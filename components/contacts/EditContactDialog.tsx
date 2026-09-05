@@ -124,7 +124,7 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
               <div>
                 <h3 className="text-sm font-medium">{t("Campos personalizados")}</h3>
                 <p className="text-xs text-muted-foreground">
-                  {t("Campos definidos no funil padrão da organização.")}
+                  {t("Campos definidos no funil padrão do workspace.")}
                 </p>
               </div>
               <CustomFieldsEditor

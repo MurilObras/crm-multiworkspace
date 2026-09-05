@@ -57,7 +57,7 @@ export function TenantForm({ initial }: Props) {
     }
     startTransition(async () => {
       const r = await updateTenant(parsed.data);
-      if (r.ok) toast.success(t("Organização atualizada."));
+      if (r.ok) toast.success(t("Workspace atualizado."));
       else toast.error(`${t("Erro")}: ${r.error}`);
     });
   }
@@ -81,11 +81,13 @@ export function TenantForm({ initial }: Props) {
               id="legal_name"
               value={form.legal_name}
               onChange={(e) => set("legal_name", e.target.value)}
-              required
             />
+            <p className="text-xs text-muted-foreground">
+              {t("Opcional — só para uso com CNPJ/LGPD. Se vazio, usa o nome de exibição.")}
+            </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cnpj">{t("CNPJ")}</Label>
+            <Label htmlFor="cnpj">{t("CNPJ (opcional)")}</Label>
             <Input
               id="cnpj"
               value={form.cnpj ?? ""}
@@ -93,7 +95,7 @@ export function TenantForm({ initial }: Props) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="dpo_email">{t("DPO email")}</Label>
+            <Label htmlFor="dpo_email">{t("DPO email (opcional)")}</Label>
             <Input
               id="dpo_email"
               type="email"

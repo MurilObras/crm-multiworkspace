@@ -51,7 +51,7 @@ const COPY: Record<string, { variant: Variant; msg?: string }> = {
   },
   tenant_not_found: {
     variant: "error",
-    msg: "Organização não encontrada.",
+    msg: "Workspace não encontrado.",
   },
   idempotency_conflict: {
     variant: "warning",

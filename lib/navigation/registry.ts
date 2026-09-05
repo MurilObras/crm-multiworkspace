@@ -113,7 +113,7 @@ export const NAV_GROUPS: NavGroup[] = [
   { id: "analise", label: "Análise", hub: { href: "/app/analise", label: "Ver tudo em Análise" } },
   {
     id: "organizacao",
-    label: "Organização",
+    label: "Workspace",
     hub: { href: "/app/settings", label: "Configurações" },
   },
 ];
@@ -626,8 +626,8 @@ export const NAV_DESTINATIONS: NavDestination[] = [
   },
   {
     href: "/app/settings/tenant",
-    label: "Organização",
-    description: "Dados da empresa, retenção de dados e encarregado de LGPD.",
+    label: "Workspace",
+    description: "Dados do workspace, retenção de dados e encarregado de LGPD.",
     icon: Buildings,
     group: "organizacao",
     section: "Sua empresa",

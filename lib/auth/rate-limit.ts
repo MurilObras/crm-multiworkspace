@@ -143,6 +143,10 @@ export const AUTH_LIMITS = {
   // usado UMA vez na vida de uma conta — 3 por hora por identidade já é
   // folga para quem errou o nome duas vezes.
   org_recovery: { ip: 5, id: 3, windowSec: 3600 },
+  // Criação de workspace adicional (usuário já logado). Cada acerto CRIA uma
+  // organização; mais folgado que a recuperação de primeiro acesso porque o
+  // caminho legítimo é recorrente, não "uma vez na vida da conta".
+  workspace_create: { ip: 10, id: 10, windowSec: 3600 },
 } satisfies Record<string, AuthRateLimits>;
 
 export const __LOGIN_IP_DEFAULT_PARA_TESTE = LOGIN_IP_DEFAULT;

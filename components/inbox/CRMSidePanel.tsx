@@ -382,7 +382,7 @@ export function CRMSidePanel({ conversation }: Props) {
 
   useEffect(() => {
     if (leadDialogOpen && defaultPipeline.isError) {
-      toast.error(t("Nenhum funil configurado nesta organização."));
+      toast.error(t("Nenhum funil configurado neste workspace."));
       setLeadDialogOpen(false);
     }
   }, [leadDialogOpen, defaultPipeline.isError, t]);

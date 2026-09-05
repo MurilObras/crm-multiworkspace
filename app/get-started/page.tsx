@@ -51,18 +51,18 @@ export default async function GetStartedPage() {
               {branding().name}
             </p>
             <h1 className="text-2xl font-semibold tracking-tight">
-              {t("Configure sua organização")}
+              {t("Configure seu workspace")}
             </h1>
             <p className="text-sm leading-relaxed text-muted-foreground">
               {t(
-                "Sua conta foi confirmada, mas a organização inicial ainda não foi criada. Informe o nome da sua empresa para concluir o primeiro acesso e abrir o onboarding do CRM.",
+                "Sua conta foi confirmada, mas o workspace inicial ainda não foi criado. Informe o nome da sua empresa para concluir o primeiro acesso e abrir o onboarding do CRM.",
               )}
             </p>
           </div>
           <RecoverOrganizationForm nomeSugerido={nomeSugerido} />
           <p className="text-xs leading-relaxed text-muted-foreground">
             {t(
-              "Se você recebeu um convite, não crie uma organização nova. Use o link do convite ou peça ao administrador para reenviá-lo.",
+              "Se você recebeu um convite, não crie um workspace novo. Use o link do convite ou peça ao administrador para reenviá-lo.",
             )}
           </p>
         </div>

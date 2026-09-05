@@ -50,9 +50,9 @@ export default async function TenantSettingsPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Organização", idioma)}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Workspace", idioma)}</h1>
         <p className="text-sm text-muted-foreground">
-          {traduzir("Dados da empresa, retenção de mídia, DPO. Admin only.", idioma)}
+          {traduzir("Dados do workspace, retenção de mídia, DPO. Admin only.", idioma)}
         </p>
       </header>
       {row && (
