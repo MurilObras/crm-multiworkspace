@@ -41,6 +41,7 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: Props) {
       const r = await createWorkspace(name.trim());
       if (!r.ok) {
         if (r.error === "rate_limited") toast.error(t("Calma — muitas tentativas. Espere alguns segundos."));
+        else if (r.error === "forbidden") toast.error(t("Só quem administra o workspace pode criar outro."));
         else toast.error(t("Não foi possível criar o workspace agora. Tente novamente."));
       }
       // No sucesso, `createWorkspace` redireciona — não há o que fazer aqui.

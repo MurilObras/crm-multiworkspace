@@ -59,6 +59,9 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível criar o workspace agora. Tente novamente.": {
     es: "No fue posible crear el espacio de trabajo ahora. Inténtalo de nuevo.",
   },
+  "Só quem administra o workspace pode criar outro.": {
+    es: "Solo quien administra el espacio de trabajo puede crear otro.",
+  },
   "Opcional — só para uso com CNPJ/LGPD. Se vazio, usa o nome de exibição.": {
     es: "Opcional — solo para uso con CNPJ/LGPD. Si está vacío, usa el nombre de visualización.",
   },

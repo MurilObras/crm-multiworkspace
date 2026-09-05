@@ -2,10 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAuth } from "@/lib/auth/server";
+import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { authRateLimited } from "@/lib/auth/rate-limit";
 import { audit } from "@/lib/audit";
-import { cookieSecure } from "@/lib/supabase/cookie-secure";
 
 vi.mock("next/headers", () => ({ cookies: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -15,7 +14,7 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
-vi.mock("@/lib/auth/server", () => ({ requireAuth: vi.fn() }));
+vi.mock("@/lib/auth/server", () => ({ requireAuth: vi.fn(), resolveActiveOrg: vi.fn() }));
 vi.mock("@/lib/auth/rate-limit", async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   authRateLimited: vi.fn(async () => false),
@@ -25,8 +24,14 @@ vi.mock("@/lib/audit", async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   audit: vi.fn(async () => undefined),
 }));
+vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }));
 
-const USUARIO = { id: "11111111-1111-4111-8111-111111111111", email: "dono@exemplo.com.br" };
+/** Usuário SEM membership nenhuma: pode criar o primeiro workspace. */
+const USUARIO = {
+  id: "11111111-1111-4111-8111-111111111111",
+  email: "dono@exemplo.com.br",
+  organizations: [],
+};
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 
 /** Monta o admin client de dublê e captura os payloads inseridos + deleções. */
@@ -63,6 +68,7 @@ describe("createWorkspace", () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.mocked(requireAuth).mockResolvedValue(USUARIO as never);
+    vi.mocked(resolveActiveOrg).mockResolvedValue(null);
     vi.mocked(authRateLimited).mockResolvedValue(false);
     const store = { set: vi.fn(), get: vi.fn() };
     vi.mocked(cookies).mockResolvedValue(store as never);
@@ -125,14 +131,48 @@ describe("createWorkspace", () => {
     expect(createAdminClient).not.toHaveBeenCalled();
   });
 
-  it("membership que falha NÃO deixa organização órfã (compensação apaga a org)", async () => {
+  it("⭐ usuário COM membership que NÃO é admin no workspace ativo é barrado", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({
+      ...USUARIO,
+      organizations: [{ organization_id: "outra", role: "agent" }],
+    } as never);
+    vi.mocked(resolveActiveOrg).mockResolvedValue({ orgId: "outra", name: "Outra", role: "agent" } as never);
+    const { createWorkspace } = await import("./createWorkspace");
+
+    await expect(createWorkspace("Clínica Boa Vista")).resolves.toEqual({
+      ok: false,
+      error: "forbidden",
+    });
+    expect(createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it("⭐ usuário COM membership e ADMIN no workspace ativo pode criar outro", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({
+      ...USUARIO,
+      organizations: [{ organization_id: "ativa", role: "admin" }],
+    } as never);
+    vi.mocked(resolveActiveOrg).mockResolvedValue({ orgId: "ativa", name: "Ativa", role: "admin" } as never);
+    const { from } = adminClient(ORG_ID);
+    vi.mocked(createAdminClient).mockReturnValue({ from } as never);
+    const { createWorkspace } = await import("./createWorkspace");
+
+    // Prossegue com a criação (sai pelo redirect do onboarding), como o caso sem
+    // membership.
+    await expect(createWorkspace("Clínica Boa Vista")).rejects.toThrow(
+      "NEXT_REDIRECT:/onboarding/welcome",
+    );
+  });
+
+  it("membership que falha NÃO deixa organização órfã (compensação + provision_failed)", async () => {
     const { from, deletados } = adminClient(ORG_ID, { falhaMembership: true });
     vi.mocked(createAdminClient).mockReturnValue({ from } as never);
     const { createWorkspace } = await import("./createWorkspace");
 
-    await expect(createWorkspace("Clínica Boa Vista")).rejects.toThrow(
-      "membership insert failed",
-    );
+    // Erro esperado vira resultado tratado, não rejection para a UI.
+    await expect(createWorkspace("Clínica Boa Vista")).resolves.toEqual({
+      ok: false,
+      error: "provision_failed",
+    });
 
     // A organização criada antes da falha foi removida — sem vínculo, ela não pode
     // ficar no banco como lixo invisível (RLS impediria qualquer um de se associar).
