@@ -19,7 +19,7 @@ const MENSAGENS: Record<string, string> = {
   invite_pending:
     "Esta conta tem um convite pendente ou inválido. Use o link do convite ou peça um novo ao administrador.",
   provision_failed:
-    "Não foi possível concluir a organização agora. Tente novamente ou contate o administrador da instalação.",
+    "Não foi possível concluir o workspace agora. Tente novamente ou contate o administrador da instalação.",
 };
 
 /**

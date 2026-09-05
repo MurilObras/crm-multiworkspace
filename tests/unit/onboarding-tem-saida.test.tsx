@@ -83,7 +83,7 @@ describe("a saída do wizard", () => {
       />,
     );
     const gatilho = screen.getByTestId("sair-do-onboarding");
-    expect(gatilho).toHaveTextContent("Ir para outra organização");
+    expect(gatilho).toHaveTextContent("Ir para outro workspace");
     await user.click(gatilho);
     // O menu do Radix monta ao abrir; os dois destinos têm testid próprio para a
     // spec em tela poder escolher um deles sem depender da ordem.

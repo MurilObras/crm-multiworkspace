@@ -2,6 +2,7 @@
 import { useTransition } from "react";
 import { CaretDown, Storefront } from "@/lib/ui/icons";
 import { useUser, useActiveOrg } from "@/hooks/auth/AuthProvider";
+import { useT } from "@/hooks/i18n/useT";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { setActiveOrg } from "@/app/actions/shell/setActiveOrg";
 
 export function TenantSwitcher() {
+  const t = useT();
   const user = useUser();
   const active = useActiveOrg();
   const [isPending, startTransition] = useTransition();
@@ -23,7 +25,7 @@ export function TenantSwitcher() {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" disabled={isPending} className="gap-2" data-testid="tenant-switcher">
           <Storefront size={16} weight="duotone" aria-hidden />
-          <span className="max-w-[160px] truncate">{active?.name ?? "Selecionar org"}</span>
+          <span className="max-w-[160px] truncate">{active?.name ?? t("Selecionar workspace")}</span>
           <CaretDown size={12} aria-hidden />
         </Button>
       </DropdownMenuTrigger>

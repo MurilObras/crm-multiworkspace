@@ -92,7 +92,7 @@ export function OutrasOrganizacoes({
           className="gap-1.5"
         >
           <ArrowBendUpLeft size={14} weight="bold" aria-hidden />
-          <span>{t("Ir para outra organização")}</span>
+          <span>{t("Ir para outro workspace")}</span>
           <CaretDown size={12} aria-hidden />
         </Button>
       </DropdownMenuTrigger>

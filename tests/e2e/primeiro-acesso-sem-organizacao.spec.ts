@@ -129,7 +129,7 @@ test.describe("conta confirmada e sem organização", () => {
     await entrar(page, emailOrfao);
     await page.goto("/onboarding");
     await expect(page).toHaveURL(/\/get-started/, { timeout: 20_000 });
-    await expect(page.getByRole("heading", { name: /Configure sua organização/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Configure seu workspace/i })).toBeVisible();
   });
 
   test("⭐ a porta do welcome (o layout) leva ao mesmo lugar", async ({ page }) => {
@@ -145,7 +145,7 @@ test.describe("conta confirmada e sem organização", () => {
     // sistema. O link é a única saída real — e clicá-lo tem de chegar lá.
     await entrar(page, emailOrfao);
     await page.goto("/app/inbox");
-    const porta = page.getByRole("link", { name: /Configurar minha organização/i });
+    const porta = page.getByRole("link", { name: /Configurar meu workspace/i });
     await expect(porta).toBeVisible({ timeout: 20_000 });
     await porta.click();
     await expect(page).toHaveURL(/\/get-started/, { timeout: 20_000 });
@@ -193,7 +193,7 @@ test.describe("CONTROLE — quem já tem organização não é mandado para a sa
     await entrar(page, emailComOrg);
     await page.goto("/get-started");
     await expect(page).toHaveURL(/\/app\/inbox/, { timeout: 20_000 });
-    await expect(page.getByRole("heading", { name: /Configure sua organização/i })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /Configure seu workspace/i })).toHaveCount(0);
   });
 
   test("o onboarding de quem tem organização NÃO cai no /get-started", async ({ page }) => {

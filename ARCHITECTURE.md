@@ -21,6 +21,8 @@
 
 `organization_id uuid not null` em toda tabela tenant-aware. RLS via helper. Service role bypassa RLS — handlers admin **DEVEM** filtrar `organization_id` manualmente, resolvido de fonte confiável (cookie/JWT/webhook secret/path token), nunca do body.
 
+**"Workspace" é o nome de produto de `organizations`.** Não existe tabela `workspaces`; o que o usuário chama de workspace é uma linha em `organizations`. Detalhes e o mapa completo do mapeamento: [`docs/architecture/workspace-e-organization.md`](docs/architecture/workspace-e-organization.md).
+
 Detalhes: [`docs/specs/01-spec-platform-base.md`](docs/specs/01-spec-platform-base.md).
 
 ## API REST `/api/v1/`

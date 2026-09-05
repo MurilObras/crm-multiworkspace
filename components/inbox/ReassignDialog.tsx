@@ -92,7 +92,7 @@ export function ReassignDialog({ conversationId, open, onOpenChange }: Props) {
             </Select>
             {!members.isLoading && options.length === 0 && (
               <p className="text-xs text-muted-foreground">
-                {t("Nenhum outro atendente disponível nesta organização.")}
+                {t("Nenhum outro atendente disponível neste workspace.")}
               </p>
             )}
           </div>

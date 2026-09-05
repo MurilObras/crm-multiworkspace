@@ -48,7 +48,25 @@ export const DICIONARIO: Traducoes = {
   "Agente de IA": { es: "Agente de IA" },
   Canais: { es: "Canales" },
   Análise: { es: "Análisis" },
-  Organização: { es: "Organización" },
+  Workspace: { es: "Espacio de trabajo" },
+  "Criar workspace": { es: "Crear espacio de trabajo" },
+  "Selecionar workspace": { es: "Seleccionar espacio de trabajo" },
+  "Nome do workspace": { es: "Nombre del espacio de trabajo" },
+  "ex: Time Comercial, Loja Sul": { es: "ej: Equipo Comercial, Tienda Sur" },
+  "Um espaço isolado para um novo time, com seus próprios números, funis e agentes.": {
+    es: "Un espacio aislado para un nuevo equipo, con sus propios números, embudos y agentes.",
+  },
+  "Não foi possível criar o workspace agora. Tente novamente.": {
+    es: "No fue posible crear el espacio de trabajo ahora. Inténtalo de nuevo.",
+  },
+  "Só quem administra o workspace pode criar outro.": {
+    es: "Solo quien administra el espacio de trabajo puede crear otro.",
+  },
+  "Opcional — só para uso com CNPJ/LGPD. Se vazio, usa o nome de exibição.": {
+    es: "Opcional — solo para uso con CNPJ/LGPD. Si está vacío, usa el nombre de visualización.",
+  },
+  "CNPJ (opcional)": { es: "CNPJ (opcional)" },
+  "DPO email (opcional)": { es: "Correo DPO (opcional)" },
 
   // ─── Navegação (a barra lateral, presente em toda tela) ───
   Inbox: { es: "Inbox" },
@@ -198,7 +216,7 @@ export const DICIONARIO: Traducoes = {
   // ─── Configurações: hub, perfil e tenant ───
   "Dados inválidos.": { es: "Datos inválidos." },
   "Perfil atualizado.": { es: "Perfil actualizado." },
-  "Organização atualizada.": { es: "Organización actualizada." },
+  "Workspace atualizado.": { es: "Espacio de trabajo actualizado." },
   "Salvando…": { es: "Guardando…" },
   "Nome completo": { es: "Nombre completo" },
   "Trocar email — em breve.": { es: "Cambiar email — próximamente." },
@@ -222,8 +240,8 @@ export const DICIONARIO: Traducoes = {
   "Informações pessoais. Email só pode ser trocado em breve.": {
     es: "Información personal. El email solo se puede cambiar próximamente.",
   },
-  "Dados da empresa, retenção de mídia, DPO. Admin only.": {
-    es: "Datos de la empresa, retención de medios, DPO. Solo administradores.",
+  "Dados do workspace, retenção de mídia, DPO. Admin only.": {
+    es: "Datos del espacio de trabajo, retención de medios, DPO. Solo administradores.",
   },
   // ─── Hub do CRM (NavHub: seções e subtítulo) ───
   //
@@ -271,8 +289,8 @@ export const DICIONARIO: Traducoes = {
   "Quem recebe cada cliente novo, e o que cada atendente enxerga.": {
     es: "Quién recibe cada cliente nuevo y qué ve cada agente.",
   },
-  "Dados da empresa, retenção de dados e encarregado de LGPD.": {
-    es: "Datos de la empresa, retención de datos y encargado de LGPD.",
+  "Dados do workspace, retenção de dados e encarregado de LGPD.": {
+    es: "Datos del espacio de trabajo, retención de datos y encargado de LGPD.",
   },
   "O nome e a cor que sua empresa mostra dentro do sistema.": {
     es: "El nombre y el color que tu empresa muestra dentro del sistema.",
@@ -3832,8 +3850,8 @@ export const DICIONARIO: Traducoes = {
   "Não consegui salvar o próximo passo. Tente de novo.": {
     es: "No pude guardar el próximo paso. Intenta de nuevo.",
   },
-  "Nenhum funil configurado nesta organização.": {
-    es: "No hay ningún embudo configurado en esta organización.",
+  "Nenhum funil configurado neste workspace.": {
+    es: "No hay ningún embudo configurado en este espacio de trabajo.",
   },
   "Não consegui ler estes dados.": { es: "No pude leer estos datos." },
   "Selecione uma conversa para ver detalhes do contato.": {
@@ -3888,8 +3906,8 @@ export const DICIONARIO: Traducoes = {
   },
   "Transferir para": { es: "Transferir a" },
   "Carregando atendentes…": { es: "Cargando agentes…" },
-  "Nenhum outro atendente disponível nesta organização.": {
-    es: "No hay ningún otro agente disponible en esta organización.",
+  "Nenhum outro atendente disponível neste workspace.": {
+    es: "No hay ningún otro agente disponible en este espacio de trabajo.",
   },
   "Motivo (opcional)": { es: "Motivo (opcional)" },
   "Ex.: cliente pediu falar com o financeiro": { es: "Ej.: el cliente pidió hablar con finanzas" },
@@ -4035,20 +4053,20 @@ export const DICIONARIO: Traducoes = {
   },
 
   // ─── Recuperação do primeiro acesso (/get-started) ───
-  "Você não tem nenhuma organização ativa. Configure sua organização ou aceite um convite.": {
-    es: "No tienes ninguna organización activa. Configura tu organización o acepta una invitación.",
+  "Você não tem nenhum workspace ativo. Configure seu workspace ou aceite um convite.": {
+    es: "No tienes ningún espacio de trabajo activo. Configura tu espacio de trabajo o acepta una invitación.",
   },
-  "Configurar minha organização": { es: "Configurar mi organización" },
+  "Configurar meu workspace": { es: "Configurar mi espacio de trabajo" },
   "Campos personalizados": { es: "Campos personalizados" },
-  "Campos definidos no funil padrão da organização.": {
-    es: "Campos definidos en el embudo predeterminado de la organización.",
+  "Campos definidos no funil padrão do workspace.": {
+    es: "Campos definidos en el embudo predeterminado del espacio de trabajo.",
   },
-  "Configure sua organização": { es: "Configura tu organización" },
-  "Sua conta foi confirmada, mas a organização inicial ainda não foi criada. Informe o nome da sua empresa para concluir o primeiro acesso e abrir o onboarding do CRM.": {
-    es: "Tu cuenta fue confirmada, pero la organización inicial aún no fue creada. Indica el nombre de tu empresa para completar el primer acceso y abrir la configuración inicial del CRM.",
+  "Configure seu workspace": { es: "Configura tu espacio de trabajo" },
+  "Sua conta foi confirmada, mas o workspace inicial ainda não foi criado. Informe o nome da sua empresa para concluir o primeiro acesso e abrir o onboarding do CRM.": {
+    es: "Tu cuenta fue confirmada, pero el espacio de trabajo inicial aún no fue creado. Indica el nombre de tu empresa para completar el primer acceso y abrir la configuración inicial del CRM.",
   },
-  "Se você recebeu um convite, não crie uma organização nova. Use o link do convite ou peça ao administrador para reenviá-lo.": {
-    es: "Si recibiste una invitación, no crees una organización nueva. Usa el enlace de la invitación o pide al administrador que la reenvíe.",
+  "Se você recebeu um convite, não crie um workspace novo. Use o link do convite ou peça ao administrador para reenviá-lo.": {
+    es: "Si recibiste una invitación, no crees un espacio de trabajo nuevo. Usa el enlace de la invitación o pide al administrador que la reenvíe.",
   },
   // "Nome da empresa" já existe no bloco do cadastro — a chave é a mesma frase.
   "Preparando seu ambiente…": { es: "Preparando tu entorno…" },
@@ -4062,8 +4080,8 @@ export const DICIONARIO: Traducoes = {
   "Esta conta tem um convite pendente ou inválido. Use o link do convite ou peça um novo ao administrador.": {
     es: "Esta cuenta tiene una invitación pendiente o inválida. Usa el enlace de la invitación o pide una nueva al administrador.",
   },
-  "Não foi possível concluir a organização agora. Tente novamente ou contate o administrador da instalação.": {
-    es: "No fue posible completar la organización ahora. Inténtalo de nuevo o contacta al administrador de la instalación.",
+  "Não foi possível concluir o workspace agora. Tente novamente ou contate o administrador da instalação.": {
+    es: "No fue posible completar el espacio de trabajo ahora. Inténtalo de nuevo o contacta al administrador de la instalación.",
   },
   "Adicionar tag à conversa": { es: "Agregar etiqueta a la conversación" },
   "Fechar conversa?": { es: "¿Cerrar conversación?" },
@@ -5800,7 +5818,7 @@ export const DICIONARIO: Traducoes = {
   "Sessão expirada. Faça login novamente.": { es: "Sesión vencida. Inicia sesión de nuevo." },
   "Você não tem permissão para esta ação.": { es: "No tienes permiso para esta acción." },
   "Recurso não encontrado ou já removido.": { es: "Recurso no encontrado o ya eliminado." },
-  "Organização não encontrada.": { es: "Organización no encontrada." },
+  "Workspace não encontrado.": { es: "Espacio de trabajo no encontrado." },
   "Operação já processada.": { es: "Operación ya procesada." },
   "Outro atendente já assumiu.": { es: "Otro agente ya lo asumió." },
   "Este caso já foi respondido ou fechado.": { es: "Este caso ya fue respondido o cerrado." },
@@ -6435,7 +6453,7 @@ export const DICIONARIO: Traducoes = {
   "Guardando…": { es: "Guardando…" },
   "tokens": { es: "tokens" },
   "Voltar para": { es: "Volver a" },
-  "Ir para outra organização": { es: "Ir a otra organización" },
+  "Ir para outro workspace": { es: "Ir a otro espacio de trabajo" },
 
   // ─── Catálogo de produtos (app/app/products) ───
   //

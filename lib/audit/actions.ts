@@ -256,6 +256,8 @@ export const AUDIT_ACTIONS = [
   "auth.password_reset_failed",
   "tenant.created_by_signup",
   "tenant.created_by_recovery",
+  // O usuário logado criou um workspace (organização) adicional por conta própria.
+  "tenant.created_by_user",
   "conversation.snoozed",
   "conversation.snooze_cancelled",
   "conversation.snooze_watcher_run",

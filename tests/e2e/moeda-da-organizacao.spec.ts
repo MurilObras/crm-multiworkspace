@@ -52,7 +52,7 @@ test.describe("moeda da organização", () => {
       await moeda.click();
       await page.getByRole("option", { name: /^BRL/ }).click();
       await page.getByRole("button", { name: /salvar/i }).click();
-      await expect(page.getByText(/organiza..o atualizada/i)).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByText(/workspace atualizado/i)).toBeVisible({ timeout: 10_000 });
     }
   });
 
@@ -70,7 +70,7 @@ test.describe("moeda da organização", () => {
     await moeda.click();
     await page.getByRole("option", { name: /^MXN/ }).click();
     await page.getByRole("button", { name: /salvar/i }).click();
-    await expect(page.getByText(/organiza..o atualizada/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/workspace atualizado/i)).toBeVisible({ timeout: 10_000 });
 
     await page.screenshot({ path: path.join(EVIDENCE, "moeda-02-mxn-salvo.png") });
 
@@ -92,7 +92,7 @@ test.describe("moeda da organização", () => {
     await page.locator("#currency").click();
     await page.getByRole("option", { name: /^MXN/ }).click();
     await page.getByRole("button", { name: /salvar/i }).click();
-    await expect(page.getByText(/organiza..o atualizada/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/workspace atualizado/i)).toBeVisible({ timeout: 10_000 });
 
     await page.goto("/app/products");
     await page.getByTestId("novo-produto").click();

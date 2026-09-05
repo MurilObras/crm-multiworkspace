@@ -1,5 +1,5 @@
 "use client";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useUser, useAuth } from "@/hooks/auth/AuthProvider";
 import {
   DropdownMenu,
@@ -13,8 +13,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { SeletorDeIdioma } from "@/components/shell/SeletorDeIdioma";
+import { CreateWorkspaceDialog } from "@/components/workspace/CreateWorkspaceDialog";
 import { useT } from "@/hooks/i18n/useT";
-import { SignOut } from "@/lib/ui/icons";
+import { Plus, SignOut } from "@/lib/ui/icons";
 
 function initials(name: string | null, email: string): string {
   if (name && name.trim()) {
@@ -28,6 +29,7 @@ export function UserMenu() {
   const user = useUser();
   const { signOut } = useAuth();
   const [isPending, startTransition] = useTransition();
+  const [criarAberto, setCriarAberto] = useState(false);
 
   return (
     <div className="flex items-center gap-2">
@@ -50,12 +52,23 @@ export function UserMenu() {
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <DropdownMenuItem
+            data-testid="criar-workspace"
+            onSelect={(e) => {
+              e.preventDefault();
+              setCriarAberto(true);
+            }}
+          >
+            <Plus size={16} className="mr-2" aria-hidden />
+            {t("Criar workspace")}
+          </DropdownMenuItem>
           <DropdownMenuItem disabled={isPending} onClick={() => startTransition(async () => { await signOut(); })}>
             <SignOut size={16} className="mr-2" aria-hidden />
             {t("Sair")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <CreateWorkspaceDialog open={criarAberto} onOpenChange={setCriarAberto} />
     </div>
   );
 }

@@ -81,35 +81,49 @@ export type ProfileInput = z.infer<typeof profileSchema>;
  */
 const MOEDAS = MOEDAS_SERVIDAS;
 
-export const tenantSchema = z.object({
-  display_name: z.string().min(1).max(120),
-  legal_name: z.string().min(1).max(200),
-  cnpj: z
-    .string()
-    .max(20)
-    .nullable()
-    .optional()
-    .or(z.literal("").transform(() => null)),
-  timezone: z.string().min(1).max(64),
-  locale: z.enum(LOCALES),
-  currency: z.enum(MOEDAS),
-  media_retention_days: z.coerce.number().int().min(30).max(3650),
-  dpo_email: z
-    .string()
-    .email()
-    .max(200)
-    .nullable()
-    .optional()
-    .or(z.literal("").transform(() => null)),
-  privacy_policy_url: z
-    .string()
-    .url()
-    .max(2048)
-    .nullable()
-    .optional()
-    .or(z.literal("").transform(() => null)),
-  lost_reasons_extra: z.array(z.string().min(1).max(80)).max(50).default([]),
-});
+export const tenantSchema = z
+  .object({
+    display_name: z.string().min(1).max(120),
+    // `legal_name` é OPCIONAL na tela: para uso interno (workspace) a razão
+    // social é irrelevante. O banco mantém a coluna `NOT NULL`, então a
+    // transformação abaixo faz o fallback para o nome de exibição — nada de
+    // migration, e a regra fica testável no schema.
+    legal_name: z
+      .string()
+      .max(200)
+      .nullable()
+      .optional()
+      .or(z.literal("").transform(() => null)),
+    cnpj: z
+      .string()
+      .max(20)
+      .nullable()
+      .optional()
+      .or(z.literal("").transform(() => null)),
+    timezone: z.string().min(1).max(64),
+    locale: z.enum(LOCALES),
+    currency: z.enum(MOEDAS),
+    media_retention_days: z.coerce.number().int().min(30).max(3650),
+    dpo_email: z
+      .string()
+      .email()
+      .max(200)
+      .nullable()
+      .optional()
+      .or(z.literal("").transform(() => null)),
+    privacy_policy_url: z
+      .string()
+      .url()
+      .max(2048)
+      .nullable()
+      .optional()
+      .or(z.literal("").transform(() => null)),
+    lost_reasons_extra: z.array(z.string().min(1).max(80)).max(50).default([]),
+  })
+  .transform((v) => ({
+    ...v,
+    legal_name: v.legal_name?.trim() || v.display_name,
+  }));
 export type TenantInput = z.infer<typeof tenantSchema>;
 
 export const NOTIFICATION_CATEGORIES = [
