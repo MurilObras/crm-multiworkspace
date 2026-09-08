@@ -55,7 +55,8 @@ function makeSupabase(botSilencedUntil: string | null) {
       if (table === 'conversations') {
         return {
           select: () => ({
-            eq: () => ({ maybeSingle: async () => ({ data: conversationRow(botSilencedUntil), error: null }) }),
+            eq() { return this; },
+            maybeSingle: async () => ({ data: conversationRow(botSilencedUntil), error: null }),
           }),
           update: (patch: Row) => {
             patches.push(patch);

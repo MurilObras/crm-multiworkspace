@@ -194,6 +194,14 @@ export const NAV_DESTINATIONS: NavDestination[] = [
 
   // ---- CRM — o funil ----
   {
+    href: "/app/campaigns",
+    label: "Campanhas WhatsApp",
+    description: "Enviar texto para contatos de uma tag e acompanhar cada resultado.",
+    icon: Megaphone,
+    group: "crm",
+    section: "Preparar a venda",
+  },
+  {
     // ⚠️ ERA "Kanban", e a URL continua sendo. O nome saiu da interface porque o
     // produto tinha CINCO vocabulários para a mesma coisa — "Kanban" no menu,
     // "Pipelines" no título desta tela, "Funis" no menu ao lado, "funil" em todo
