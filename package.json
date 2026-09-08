@@ -22,7 +22,7 @@
     "e2e:build": "bash scripts/e2e-build.sh",
     "e2e:env": "bash scripts/gerar-env-e2e.sh",
     "test:journeys": "playwright test -c tests/journeys/playwright.config.ts",
-    "test:unit": "vitest run",
+    "test:unit": "vitest run && node --test tests/unit/event-log-imports.smoke.cjs",
     "test:db": "bash scripts/test-db.sh",
     "test:shell": "bash tests/shell/update-guard.test.sh && bash tests/shell/dono-do-projeto.test.sh && bash tests/shell/scheduler-entrypoint.test.sh && bash tests/shell/owner-id-por-email.test.sh && bash hostgator-setup-kit/test-validators.sh",
     "test:invariants": "bash scripts/test-db.sh",
@@ -134,6 +134,9 @@
       "fast-uri": "^3.1.7",
       "qs": "^6.16.0",
       "browserslist": "^4.28.8"
+    },
+    "patchedDependencies": {
+      "@react-pdf/hyphenate@0.1.0": "patches/@react-pdf__hyphenate@0.1.0.patch"
     }
   }
 }
