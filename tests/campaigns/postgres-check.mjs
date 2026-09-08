@@ -82,7 +82,10 @@ async function ageReservations(campaign) {
 test("migration is idempotent and baseline append is identical", async () => {
   await db.query(migration);
   const baseline = readFileSync(new URL("../../supabase/baseline.sql", import.meta.url), "utf8");
-  assert.equal(baseline.split("-- ---- whatsapp_campaigns (migration 0218) ----\n")[1].trim(), migration.trim());
+  const append = baseline.split("-- ---- whatsapp_campaigns (migration 0218) ----\n")[1];
+  const sweepStart = append.indexOf("-- ---- VARREDURA anon:");
+  assert.ok(sweepStart >= 0, "final anon sweep marker must exist");
+  assert.equal(append.slice(0, sweepStart).trim(), migration.trim());
 });
 test("launch freezes tag + source audience, seeds step 0 and emits one event on replay", async () => {
   const id = await launch();

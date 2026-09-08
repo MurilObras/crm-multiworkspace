@@ -99,6 +99,7 @@ beforeAll(() => {
       v_conv uuid;
       v_pipe uuid;
       v_stage uuid;
+      v_campaign uuid;
     begin
       foreach v_org in array array['${ORG_A}'::uuid, '${ORG_B}'::uuid] loop
         select id into v_sess from public.channel_sessions where organization_id = v_org limit 1;
@@ -121,6 +122,24 @@ beforeAll(() => {
           insert into public.messages (organization_id, conversation_id, channel_session_id, contact_id, type, direction, body)
             values (v_org, v_conv, v_sess, v_contact, 'text', 'inbound', 'rls invariant probe');
         end if;
+
+        select id into v_campaign from public.whatsapp_campaigns
+          where organization_id = v_org and name = 'RLS Invariant Campaign';
+        if v_campaign is null then
+          insert into public.whatsapp_campaigns
+            (organization_id, name, channel_session_id, steps, filters, hourly_limit)
+            values (v_org, 'RLS Invariant Campaign', v_sess,
+                    '[{"message":"RLS invariant probe","delay_minutes":0}]'::jsonb,
+                    '{"tag":"rls-invariant"}'::jsonb, 100)
+            returning id into v_campaign;
+        end if;
+        insert into public.whatsapp_campaign_recipients (organization_id, campaign_id, contact_id)
+          values (v_org, v_campaign, v_contact)
+          on conflict (campaign_id, contact_id) do nothing;
+        insert into public.whatsapp_campaign_recipient_steps
+          (organization_id, campaign_id, contact_id, step_index)
+          values (v_org, v_campaign, v_contact, 0)
+          on conflict (campaign_id, contact_id, step_index) do nothing;
 
         select id into v_pipe from public.crm_pipelines
           where organization_id = v_org and slug = 'rls-inv';
@@ -264,6 +283,10 @@ export const TABLES = [
   // controle positivo passaria por acerto. Quem mede a escrita é a rota, em
   // `tests/unit/tarefas-rota-nao-tem-porta-dos-fundos.test.ts`.
   "crm_tasks",
+  // Leitura autenticada com controle positivo e bloqueio cross-org, sem transporte.
+  "whatsapp_campaigns",
+  "whatsapp_campaign_recipients",
+  "whatsapp_campaign_recipient_steps",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"
@@ -298,5 +321,13 @@ describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {
       ),
     );
     expect(total).toBe(2);
+  });
+
+  it("campaign seeds exist in both orgs for every campaign table", () => {
+    for (const table of TABLES.filter((name) => name.startsWith("whatsapp_campaign"))) {
+      expect(Number(sql(
+        `select count(distinct organization_id) from public.${table} where organization_id in ('${ORG_A}','${ORG_B}');`,
+      ))).toBe(2);
+    }
   });
 });

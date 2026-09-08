@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { type Campaign, type RecipientStatus, recipientStatuses } from "@/lib/campaigns/schema";
+import { useT } from "@/lib/i18n/IdiomaProvider";
+import { randomId } from "@/lib/random-id";
 
 const labels: Record<RecipientStatus, string> = {
   pending: "Pendentes", sent: "Enviados", failed: "Falhas",
@@ -51,6 +53,7 @@ const emptyStep = (): StepDraft => ({ message: "", delay: "", unit: "hours" });
 const emptyForm = () => ({ id: "", name: "", channel_session_id: "", tag: "", source: "", hourly_limit: 100, steps: [emptyStep()] });
 
 export function CampaignsClient({ canSend }: { canSend: boolean }) {
+  const t = useT();
   const [list, setList] = useState<{ campaigns: Campaign[]; channels: Channel[] }>({ campaigns: [], channels: [] });
   const [detail, setDetail] = useState<Detail | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -120,66 +123,66 @@ export function CampaignsClient({ canSend }: { canSend: boolean }) {
 
   return <div className="mx-auto w-full max-w-5xl space-y-6 p-4 md:p-8">
     <header className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-semibold">Campanhas WhatsApp</h1><p className="text-sm text-muted-foreground">Sequencia de mensagens, publico por tag e limite por hora por canal.</p></div>
+      <div><h1 className="text-2xl font-semibold">{t("Campanhas WhatsApp")}</h1><p className="text-sm text-muted-foreground">{t("Sequencia de mensagens, publico por tag e limite por hora por canal.")}</p></div>
       {canSend && !creating && !selected && <Button onClick={() => {
-        setForm({ ...emptyForm(), id: crypto.randomUUID() });
+        setForm({ ...emptyForm(), id: randomId() });
         setPreview(null); setLaunchUncertain(false); setCreating(true);
-      }}>Nova campanha</Button>}
-      {(creating || selected) && <Button variant="outline" onClick={() => { setCreating(false); setSelected(null); setDetail(null); }}>Voltar para lista</Button>}
+      }}>{t("Nova campanha")}</Button>}
+      {(creating || selected) && <Button variant="outline" onClick={() => { setCreating(false); setSelected(null); setDetail(null); }}>{t("Voltar para lista")}</Button>}
     </header>
     {error && <p role="alert" className="rounded-md border border-destructive p-3 text-sm text-destructive">{error}</p>}
     {creating ? <form onSubmit={launch} className="space-y-4 rounded-lg border bg-card p-5">
       <fieldset disabled={busy || launchUncertain} className="grid gap-4 md:grid-cols-2">
-        <label className="space-y-1 text-sm">Nome<Input required maxLength={120} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-        <label className="space-y-1 text-sm">Canal WhatsApp<select required className="h-9 w-full rounded-md border bg-background px-3" value={form.channel_session_id} onChange={(e) => setForm({ ...form, channel_session_id: e.target.value })}>
-          <option value="">Selecione um canal conectado</option>{list.channels.map((c) => <option key={c.id} value={c.id}>{c.phone_number ?? c.id}</option>)}
+        <label className="block space-y-1 text-sm">{t("Nome")}<Input required maxLength={120} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+        <label className="block space-y-1 text-sm">{t("Canal WhatsApp")}<select required className="h-9 w-full rounded-md border bg-background px-3" value={form.channel_session_id} onChange={(e) => setForm({ ...form, channel_session_id: e.target.value })}>
+          <option value="">{t("Selecione um canal conectado")}</option>{list.channels.map((c) => <option key={c.id} value={c.id}>{c.phone_number ?? c.id}</option>)}
         </select></label>
-        <label className="space-y-1 text-sm">Tag<Input required maxLength={100} value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} /></label>
-        <label className="space-y-1 text-sm">Origem (opcional)<Input maxLength={100} value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} /></label>
-        <label className="space-y-1 text-sm">Limite por hora<Input required type="number" min={1} max={10000} value={form.hourly_limit} onChange={(e) => setForm({ ...form, hourly_limit: Number(e.target.value) })} /></label>
+        <label className="block space-y-1 text-sm">{t("Tag")}<Input required maxLength={100} value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} /></label>
+        <label className="block space-y-1 text-sm">{t("Origem (opcional)")}<Input maxLength={100} value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} /></label>
+        <label className="block space-y-1 text-sm">{t("Limite por hora")}<Input required type="number" min={1} max={10000} value={form.hourly_limit} onChange={(e) => setForm({ ...form, hourly_limit: Number(e.target.value) })} /></label>
       </fieldset>
       <div className="space-y-4">
-        <div className="text-sm font-medium">Mensagens</div>
+        <div className="text-sm font-medium">{t("Mensagens")}</div>
         {form.steps.map((step, index) => (
           <div key={index} className="space-y-2 rounded-md border p-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">{index === 0 ? "Passo 1 · imediato" : `Passo ${index + 1} · apos o anterior`}</span>
-              {index > 0 && <Button type="button" variant="ghost" size="sm" onClick={() => removeStep(index)}>Remover</Button>}
+              <span className="text-sm text-muted-foreground">{index === 0 ? t("Passo 1 · imediato") : t("Passo {n} · apos o anterior").replace("{n}", String(index + 1))}</span>
+              {index > 0 && <Button type="button" variant="ghost" size="sm" onClick={() => removeStep(index)}>{t("Remover")}</Button>}
             </div>
             {index > 0 && <div className="flex items-end gap-2">
-              <label className="flex-1 space-y-1 text-sm">Delay
+              <label className="block flex-1 space-y-1 text-sm">{t("Delay")}
                 <Input required type="number" min={1} max={43200} value={step.delay} onChange={(e) => patchStep(index, { delay: e.target.value })} />
               </label>
-              <label className="space-y-1 text-sm">Unidade
+              <label className="block space-y-1 text-sm">{t("Unidade")}
                 <select className="h-9 w-full rounded-md border bg-background px-3" value={step.unit} onChange={(e) => patchStep(index, { unit: e.target.value as DelayUnit })}>
-                  {DELAY_UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+                  {DELAY_UNITS.map((u) => <option key={u.value} value={u.value}>{t(u.label)}</option>)}
                 </select>
               </label>
             </div>}
-            <label className="space-y-1 text-sm">Mensagem<Textarea required maxLength={4096} rows={3} value={step.message} onChange={(e) => patchStep(index, { message: e.target.value })} /><span className="text-muted-foreground">O texto sera enviado exatamente como escrito. Sem variaveis ou IA.</span></label>
+            <label className="block space-y-1 text-sm">{t("Mensagem")}<Textarea required maxLength={4096} rows={3} value={step.message} onChange={(e) => patchStep(index, { message: e.target.value })} /><span className="text-muted-foreground">{t("O texto sera enviado exatamente como escrito. Sem variaveis ou IA.")}</span></label>
           </div>
         ))}
-        {form.steps.length < 20 && <Button type="button" variant="outline" onClick={addStep}>+ Adicionar mensagem</Button>}
+        {form.steps.length < 20 && <Button type="button" variant="outline" onClick={addStep}>{t("+ Adicionar mensagem")}</Button>}
       </div>
-      {!list.channels.length && <p className="text-sm">Nenhum canal conectado. Consulte a Central de Conexoes com seu administrador.</p>}
-      <div className="flex flex-wrap items-center gap-3"><Button type="button" variant="outline" disabled={busy || !form.tag.trim() || launchUncertain} onClick={() => void showPreview()}>Calcular publico</Button>
-        {preview?.key === filterKey && <span role="status">{preview.count} contatos no recorte</span>}
+      {!list.channels.length && <p className="text-sm">{t("Nenhum canal conectado. Consulte a Central de Conexoes com seu administrador.")}</p>}
+      <div className="flex flex-wrap items-center gap-3"><Button type="button" variant="outline" disabled={busy || !form.tag.trim() || launchUncertain} onClick={() => void showPreview()}>{t("Calcular publico")}</Button>
+        {preview?.key === filterKey && <span role="status">{preview.count} {t("contatos no recorte")}</span>}
       </div>
-      <p className="text-sm text-muted-foreground">O publico e congelado ao iniciar. Bloqueios e recusas de marketing sao conferidos antes de cada passo; se o contato responder, os passos seguintes param. O limite conta reservas da ultima hora no canal, compartilhado entre campanhas. Falhas incertas nao sao reenviadas.</p>
-      <Button disabled={busy || preview?.key !== filterKey || !list.channels.length || !stepsValid} type="submit">{busy ? "Aguarde..." : launchUncertain ? "Repetir com o mesmo ID" : "Enviar agora"}</Button>
+      <p className="text-sm text-muted-foreground">{t("O publico e congelado ao iniciar. Bloqueios e recusas de marketing sao conferidos antes de cada passo; se o contato responder, os passos seguintes param. O limite conta reservas da ultima hora no canal, compartilhado entre campanhas. Falhas incertas nao sao reenviadas.")}</p>
+      <Button disabled={busy || preview?.key !== filterKey || !list.channels.length || !stepsValid} type="submit">{busy ? t("Aguarde...") : launchUncertain ? t("Repetir com o mesmo ID") : t("Enviar agora")}</Button>
     </form> : selected ? detail ? <section className="space-y-5">
-      <div><h2 className="text-xl font-medium">{detail.campaign.name}</h2><p className="text-sm text-muted-foreground">{detail.campaign.status === "completed" ? "Concluida" : "Em andamento"} · Limite: {detail.campaign.hourly_limit}/hora por canal · {detail.campaign.steps.length} passo(s)</p></div>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">{recipientStatuses.map((s) => <div key={s} className="rounded-lg border bg-card p-4"><p className="text-sm text-muted-foreground">{labels[s]}</p><p className="text-2xl font-semibold">{detail.counts[s]}</p></div>)}</div>
-      <ol className="space-y-2 rounded-lg border p-4">{detail.campaign.steps.map((step, index) => <li key={index} className="text-sm">{index === 0 ? "Passo 1 (imediato)" : `Passo ${index + 1} (+${fromMinutes(step.delay_minutes).delay} ${DELAY_UNITS.find((u) => u.value === fromMinutes(step.delay_minutes).unit)?.label})`}: <span className="whitespace-pre-wrap break-words">{step.message}</span></li>)}</ol>
-      <p className="text-sm text-muted-foreground">Atualiza a cada 10 segundos. Falha incerta pode representar envio em andamento ou interrompido: inspecione a mensagem antes de qualquer nova campanha. Pagina {recipientPage + 1}, ate 100 destinatarios por pagina.</p>
+      <div><h2 className="text-xl font-medium">{detail.campaign.name}</h2><p className="text-sm text-muted-foreground">{detail.campaign.status === "completed" ? t("Concluida") : t("Em andamento")} · {t("Limite:")} {detail.campaign.hourly_limit}/{t("hora por canal")} · {detail.campaign.steps.length} {t("passo(s)")}</p></div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">{recipientStatuses.map((s) => <div key={s} className="rounded-lg border bg-card p-4"><p className="text-sm text-muted-foreground">{t(labels[s])}</p><p className="text-2xl font-semibold">{detail.counts[s]}</p></div>)}</div>
+      <ol className="space-y-2 rounded-lg border p-4">{detail.campaign.steps.map((step, index) => <li key={index} className="text-sm">{index === 0 ? t("Passo 1 (imediato)") : `${t("Passo")} ${index + 1} (+${fromMinutes(step.delay_minutes).delay} ${t(DELAY_UNITS.find((u) => u.value === fromMinutes(step.delay_minutes).unit)!.label)})`}: <span className="whitespace-pre-wrap break-words">{step.message}</span></li>)}</ol>
+      <p className="text-sm text-muted-foreground">{t("Atualiza a cada 10 segundos. Falha incerta pode representar envio em andamento ou interrompido: inspecione a mensagem antes de qualquer nova campanha. Pagina {n}, ate 100 destinatarios por pagina.").replace("{n}", String(recipientPage + 1))}</p>
       <ul className="divide-y rounded-lg border">{detail.recipients.map((r) => <li key={r.id} className="space-y-2 p-3 text-sm">
         <Link className="underline" href={`/app/contacts/${r.contact_id}`}>{r.contact_id}</Link>
-        <ul className="flex flex-wrap gap-2">{r.steps.map((s) => <li key={s.step_index} className="rounded bg-muted px-2 py-1">P{s.step_index + 1} · {stepLabels[s.status]}{s.failure_reason ? ` (${s.failure_reason})` : ""}</li>)}</ul>
+        <ul className="flex flex-wrap gap-2">{r.steps.map((s) => <li key={s.step_index} className="rounded-md bg-muted px-2 py-1">P{s.step_index + 1} · {t(stepLabels[s.status])}{s.failure_reason ? ` (${s.failure_reason})` : ""}</li>)}</ul>
       </li>)}</ul>
-      <div className="flex gap-3"><Button variant="outline" disabled={recipientPage === 0} onClick={() => { setDetail(null); setRecipientPage(recipientPage - 1); }}>Anterior</Button><Button variant="outline" disabled={!detail.has_more} onClick={() => { setDetail(null); setRecipientPage(recipientPage + 1); }}>Proxima</Button></div>
-    </section> : <p role="status">Carregando campanha...</p> : <section className="space-y-3">
-      <h2 className="text-lg font-medium">Campanhas recentes</h2>
-      {!loaded ? <p role="status">Carregando...</p> : !list.campaigns.length ? <p className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">Nenhuma campanha criada.</p> : list.campaigns.map((c) => <button key={c.id} className="flex w-full flex-wrap justify-between gap-2 rounded-lg border bg-card p-4 text-left hover:bg-muted" onClick={() => { setDetail(null); setRecipientPage(0); setSelected(c.id); }}><span className="font-medium">{c.name}</span><span className="text-sm text-muted-foreground">{c.status === "completed" ? "Concluida" : "Em andamento"} · {c.steps.length} passo(s) · {c.hourly_limit}/hora</span></button>)}
+      <div className="flex gap-3"><Button variant="outline" disabled={recipientPage === 0} onClick={() => { setDetail(null); setRecipientPage(recipientPage - 1); }}>{t("Anterior")}</Button><Button variant="outline" disabled={!detail.has_more} onClick={() => { setDetail(null); setRecipientPage(recipientPage + 1); }}>{t("Proxima")}</Button></div>
+    </section> : <p role="status">{t("Carregando campanha...")}</p> : <section className="space-y-3">
+      <h2 className="text-lg font-medium">{t("Campanhas recentes")}</h2>
+      {!loaded ? <p role="status">{t("Carregando...")}</p> : !list.campaigns.length ? <p className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">{t("Nenhuma campanha criada.")}</p> : list.campaigns.map((c) => <button key={c.id} className="flex w-full flex-wrap justify-between gap-2 rounded-lg border bg-card p-4 text-left hover:bg-muted" onClick={() => { setDetail(null); setRecipientPage(0); setSelected(c.id); }}><span className="font-medium">{c.name}</span><span className="text-sm text-muted-foreground">{c.status === "completed" ? t("Concluida") : t("Em andamento")} · {c.steps.length} {t("passo(s)")} · {c.hourly_limit}/{t("hora")}</span></button>)}
     </section>}
   </div>;
 }

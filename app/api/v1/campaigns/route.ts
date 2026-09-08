@@ -81,7 +81,7 @@ export async function POST(req: Request) {
   const parsed = campaignCreateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail("validation_failed", "Confira os campos da campanha.", 422, { requestId });
   const p = parsed.data;
-  const { data, error } = await createAdminClient().rpc("launch_whatsapp_campaign", {
+  const { data: campaignId, error } = await createAdminClient().rpc("launch_whatsapp_campaign", {
     p_id: p.id, p_organization_id: auth.org.orgId, p_created_by: auth.user.id,
     p_name: p.name, p_channel_session_id: p.channel_session_id, p_steps: p.steps,
     p_filters: p.filters, p_hourly_limit: p.hourly_limit,
@@ -93,6 +93,6 @@ export async function POST(req: Request) {
       isValidation ? 422 : 500, { requestId });
   }
   await audit({ action: "whatsapp_campaign.launched", organizationId: auth.org.orgId,
-    actorUserId: auth.user.id, resourceType: "whatsapp_campaign", resourceId: data, requestId });
-  return ok({ id: data }, { status: 201, requestId });
+    actorUserId: auth.user.id, resourceType: "whatsapp_campaign", resourceId: campaignId, requestId });
+  return ok({ id: campaignId }, { status: 201, requestId });
 }
