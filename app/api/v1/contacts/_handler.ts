@@ -26,6 +26,22 @@ import { contactListQuerySchema } from "@/lib/schemas";
 
 type SB = SupabaseClient;
 
+/** Recorte compartilhado pela listagem e pelo preview de campanhas. */
+export function contactAudienceQuery(supabase: SB, organizationId: string, filters: { tag?: string; source?: string }) {
+  const query = supabase.from("contacts").select("id", { count: "exact", head: true })
+    .eq("organization_id", organizationId).is("is_merged_into", null);
+  return applyAudienceFilters(query, filters);
+}
+
+function applyAudienceFilters<T extends {
+  contains: (column: string, value: string[]) => T;
+  eq: (column: string, value: string) => T;
+}>(query: T, filters: { tag?: string; source?: string }): T {
+  if (filters.tag) query = query.contains("tags", [filters.tag]);
+  if (filters.source) query = query.eq("source", filters.source);
+  return query;
+}
+
 const SELECT_COLS =
   "id, organization_id, name, display_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at";
 
@@ -158,8 +174,7 @@ export async function listContactsHandler(
     }
     query = query.or(orParts.join(","));
   }
-  if (q.tag) query = query.contains("tags", [q.tag]);
-  if (q.source) query = query.eq("source", q.source);
+  query = applyAudienceFilters(query, q);
 
   if (q.cursor) {
     const c = decodeCursor(q.cursor);

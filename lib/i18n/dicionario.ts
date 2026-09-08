@@ -37,6 +37,56 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // Campanhas: texto da interface, nunca o conteudo escrito para envio.
+  "Campanhas WhatsApp": { es: "Campañas WhatsApp" },
+  "Sequencia de mensagens, publico por tag e limite por hora por canal.": {
+    es: "Secuencia de mensajes, público por etiqueta y límite por hora por canal.",
+  },
+  "Nova campanha": { es: "Nueva campaña" },
+  "Voltar para lista": { es: "Volver a la lista" },
+  "Canal WhatsApp": { es: "Canal WhatsApp" },
+  "Selecione um canal conectado": { es: "Seleccione un canal conectado" },
+  "Origem (opcional)": { es: "Origen (opcional)" },
+  "Limite por hora": { es: "Límite por hora" },
+  "Passo 1 · imediato": { es: "Paso 1 · inmediato" },
+  "Passo {n} · apos o anterior": { es: "Paso {n} · después del anterior" },
+  Delay: { es: "Espera" },
+  Unidade: { es: "Unidad" },
+  minutos: { es: "minutos" },
+  "O texto sera enviado exatamente como escrito. Sem variaveis ou IA.": {
+    es: "El texto se enviará exactamente como está escrito. Sin variables ni IA.",
+  },
+  "+ Adicionar mensagem": { es: "+ Añadir mensaje" },
+  "Nenhum canal conectado. Consulte a Central de Conexoes com seu administrador.": {
+    es: "Ningún canal conectado. Consulte la Central de Conexiones con su administrador.",
+  },
+  "Calcular publico": { es: "Calcular público" },
+  "contatos no recorte": { es: "contactos en la selección" },
+  "O publico e congelado ao iniciar. Bloqueios e recusas de marketing sao conferidos antes de cada passo; se o contato responder, os passos seguintes param. O limite conta reservas da ultima hora no canal, compartilhado entre campanhas. Falhas incertas nao sao reenviadas.": {
+    es: "El público se fija al iniciar. Los bloqueos y rechazos de marketing se verifican antes de cada paso; si el contacto responde, los pasos siguientes se detienen. El límite cuenta las reservas de la última hora en el canal, compartido entre campañas. Los fallos inciertos no se reenvían.",
+  },
+  "Aguarde...": { es: "Espere..." },
+  "Repetir com o mesmo ID": { es: "Repetir con el mismo ID" },
+  "Enviar agora": { es: "Enviar ahora" },
+  Concluida: { es: "Concluida" },
+  "Limite:": { es: "Límite:" },
+  "hora por canal": { es: "hora por canal" },
+  "passo(s)": { es: "paso(s)" },
+  Pendentes: { es: "Pendientes" },
+  "Opt-out": { es: "Opt-out" },
+  "Parados (resposta)": { es: "Detenidos (respuesta)" },
+  Enviado: { es: "Enviado" },
+  "Parado (resposta)": { es: "Detenido (respuesta)" },
+  "Passo 1 (imediato)": { es: "Paso 1 (inmediato)" },
+  Passo: { es: "Paso" },
+  "Atualiza a cada 10 segundos. Falha incerta pode representar envio em andamento ou interrompido: inspecione a mensagem antes de qualquer nova campanha. Pagina {n}, ate 100 destinatarios por pagina.": {
+    es: "Se actualiza cada 10 segundos. Un fallo incierto puede representar un envío en curso o interrumpido: inspeccione el mensaje antes de cualquier nueva campaña. Página {n}, hasta 100 destinatarios por página.",
+  },
+  Proxima: { es: "Siguiente" },
+  "Carregando campanha...": { es: "Cargando campaña..." },
+  "Campanhas recentes": { es: "Campañas recientes" },
+  "Nenhuma campanha criada.": { es: "Ninguna campaña creada." },
+  hora: { es: "hora" },
   // ─── Cabeçalhos de grupo da barra lateral ───
   //
   // ⚠️ NUNCA TIVERAM TRADUÇÃO, e o defeito era invisível: `Sidebar.tsx:83` já

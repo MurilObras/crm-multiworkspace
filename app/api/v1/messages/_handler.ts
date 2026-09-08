@@ -262,6 +262,7 @@ export async function sendMessageHandler(
   supabase: SB,
   ctx: HandlerCtx,
   input: SendMessageInput,
+  options?: { beforeSend: (message: Message) => Promise<void> },
 ): Promise<Message> {
   // `archived_at` entra pelo helper tolerante porque este é O caminho de saída do
   // sistema inteiro (UI, automação, MCP e o agente passam por aqui): num clone que
@@ -271,8 +272,8 @@ export async function sendMessageHandler(
   const convSelect = (comArchived: boolean) =>
     `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   const { data: conv, error: convErr } = await queryTolerantToMissingArchived(
-    () => supabase.from("conversations").select(convSelect(true)).eq("id", input.conversation_id).maybeSingle(),
-    () => supabase.from("conversations").select(convSelect(false)).eq("id", input.conversation_id).maybeSingle(),
+    () => supabase.from("conversations").select(convSelect(true)).eq("id", input.conversation_id).eq("organization_id", ctx.organization_id).maybeSingle(),
+    () => supabase.from("conversations").select(convSelect(false)).eq("id", input.conversation_id).eq("organization_id", ctx.organization_id).maybeSingle(),
   );
 
   if (convErr) {
@@ -483,6 +484,19 @@ export async function sendMessageHandler(
     );
   }
   let message = created as unknown as Message;
+
+  // Campanha vincula a linha e repete opt-out antes de qualquer transporte.
+  if (options) {
+    try {
+      await options.beforeSend(message);
+    } catch (error) {
+      await supabase.from("messages").update({
+        status: "failed", error_code: "send_guard_rejected",
+        error_message: "Envio interrompido antes do transporte.",
+      }).eq("id", message.id).eq("organization_id", ctx.organization_id);
+      throw error;
+    }
+  }
 
   // O canal vem da SESSÃO (migration 0087), não de um literal. O fallback só
   // alcança o caso em que o embed não trouxe a sessão — impossível hoje

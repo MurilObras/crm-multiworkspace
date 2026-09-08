@@ -28,21 +28,36 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({ storage: { from: () => ({ createSignedUrl: async () => ({ data: null, error: null }) }) } }),
 }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => {}) }));
+// Este teste mede o carimbo no CRM, sem chamar o transporte real.
+vi.mock("@/lib/channels", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/channels")>(),
+  getAdapter: () => ({
+    resolveRecipient: () => "synthetic-recipient",
+    isConfigured: () => true,
+    send: vi.fn(async () => ({ externalId: null })),
+  }),
+}));
 
 function makeSupabase(conversation: Record<string, unknown>) {
   let conversationPatch: Record<string, unknown> | null = null;
   let contactPatch: Record<string, unknown> | null = null;
   const contactFilters: Record<string, unknown> = {};
+  const conversationFilters: Record<string, unknown> = {};
 
   const client = {
     from(table: string) {
       if (table === "conversations") {
         return {
-          select: () => ({
-            eq: () => ({
+          select: () => {
+            const query = {
+              eq: (col: string, val: unknown) => {
+                conversationFilters[col] = val;
+                return query;
+              },
               maybeSingle: async () => ({ data: conversation, error: null }),
-            }),
-          }),
+            };
+            return query;
+          },
           update: (patch: Record<string, unknown>) => {
             conversationPatch = patch;
             return { eq: async () => ({ error: null }) };
@@ -95,12 +110,14 @@ function makeSupabase(conversation: Record<string, unknown>) {
     getConversationPatch: () => conversationPatch,
     getContactPatch: () => contactPatch,
     getContactFilters: () => contactFilters,
+    getConversationFilters: () => conversationFilters,
   };
 
   return client as unknown as SupabaseClient & {
     getConversationPatch: () => Record<string, unknown> | null;
     getContactPatch: () => Record<string, unknown> | null;
     getContactFilters: () => Record<string, unknown>;
+    getConversationFilters: () => Record<string, unknown>;
   };
 }
 
@@ -136,6 +153,7 @@ describe("sendMessageHandler — unread zera ao responder", () => {
       unread_count_for_assignee: 0,
       last_outbound_at: expect.any(String),
     });
+    expect(supabase.getConversationFilters()).toEqual({ id: CONV, organization_id: ORG });
     expect(supabase.getContactPatch()).toMatchObject({
       last_activity_at: expect.any(String),
     });

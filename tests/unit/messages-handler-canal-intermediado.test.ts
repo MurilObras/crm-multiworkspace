@@ -177,9 +177,8 @@ function makeSupabase(linhaCompleta: Row) {
           select: (cols: string) => {
             estado.selects.push(cols);
             return {
-              eq: () => ({
+              eq() { return this; },
                 maybeSingle: async () => ({ data: projetar(linhaCompleta, cols), error: null }),
-              }),
             };
           },
           update: () => ({ eq: async () => ({ error: null }) }),

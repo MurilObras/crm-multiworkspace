@@ -98,8 +98,10 @@ function makeSupabase(
     from(table: string) {
       if (table === 'conversations') {
         return {
-          select: (cols?: string) => ({
-            eq: () => ({
+          select: (cols?: string) => {
+            let matches = true;
+            return {
+              eq(column: string, value: unknown) { matches = matches && conversation[column] === value; return this; },
               maybeSingle: async () =>
                 opts.semColunaArquivada === true && (cols ?? '').includes('archived_at')
                   ? {
@@ -109,9 +111,9 @@ function makeSupabase(
                         message: 'column channel_sessions_1.archived_at does not exist',
                       },
                     }
-                  : { data: conversation, error: null },
-            }),
-          }),
+                  : { data: matches ? conversation : null, error: null },
+            };
+          },
           update: () => ({ eq: async () => ({ error: null }) }),
         };
       }
@@ -147,9 +149,9 @@ function makeSupabase(
           update: (patch: Row) => {
             state.message = { ...state.message, ...patch };
             return {
-              eq: () => ({
-                select: () => ({ maybeSingle: async () => ({ data: { ...state.message }, error: null }) }),
-              }),
+              eq() { return this; },
+              select: () => ({ maybeSingle: async () => ({ data: { ...state.message }, error: null }) }),
+              then: (resolve: (v: { error: null }) => unknown) => Promise.resolve({ error: null }).then(resolve),
             };
           },
         };
@@ -194,6 +196,44 @@ afterEach(() => {
 });
 
 describe('sendMessageHandler — os 6 desfechos do envio', () => {
+  it('campanha: a guarda recebe a mensagem persistida antes do transporte', async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn(async () => Response.json({ key: { id: 'CAMPAIGN' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const beforeSend = vi.fn(async (message) => {
+      expect(message.id).toBe('msg-1');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+    const message = await sendMessageHandler(makeSupabase(conversationRow()), ctx, textInput(), { beforeSend });
+    expect(beforeSend).toHaveBeenCalledTimes(1);
+    expect(message.status).toBe('sent');
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('campanha: guarda recusada nao chama transporte e nao deixa mensagem queued', async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const db = makeSupabase(conversationRow());
+    const from = vi.spyOn(db, 'from');
+    await expect(sendMessageHandler(db, ctx, textInput(), {
+      beforeSend: async () => { throw new Error('opt_out'); },
+    })).rejects.toThrow('opt_out');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(from.mock.calls.filter(([table]) => table === 'messages')).toHaveLength(2);
+    const stored = await db.from('messages').update({}).eq('id', 'msg-1').select('*').maybeSingle();
+    expect(stored.data.status).toBe('failed');
+    expect(stored.data.error_code).toBe('send_guard_rejected');
+  });
+
+  it('service role: conversa de outra organizacao nunca chega ao transporte', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(sendMessageHandler(makeSupabase({ ...conversationRow(), organization_id: 'foreign' }), ctx, textInput()))
+      .rejects.toMatchObject({ status: 404 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('1. WAHA não configurado: fica queued com queued_reason, nada sai pela rede', async () => {
     wahaConfigured(false);
     const fetchMock = vi.fn();
@@ -427,7 +467,7 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
       }),
       ctx,
       {
-        conversation_id: 'conv-1',
+        conversation_id: CONV,
         type: 'template',
         template_name: 'pedido_confirmado',
         template_language: 'pt_BR',
@@ -454,7 +494,7 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
       makeSupabase(conversationRow({ provider: 'meta_cloud' }), null),
       ctx,
       {
-        conversation_id: 'conv-1',
+        conversation_id: CONV,
         type: 'template',
         template_name: 'nao_existe',
         template_language: 'pt_BR',

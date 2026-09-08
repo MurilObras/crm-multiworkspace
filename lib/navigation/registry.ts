@@ -314,6 +314,15 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     // Tarefas se abrem todo dia. É esse o corte que decide quem fica no menu.
   },
 
+  {
+    href: "/app/campaigns",
+    label: "Campanhas WhatsApp",
+    description: "Enviar texto para contatos de uma tag e acompanhar cada resultado.",
+    icon: Megaphone,
+    group: "crm",
+    section: "Preparar a venda",
+  },
+
   // ---- Agente de IA — montar, ensinar, acompanhar ----
   {
     href: "/app/ai/agents",
