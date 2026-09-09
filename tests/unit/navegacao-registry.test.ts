@@ -111,11 +111,13 @@ describe("sidebarGroups", () => {
     //
     // A lista é EXATA de propósito. `toContain` deixaria um sexto item entrar
     // calado no sidebar e reabrir a mesma corrida por pixel.
+    // Campanhas entra por requisito explicito: busca/hub nao bastam como porta.
     const crm = sidebarGroups(true, null).find((g) => g.group.id === "crm");
     expect(crm?.items.map((i) => i.href)).toEqual([
       "/app/kanban",
       "/app/contacts",
       "/app/tasks",
+      "/app/campaigns",
     ]);
     expect(NAV_GROUPS.find((g) => g.id === "crm")?.hub?.href).toBe("/app/crm");
   });

@@ -84,6 +84,7 @@
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.86.0",
     "react-hotkeys-hook": "^5.3.3",
+    "read-excel-file": "^9.3.10",
     "recharts": "^3.10.1",
     "require-in-the-middle": "^8.0.1",
     "resend": "^6.24.0",

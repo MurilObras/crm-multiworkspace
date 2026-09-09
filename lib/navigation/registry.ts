@@ -317,10 +317,11 @@ export const NAV_DESTINATIONS: NavDestination[] = [
   {
     href: "/app/campaigns",
     label: "Campanhas WhatsApp",
-    description: "Enviar texto para contatos de uma tag e acompanhar cada resultado.",
+    description: "Enviar ou agendar sequencias para listas ou tags e acompanhar cada resultado.",
     icon: Megaphone,
     group: "crm",
     section: "Preparar a venda",
+    sidebar: true,
   },
 
   // ---- Agente de IA — montar, ensinar, acompanhar ----

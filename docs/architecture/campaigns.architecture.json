@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": { "title": "Campanhas: publico congelado e agendamento", "output": "campaigns.html", "quality_profile": "standard" },
+  "lanes": [{ "id": "ui", "label": "Operador" }, { "id": "backend", "label": "Servidor" }, { "id": "db", "label": "Banco" }],
+  "mainPath": ["menu", "screen", "api", "prepare", "events", "worker", "send"],
+  "nodes": [
+    { "id": "menu", "lane": "ui", "col": 1, "type": "frontend", "label": "lib/navigation/registry.ts" },
+    { "id": "screen", "lane": "ui", "col": 2, "type": "frontend", "label": "/app/campaigns", "sublabel": "Preview e progresso por destinatario/passo" },
+    { "id": "api", "lane": "backend", "col": 1, "type": "api", "label": "/api/v1/campaigns e /preview", "sublabel": "requireRole contacts; org confiavel; CSV/XLSX sem storage" },
+    { "id": "prepare", "lane": "db", "col": 1, "type": "database", "label": "prepare_whatsapp_campaign / launch_whatsapp_campaign", "sublabel": "fn_upsert_wa_contact; recipients congelados; transacao unica" },
+    { "id": "events", "lane": "db", "col": 2, "type": "database", "label": "event_log.next_attempt_at", "sublabel": "whatsapp_campaign.requested; scheduler/drain existente" },
+    { "id": "worker", "lane": "backend", "col": 2, "type": "service", "label": "lib/campaigns/worker.ts", "sublabel": "start_scheduled_whatsapp_campaign; prazo, quota e claim no banco" },
+    { "id": "send", "lane": "backend", "col": 3, "type": "service", "label": "sendMessageHandler", "sublabel": "Canal, opt-out, blocked, stopped_reply e reserva irreversivel" },
+    { "id": "progress", "lane": "db", "col": 3, "type": "database", "label": "whatsapp_campaign_recipient_steps", "sublabel": "Falha incerta exige inspecao; sent agenda o proximo passo" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "menu", "to": "screen", "label": "sidebar e busca" },
+    { "id": "e2", "from": "screen", "to": "api", "label": "preview e confirmacao" },
+    { "id": "e3", "from": "api", "to": "prepare", "label": "tenant e ator autenticados" },
+    { "id": "e4", "from": "prepare", "to": "events", "label": "evento e prazo atomicos" },
+    { "id": "e5", "from": "events", "to": "worker", "label": "drain sem navegador" },
+    { "id": "e6", "from": "worker", "to": "send", "label": "reserva antes de transportar" },
+    { "id": "e7", "from": "send", "to": "progress", "label": "finalize atomico" },
+    { "id": "e8", "from": "progress", "to": "events", "label": "delay do proximo passo" },
+    { "id": "e9", "from": "progress", "to": "screen", "label": "contagens e falhas para inspecao" }
+  ]
+}

@@ -13,6 +13,7 @@ if (!modulePath || !tempRoot) throw new Error("Set CAMPAIGNS_EMBEDDED_PG and CAM
 const { default: EmbeddedPostgres } = await import(pathToFileURL(modulePath).href);
 const cluster = new EmbeddedPostgres({ databaseDir: join(mkdtempSync(join(tempRoot, "campaigns-")), "db"),
   user: "postgres", password: "campaigns-local-test", port: 55439, persistent: false,
+  initdbFlags: ["--encoding=UTF8", "--locale=C"],
   postgresFlags: ["-h", "127.0.0.1"], onLog() {}, onError() {},
 });
 const config = { host: "127.0.0.1", port: 55439, user: "postgres", password: "campaigns-local-test", database: "postgres" };
@@ -20,6 +21,7 @@ let db;
 const orgA = randomUUID(), orgB = randomUUID(), user = randomUUID(), channelB = randomUUID();
 const contactA = randomUUID(), contactB = randomUUID(), contactOtherSource = randomUUID();
 const migration = readFileSync(new URL("../../supabase/migrations/20260907120000_0218_whatsapp_campaigns.sql", import.meta.url), "utf8");
+const scheduling = readFileSync(new URL("../../supabase/migrations/20260908120000_0219_campaigns_audience_scheduling.sql", import.meta.url), "utf8");
 
 before(async () => {
   await cluster.initialise(); await cluster.start();
@@ -28,8 +30,11 @@ before(async () => {
     create role anon; create role authenticated; create role service_role bypassrls;
     create schema auth; create table auth.users(id uuid primary key);
     create table organizations(id uuid primary key);
-    create table contacts(id uuid primary key, organization_id uuid not null references organizations,
-      tags text[], source text, is_merged_into uuid);
+    create table contacts(id uuid primary key default gen_random_uuid(), organization_id uuid not null references organizations,
+      tags text[], source text, is_merged_into uuid, phone_number text, name text, display_name text,
+      source_metadata jsonb default '{}', consent jsonb default '{}', wa_lid text,
+      updated_at timestamptz default now(), is_anonymized boolean default false);
+    create unique index contacts_phone on contacts(organization_id, phone_number) where is_merged_into is null;
     create table channel_sessions(id uuid primary key, organization_id uuid not null references organizations,
       archived_at timestamptz, status text);
     create table messages(id uuid primary key, organization_id uuid not null, contact_id uuid not null);
@@ -49,10 +54,14 @@ before(async () => {
     grant usage on schema public to authenticated;
   `);
   await db.query(migration);
+  // O helper REAL aplicado (sem executar o backfill de dados de outras jornadas).
+  const upsert = readFileSync(new URL("../../supabase/migrations/20260827182000_0198_nono_digito_canonico.sql", import.meta.url), "utf8");
+  await db.query(upsert.slice(upsert.indexOf("create or replace function"), upsert.indexOf("-- 2 ·")));
+  await db.query(scheduling);
   await db.query("insert into organizations values ($1),($2)", [orgA, orgB]);
   await db.query("insert into auth.users values ($1)", [user]);
   await db.query("insert into channel_sessions values ($1,$2,null,'WORKING')", [channelB, orgB]);
-  await db.query("insert into contacts values ($1,$2,array['vip'],'manual',null),($3,$4,array['vip'],'manual',null),($5,$2,array['vip'],'whatsapp',null)", [contactA, orgA, contactB, orgB, contactOtherSource]);
+  await db.query("insert into contacts(id,organization_id,tags,source,is_merged_into) values ($1,$2,array['vip'],'manual',null),($3,$4,array['vip'],'manual',null),($5,$2,array['vip'],'whatsapp',null)", [contactA, orgA, contactB, orgB, contactOtherSource]);
 });
 after(async () => { await db?.end(); await cluster.stop(); });
 
@@ -79,13 +88,113 @@ async function ageReservations(campaign) {
   await db.query("update whatsapp_campaign_recipient_steps set reserved_at = now() - interval '1 hour' where campaign_id=$1 and reserved_at is not null", [campaign]);
 }
 
+async function prepare({ id = randomUUID(), org = orgA, audience = null, due = null, channel = null } = {}, client = db) {
+  const ch = channel ?? await freshChannel(org);
+  await client.query("select prepare_whatsapp_campaign($1,$2,$3,'Scheduled',$4,$5::jsonb,$6::jsonb,10000,$7::jsonb,$8)",
+    [id, org, user, ch, JSON.stringify(twoSteps), JSON.stringify(audience ? {} : { tag: "vip", source: "manual" }), audience ? JSON.stringify(audience) : null, due]);
+  return id;
+}
+
+test("0219 lists reuse local phone variants, auto-create foreign-only phones, preserve existing data and dedupe retries", async () => {
+  const phone = "+5532984793302", otherPhone = "+5511987654321";
+  await db.query("update contacts set phone_number='+553284793302',name='Original' where id=$1", [contactA]);
+  await db.query("update contacts set phone_number=$1 where id=$2", [otherPhone, contactB]);
+  const audience = [{ phone_number: phone, name: "Replacement" }, { phone_number: "+553284793302" }, { phone_number: otherPhone, name: "New" }];
+  const id = await prepare({ audience });
+  await prepare({ id, audience });
+  const recipients = (await db.query("select r.contact_id,c.organization_id,c.name,c.consent,c.source from whatsapp_campaign_recipients r join contacts c on c.id=r.contact_id where campaign_id=$1", [id])).rows;
+  assert.equal(recipients.length, 2);
+  assert.ok(recipients.every((r) => r.organization_id === orgA && r.contact_id !== contactB));
+  assert.equal(recipients.find((r) => r.contact_id === contactA).name, "Original");
+  assert.equal(recipients.find((r) => r.contact_id === contactA).source, "manual");
+  assert.deepEqual(recipients.find((r) => r.contact_id !== contactA).consent, {});
+  assert.equal(recipients.find((r) => r.contact_id !== contactA).name, "New");
+  assert.equal((await db.query("select count(*)::int n from contacts where organization_id=$1 and phone_number=$2", [orgA, otherPhone])).rows[0].n, 1);
+  assert.equal((await db.query("select count(*)::int n from event_log where entity_id=$1", [id])).rows[0].n, 1);
+  assert.equal((await db.query("select count(*)::int n from whatsapp_campaign_recipient_steps where campaign_id=$1", [id])).rows[0].n, 2);
+  await assert.rejects(prepare({ id, org: orgB, audience }), /campaign_id_conflict/);
+});
+test("0219 rejects past schedules and foreign channels atomically", async () => {
+  await assert.rejects(prepare({ due: "2000-01-01T00:00:00Z" }), /schedule_must_be_future/);
+  const phone = "+5511977771111";
+  await assert.rejects(prepare({ channel: channelB, audience: [{ phone_number: phone }] }), /invalid_channel/);
+  assert.equal((await db.query("select count(*)::int n from contacts where phone_number=$1", [phone])).rows[0].n, 0);
+});
+test("0219 event failure rolls back newly created contacts too", async () => {
+  const phone = "+5511977772222";
+  await db.query("set test.fail_event='yes'");
+  try { await assert.rejects(prepare({ audience: [{ phone_number: phone }] }), /event_failed/); }
+  finally { await db.query("set test.fail_event='no'"); }
+  assert.equal((await db.query("select count(*)::int n from contacts where phone_number=$1", [phone])).rows[0].n, 0);
+});
+test("0219 scheduled tag audience freezes before due; start is guarded, tenant-local and replay-safe", async () => {
+  const due = new Date(Date.now() + 3600000).toISOString();
+  const id = await prepare({ due });
+  const start = async (org = orgA) => (await db.query("select start_scheduled_whatsapp_campaign($1,$2) x", [org, id])).rows[0].x;
+  assert.deepEqual(await start(orgB), { done: true });
+  assert.ok((await start()).retry_at);
+  assert.deepEqual(await claim(id), { done: true });
+  assert.equal((await db.query("select status from whatsapp_campaigns where id=$1", [id])).rows[0].status, "scheduled");
+  assert.equal((await db.query("select count(*)::int n from event_log where entity_id=$1 and next_attempt_at <= now()", [id])).rows[0].n, 0);
+  await db.query("update contacts set tags='{}' where id=$1", [contactA]);
+  assert.equal((await db.query("select contact_id from whatsapp_campaign_recipients where campaign_id=$1", [id])).rows[0].contact_id, contactA);
+  await db.query("update contacts set tags=array['vip'] where id=$1", [contactA]);
+  await db.query("update whatsapp_campaigns set scheduled_at=now()-interval '1 second' where id=$1", [id]);
+  const first = await start();
+  assert.equal(first.status, "running");
+  assert.deepEqual(await start(), first);
+  await prepare({ id, due: "2000-01-01T00:00:00Z" });
+  assert.equal((await db.query("select count(*)::int n from event_log where entity_id=$1", [id])).rows[0].n, 1);
+  assert.equal((await claim(id)).contact_id, contactA);
+  await finalize(id, contactA, 0, "sent");
+  assert.equal((await db.query("select count(*)::int n from whatsapp_campaign_recipient_steps where campaign_id=$1 and step_index=1", [id])).rows[0].n, 1);
+  assert.equal((await db.query("select count(*)::int n from event_log where entity_id=$1 and payload->>'step_index'='1' and next_attempt_at>now()+interval '59 minutes'", [id])).rows[0].n, 1);
+});
+test("0219 concurrent retries create one contact, one recipient and one step-zero event", async () => {
+  const client = new Client(config); await client.connect();
+  try {
+    const id = randomUUID(), channel = await freshChannel();
+    const input = { id, channel, audience: [{ phone_number: "+5511977773333" }], due: new Date(Date.now() + 3600000).toISOString() };
+    await Promise.all([prepare(input), prepare(input, client)]);
+    assert.equal((await db.query("select count(*)::int n from contacts where organization_id=$1 and phone_number='+5511977773333'", [orgA])).rows[0].n, 1);
+    for (const table of ["whatsapp_campaign_recipients", "whatsapp_campaign_recipient_steps"]) {
+      assert.equal((await db.query(`select count(*)::int n from ${table} where campaign_id=$1`, [id])).rows[0].n, 1);
+    }
+    assert.equal((await db.query("select count(*)::int n from event_log where entity_id=$1", [id])).rows[0].n, 1);
+  } finally { await client.end(); }
+});
+test("0219 scheduled RPCs cannot be called by anon/authenticated", async () => {
+  for (const role of ["anon", "authenticated"]) {
+    for (const signature of ["prepare_whatsapp_campaign(uuid,uuid,uuid,text,uuid,jsonb,jsonb,integer,jsonb,timestamptz)", "start_scheduled_whatsapp_campaign(uuid,uuid)"]) {
+      assert.equal((await db.query("select has_function_privilege($1,$2,'execute') allowed", [role, signature])).rows[0].allowed, false);
+    }
+  }
+});
+test("0219 concurrent different campaigns still share one local contact", async () => {
+  const client = new Client(config); await client.connect();
+  try {
+    const channel = await freshChannel();
+    const audience = [{ phone_number: "+5511977774444" }];
+    const ids = await Promise.all([prepare({ channel, audience }), prepare({ channel, audience }, client)]);
+    const rows = (await db.query("select contact_id from whatsapp_campaign_recipients where campaign_id=any($1::uuid[])", [ids])).rows;
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].contact_id, rows[1].contact_id);
+    assert.equal((await db.query("select count(*)::int n from contacts where organization_id=$1 and phone_number='+5511977774444'", [orgA])).rows[0].n, 1);
+  } finally { await client.end(); }
+});
+
 test("migration is idempotent and baseline append is identical", async () => {
   await db.query(migration);
   const baseline = readFileSync(new URL("../../supabase/baseline.sql", import.meta.url), "utf8");
   const append = baseline.split("-- ---- whatsapp_campaigns (migration 0218) ----\n")[1];
-  const sweepStart = append.indexOf("-- ---- VARREDURA anon:");
+  const nextMarker = append.indexOf("-- ---- campaigns_audience_scheduling (migration 0219) ----");
+  assert.ok(nextMarker >= 0, "0219 marker must delimit the full 0218 block");
+  assert.equal(append.slice(0, nextMarker).trim(), migration.trim());
+  const next = baseline.split("-- ---- campaigns_audience_scheduling (migration 0219) ----\n")[1];
+  const sweepStart = next.indexOf("-- ---- VARREDURA anon:");
   assert.ok(sweepStart >= 0, "final anon sweep marker must exist");
-  assert.equal(append.slice(0, sweepStart).trim(), migration.trim());
+  assert.equal(next.slice(0, sweepStart).trim(), scheduling.trim());
+  await db.query(scheduling);
 });
 test("launch freezes tag + source audience, seeds step 0 and emits one event on replay", async () => {
   const id = await launch();
@@ -100,7 +209,7 @@ test("launch freezes tag + source audience, seeds step 0 and emits one event on 
 });
 test("source is optional and merged contacts are excluded", async () => {
   const merged = randomUUID();
-  await db.query("insert into contacts values($1,$2,array['vip'],'manual',$3)", [merged, orgA, contactA]);
+  await db.query("insert into contacts(id,organization_id,tags,source,is_merged_into) values($1,$2,array['vip'],'manual',$3)", [merged, orgA, contactA]);
   const id = await launch({ filters: { tag: "vip" } });
   assert.equal((await db.query("select count(*)::int n from whatsapp_campaign_recipients where campaign_id=$1", [id])).rows[0].n, 2);
 });
