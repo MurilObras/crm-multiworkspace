@@ -39,6 +39,33 @@ type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>
 export const DICIONARIO: Traducoes = {
   // Campanhas: texto da interface, nunca o conteudo escrito para envio.
   "Campanhas WhatsApp": { es: "Campañas WhatsApp" },
+  "Sequencias para listas ou tags, agora ou agendadas, com limite por canal.": {
+    es: "Secuencias para listas o etiquetas, inmediatas o programadas, con límite por canal.",
+  },
+  Publico: { es: "Público" },
+  "Tag e origem": { es: "Etiqueta y origen" },
+  "Colar numeros": { es: "Pegar números" },
+  "Arquivo CSV ou XLSX": { es: "Archivo CSV o XLSX" },
+  Numeros: { es: "Números" },
+  "Separe por linha, virgula ou ponto e virgula. Ate 500 numeros.": {
+    es: "Separe por línea, coma o punto y coma. Hasta 500 números.",
+  },
+  Planilha: { es: "Hoja de cálculo" },
+  "Coluna telefone obrigatoria, nome opcional. Extras ignoradas. Ate 500 linhas e 5 MB; arquivo nao e armazenado.": {
+    es: "Columna de teléfono obligatoria, nombre opcional. Las columnas adicionales se ignoran. Hasta 500 filas y 5 MB; el archivo no se almacena.",
+  },
+  "Quando enviar": { es: "Cuándo enviar" },
+  Agendar: { es: "Programar" },
+  "Data e hora": { es: "Fecha y hora" },
+  "Fuso horario": { es: "Zona horaria" },
+  Total: { es: "Total" },
+  Validos: { es: "Válidos" },
+  Unicos: { es: "Únicos" },
+  Invalidos: { es: "Inválidos" },
+  "O publico e congelado ao confirmar, inclusive ao agendar. Somente numeros validos e unicos entram; contatos novos sao criados neste workspace. O envio agendado continua com o navegador fechado. Bloqueios e recusas de marketing sao conferidos antes de cada passo; se o contato responder, os passos seguintes param. O limite e compartilhado entre campanhas do canal. Falhas incertas nao sao reenviadas.": {
+    es: "El público se fija al confirmar, también al programar. Solo se incluyen números válidos y únicos; los contactos nuevos se crean en este espacio de trabajo. El envío programado continúa con el navegador cerrado. Los bloqueos y rechazos de marketing se verifican antes de cada paso; si el contacto responde, los pasos siguientes se detienen. El límite se comparte entre las campañas del canal. Los fallos inciertos no se reenvían.",
+  },
+  "Agendar campanha": { es: "Programar campaña" },
   "Sequencia de mensagens, publico por tag e limite por hora por canal.": {
     es: "Secuencia de mensajes, público por etiqueta y límite por hora por canal.",
   },

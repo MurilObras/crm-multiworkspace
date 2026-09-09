@@ -111,11 +111,12 @@ describe("sidebarGroups", () => {
     //
     // A lista é EXATA de propósito. `toContain` deixaria um sexto item entrar
     // calado no sidebar e reabrir a mesma corrida por pixel.
+    // Campanhas entra por requisito explicito: busca/hub nao bastam como porta.
     const crm = sidebarGroups(true, null).find((g) => g.group.id === "crm");
     expect(crm?.items.map((i) => i.href)).toEqual([
       "/app/kanban",
       "/app/contacts",
-      "/app/tasks",
+      "/app/campaigns",
     ]);
     expect(NAV_GROUPS.find((g) => g.id === "crm")?.hub?.href).toBe("/app/crm");
   });
@@ -142,6 +143,12 @@ describe("sidebarGroups", () => {
 });
 
 describe("hubSections", () => {
+  it.each([VIEWER, AGENT, MANAGER, ADMIN])("preserva Tarefas no hub CRM e na busca para $role", ({ platform, role }) => {
+    const secao = hubSections("crm", platform, role).find((s) => s.section === "O dia a dia da venda");
+    expect(secao?.items.map((i) => i.href)).toContain("/app/tasks");
+    expect(searchable(platform, role).map((i) => i.href)).toContain("/app/tasks");
+  });
+
   it("o hub do CRM é inventário: as seis telas do grupo, nas duas seções", () => {
     // As seções são a régua do sidebar escrita por extenso — o que se abre todo
     // dia contra o que se define uma vez. Lista EXATA: `toContain` deixaria uma

@@ -222,9 +222,9 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     sidebar: true,
   },
   {
-    // Extraída do PR #418 (@clinicacentrodosorrisosc-code). Fica no CRM e no
-    // sidebar porque é tela de USO DIÁRIO — quem atende abre para ver o que
-    // vence hoje, do mesmo jeito que abre o Inbox. Sem `minRole`: `viewer` VÊ
+    // Extraída do PR #418 (@clinicacentrodosorrisosc-code). Fica no hub CRM;
+    // Campanhas mantém a porta direta sem acrescentar uma linha ao sidebar.
+    // Sem `minRole`: `viewer` VÊ
     // o que o time combinou (é informação de operação), e a criação é cobrada
     // pela rota, com `requireRole("agent")`.
     href: "/app/tasks",
@@ -233,7 +233,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     icon: ListChecks,
     group: "crm",
     section: "O dia a dia da venda",
-    sidebar: true,
   },
   {
     // ⚠️ Esta tela nasceu porque a FERRAMENTA já existia sem ela. O agente de IA
@@ -311,16 +310,20 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     // "Configurações". O que muda é a frequência: desenhar as colunas do funil
     // e escrever os motivos de perda é trabalho de montagem, feito uma vez e
     // revisitado por `manager` de vez em quando — enquanto Funis, Contatos e
-    // Tarefas se abrem todo dia. É esse o corte que decide quem fica no menu.
+    // Campanhas se abrem todo dia e ficam diretos no menu. Tarefas, que também
+    // se abre todo dia, seguiu para atrás de "Ver tudo em CRM": o grupo CRM
+    // ganhou uma linha com Campanhas e a dobra de 900px não cabe duas telas
+    // novas. Ela continua alcançável pelo hub e pela busca (⌘K).
   },
 
   {
     href: "/app/campaigns",
     label: "Campanhas WhatsApp",
-    description: "Enviar texto para contatos de uma tag e acompanhar cada resultado.",
+    description: "Enviar ou agendar sequencias para listas ou tags e acompanhar cada resultado.",
     icon: Megaphone,
     group: "crm",
     section: "Preparar a venda",
+    sidebar: true,
   },
 
   // ---- Agente de IA — montar, ensinar, acompanhar ----

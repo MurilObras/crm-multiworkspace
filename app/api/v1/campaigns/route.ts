@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { campaignCreateSchema, campaignFiltersSchema, recipientStatuses } from "@/lib/campaigns/schema";
 import { contactAudienceQuery } from "@/app/api/v1/contacts/_handler";
+import { normalizaTelefone } from "@/lib/contacts/csv";
 
 export const dynamic = "force-dynamic";
 
@@ -81,15 +82,19 @@ export async function POST(req: Request) {
   const parsed = campaignCreateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail("validation_failed", "Confira os campos da campanha.", 422, { requestId });
   const p = parsed.data;
-  const { data: campaignId, error } = await createAdminClient().rpc("launch_whatsapp_campaign", {
+  const audience = p.audience?.map((c) => ({ ...c, phone_number: normalizaTelefone(c.phone_number) }));
+  if (audience?.some((c) => !c.phone_number)) return fail("validation_failed", "Telefone invalido.", 422, { requestId });
+  const extended = p.audience !== undefined || p.scheduled_at !== undefined;
+  const { data: campaignId, error } = await createAdminClient().rpc(extended ? "prepare_whatsapp_campaign" : "launch_whatsapp_campaign", {
     p_id: p.id, p_organization_id: auth.org.orgId, p_created_by: auth.user.id,
     p_name: p.name, p_channel_session_id: p.channel_session_id, p_steps: p.steps,
-    p_filters: p.filters, p_hourly_limit: p.hourly_limit,
+    p_filters: p.filters ?? {}, p_hourly_limit: p.hourly_limit,
+    ...(extended ? { p_audience: audience ?? null, p_scheduled_at: p.scheduled_at ?? null } : {}),
   });
   if (error) {
     const isValidation = error.code === "22023";
     return fail(isValidation ? "validation_failed" : "internal_error",
-      isValidation ? "Canal indisponivel, passos invalidos ou identificador ja utilizado." : "Falha ao iniciar. Repita com o mesmo identificador.",
+      isValidation ? "Confira o canal, o publico e a data futura do agendamento." : "Falha ao iniciar. Repita com o mesmo identificador.",
       isValidation ? 422 : 500, { requestId });
   }
   await audit({ action: "whatsapp_campaign.launched", organizationId: auth.org.orgId,

@@ -100,10 +100,34 @@ it("launch uses trusted organization and actor with one atomic RPC carrying step
   });
   expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "whatsapp_campaign.launched", organizationId: org }));
 });
-it("body cannot override tenant or request future scheduling", async () => {
+it("body cannot override tenant or send a date without time and offset", async () => {
   const db = database();
   expect((await POST(request({ ...input, organization_id: "foreign" }))).status).toBe(422);
   expect((await POST(request({ ...input, scheduled_at: "2027-01-01" }))).status).toBe(422);
+  expect(db.rpc).not.toHaveBeenCalled();
+});
+it("list submission normalizes again on server and only passes trusted tenant to atomic prepare", async () => {
+  const db = database();
+  const { filters: _filters, ...listInput } = input;
+  expect((await POST(request({ ...listInput, audience: [{ phone_number: "+553284793302" }] }))).status).toBe(201);
+  expect(db.rpc).toHaveBeenCalledWith("prepare_whatsapp_campaign", expect.objectContaining({
+    p_organization_id: org, p_created_by: user, p_filters: {},
+    p_audience: [{ phone_number: "+5532984793302" }], p_scheduled_at: null,
+  }));
+});
+it("scheduled tag request retains filters and UTC timestamp in the same atomic prepare", async () => {
+  const db = database();
+  const due = "2030-01-01T12:00:00.000Z";
+  expect((await POST(request({ ...input, scheduled_at: due }))).status).toBe(201);
+  expect(db.rpc).toHaveBeenCalledWith("prepare_whatsapp_campaign", expect.objectContaining({
+    p_organization_id: org, p_filters: input.filters, p_audience: null, p_scheduled_at: due,
+  }));
+});
+it("cannot mix audience modes, inject contact IDs or use invalid list phones", async () => {
+  const db = database();
+  expect((await POST(request({ ...input, audience: [{ phone_number: "+5511987654321" }] }))).status).toBe(422);
+  expect((await POST(request({ ...input, filters: undefined, audience: [{ phone_number: "bad" }] }))).status).toBe(422);
+  expect((await POST(request({ ...input, filters: undefined, audience: [{ phone_number: "+5511987654321", contact_id: id }] }))).status).toBe(422);
   expect(db.rpc).not.toHaveBeenCalled();
 });
 it("foreign channel RPC rejection becomes validation error, no audit success", async () => {

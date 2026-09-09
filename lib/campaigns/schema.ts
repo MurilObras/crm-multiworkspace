@@ -15,9 +15,11 @@ export const campaignCreateSchema = z.object({
   name: z.string().trim().min(1).max(120),
   channel_session_id: z.uuid(),
   steps: z.array(campaignStepSchema).min(1).max(20),
-  filters: campaignFiltersSchema,
+  filters: campaignFiltersSchema.optional(),
+  audience: z.array(z.object({ phone_number: z.string().regex(/^\+\d{8,15}$/), name: z.string().trim().max(200).optional() }).strict()).min(1).max(500).optional(),
+  scheduled_at: z.iso.datetime({ offset: true }).optional(),
   hourly_limit: z.number().int().min(1).max(10000),
-}).strict();
+}).strict().refine((p) => Boolean(p.filters) !== Boolean(p.audience), { message: "Escolha um publico." });
 
 export const recipientStatuses = ["pending", "sent", "failed", "skipped_opt_out", "stopped_reply"] as const;
 export type RecipientStatus = typeof recipientStatuses[number];
@@ -32,9 +34,10 @@ export interface Campaign {
   name: string;
   channel_session_id: string;
   steps: CampaignStep[];
-  filters: z.infer<typeof campaignFiltersSchema>;
+  filters: z.infer<typeof campaignFiltersSchema> | { mode: "list" };
   hourly_limit: number;
-  status: "running" | "completed";
+  status: "scheduled" | "running" | "completed";
+  scheduled_at?: string | null;
   created_by: string | null;
   created_at: string;
   started_at: string;

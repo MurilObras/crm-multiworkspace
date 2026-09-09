@@ -21,6 +21,7 @@ type Options = {
   optOutDuringSend?: boolean; foreignChannel?: boolean; foreignConversation?: boolean;
   retry?: string; done?: boolean; linkError?: boolean; firstClaimDone?: boolean;
   inbound?: { organization_id?: string; channel_session_id?: string };
+  scheduled?: boolean; notDue?: string;
 };
 function database(options: Options = {}) {
   let claimed = false;
@@ -36,6 +37,8 @@ function database(options: Options = {}) {
   const admin = {
     rpc: vi.fn(async (fn: string, args: Record<string, unknown>) => {
       rpcCalls.push({ fn, args });
+      if (fn === "start_scheduled_whatsapp_campaign") return { data: options.notDue
+        ? { retry_at: options.notDue } : { status: "running", started_at: campaign.started_at }, error: null };
       if (fn === "claim_whatsapp_campaign_step") {
         if (options.done) return { data: { done: true }, error: null };
         if (options.retry) return { data: { retry_at: options.retry }, error: null };
@@ -62,7 +65,7 @@ function database(options: Options = {}) {
         then: (fn: (v: unknown) => unknown) => Promise.resolve(resolve()).then(fn),
       };
       function resolve() {
-        if (table === "whatsapp_campaigns") return { data: options.foreign ? null : campaign, error: null };
+        if (table === "whatsapp_campaigns") return { data: options.foreign ? null : { ...campaign, status: options.scheduled ? "scheduled" : "running" }, error: null };
         if (table === "contacts") {
           contactReads++;
           const blocked = options.blocked || (options.optOutDuringSend && contactReads > 1);
@@ -100,6 +103,21 @@ it("isolates tenant: foreign campaign never claims or sends", async () => {
   expect((await processCampaign(db.admin, row())).status).toBe("skipped");
   expect(db.admin.rpc).not.toHaveBeenCalled();
   expect(send).not.toHaveBeenCalled();
+});
+it("scheduled event cannot claim or send before database due time", async () => {
+  const due = "2030-01-01T00:00:00Z";
+  const db = database({ scheduled: true, notDue: due });
+  expect(await processCampaign(db.admin, row())).toMatchObject({ status: "retry", retry_at: due });
+  expect(db.rpcCalls).toEqual([{ fn: "start_scheduled_whatsapp_campaign", args: { p_organization_id: "org-a", p_campaign_id: "campaign" } }]);
+  expect(send).not.toHaveBeenCalled();
+});
+it("due scheduled event starts then uses the same send and claim idempotency on replay", async () => {
+  const db = database({ scheduled: true });
+  await processCampaign(db.admin, row());
+  await processCampaign(db.admin, row());
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(db.rpcCalls[0]?.fn).toBe("start_scheduled_whatsapp_campaign");
+  expect(db.rpcCalls.find((c) => c.fn === "finalize_whatsapp_campaign_step")?.args.p_status).toBe("sent");
 });
 it.each([{ blocked: true }, { declined: true }])("opt-out does not send and finalizes skipped_opt_out: %j", async (options) => {
   const db = database(options);

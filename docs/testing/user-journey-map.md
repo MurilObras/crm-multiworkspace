@@ -10,6 +10,12 @@
 
 ## Convenções
 
+Campanhas `[P1]`: cobertura incremental de paste/CSV/XLSX, sequencias, fuso e
+agendamento em `tests/campaigns/` e detalhes em
+[`campaigns-audience-scheduling.md`](campaigns-audience-scheduling.md).
+Esta cobertura usa PostgreSQL descartavel e frontend real com API simulada;
+nao equivale a PASS de jornada VPS fresca com Supabase/WAHA reais.
+
 - `[P0]` primeira impressão — bug aqui é vergonha pública; prioridade máxima.
 - `[P1]` rotina diária do operador/atendente.
 - `[P2]` exploração/edge.

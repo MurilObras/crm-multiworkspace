@@ -34,8 +34,19 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
   const { data, error } = await admin.from("whatsapp_campaigns").select("*")
     .eq("organization_id", org).eq("id", campaignId).maybeSingle();
   if (error) throw new Error("campaign_read_failed");
-  if (!data || data.status !== "running") return result("skipped");
+  if (!data) return result("skipped");
   const campaign = data as Campaign;
+  if (campaign.status === "scheduled") {
+    const { data: start, error: startError } = await admin.rpc("start_scheduled_whatsapp_campaign", {
+      p_organization_id: org, p_campaign_id: campaignId,
+    });
+    if (startError) throw new Error("campaign_start_failed");
+    if (start?.retry_at) return result("retry", { retry_at: start.retry_at });
+    if (start?.status !== "running") return result("skipped");
+    campaign.status = "running";
+    campaign.started_at = start.started_at;
+  }
+  if (campaign.status !== "running") return result("skipped");
   if (stepIndex < 0 || stepIndex >= campaign.steps.length) return result("skipped");
 
   const { data: claim, error: claimError } = await admin.rpc("claim_whatsapp_campaign_step", {
