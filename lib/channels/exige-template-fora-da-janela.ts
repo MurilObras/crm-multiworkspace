@@ -13,6 +13,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { ARCHIVED_AT, queryTolerantToMissingArchived } from "./archived";
 import { capabilitiesOf } from "./capabilities";
 import type { ChannelProvider } from "./types";
 
@@ -31,20 +32,27 @@ export function providerExigeTemplateForaDaJanela(provider: string): boolean {
  *
  * Resolve dos `channel_sessions` da org — o mesmo destino que o follow-up usa
  * para enviar (`resolveSendTarget` em `lib/agent-engine/agent/followup-turn.ts`
- * deriva o canal da conversa do contato, caindo no número ativo da org).
+ * deriva o canal da conversa do contato, caindo no número ativo da org). E com a
+ * MESMA elegibilidade: só sessão NÃO arquivada conta. Um Meta antigo arquivado
+ * numa org que hoje usa só WAHA não pode exigir template — o runtime ignora o
+ * arquivado, e a validação de publish tem de enxergar o mesmo conjunto.
  *
- * Fail-closed: sem conseguir ler os canais (ou org sem canal) devolve `true`,
- * preservando a exigência atual — o afrouxamento só vale com canal resolvido e
- * provadamente de texto livre.
+ * Fail-closed: sem conseguir ler os canais (ou org sem canal elegível) devolve
+ * `true`, preservando a exigência atual — o afrouxamento só vale com canal
+ * elegível resolvido e provadamente de texto livre. Org mista com Meta NÃO
+ * arquivado junto a WAHA continua exigindo.
  */
 export async function orgExigeTemplateForaDaJanela(
   db: SupabaseClient,
   organizationId: string,
 ): Promise<boolean> {
-  const { data, error } = await db
-    .from("channel_sessions")
-    .select("provider")
-    .eq("organization_id", organizationId);
+  const base = () =>
+    db.from("channel_sessions").select("provider").eq("organization_id", organizationId);
+
+  const { data, error } = await queryTolerantToMissingArchived(
+    () => base().is(ARCHIVED_AT, null),
+    () => base(),
+  );
   if (error) return true;
 
   const rows = (data ?? []) as Array<{ provider: string | null }>;
