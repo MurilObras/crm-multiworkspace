@@ -17,6 +17,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { orgExigeTemplateForaDaJanela } from "@/lib/channels/exige-template-fora-da-janela";
 import { validateFlowForPublish } from "@/lib/followup/validate-publish";
 import { publishFollowupFlowVersion } from "@/lib/followup/publish";
 import type { FlowGraph } from "@/lib/followup/graph-schema";
@@ -131,7 +132,14 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   }
 
   const graph = pointer.draft_graph as unknown as FlowGraph;
-  const validation = validateFlowForPublish(graph);
+  // A exigência de fallback_template_id só vale para canais com hetero-restrição
+  // de janela. Canais de texto livre não a têm — resolve a capability canônica
+  // do canal da org, sem nomear provider.
+  const requiresTemplateOutsideWindow = await orgExigeTemplateForaDaJanela(
+    admin,
+    activeOrg.orgId,
+  );
+  const validation = validateFlowForPublish(graph, { requiresTemplateOutsideWindow });
   if (!validation.ok) {
     return fail("validation_failed", "Fluxo reprovado na validação de publish.", 422, {
       requestId,
