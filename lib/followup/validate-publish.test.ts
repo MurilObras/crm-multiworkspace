@@ -368,6 +368,71 @@ describe('validateFlowForPublish', () => {
 });
 
 /**
+ * A regra da janela de 24h é condicionada ao CANAL: só quem tem hetero-restrição
+ * de janela exige `fallback_template_id` num `action ai_message` alcançável após
+ * ≥24h. Canais de texto livre não exigem. O default (`requiresTemplateOutsideWindow`
+ * ausente) preserva o comportamento atual.
+ */
+describe('validateFlowForPublish — janela 24h x canal (fallback_template_id)', () => {
+  function grafoComAiMessage(waitMs: number, fallback?: string): FlowGraph {
+    return graph(
+      [
+        trigger('t1'),
+        wait('w1', { mode: 'fixed', duration_ms: waitMs }),
+        actionAiMessage('a1', fallback === undefined ? {} : { fallback }),
+        end('e1'),
+      ],
+      [edge('t1', 'w1', always()), edge('w1', 'a1', always()), edge('a1', 'e1', always())]
+    );
+  }
+
+  it('canal com hetero-restrição: <24h sem fallback publica', () => {
+    expect(validateFlowForPublish(grafoComAiMessage(300_000)).ok).toBe(true);
+  });
+
+  it('canal com hetero-restrição: ≥24h sem fallback rejeita', () => {
+    const result = validateFlowForPublish(grafoComAiMessage(86_400_000));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.map((e) => e.code)).toEqual(['long_wait_needs_template']);
+      expect(result.errors[0]!.node_id).toBe('a1');
+    }
+  });
+
+  it('canal com hetero-restrição: ≥24h com fallback aceita', () => {
+    expect(validateFlowForPublish(grafoComAiMessage(86_400_000, TEMPLATE_ID)).ok).toBe(true);
+  });
+
+  it('canal de texto livre: ≥24h sem fallback aceita', () => {
+    expect(
+      validateFlowForPublish(grafoComAiMessage(86_400_000), {
+        requiresTemplateOutsideWindow: false,
+      }).ok,
+    ).toBe(true);
+  });
+
+  it('canal de texto livre: as demais regras do fluxo continuam valendo', () => {
+    // Ciclo sem espera mínima continua reprovado mesmo com a regra de template
+    // desligada — o afrouxamento é SÓ da exigência de fallback_template_id.
+    const g = graph(
+      [trigger('t1'), condition('c1'), condition('c2'), end('e1')],
+      [
+        edge('t1', 'c1', always()),
+        edge('c1', 'c2', condResult(true)),
+        edge('c2', 'c1', condResult(true)),
+        edge('c1', 'e1', condResult(false)),
+        edge('c2', 'e1', condResult(false)),
+      ]
+    );
+    const result = validateFlowForPublish(g, { requiresTemplateOutsideWindow: false });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.map((e) => e.code)).toEqual(['cycle_without_wait']);
+    }
+  });
+});
+
+/**
  * Cobertura por ramo no modo 'per_check'. A regra é NOVA e vale só para a forma
  * nova: um nó de condição combinado continua publicando sob as mesmas exigências
  * de sempre, senão o publish passaria a reprovar fluxo que já está rodando.

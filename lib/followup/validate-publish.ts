@@ -35,6 +35,23 @@ export type PublishValidationResult =
   | { ok: true }
   | { ok: false; errors: PublishValidationError[] };
 
+/**
+ * Opções de validação de publish. A regra da janela de 24h
+ * (`long_wait_needs_template`) só se aplica quando o canal exige template fora
+ * da janela (hetero-restrição da plataforma); canais de texto livre não têm
+ * essa restrição. O valor é RESOLVIDO pelo chamador a partir da capability
+ * canônica do canal (`freeformOutsideWindow`) — o validador permanece puro e
+ * sem conhecer provider.
+ */
+export interface PublishValidationOptions {
+  /**
+   * `false` desativa a exigência de `fallback_template_id` para `action
+   * ai_message` alcançável após ≥24h. Default `true` preserva o comportamento
+   * atual e mantém a exigência para a API oficial.
+   */
+  requiresTemplateOutsideWindow?: boolean;
+}
+
 const LONG_WAIT_THRESHOLD_MS = 86_400_000; // 24h
 const MIN_CYCLE_WAIT_MS = 300_000; // 5min
 const MAX_PATH_STEPS = 30;
@@ -159,7 +176,8 @@ function analyzeCondensedPaths(
   startId: string,
   nodes: FlowNode[],
   nodesById: Map<string, FlowNode>,
-  outEdges: Map<string, FlowEdge[]>
+  outEdges: Map<string, FlowEdge[]>,
+  requiresTemplateOutsideWindow: boolean
 ): { longWaitNodeIds: Set<string>; maxStepsExceeded: boolean } {
   const longWaitNodeIds = new Set<string>();
   let maxStepsExceeded = false;
@@ -212,6 +230,7 @@ function analyzeCondensedPaths(
     for (const id of components[idx]!) {
       const node = nodesById.get(id);
       if (
+        requiresTemplateOutsideWindow &&
         node &&
         node.type === 'action' &&
         node.config.mode === 'ai_message' &&
@@ -268,8 +287,12 @@ function cobrirRamos(
   }
 }
 
-export function validateFlowForPublish(graph: FlowGraph): PublishValidationResult {
+export function validateFlowForPublish(
+  graph: FlowGraph,
+  options: PublishValidationOptions = {},
+): PublishValidationResult {
   const { nodes, edges } = graph;
+  const requiresTemplateOutsideWindow = options.requiresTemplateOutsideWindow !== false;
   const errors: PublishValidationError[] = [];
   const nodesById = new Map(nodes.map((n) => [n.id, n]));
   const outEdges = buildOutEdges(edges);
@@ -322,7 +345,8 @@ export function validateFlowForPublish(graph: FlowGraph): PublishValidationResul
       startTrigger.id,
       nodes,
       nodesById,
-      outEdges
+      outEdges,
+      requiresTemplateOutsideWindow
     );
     for (const id of [...longWaitNodeIds].sort()) {
       errors.push({

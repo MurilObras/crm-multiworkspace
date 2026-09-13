@@ -53,6 +53,21 @@ const INVALID_GRAPH: FlowGraph = {
   edges: [edge("edge1", "t1", "e1")],
 };
 
+/**
+ * trigger -> wait(24h) -> action ai_message (sem fallback) -> end.
+ * Só reprova quando o canal exige template fora da janela (Meta) — o caso que o
+ * publish resolve pela capability do canal.
+ */
+const LONG_WAIT_NO_FALLBACK_GRAPH: FlowGraph = {
+  nodes: [
+    trigger("t1"),
+    { id: "w1", type: "wait", label: "w1", position: pos, config: { mode: "fixed", duration_ms: 86_400_000 } },
+    { id: "a1", type: "action", label: "a1", position: pos, config: { mode: "ai_message", prompt_hint: "hint" } },
+    end("e1"),
+  ],
+  edges: [edge("edge1", "t1", "w1"), edge("edge2", "w1", "a1"), edge("edge3", "a1", "e1")],
+};
+
 // ---------------------------------------------------------------------------
 // In-memory fake Supabase client (chainable: select/insert/update/eq/order/
 // maybeSingle/single, thenable for implicit awaits after order()).
@@ -60,7 +75,7 @@ const INVALID_GRAPH: FlowGraph = {
 
 type Row = Record<string, unknown>;
 
-function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
+function makeDb(pointers: Row[], versions: Row[], stages: Row[] = [], channels: Row[] = []) {
   const tables: Record<string, Row[]> = {
     followup_flow_pointers: pointers,
     followup_flow_versions: versions,
@@ -69,6 +84,9 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
     // apagada/arquivada = fluxo `active` que nunca matricula ninguém). Sem esta
     // tabela no mock, o caso positivo do `stage_change` não teria como existir.
     crm_stages: stages,
+    // O publish resolve a capability do canal da org (exige template fora da
+    // janela?) para decidir se cobra fallback_template_id.
+    channel_sessions: channels,
   };
 
   function builder(table: string) {
@@ -649,6 +667,53 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
     const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
     const res = await POST(req("POST"), ctx("33333333-3333-4333-8333-333333333333"));
     expect(res.status).toBe(200);
+  });
+
+  it("canal de texto livre (WAHA/QR): espera ≥24h sem fallback publica", async () => {
+    const db = makeDb(
+      [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          organization_id: ORG_ID,
+          status: "draft",
+          draft_graph: LONG_WAIT_NO_FALLBACK_GRAPH,
+          trigger_config: { kind: "manual" },
+        },
+      ],
+      [],
+      [],
+      [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", organization_id: ORG_ID, provider: "waha" }],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const res = await POST(req("POST"), ctx("33333333-3333-4333-8333-333333333333"));
+    expect(res.status).toBe(200);
+  });
+
+  it("canal oficial (Meta): espera ≥24h sem fallback rejeita (long_wait_needs_template)", async () => {
+    const db = makeDb(
+      [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          organization_id: ORG_ID,
+          status: "draft",
+          draft_graph: LONG_WAIT_NO_FALLBACK_GRAPH,
+          trigger_config: { kind: "manual" },
+        },
+      ],
+      [],
+      [],
+      [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", organization_id: ORG_ID, provider: "meta_cloud" }],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const res = await POST(req("POST"), ctx("33333333-3333-4333-8333-333333333333"));
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as {
+      error: { code: string; details: { errors: Array<{ code: string }> } };
+    };
+    expect(body.error.code).toBe("validation_failed");
+    expect(body.error.details.errors.map((e) => e.code)).toContain("long_wait_needs_template");
   });
 });
 
