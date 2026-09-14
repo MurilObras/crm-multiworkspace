@@ -46,6 +46,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import type { SendMessageInput } from "@/lib/schemas";
+import { getAdapter, type ChannelProvider } from "@/lib/channels";
+import * as templateSender from "@/lib/channels/meta/send-template-for-session";
+import { applySendOutcome, sendTurnMessage } from "@/lib/agent-engine/edge/crm/send-message";
+import type { Queryable } from "@/lib/agent-engine/queue/queue";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CONV = "22222222-2222-4222-8222-222222222222";
@@ -145,6 +149,8 @@ function conversaCompleta(forma: Forma = {}): Row {
     channel_session_id: SESSION,
     is_group: false,
     group_chat_id: null,
+    // Os testes de transporte representam uma resposta dentro da janela.
+    last_inbound_at: new Date().toISOString(),
     provider_conversation_id: forma.providerConversationId ?? null,
     contacts: { phone_number: "+595991733685", wa_identity: null, wa_lid: "999888", is_blocked: false },
     channel_sessions: {
@@ -217,9 +223,8 @@ function makeSupabase(linhaCompleta: Row) {
           update: (patch: Row) => {
             estado.message = { ...estado.message, ...patch };
             return {
-              eq: () => ({
-                select: () => ({ maybeSingle: async () => ({ data: { ...estado.message }, error: null }) }),
-              }),
+              eq() { return this; },
+              select: () => ({ maybeSingle: async () => ({ data: { ...estado.message }, error: null }) }),
             };
           },
         };
@@ -273,8 +278,115 @@ function respostaOk(messageId = "wamid.OK") {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+});
+
+describe("janela universal no sink de outbound", () => {
+  const agora = new Date("2026-09-14T12:00:00Z");
+  const dentro = "2026-09-14T11:00:00Z";
+  const fora = "2026-09-13T11:00:00Z";
+
+  it.each([
+    ["waha", fora, "sent"],
+    ["waha", null, "sent"],
+    ["meta_cloud", dentro, "sent"],
+    ["meta_cloud", fora, "failed"],
+    ["meta_cloud", null, "failed"],
+    ["meta_cloud", "2026-09-13T12:00:00Z", "failed"],
+    ["meta_cloud", "data-invalida", "failed"],
+    ["zernio", dentro, "sent"],
+    ["zernio", fora, "failed"],
+    ["zernio", null, "failed"],
+  ] as const)("%s com inbound %s resulta em %s", async (provider, inbound, status) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(agora);
+    const adapter = getAdapter(provider);
+    vi.spyOn(adapter, "isConfigured").mockReturnValue(true);
+    const send = vi.spyOn(adapter, "send").mockResolvedValue({ externalId: "wamid.window" });
+    const { supabase, estado } = makeSupabase({
+      ...conversaCompleta({ provider }), last_inbound_at: inbound,
+    });
+
+    const message = await sendMessageHandler(supabase, ctx, texto());
+
+    expect(message.status).toBe(status);
+    expect(estado.message?.status).toBe(status);
+    expect(estado.selects.every((s) => colunasDoSelect(s).includes("last_inbound_at"))).toBe(true);
+    if (status === "failed") {
+      expect(message.error_code).toBe("messaging_window_closed");
+      expect(message.metadata).not.toHaveProperty("queued_reason");
+      expect(send).not.toHaveBeenCalled();
+    } else {
+      expect(send).toHaveBeenCalledOnce();
+    }
+  });
+
+  it.each(["meta_cloud", "zernio"] as ChannelProvider[])("%s permite template fora da janela", async (provider) => {
+    const adapter = getAdapter(provider);
+    vi.spyOn(adapter, "isConfigured").mockReturnValue(true);
+    const send = vi.spyOn(adapter, "send");
+    const sendTemplate = adapter.sendTemplate
+      ? vi.spyOn(adapter, "sendTemplate").mockResolvedValue({ externalId: "wamid.template" })
+      : vi.spyOn(templateSender, "sendTemplateForSession").mockResolvedValue("wamid.template");
+    const { supabase } = makeSupabase({ ...conversaCompleta({ provider }), last_inbound_at: null });
+
+    const message = await sendMessageHandler(supabase, ctx, texto({
+      type: "template", template_name: "retorno", template_language: "pt_BR", template_values: {},
+    }));
+
+    expect(message.status).toBe("sent");
+    expect(sendTemplate).toHaveBeenCalledOnce();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("janela fechada falha mesmo com canal sem configuração ou desconectado", async () => {
+    const adapter = getAdapter("meta_cloud");
+    vi.spyOn(adapter, "isConfigured").mockReturnValue(false);
+    const send = vi.spyOn(adapter, "send");
+    const row = conversaCompleta({ provider: "meta_cloud" });
+    const { supabase } = makeSupabase({
+      ...row, last_inbound_at: null,
+      channel_sessions: { ...(row.channel_sessions as Row), status: "STOPPED" },
+    });
+    const message = await sendMessageHandler(supabase, ctx, texto());
+    expect(message).toMatchObject({ status: "failed", error_code: "messaging_window_closed" });
+    expect(message.metadata).not.toHaveProperty("queued_reason");
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("mídia também não contorna a janela", async () => {
+    const send = vi.spyOn(getAdapter("meta_cloud"), "send");
+    const { supabase } = makeSupabase({ ...conversaCompleta({ provider: "meta_cloud" }), last_inbound_at: null });
+    const message = await sendMessageHandler(supabase, ctx, texto({ type: "image", media_url: "https://example.com/image.jpg" }));
+    expect(message).toMatchObject({ status: "failed", error_code: "messaging_window_closed" });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("agent-engine registra failed no ledger e não reagenda como queued", async () => {
+    const send = vi.spyOn(getAdapter("meta_cloud"), "send");
+    const { supabase } = makeSupabase({ ...conversaCompleta({ provider: "meta_cloud" }), last_inbound_at: null });
+    const query = vi.fn(async () => ({ rows: [{ id: "ledger-1" }], rowCount: 1 }));
+    const db = { query } as unknown as Queryable;
+
+    const outcome = await sendTurnMessage(db, { supabase }, {
+      tenantId: ORG, leadId: CONTACT, jobId: "job-1", seq: 1, conversationId: CONV, body: "oi",
+    });
+    expect(outcome).toMatchObject({ kind: "failed", crmMessageId: "msg-1" });
+    expect(query.mock.calls[1]).toEqual([
+      expect.stringContaining("update send_ledger"),
+      ["ledger-1", "failed", "msg-1", expect.any(String)],
+    ]);
+    query.mockClear();
+    expect(await applySendOutcome(db, outcome, {
+      jobId: "job-1", workerId: "worker-1", tenantId: ORG, leadId: CONTACT,
+    }, { queuedRetryDelayMs: 300_000 })).toEqual({ action: "none" });
+    // Falhas seguem o orçamento finito da fila; não caem no retry ilimitado de queued.
+    expect(query).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
 });
 
 describe("o projetor do dublê é discriminante (guarda de vacuidade)", () => {

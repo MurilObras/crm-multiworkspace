@@ -184,6 +184,17 @@ ver, tela para mudar, e caminho visível de falha.**
 
 ## Enforcement
 
+O sink comum `sendMessageHandler` consulta `conversations.last_inbound_at` e usa
+`capabilitiesOf(provider).freeformOutsideWindow` com `isWindowOpen`. Em canais
+restritos, toda mensagem que não seja template exige janela aberta (24h exatas
+já fecham; inbound nulo não abre). O bloqueio grava `messages.status = failed`
+com `error_code = messaging_window_closed`, sem chamar o transporte nem deixar
+`queued`. Templates mantêm o pré-voo existente de definição e parâmetros.
+
+A cadeia `runBeforeSend` continua pertencendo ao agente: o sink não a executa
+novamente. No engine, `failed` segue o orçamento finito de tentativas da fila,
+não o reagendamento sem consumo de tentativas reservado a `queued`.
+
 | Camada | Mecanismo | Efeito |
 |---|---|---|
 | Lint | `scripts/lint-channels.ts` | nome de provider fora de `lib/channels/` reprova |

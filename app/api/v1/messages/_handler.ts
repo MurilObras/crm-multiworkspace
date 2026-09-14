@@ -11,7 +11,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { isWindowOpen } from "@/lib/agent-engine/guardrails/messaging-window";
 import {
+  capabilitiesOf,
   CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
   getAdapter,
@@ -270,7 +272,7 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, last_inbound_at, provider_conversation_id, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   const { data: conv, error: convErr } = await queryTolerantToMissingArchived(
     () => supabase.from("conversations").select(convSelect(true)).eq("id", input.conversation_id).eq("organization_id", ctx.organization_id).maybeSingle(),
     () => supabase.from("conversations").select(convSelect(false)).eq("id", input.conversation_id).eq("organization_id", ctx.organization_id).maybeSingle(),
@@ -291,6 +293,7 @@ export async function sendMessageHandler(
     is_group: boolean;
     group_chat_id: string | null;
     bot_silenced_until: string | null;
+    last_inbound_at: string | null;
     /** Thread do provider, quando ele endereça por thread própria (migration 0132). */
     provider_conversation_id: string | null;
     contacts: {
@@ -502,7 +505,8 @@ export async function sendMessageHandler(
   // alcança o caso em que o embed não trouxe a sessão — impossível hoje
   // (`conversations.channel_session_id` é NOT NULL com FK ON DELETE RESTRICT),
   // e ainda assim mantido para não trocar o desfecho desse ramo defensivo.
-  const adapter = getAdapter(c.channel_sessions?.provider ?? DEFAULT_CHANNEL_PROVIDER);
+  const provider = c.channel_sessions?.provider ?? DEFAULT_CHANNEL_PROVIDER;
+  const adapter = getAdapter(provider);
   const chatId = adapter.resolveRecipient({
     isGroup: c.is_group,
     groupChatId: c.group_chat_id,
@@ -533,6 +537,30 @@ export async function sendMessageHandler(
       .select(MSG_COLS)
       .maybeSingle();
     if (updated) message = updated as unknown as Message;
+  } else if (
+    input.type !== "template" &&
+    !capabilitiesOf(provider).freeformOutsideWindow &&
+    !isWindowOpen(new Date(), c.last_inbound_at ? new Date(c.last_inbound_at) : null)
+  ) {
+    // Proteção universal do sink, inclusive mídia e texto fixo. A cadeia do agente
+    // já roda antes daqui; repeti-la consumiria pacing/quotas duas vezes.
+    // Janela fechada não espera configuração nem sessão: falha terminal na linha,
+    // nunca queued (que reagendaria sem consumir attempts). Só inbound reabre.
+    const { data: updated, error } = await supabase
+      .from("messages")
+      .update({
+        status: "failed",
+        error_code: "messaging_window_closed",
+        error_message: "Janela de atendimento encerrada. Envie um template aprovado ou aguarde uma resposta do contato.",
+      })
+      .eq("id", message.id)
+      .eq("organization_id", ctx.organization_id)
+      .select(MSG_COLS)
+      .maybeSingle();
+    if (error || !updated) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, error?.message ?? "message_update_failed");
+    }
+    message = updated as unknown as Message;
   } else if (!adapter.isConfigured()) {
     const { data: updated } = await supabase
       .from("messages")
