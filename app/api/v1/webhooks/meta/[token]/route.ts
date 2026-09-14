@@ -24,6 +24,7 @@ import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
 import { parseMetaWebhook, verificationChallenge, verifyMetaSignature } from "@/lib/channels/meta/webhook";
 import { ingestMetaInbound } from "@/lib/channels/meta/ingest";
 import { metaSessionByWebhookToken } from "@/lib/channels/meta/session";
+import { applyMetaMessageStatus } from "@/lib/channels/meta/message-status";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -142,17 +143,19 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
         .eq("name", e.templateName)
         .eq("language", e.templateLanguage);
     } else {
-      await admin
-        .from("messages")
-        .update({ status: e.status === "failed" ? "failed" : "sent", updated_at: now })
-        .eq("organization_id", session.organizationId)
-        .eq("external_id", e.externalId);
+      try {
+        desfechos.push(await applyMetaMessageStatus(admin, session, e, now));
+      } catch {
+        logger.error("[meta.webhook] falha ao persistir recibo", { request_id: requestId });
+        return fail("internal_error", "status_update_failed", 500, { requestId });
+      }
     }
   }
 
-  // 200 SEMPRE que a assinatura confere, inclusive para evento que não nos
+  // 200 para evento processado ou que não nos
   // interessa: a Meta re-entrega tudo que não recebe 2xx, e recusar o que
-  // ignoramos vira re-tentativa em backoff por horas.
+  // ignoramos vira re-tentativa em backoff por horas. Falha de persistência de
+  // recibo retorna 500: a reentrega idempotente é necessária para não perdê-lo.
   // `outcomes` no corpo: quem depura vê o que aconteceu com cada evento em vez de
   // ler um contador que não distingue sucesso de falha.
   return NextResponse.json(
