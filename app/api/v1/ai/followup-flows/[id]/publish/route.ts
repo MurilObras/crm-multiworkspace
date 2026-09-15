@@ -20,6 +20,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { validateFlowForPublish } from "@/lib/followup/validate-publish";
 import { publishFollowupFlowVersion } from "@/lib/followup/publish";
 import type { FlowGraph } from "@/lib/followup/graph-schema";
+import { resolveOutboundSession } from "@/lib/channels/resolve-outbound";
+import { capabilitiesOf } from "@/lib/channels";
+import { loadOfficialFollowupTemplate } from "@/lib/channels/followup-delivery";
 
 export const dynamic = "force-dynamic";
 
@@ -131,12 +134,39 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   }
 
   const graph = pointer.draft_graph as unknown as FlowGraph;
-  const validation = validateFlowForPublish(graph);
+  let session;
+  try {
+    session = await resolveOutboundSession(admin, { organizationId: activeOrg.orgId, kind: "text" });
+  } catch {
+    return fail("internal_error", "Não foi possível conferir a conexão do fluxo.", 500, { requestId });
+  }
+  if (!session) {
+    return fail("validation_failed", "Conexão do fluxo indisponível ou ambígua.", 422, {
+      requestId, details: { reason: "followup_channel_unresolved" },
+    });
+  }
+  const caps = capabilitiesOf(session.provider);
+  const validation = validateFlowForPublish(graph, caps);
   if (!validation.ok) {
     return fail("validation_failed", "Fluxo reprovado na validação de publish.", 422, {
       requestId,
       details: { errors: validation.errors },
     });
+  }
+
+  if (!caps.freeformOutsideWindow) {
+    for (const node of graph.nodes) {
+      if (node.type !== "action") continue;
+      try {
+        await loadOfficialFollowupTemplate(admin, activeOrg.orgId, session.id,
+          node.config.fallback_template_id, node.config.fallback_template_values);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : "followup_template_invalid";
+        return fail("validation_failed", "Fallback oficial do fluxo não está pronto para envio.", 422, {
+          requestId, details: { node_id: node.id, reason },
+        });
+      }
+    }
   }
 
   const result = await publishFollowupFlowVersion(admin, {

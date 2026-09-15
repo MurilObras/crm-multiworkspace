@@ -165,7 +165,8 @@ describe("followup_turn — canal arquivado", () => {
     runAgentTurn.mockClear();
     const { pool, query } = fakePool();
     query.mockResolvedValue({ rows: [{ id: CONVERSA, channel_session_id: CANAL, channel_archived_at: null,
-      resolved_session_id: CANAL, organization_id: ORG, provider: "meta_cloud", channel_status: "WORKING" }] });
+      resolved_session_id: CANAL, organization_id: ORG, provider: "meta_cloud", channel_status: "WORKING",
+      last_inbound_at: new Date().toISOString() }] });
     await handler()(job(), pool, ctx);
     expect(runAgentTurn).toHaveBeenCalledOnce();
     expect(query).toHaveBeenCalledTimes(1);

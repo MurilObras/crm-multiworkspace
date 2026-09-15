@@ -9,6 +9,8 @@ import { createSupabaseAdminClient, type FollowupJobRequest } from "@/lib/follow
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
 import { completeTurnForEnrollment, type TurnBridgeAdminClient } from "@/lib/followup/turn-bridge";
 import { logger } from "@/lib/logger";
+import { followupNeedsTemplate, loadOfficialFollowupTemplate } from "@/lib/channels/followup-delivery";
+import type { ChannelProvider } from "@/lib/channels";
 
 function ponteSupabase(admin: SupabaseClient): TurnBridgeAdminClient {
   const base = createSupabaseAdminClient(admin);
@@ -109,15 +111,32 @@ export async function enviarTextoFixoPendente(
         continue;
       }
 
-      await sendMessageHandler(
+      const { data: conversation, error: conversationError } = await admin.from("conversations")
+        .select("last_inbound_at, channel_sessions:channel_session_id(provider)")
+        .eq("organization_id", job.organization_id as string).eq("id", conversationId)
+        .eq("channel_session_id", sessionId).maybeSingle();
+      if (conversationError || !conversation) throw new Error("followup_conversation_lookup_failed");
+      const window = conversation as unknown as {
+        last_inbound_at: string | null; channel_sessions: { provider: ChannelProvider } | null;
+      };
+      if (!window.channel_sessions) throw new Error("followup_session_missing");
+      const official = followupNeedsTemplate(window.channel_sessions.provider, window.last_inbound_at, new Date())
+        ? await loadOfficialFollowupTemplate(admin, job.organization_id as string, sessionId,
+          payload.fallback_template_id, payload.fallback_template_values)
+        : null;
+      const message = await sendMessageHandler(
         admin,
         {
           organization_id: job.organization_id as string,
           actor: { type: "webhook_source", id: enrollmentId },
           requestId: `followup:${job.id}`,
         },
-        { conversation_id: conversationId, type: "text", body },
+        official ? { conversation_id: conversationId, type: "template", body: official.body,
+          template_name: official.template.name, template_language: official.template.language,
+          template_values: official.template.values }
+          : { conversation_id: conversationId, type: "text", body },
       );
+      if (message.status !== "sent") throw new Error(message.error_code ?? "followup_send_not_sent");
       enviados++;
       try {
         await completeTurnForEnrollment(ponte, job.organization_id as string, enrollmentId, nodeId, {
@@ -132,10 +151,11 @@ export async function enviarTextoFixoPendente(
       if (doneErr) throw new Error(doneErr.message);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
+      const terminal = /^(messaging_window_closed|followup_template_(not_found|not_approved|missing_values))/.test(message);
       logger.warn("[dev.pipeline] envio inline falhou", { error: message });
       await admin
         .from("job_queue")
-        .update({ status: "pending", last_error: message.slice(0, 300) })
+        .update({ status: terminal ? "dead" : "pending", last_error: message.slice(0, 300) })
         .eq("id", job.id);
     }
   }

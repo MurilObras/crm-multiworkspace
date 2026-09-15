@@ -18,6 +18,7 @@
 import { z } from 'zod';
 import type pg from 'pg';
 import { selectOutboundSession, type OutboundSession } from '@/lib/channels/resolve-outbound';
+import { followupNeedsTemplate, loadOfficialFollowupTemplate, type OfficialFollowupTemplate } from '@/lib/channels/followup-delivery';
 
 import { withFields } from '../obs/logger';
 import type { JobRow } from '../queue/queue';
@@ -77,6 +78,8 @@ export const followupTurnPayloadSchema = z
     fixed_body: z.string().min(1).max(4000).optional(),
     /** action mode `template` — corpo em `message_templates`. */
     template_id: z.string().uuid().optional(),
+    fallback_template_id: z.string().uuid().optional(),
+    fallback_template_values: z.record(z.string(), z.string()).optional(),
     volta_index: z.number().int().optional(),
     volta_total: z.number().int().optional(),
     classes: z.array(z.string()).optional(),
@@ -257,6 +260,8 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
         promptHint: payload.prompt_hint,
         fixedBody: payload.fixed_body,
         templateId: payload.template_id,
+        fallbackTemplateId: payload.fallback_template_id,
+        fallbackTemplateValues: payload.fallback_template_values,
         voltaIndex: payload.volta_index,
         voltaTotal: payload.volta_total,
         classes: payload.classes,
@@ -270,15 +275,13 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
     // cadeia de guardrails, sem chamar o modelo. É um CAMINHO ADICIONAL: o run do
     // agente (abaixo) segue intocado quando o modo não é 'template'.
     if (payload.mode === 'template') {
-      await runDeterministicReentry(deps, job, pool, ctx, clock, {
-        tenantId,
-        leadId,
-        channelSessionId: target.channelSessionId,
-        conversationId: target.conversationId,
-      });
+      await runDeterministicReentry(deps, job, pool, ctx, clock, target);
       return;
     }
 
+    if (followupNeedsTemplate(target.provider, target.lastInboundAt, clock())) {
+      throw new Error('messaging_window_closed: followup_fallback_missing');
+    }
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: target.channelSessionId,
       conversationId: target.conversationId,
@@ -301,6 +304,8 @@ interface ReentrySendTarget {
   leadId: string;
   channelSessionId: string;
   conversationId: string;
+  provider: OutboundSession['provider'];
+  lastInboundAt: Date | string | null;
 }
 
 /**
@@ -325,8 +330,9 @@ async function resolveSendTarget(
     organization_id: string;
     provider: OutboundSession['provider'];
     channel_status: string;
+    last_inbound_at: Date | string | null;
   }>(
-    `select c.id,
+    `select c.id, c.last_inbound_at,
              c.channel_session_id,
              cs.id as resolved_session_id, cs.organization_id, cs.provider, cs.status as channel_status,
             to_jsonb(cs) ->> 'archived_at' as channel_archived_at
@@ -356,6 +362,8 @@ async function resolveSendTarget(
       leadId: contactId,
       channelSessionId: conv.channel_session_id,
       conversationId: conv.id,
+      provider: conv.provider,
+      lastInboundAt: conv.last_inbound_at ?? null,
     };
   }
 
@@ -369,7 +377,8 @@ async function resolveSendTarget(
        order by cs.created_at asc, cs.id`,
     [tenantId],
   );
-  const channelSessionId = selectOutboundSession(session.rows, { organizationId: tenantId, kind: 'text' })?.id;
+  const selectedSession = selectOutboundSession(session.rows, { organizationId: tenantId, kind: 'text' });
+  const channelSessionId = selectedSession?.id;
   if (channelSessionId === undefined) {
     throw new Error('followup_turn sem conversa/número do contato — impossível retomar o contato');
   }
@@ -385,7 +394,7 @@ async function resolveSendTarget(
     if (conversationId === undefined) {
       throw new Error('followup_turn sem conversa/número do contato — impossível retomar o contato');
     }
-    return { tenantId, leadId: contactId, channelSessionId, conversationId };
+    return { tenantId, leadId: contactId, channelSessionId, conversationId, provider: selectedSession!.provider, lastInboundAt: null };
   } catch (err) {
     const code = (err as { code?: string } | null)?.code;
     if (code !== '23505') throw err;
@@ -397,7 +406,7 @@ async function resolveSendTarget(
     );
     const conversationId = winner.rows[0]?.id;
     if (conversationId === undefined) throw err;
-    return { tenantId, leadId: contactId, channelSessionId, conversationId };
+    return { tenantId, leadId: contactId, channelSessionId, conversationId, provider: selectedSession!.provider, lastInboundAt: null };
   }
 }
 
@@ -422,6 +431,8 @@ async function runFlowDrivenTurn(
     promptHint: string | undefined;
     fixedBody: string | undefined;
     templateId: string | undefined;
+    fallbackTemplateId: string | undefined;
+    fallbackTemplateValues: Record<string, string> | undefined;
     voltaIndex: number | undefined;
     voltaTotal: number | undefined;
     classes: string[] | undefined;
@@ -442,6 +453,13 @@ async function runFlowDrivenTurn(
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
 
   if (input.purpose === 'send_message') {
+    if (followupNeedsTemplate(target.provider, target.lastInboundAt, clock())) {
+      const official = await loadOfficialFollowupTemplate(deps.crmCfg.supabase,
+        target.tenantId, target.channelSessionId, input.fallbackTemplateId, input.fallbackTemplateValues);
+      const sent = await sendFixedOutbound(deps, job, pool, ctx, clock, target, official.body, false, official);
+      if (sent) await complete(pool, { organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'sent' } });
+      return;
+    }
     const body = await resolveFlowSendBody(pool, target.tenantId, input);
     if (body !== null) {
       // Texto do operador: sem camada semântica (ver o cabeçalho de sendFixedOutbound).
@@ -625,9 +643,13 @@ async function sendFixedOutbound(
   body: string,
   /** `true` só na re-entrada por template — ver o cabeçalho. */
   comCamadaSemantica: boolean,
+  official?: OfficialFollowupTemplate,
 ): Promise<boolean> {
   const { tenantId, leadId, channelSessionId, conversationId } = target;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
+  if (!official && followupNeedsTemplate(target.provider, target.lastInboundAt, clock())) {
+    throw new Error('messaging_window_closed: followup_fallback_missing');
+  }
 
   if (await isLeadInHandoff(pool, tenantId, leadId)) {
     runLog.info('envio fixo pulado — lead silenciado (handoff/opt-out)', { kind: job.kind });
@@ -664,6 +686,7 @@ async function sendFixedOutbound(
     jobId: job.id,
     channelSessionId,
     body,
+    ...(official ? { isTemplate: true } : {}),
     optedOutThisTurn,
     crmDailyLimit: null,
     now: clock(),
@@ -682,7 +705,8 @@ async function sendFixedOutbound(
             ),
         }
       : {}),
-    send: (finalBody) => channel.send({ tenantId, leadId, jobId: job.id, seq: 1, conversationId, body: finalBody }),
+    send: (finalBody) => channel.send({ tenantId, leadId, jobId: job.id, seq: 1, conversationId, body: finalBody,
+      ...(official ? { template: official.template } : {}) }),
   });
 
   if (chain.status === 'vetoed') {

@@ -6,8 +6,9 @@
  * `allowlist` barra.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CHANNEL_PROVIDER_META, DEFAULT_CHANNEL_PROVIDER } from "@/lib/channels/capabilities";
 
-const sendMessageHandler = vi.fn(async (..._a: unknown[]) => ({ id: "msg-1" }));
+const sendMessageHandler = vi.fn(async (..._a: unknown[]) => ({ id: "msg-1", status: "sent", error_code: null as string | null }));
 const decidir = vi.fn();
 const completeTurnForEnrollment = vi.fn(async (..._a: unknown[]) => {});
 
@@ -37,7 +38,7 @@ const JOB = {
 const statusUpdates: string[] = [];
 
 /** Admin stub: job_queue (select pending / claim / status) + followup_enrollments. */
-function admin() {
+function admin(provider = DEFAULT_CHANNEL_PROVIDER, inbound: string | null = null, fallback = false) {
   const make = (table: string) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
@@ -53,6 +54,9 @@ function admin() {
         return chain;
       },
       maybeSingle: () => {
+        if (table === "conversations") return Promise.resolve({ data: { last_inbound_at: inbound, channel_sessions: { provider } }, error: null });
+        if (table === "meta_templates") return Promise.resolve({ data: { name: "retorno", language: "pt_BR", status: "APPROVED",
+          parameter_format: "POSITIONAL", components: [{ type: "BODY", text: "Olá!" }] }, error: null });
         if (table === "job_queue" && chain._upd) return Promise.resolve({ data: { id: JOB.id }, error: null });
         if (table === "followup_enrollments")
           return Promise.resolve({ data: { current_node_id: "node-1" }, error: null });
@@ -60,7 +64,8 @@ function admin() {
       },
       then: (r: (v: unknown) => unknown) => {
         if (table === "job_queue" && !chain._upd) {
-          return Promise.resolve({ data: [JOB], error: null }).then(r);
+          return Promise.resolve({ data: [{ ...JOB, payload: { ...JOB.payload,
+            ...(fallback ? { fallback_template_id: "11111111-1111-4111-8111-111111111111" } : {}) } }], error: null }).then(r);
         }
         return Promise.resolve({ data: null, error: null }).then(r);
       },
@@ -76,6 +81,34 @@ beforeEach(() => {
 });
 
 describe("enviarTextoFixoPendente · gate de elegibilidade", () => {
+  it("Meta fora da janela usa fallback oficial no sink", async () => {
+    decidir.mockResolvedValue({ permite: true });
+    expect(await enviarTextoFixoPendente(admin(CHANNEL_PROVIDER_META, null, true))).toBe(1);
+    expect(sendMessageHandler.mock.calls[0]?.[2]).toMatchObject({ type: "template", template_name: "retorno", template_language: "pt_BR" });
+    expect(completeTurnForEnrollment).toHaveBeenCalledOnce();
+  });
+
+  it("Meta sem fallback bloqueia explicitamente e não completa o passo", async () => {
+    decidir.mockResolvedValue({ permite: true });
+    expect(await enviarTextoFixoPendente(admin(CHANNEL_PROVIDER_META))).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(completeTurnForEnrollment).not.toHaveBeenCalled();
+    expect(statusUpdates).toContain("dead");
+  });
+
+  it("resposta reabre a janela e texto fixo volta ao envio livre", async () => {
+    decidir.mockResolvedValue({ permite: true });
+    expect(await enviarTextoFixoPendente(admin(CHANNEL_PROVIDER_META, new Date().toISOString(), true))).toBe(1);
+    expect(sendMessageHandler.mock.calls[0]?.[2]).toMatchObject({ type: "text", body: JOB.payload.fixed_body });
+  });
+
+  it("sink failed não é contado como envio nem completa o passo", async () => {
+    decidir.mockResolvedValue({ permite: true });
+    sendMessageHandler.mockResolvedValueOnce({ id: "msg-1", status: "failed", error_code: "messaging_window_closed" });
+    expect(await enviarTextoFixoPendente(admin())).toBe(0);
+    expect(completeTurnForEnrollment).not.toHaveBeenCalled();
+    expect(statusUpdates).toContain("dead");
+  });
   it("conversa NÃO elegível → NÃO envia, job vira 'done'", async () => {
     decidir.mockResolvedValue({ permite: false, motivo: "sem_autorizacao", bloqueioPorAllowlist: true });
     const enviados = await enviarTextoFixoPendente(admin());
