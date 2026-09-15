@@ -561,7 +561,7 @@ export async function sendMessageHandler(
       throw new ApiError(500, "internal_error", undefined, ctx.requestId, error?.message ?? "message_update_failed");
     }
     message = updated as unknown as Message;
-  } else if (!adapter.isConfigured()) {
+  } else if (!adapter.isConfigured({ channelSessionId: c.channel_session_id })) {
     const { data: updated } = await supabase
       .from("messages")
       .update({
@@ -646,6 +646,7 @@ export async function sendMessageHandler(
             ).externalId
           : await sendTemplateForSession(supabase, {
               organizationId: ctx.organization_id,
+              channelSessionId: c.channel_session_id,
               to: chatId,
               name: input.template_name ?? "",
               language: input.template_language ?? "",
@@ -663,6 +664,7 @@ export async function sendMessageHandler(
         const filename = input.media_storage_path.split("/").pop() ?? undefined;
         ({ externalId } = await adapter.send({
           organizationId: ctx.organization_id,
+          channelSessionId: c.channel_session_id,
           sessionRef: resolveSessionRef(c.channel_sessions),
           to: chatId,
           providerConversationId: c.provider_conversation_id,
@@ -693,6 +695,7 @@ export async function sendMessageHandler(
         const nome = sc.name?.trim() || telefone;
         ({ externalId } = await adapter.send({
           organizationId: ctx.organization_id,
+          channelSessionId: c.channel_session_id,
           sessionRef: resolveSessionRef(c.channel_sessions),
           to: chatId,
           providerConversationId: c.provider_conversation_id,
@@ -708,6 +711,7 @@ export async function sendMessageHandler(
       } else {
         ({ externalId } = await adapter.send({
           organizationId: ctx.organization_id,
+          channelSessionId: c.channel_session_id,
           sessionRef: resolveSessionRef(c.channel_sessions),
           to: chatId,
           providerConversationId: c.provider_conversation_id,

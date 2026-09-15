@@ -541,10 +541,9 @@ describe("nenhum desfecho diz `sent` sem nada ter saído", () => {
     expect(msg.status).not.toBe("sent");
   });
 
-  it("CONTROLE: o canal oficial, com env igualmente incompleto, fica `queued`", async () => {
-    // O par é o que dá sentido ao caso acima: mesma classe de má configuração,
-    // desfecho oposto. `metaCredsFromEnv()` exige as duas vars e `isConfigured()`
-    // deriva DELE, então o pre-check já barra e a linha fica em fila.
+  it("canal oficial sem credencial da sessão falha fechado, sem cair no env", async () => {
+    // A sessão vem do CRM: o pre-check permite consultar o banco, mas a ausência
+    // de credencial da sessão falha fechado em vez de enfileirar pelo env.
     vi.stubEnv("META_PHONE_NUMBER_ID", "");
     vi.stubEnv("META_SYSTEM_USER_TOKEN", "tok");
     const fetchMock = vi.fn();
@@ -553,8 +552,8 @@ describe("nenhum desfecho diz `sent` sem nada ter saído", () => {
     const { supabase } = makeSupabase(conversaCompleta({ provider: "meta_cloud" }));
     const msg = await sendMessageHandler(supabase, ctx, texto());
 
-    expect(msg.status).toBe("queued");
-    expect((msg.metadata as Record<string, unknown>).queued_reason).toBe("meta_not_configured");
+    expect(msg.status).toBe("failed");
+    expect(msg.error_message).toBe("meta_session_credentials_missing");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

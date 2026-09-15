@@ -32,7 +32,7 @@ export interface SendTemplateInput {
   to: string;
   binding: TemplateBinding;
   /** A linha do espelho local. `null` = template não existe mais na Meta. */
-  current: (CurrentTemplate & { components: unknown }) | null;
+  current: (CurrentTemplate & { components: unknown; parameterFormat?: string }) | null;
 }
 
 /**
@@ -63,6 +63,7 @@ export async function sendTemplate(input: SendTemplateInput): Promise<SendTempla
     name: input.binding.name,
     language: input.binding.language,
     components: input.current!.components as never,
+    parameter_format: input.current!.parameterFormat,
   });
 
   // 2) Valores completos? `buildComponents` lança se faltar; perguntar antes deixa a

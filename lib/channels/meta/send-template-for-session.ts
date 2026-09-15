@@ -16,9 +16,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendTemplate } from "./send-template";
+import { resolveMetaCreds } from "./credentials";
 
 export interface SendTemplateForSessionInput {
   organizationId: string;
+  channelSessionId: string;
   /** Destinatário em dígitos E.164, já resolvido pelo adapter. */
   to: string;
   name: string;
@@ -38,24 +40,28 @@ export async function sendTemplateForSession(
   db: SupabaseClient,
   input: SendTemplateForSessionInput,
 ): Promise<string | null> {
+  if (!input.channelSessionId) throw new Error("meta_session_required");
   if (!input.name || !input.language) {
     throw new Error("template_incompleto: nome e idioma são obrigatórios em type=template");
   }
 
   const { data: linha, error } = await db
     .from("meta_templates")
-    .select("name, language, status, contract_hash, components")
+    .select("name, language, status, contract_hash, components, parameter_format")
     .eq("organization_id", input.organizationId)
+    .eq("channel_session_id", input.channelSessionId)
     .eq("name", input.name)
     .eq("language", input.language)
     .maybeSingle();
 
   if (error) throw new Error(`template_lookup_failed: ${error.message}`);
+  const creds = await resolveMetaCreds(db, { organizationId: input.organizationId, channelSessionId: input.channelSessionId });
+  if (!creds) throw new Error("meta_session_credentials_missing");
 
   const resultado = await sendTemplate({
-    phoneNumberId: process.env.META_PHONE_NUMBER_ID ?? "",
-    token: process.env.META_SYSTEM_USER_TOKEN ?? "",
-    graphVersion: process.env.META_GRAPH_VERSION ?? "v22.0",
+    phoneNumberId: creds.phoneNumberId,
+    token: creds.token,
+    graphVersion: creds.graphVersion,
     to: input.to,
     binding: {
       name: input.name,
@@ -72,6 +78,7 @@ export async function sendTemplateForSession(
           contractHash: linha.contract_hash,
           status: linha.status,
           components: linha.components,
+          parameterFormat: linha.parameter_format,
         }
       : null,
   });

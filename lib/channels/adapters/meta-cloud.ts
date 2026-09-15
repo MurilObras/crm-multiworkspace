@@ -38,11 +38,8 @@ function toE164Digits(raw: string): string {
 /**
  * Credencial do ambiente — o caminho de instalação de número único.
  *
- * `isConfigured()` continua olhando só o env de propósito: ele responde "dá para
- * tentar?" de forma SÍNCRONA, e a resposta certa para uma instalação que gravou a
- * credencial na sessão vem do banco. Quem sabe disso é o `send`, que é async.
- * Devolver `false` aqui com sessão configurada faria o handler gravar `queued` sem
- * motivo — por isso o `send` resolve de novo, com a sessão, antes de desistir.
+ * Sem contexto, isConfigured conserva a consulta legada ao env. Com ID da sessão
+ * do CRM, permite a consulta assíncrona no send, que recusa credencial ausente.
  */
 import { metaCredsFromEnv } from "../meta/credentials";
 export { metaCredsFromEnv as getMetaCreds };
@@ -97,28 +94,13 @@ export const metaCloudAdapter: ChannelAdapter = {
   },
 
   /**
-   * DÍVIDA CONHECIDA, deixada de propósito — não é descuido.
-   *
-   * A credencial deste canal também pode viver na SESSÃO (a tela de "Conectar
-   * canal oficial" grava `meta_token_encrypted` desde a 0118), e `isConfigured`
-   * é síncrono: não consulta o banco. Numa instalação que conectou pela tela e
-   * não escreveu `.env`, isto devolve `false`, e o handler (`_handler.ts:370`)
-   * grava `queued` com `queued_reason: meta_not_configured` sem nunca chamar
-   * `send` — mensagem parada no inbox, sem erro, com o canal conectado.
-   *
-   * O canal intermediado JÁ passou por isso e resolveu devolvendo `true` e
-   * fazendo o `send` lançar (ver `adapters/zernio.ts`). O mesmo conserto cabe
-   * aqui, mas ele muda um contrato com dois testes explícitos
-   * (`tests/unit/channel-adapter-meta.test.ts`) cuja justificativa escrita é
-   * "mesmo contrato do outro canal" — justificativa que o fork já não sustenta.
-   *
-   * Trocar contrato testado exige uma mudança própria, com os testes revistos de
-   * propósito e não de passagem. Fica registrado aqui para quem for fazê-la.
+   * Com sessão do CRM, permite chegar à resolução assíncrona da credencial no
+   * banco. Sem sessão, preserva o contrato legado explícito de instalação via env.
    */
-  isConfigured(): boolean {
+  isConfigured(context?: { channelSessionId: string }): boolean {
     // Síncrono por contrato. Com credencial na sessão, quem confirma é o `send`
     // (async) — ver o comentário acima.
-    return metaCredsFromEnv() !== null;
+    return Boolean(context?.channelSessionId) || metaCredsFromEnv() !== null;
   },
 
   /**
@@ -186,12 +168,14 @@ export const metaCloudAdapter: ChannelAdapter = {
   },
 
   async send(envelope: OutboundEnvelope): Promise<{ externalId: string | null }> {
-    // Sessão primeiro, env como fallback. O `sessionRef` do canal oficial É o
-    // `phone_number_id` (ver `resolveSessionRef`), então ele é a chave da busca.
+    // O ID do CRM amarra o envio à sessão validada, inclusive o phone_number_id.
+    // Fallback de ambiente só é permitido no contrato legado sem esse ID.
     const creds = await resolveMetaCreds(createAdminClient(), {
       organizationId: envelope.organizationId,
       phoneNumberId: envelope.sessionRef,
+      channelSessionId: envelope.channelSessionId,
     });
+    if (!creds && envelope.channelSessionId !== undefined) throw new Error("meta_session_credentials_missing");
     // Mesmo contrato do outro canal: sem credencial é NOOP, não exceção. A UI mostra
     // o banner de "canal não conectado"; transformar em erro mudaria comportamento.
     if (!creds) return { externalId: null };

@@ -13,10 +13,9 @@
  * terceiro caminho de cifra seria criar mais um lugar para a chave vazar.
  *
  * ─── Por que o env continua existindo ───────────────────────────────────────
- * Como **fallback explícito de instalação de número único**, não como padrão. Um
- * self-hoster que ainda não passou pela tela de conexão continua funcionando, e o
- * caminho fica nomeado (`source: 'env'`) em vez de virar comportamento oculto — quem
- * depura vê de onde a credencial veio.
+ * Apenas para chamadas legadas SEM `channelSessionId`. Todo envio pelo sink do
+ * CRM informa esse ID e usa exclusivamente a credencial da sessão; token ausente
+ * ou erro de decifra fecham o envio. O caminho legado fica nomeado (`source: 'env'`).
  *
  * A ordem é sessão-primeiro de propósito: com a credencial gravada, o env deixa de
  * ter efeito. Se fosse o contrário, um env esquecido silenciaria a configuração da
@@ -40,6 +39,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "../archived";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { CHANNEL_PROVIDER_META } from "../capabilities";
 
 export interface MetaCredentials {
   phoneNumberId: string;
@@ -56,7 +56,9 @@ export interface MetaCredsLookup {
   /** Resolvido de fonte confiável (sessão, linha já escopada, token do webhook). */
   organizationId: string;
   /** `channel_sessions.meta_phone_number_id` — o `sessionRef` deste canal. */
-  phoneNumberId: string;
+  phoneNumberId?: string;
+  /** Quando presente, resolução estrita por ID do CRM, sem fallback de ambiente. */
+  channelSessionId?: string;
 }
 
 /** Versão da Graph API. Explícita de propósito: bump é decisão, não deriva. */
@@ -78,8 +80,8 @@ export function metaCredsFromEnv(): MetaCredentials | null {
 /**
  * Credencial da sessão desta ORGANIZAÇÃO que atende este `phone_number_id`.
  *
- * `null` significa "esta sessão não tem token gravado" — o chamador cai no env. NÃO
- * significa erro: durante a transição a maioria das instalações ainda usa env.
+ * `null` significa "credencial indisponível". Com channelSessionId o chamador
+ * deve recusar o envio; só chamadas legadas sem esse ID podem usar env.
  *
  * **LANÇA quando a consulta falha**, e essa é a diferença que a issue #236 pagou.
  * A versão anterior desestruturava só `{ data }` e jogava o `error` fora: com duas
@@ -92,20 +94,25 @@ export async function metaCredsForPhoneNumberId(
   admin: SupabaseClient,
   lookup: MetaCredsLookup,
 ): Promise<MetaCredentials | null> {
-  const { organizationId, phoneNumberId } = lookup;
-  if (!organizationId || !phoneNumberId) return null;
+  const { organizationId, phoneNumberId, channelSessionId } = lookup;
+  if (!organizationId || (channelSessionId !== undefined ? !channelSessionId : !phoneNumberId)) return null;
 
   // `organization_id` À MÃO: este client é de service role e bypassa RLS.
   // `archived_at is null` acompanha o filtro porque é o MESMO recorte do índice
   // único `channel_sessions_meta_phone_number_id_ativo_unique` (migration 0165) —
   // sem ele a linha arquivada volta a poder duplicar o número e a busca deixa de
   // ser exata justo onde a trava do banco não alcança.
-  const base = () =>
-    admin
+  const base = () => {
+    let q = admin
       .from("channel_sessions")
       .select("meta_phone_number_id, meta_token_encrypted")
-      .eq("organization_id", organizationId)
-      .eq("meta_phone_number_id", phoneNumberId);
+      .eq("organization_id", organizationId);
+    if (channelSessionId !== undefined) {
+      q = q.eq("id", channelSessionId).eq("provider", CHANNEL_PROVIDER_META).eq("status", "WORKING");
+    }
+    if (phoneNumberId) q = q.eq("meta_phone_number_id", phoneNumberId);
+    return q;
+  };
   const { data, error } = await queryTolerantToMissingArchived(
     () => base().is(ARCHIVED_AT, null).maybeSingle(),
     () => base().maybeSingle(),
@@ -117,12 +124,10 @@ export async function metaCredsForPhoneNumberId(
   }
 
   const cifrado = data?.meta_token_encrypted;
-  if (!data || !cifrado) return null;
+  if (!data?.meta_phone_number_id || !cifrado) return null;
 
   const token = await decryptWebhookSecret(admin, cifrado as unknown as string);
-  // Decifra que falha devolve null: a chave (GUC) pode não estar configurada nesta
-  // instalação. Cair no env é melhor que derrubar o envio — e o `source` no retorno
-  // deixa a diferença visível para quem depura.
+  // Falha de decifra não autoriza credencial global no envio session-bound.
   if (!token) return null;
 
   return {
@@ -134,14 +139,14 @@ export async function metaCredsForPhoneNumberId(
 }
 
 /**
- * A credencial em vigor para este número: **sessão primeiro, env como fallback**.
- *
- * Uma instalação com várias organizações grava um token por sessão e cada uma envia
- * pelo seu; uma instalação de número único pode continuar no env sem tocar em nada.
+ * Com ID do CRM: somente a sessão validada. Sem ID: compatibilidade de chamadas
+ * legadas que ainda resolvem por número e permitem fallback de instalação.
  */
 export async function resolveMetaCreds(
   admin: SupabaseClient,
   lookup: MetaCredsLookup,
 ): Promise<MetaCredentials | null> {
-  return (await metaCredsForPhoneNumberId(admin, lookup)) ?? metaCredsFromEnv();
+  const session = await metaCredsForPhoneNumberId(admin, lookup);
+  if (lookup.channelSessionId !== undefined) return session;
+  return session ?? metaCredsFromEnv();
 }

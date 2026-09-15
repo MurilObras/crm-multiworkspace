@@ -95,6 +95,17 @@ export async function sendTurnMessage(
   const bodyHash = createHash('sha256').update(input.body).digest('hex');
   const ledger = await claimLedgerRow(db, input, bodyHash);
   if (ledger.shortCircuit) {
+    // queued já tem mensagem sob custódia do CRM. Só reconcilia seu desfecho,
+    // nunca cria outra linha nem reenvia enquanto aguarda confirmação.
+    if (ledger.shortCircuit.kind === 'queued' && ledger.shortCircuit.crmMessageId) {
+      const { rows } = await db.query<{ id: string; status: string }>(
+        'select id, status from messages where organization_id = $1 and id = $2',
+        [input.tenantId, ledger.shortCircuit.crmMessageId],
+      );
+      if (rows[0] && rows[0].status !== 'queued' && rows[0].status !== 'sending') {
+        return reconcile(db, ledger.key, rows[0].id, rows[0].status);
+      }
+    }
     return ledger.shortCircuit;
   }
   const idempotencyKey = ledger.key;

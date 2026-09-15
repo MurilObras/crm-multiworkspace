@@ -479,6 +479,7 @@ async function runFlowDrivenTurn(
         return `${opening}\n\n## Orientação do passo do fluxo\n${input.promptHint}`;
       },
     });
+    await confirmFlowDelivery(deps, job, pool, ctx, target);
     await complete(pool, { organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'sent' } });
     return;
   }
@@ -542,6 +543,25 @@ async function runFlowDrivenTurn(
     nodeId,
     result: { kind: 'planned', propostas: plano.propostas, modelo: plano.modelo },
   });
+}
+
+/** O turno de IA retornar não prova envio: confirma no ledger antes de avançar. */
+async function confirmFlowDelivery(
+  deps: InboundTurnDeps, job: JobRow, pool: pg.Pool,
+  ctx: { workerId: string }, target: ReentrySendTarget,
+): Promise<void> {
+  const { rows } = await pool.query<{ id: string; status: string; crm_message_id: string | null }>(
+    'select id, status, crm_message_id from send_ledger where organization_id = $1 and job_id = $2',
+    [target.tenantId, job.id],
+  );
+  const queued = rows.find((r) => r.status === 'queued');
+  if (queued) {
+    await applySendOutcome(pool, { kind: 'queued', idempotencyKey: queued.id, crmMessageId: queued.crm_message_id },
+      { jobId: job.id, workerId: ctx.workerId, tenantId: target.tenantId, leadId: target.leadId },
+      { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs });
+    throw new JobSettledError('followup aguardando confirmação do envio — passo não concluído');
+  }
+  if (!rows.length || rows.some((r) => r.status !== 'accepted')) throw new Error('followup_send_not_confirmed');
 }
 
 /**
@@ -732,9 +752,13 @@ async function sendFixedOutbound(
   switch (outcome.kind) {
     case 'sent':
     case 'already_sent':
-    case 'queued':
       runLog.info('envio fixo concluído', { kind: outcome.kind });
       return true;
+    case 'queued':
+      await applySendOutcome(pool, { kind: 'queued', idempotencyKey: outcome.idempotencyKey, crmMessageId: outcome.messageId },
+        { jobId: job.id, workerId: ctx.workerId, tenantId, leadId },
+        { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs });
+      throw new JobSettledError('followup aguardando confirmação do envio — passo não concluído');
     case 'blocked':
       await applySendOutcome(pool, outcome, { jobId: job.id, workerId: ctx.workerId, tenantId, leadId }, {
         queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs,
