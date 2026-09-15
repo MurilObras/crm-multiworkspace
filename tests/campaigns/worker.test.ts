@@ -19,6 +19,7 @@ function row(payload: Record<string, unknown> = { step_index: 0 }): EventRow {
 type Options = {
   step?: Record<string, unknown>; template?: Record<string, unknown>; templateError?: boolean;
   provider?: string; finalizeError?: boolean;
+  replyError?: boolean; contactErrorAt?: number; missingContactAt?: number; unexpectedContactAt?: number;
   foreign?: boolean; blocked?: boolean; declined?: boolean; replied?: boolean;
   optOutDuringSend?: boolean; foreignChannel?: boolean; foreignConversation?: boolean;
   retry?: string; done?: boolean; linkError?: boolean; firstClaimDone?: boolean;
@@ -74,14 +75,17 @@ function database(options: Options = {}) {
           ...(options.step ? { steps: [options.step] } : {}), status: options.scheduled ? "scheduled" : "running" }, error: null };
         if (table === "contacts") {
           contactReads++;
+          if (contactReads === options.contactErrorAt) return { data: null, error: { message: 'db down' } };
+          if (contactReads === options.missingContactAt) return { data: null, error: null };
           const blocked = options.blocked || (options.optOutDuringSend && contactReads > 1);
-          return { data: { id: "contact", phone_number: "+5511999999999", is_blocked: blocked, consent: options.declined ? { marketing: { declined_at: "2026-09-01" } } : {} }, error: null };
+          return { data: { id: contactReads === options.unexpectedContactAt ? 'other' : "contact", organization_id: 'org-a',
+            phone_number: "+5511999999999", is_blocked: Boolean(blocked), consent: options.declined ? { marketing: { declined_at: "2026-09-01" } } : {} }, error: null };
         }
         if (table === "messages") return {
           data: messages.find((message) =>
             Object.entries(filters).every(([k, v]) => message[k] === v)
             && Object.entries(greaterThan).every(([k, v]) => typeof message[k] === "string" && message[k] > v)) ?? null,
-          error: null,
+          error: options.replyError ? { message: 'db down' } : null,
         };
         if (table === "channel_sessions") return { data: options.foreignChannel ? null : {
           id: "channel", organization_id: "org-a", provider: options.provider ?? "waha", status: "WORKING", archived_at: null,
@@ -124,6 +128,22 @@ it("official step renders current definition and sends template through the same
   expect(send.mock.calls[0]?.[2]).toMatchObject({ type: "template", body: "Olá Ana", template_name: "retorno",
     template_language: "pt_BR", template_values: { "1": "Ana" } });
   expect(db.rpcCalls.find((c) => c.fn === "finalize_whatsapp_campaign_step")?.args.p_status).toBe("sent");
+});
+
+it.each([
+  { replyError: true }, { contactErrorAt: 1 }, { contactErrorAt: 2 },
+  { missingContactAt: 1 }, { missingContactAt: 2 }, { unexpectedContactAt: 1 }, { unexpectedContactAt: 2 },
+])('guardas sem confirmação positiva impedem o transporte: %j', async (options) => {
+  const transport = vi.fn();
+  send.mockImplementation(async (_db, _ctx, _input, opts) => {
+    await opts.beforeSend({ id: 'message' });
+    transport(); return { id: 'message', status: 'sent', external_id: 'external' };
+  });
+  const db = database(options);
+  await processCampaign(db.admin, row());
+  await processCampaign(db.admin, row());
+  expect(transport).not.toHaveBeenCalled();
+  expect(db.rpcCalls.find((c) => c.fn === 'finalize_whatsapp_campaign_step')?.args.p_status).toBe('failed');
 });
 
 it.each([

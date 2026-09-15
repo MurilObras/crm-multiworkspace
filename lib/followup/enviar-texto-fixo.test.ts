@@ -13,6 +13,12 @@ const decidir = vi.fn();
 const completeTurnForEnrollment = vi.fn(async (..._a: unknown[]) => {});
 
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: (...a: unknown[]) => sendMessageHandler(...a) }));
+// Aqui se testa preparação/eligibilidade. A identidade durável e o retry do
+// helper real são exercitados por tests/unit/followup-inline-ledger.test.ts.
+vi.mock("@/lib/agent-engine/edge/crm/inline-send", () => ({
+  sendInlineTurnMessage: async (db: unknown, ctx: unknown, _job: string, _contact: string, prepare: () => Promise<unknown>) =>
+    sendMessageHandler(db, ctx, await prepare()),
+}));
 vi.mock("@/lib/automation/start-conversation", () => ({
   ensureConversation: async () => "conv-1",
   sessaoProntaParaEnvio: async () => "sess-1",

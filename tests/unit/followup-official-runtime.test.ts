@@ -19,9 +19,14 @@ const now = new Date("2026-09-15T12:00:00Z");
 const fallback = "11111111-1111-4111-8111-111111111111";
 function setup(provider: string, inbound: Date | null, payload: Record<string, unknown> = {}) {
   const conversation = { id: "conv-1", channel_session_id: "s-1", channel_archived_at: null,
-    resolved_session_id: "s-1", organization_id: "org-1", provider, channel_status: "WORKING", last_inbound_at: inbound };
+    resolved_session_id: "s-1", organization_id: "org-1", contact_id: "contact-1", provider, channel_status: "WORKING", last_inbound_at: inbound };
+  const conversations = [conversation];
+  const enrollment = { id: fallback, organization_id: 'org-1', contact_id: 'contact-1', conversation_id: null as string | null };
   const ledger = { id: 'ledger-1', status: 'accepted', crm_message_id: 'msg-1' };
-  const pool = { query: async (sql: string) => ({ rows: /from conversations/.test(sql) ? [conversation]
+  const pool = { query: async (sql: string, params: unknown[] = []) => ({ rows: /from followup_enrollments/.test(sql)
+    ? (params[0] === enrollment.organization_id && params[1] === enrollment.contact_id && params[2] === enrollment.id ? [enrollment] : [])
+    : /from conversations/.test(sql) ? conversations.filter((c) => c.organization_id === params[0] && c.contact_id === params[1] &&
+      (!sql.includes('and c.id = $3') || c.id === params[2]))
     : /from send_ledger/.test(sql) ? [ledger] : [] }) };
   const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: {
     name: "retorno", language: "pt_BR", status: "APPROVED", parameter_format: "POSITIONAL",
@@ -34,10 +39,32 @@ function setup(provider: string, inbound: Date | null, payload: Record<string, u
   const job = { id: "job-1", organization_id: "org-1", contact_id: "contact-1", payload: {
     followup_enrollment_id: fallback, node_id: "node-1", purpose: "send_message", prompt_hint: "retome", ...payload,
   } } as unknown as JobRow;
-  return { run: () => createFollowupTurnHandler(deps)(job, pool as never, { workerId: "worker-1" }), conversation, ledger };
+  return { run: () => createFollowupTurnHandler(deps)(job, pool as never, { workerId: "worker-1" }), conversation, conversations, enrollment, ledger };
 }
 beforeEach(() => vi.clearAllMocks());
 describe("agent-engine usa o fallback oficial pinado no fluxo", () => {
+  it('enrollment explícito mantém conversa entre múltiplas conexões', async () => {
+    const s = setup('waha', now); s.enrollment.conversation_id = 'conv-1';
+    s.conversations.push({ ...s.conversation, id: 'conv-2', channel_session_id: 's-2', resolved_session_id: 's-2' });
+    await s.run();
+    expect(agent).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.anything(),
+      expect.objectContaining({ conversationId: 'conv-1', channelSessionId: 's-1' }));
+  });
+  it.each([{ organization_id: 'foreign' }, { contact_id: 'other' }])('vínculo de conversa fora do escopo %j bloqueia', async (over) => {
+    const s = setup('waha', now); s.enrollment.conversation_id = 'conv-1'; Object.assign(s.conversation, over);
+    await expect(s.run()).rejects.toThrow('followup_conversation_not_found');
+    expect(agent).not.toHaveBeenCalled(); expect(send).not.toHaveBeenCalled();
+  });
+  it('enrollment de outro contato não dispara o turno', async () => {
+    const s = setup('waha', now); s.enrollment.contact_id = 'other';
+    await expect(s.run()).rejects.toThrow('followup_enrollment_not_found');
+    expect(agent).not.toHaveBeenCalled();
+  });
+  it('sem vínculo explícito mantém fail-closed para múltiplas conversas', async () => {
+    const s = setup('waha', now);
+    s.conversations.push({ ...s.conversation, id: 'conv-2', channel_session_id: 's-2', resolved_session_id: 's-2' });
+    await expect(s.run()).rejects.toThrow('outbound_session_ambiguous');
+  });
   it("template queued não conclui o passo; confirmação posterior permite avançar", async () => {
     const s = setup('meta_cloud', null, { fallback_template_id: fallback });
     send.mockResolvedValueOnce({ kind: 'queued', messageId: 'msg-1', idempotencyKey: 'ledger-1' });

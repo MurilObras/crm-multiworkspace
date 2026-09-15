@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
+import { sendInlineTurnMessage } from "@/lib/agent-engine/edge/crm/inline-send";
 import { ApiError } from "@/lib/api/types";
 import { ensureConversation, sessaoProntaParaEnvio } from "@/lib/automation/start-conversation";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
@@ -59,6 +59,7 @@ export async function enviarTextoFixoPendente(
       .from("job_queue")
       .update({ status: "running" })
       .eq("id", job.id)
+      .eq("organization_id", job.organization_id as string)
       .eq("status", "pending")
       .select("id")
       .maybeSingle();
@@ -66,88 +67,85 @@ export async function enviarTextoFixoPendente(
     if (!claimed) continue;
 
     try {
-      const { data: enr } = await admin
+      const { data: enr, error: enrollmentError } = await admin
         .from("followup_enrollments")
-        .select("current_node_id")
+        .select("current_node_id, conversation_id")
         .eq("id", enrollmentId)
         .eq("organization_id", job.organization_id as string)
+        .eq("contact_id", contactId)
         .maybeSingle();
+      if (enrollmentError) throw new Error('followup_enrollment_lookup_failed');
       if (!enr || enr.current_node_id !== nodeId) {
-        await admin.from("job_queue").update({ status: "done" }).eq("id", job.id);
+        await admin.from("job_queue").update({ status: "done" }).eq("id", job.id)
+          .eq('organization_id', job.organization_id as string);
         continue;
       }
-      const sessionId = await sessaoProntaParaEnvio(admin, job.organization_id as string, contactId);
-      if (!sessionId) {
-        logger.warn("[dev.pipeline] sem sessão de canal — job volta pra pending");
-        await admin.from("job_queue").update({ status: "pending" }).eq("id", job.id);
-        continue;
-      }
-      const conversationId = await ensureConversation(
-        admin,
-        job.organization_id as string,
-        contactId,
-        sessionId,
-      );
+      const message = await sendInlineTurnMessage(admin, {
+        organization_id: job.organization_id as string,
+        actor: { type: 'webhook_source', id: enrollmentId }, requestId: `followup:${job.id}`,
+      }, job.id as string, contactId, async () => {
+        const boundConversationId = (enr.conversation_id as string | null) ?? undefined;
+        const sessionId = await sessaoProntaParaEnvio(admin, job.organization_id as string, contactId, undefined, boundConversationId);
+        if (!sessionId) throw new Error('outbound_session_unavailable');
+        const conversationId = await ensureConversation(
+          admin,
+          job.organization_id as string,
+          contactId,
+          sessionId,
+        );
+        if (boundConversationId && conversationId !== boundConversationId) throw new Error('followup_conversation_mismatch');
 
-      // GATE DE ELEGIBILIDADE — este envio inline BYPASSA `executarTurnoDoAgente`
-      // (é o atalho "sem cron e sem agent-worker"), então precisa da checagem
-      // por conta própria. Mesma regra pura do drain/turno. Canal 'open' → passa.
-      // Bloqueio definitivo → o follow-up NÃO sai e o job vira `done`. Erro de
-      // leitura → job volta pra `pending` (pode ser transitório) — fail-closed:
-      // não envia sem confirmar.
-      const elegib = await decidirElegibilidadeDaConversaViaSupabase(admin, {
-        organizationId: job.organization_id as string,
-        conversationId,
-        agora: new Date(),
-        ttlMs: ttlDaAutorizacaoMs(process.env),
+        // GATE DE ELEGIBILIDADE — este envio inline BYPASSA `executarTurnoDoAgente`
+        // (é o atalho "sem cron e sem agent-worker"), então precisa da checagem
+        // por conta própria. Mesma regra pura do drain/turno. Canal 'open' → passa.
+        // Bloqueio definitivo → o follow-up NÃO sai e o job vira `done`. Erro de
+        // leitura → job volta pra `pending` (pode ser transitório) — fail-closed:
+        // não envia sem confirmar.
+        const elegib = await decidirElegibilidadeDaConversaViaSupabase(admin, {
+          organizationId: job.organization_id as string,
+          conversationId,
+          agora: new Date(),
+          ttlMs: ttlDaAutorizacaoMs(process.env),
+        });
+        if (elegib !== null && !elegib.permite) {
+          logger.info("[followup] texto fixo não enviado — conversa não elegível para IA", {
+            organization_id: job.organization_id,
+            conversation_id: conversationId,
+            motivo: elegib.motivo,
+          });
+          throw new Error('followup_not_eligible');
+        }
+
+        const { data: conversation, error: conversationError } = await admin.from("conversations")
+          .select("last_inbound_at, channel_sessions:channel_session_id(provider)")
+          .eq("organization_id", job.organization_id as string).eq("id", conversationId)
+          .eq("channel_session_id", sessionId).maybeSingle();
+        if (conversationError || !conversation) throw new Error("followup_conversation_lookup_failed");
+        const window = conversation as unknown as {
+          last_inbound_at: string | null; channel_sessions: { provider: ChannelProvider } | null;
+        };
+        if (!window.channel_sessions) throw new Error("followup_session_missing");
+        const official = followupNeedsTemplate(window.channel_sessions.provider, window.last_inbound_at, new Date())
+          ? await loadOfficialFollowupTemplate(admin, job.organization_id as string, sessionId,
+            payload.fallback_template_id, payload.fallback_template_values)
+          : null;
+        return official ? { conversation_id: conversationId, type: "template", body: official.body,
+            template_name: official.template.name, template_language: official.template.language,
+            template_values: official.template.values }
+            : { conversation_id: conversationId, type: "text", body };
       });
-      if (elegib !== null && !elegib.permite) {
-        logger.info("[followup] texto fixo não enviado — conversa não elegível para IA", {
-          organization_id: job.organization_id,
-          conversation_id: conversationId,
-          motivo: elegib.motivo,
-        });
-        await admin.from("job_queue").update({ status: "done" }).eq("id", job.id);
+      if (!['sent', 'delivered', 'read'].includes(message.status)) {
+        const { error: pendingError } = await admin.from('job_queue').update({
+          status: message.status === 'failed' ? 'dead' : 'pending',
+          last_error: message.error_code ?? 'followup_send_not_confirmed',
+        }).eq('id', job.id).eq('organization_id', job.organization_id as string);
+        if (pendingError) throw new Error('followup_job_update_failed');
         continue;
       }
-
-      const { data: conversation, error: conversationError } = await admin.from("conversations")
-        .select("last_inbound_at, channel_sessions:channel_session_id(provider)")
-        .eq("organization_id", job.organization_id as string).eq("id", conversationId)
-        .eq("channel_session_id", sessionId).maybeSingle();
-      if (conversationError || !conversation) throw new Error("followup_conversation_lookup_failed");
-      const window = conversation as unknown as {
-        last_inbound_at: string | null; channel_sessions: { provider: ChannelProvider } | null;
-      };
-      if (!window.channel_sessions) throw new Error("followup_session_missing");
-      const official = followupNeedsTemplate(window.channel_sessions.provider, window.last_inbound_at, new Date())
-        ? await loadOfficialFollowupTemplate(admin, job.organization_id as string, sessionId,
-          payload.fallback_template_id, payload.fallback_template_values)
-        : null;
-      const message = await sendMessageHandler(
-        admin,
-        {
-          organization_id: job.organization_id as string,
-          actor: { type: "webhook_source", id: enrollmentId },
-          requestId: `followup:${job.id}`,
-        },
-        official ? { conversation_id: conversationId, type: "template", body: official.body,
-          template_name: official.template.name, template_language: official.template.language,
-          template_values: official.template.values }
-          : { conversation_id: conversationId, type: "text", body },
-      );
-      if (message.status !== "sent") throw new Error(message.error_code ?? "followup_send_not_sent");
       enviados++;
-      try {
-        await completeTurnForEnrollment(ponte, job.organization_id as string, enrollmentId, nodeId, {
-          kind: "sent",
-        });
-      } catch (err) {
-        logger.warn("[dev.pipeline] completeTurn apos envio", {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-      const { error: doneErr } = await admin.from("job_queue").update({ status: "done" }).eq("id", job.id);
+      await completeTurnForEnrollment(ponte, job.organization_id as string, enrollmentId, nodeId, { kind: "sent" });
+      const { error: doneErr } = await admin.from("job_queue").update({ status: "done" }).eq("id", job.id)
+        .eq('organization_id', job.organization_id as string);
       if (doneErr) throw new Error(doneErr.message);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
@@ -155,8 +153,8 @@ export async function enviarTextoFixoPendente(
       logger.warn("[dev.pipeline] envio inline falhou", { error: message });
       await admin
         .from("job_queue")
-        .update({ status: terminal ? "dead" : "pending", last_error: message.slice(0, 300) })
-        .eq("id", job.id);
+        .update({ status: message === 'followup_not_eligible' ? 'done' : terminal ? "dead" : "pending", last_error: message.slice(0, 300) })
+        .eq("id", job.id).eq('organization_id', job.organization_id as string);
     }
   }
   return enviados;

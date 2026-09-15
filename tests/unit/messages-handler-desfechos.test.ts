@@ -214,6 +214,35 @@ afterEach(() => {
 });
 
 describe('sendMessageHandler — os 6 desfechos do envio', () => {
+  it('marca a entrada no transporte antes de qualquer envio remoto', async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn(async () => Response.json({ key: { id: 'INLINE' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const beforeTransport = vi.fn(async () => { expect(fetchMock).not.toHaveBeenCalled(); });
+    const message = await sendMessageHandler(makeSupabase(conversationRow()), ctx, textInput(), {
+      beforeSend: async () => {}, beforeTransport,
+    });
+    expect(beforeTransport).toHaveBeenCalledOnce(); expect(message.status).toBe('sent');
+  });
+
+  it('falha na marcação de transporte impede a rede', async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
+    const message = await sendMessageHandler(makeSupabase(conversationRow()), ctx, textInput(), {
+      beforeSend: async () => {}, beforeTransport: async () => { throw new Error('inline_transport_claim_failed'); },
+    });
+    expect(message.status).toBe('failed'); expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('fila por canal sem configuração não é marcada como transporte iniciado', async () => {
+    wahaConfigured(false);
+    const beforeTransport = vi.fn(async () => {});
+    const message = await sendMessageHandler(makeSupabase(conversationRow()), ctx, textInput(), {
+      beforeSend: async () => {}, beforeTransport,
+    });
+    expect(message.status).toBe('queued'); expect(beforeTransport).not.toHaveBeenCalled();
+  });
+
   it('campanha: a guarda recebe a mensagem persistida antes do transporte', async () => {
     wahaConfigured(true);
     const fetchMock = vi.fn(async () => Response.json({ key: { id: 'CAMPAIGN' } }));

@@ -264,7 +264,7 @@ export async function sendMessageHandler(
   supabase: SB,
   ctx: HandlerCtx,
   input: SendMessageInput,
-  options?: { beforeSend: (message: Message) => Promise<void> },
+  options?: { beforeSend: (message: Message) => Promise<void>; beforeTransport?: (message: Message) => Promise<void> },
 ): Promise<Message> {
   // `archived_at` entra pelo helper tolerante porque este é O caminho de saída do
   // sistema inteiro (UI, automação, MCP e o agente passam por aqui): num clone que
@@ -598,6 +598,9 @@ export async function sendMessageHandler(
     if (updated) message = updated as unknown as Message;
   } else {
     try {
+      // Dono idempotente pode registrar a entrada no transporte antes da rede.
+      // Assim, queda após aceite não deixa a tentativa como fila ainda não enviada.
+      await options?.beforeTransport?.(message);
       // O que separa mídia de texto é a presença de `media` no envelope — o
       // adapter preserva o mesmo branch (e a mesma mensagem de erro de cada
       // método) do outro lado do seam.
@@ -767,6 +770,7 @@ export async function sendMessageHandler(
         const { data: emFila } = await supabase
           .from("messages")
           .update({
+            status: "queued",
             metadata: { ...(message.metadata ?? {}), queued_reason: adapter.codes.notConfigured },
           })
           .eq("id", message.id)

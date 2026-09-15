@@ -246,7 +246,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
     }
     const payload = followupTurnPayloadSchema.parse(job.payload);
 
-    const target = await resolveSendTarget(pool, tenantId, leadId);
+    const target = await resolveSendTarget(pool, tenantId, leadId, payload.followup_enrollment_id);
 
     const clock = deps.clock ?? ((): Date => new Date());
 
@@ -321,7 +321,17 @@ async function resolveSendTarget(
   pool: pg.Pool,
   tenantId: string,
   contactId: string,
+  enrollmentId?: string,
 ): Promise<ReentrySendTarget> {
+  let conversationId: string | null = null;
+  if (enrollmentId) {
+    const { rows: enrollments } = await pool.query<{ conversation_id: string | null }>(
+      'select conversation_id from followup_enrollments where organization_id = $1 and contact_id = $2 and id = $3',
+      [tenantId, contactId, enrollmentId],
+    );
+    if (!enrollments[0]) throw new Error('followup_enrollment_not_found');
+    conversationId = enrollments[0].conversation_id;
+  }
   const { rows } = await pool.query<{
     id: string;
     channel_session_id: string | null;
@@ -339,11 +349,13 @@ async function resolveSendTarget(
        from conversations c
        left join channel_sessions cs
          on cs.id = c.channel_session_id and cs.organization_id = c.organization_id
-      where c.organization_id = $1 and c.contact_id = $2 and c.is_group = false
+       where c.organization_id = $1 and c.contact_id = $2 and c.is_group = false
+         ${conversationId ? 'and c.id = $3' : ''}
        order by c.last_message_at desc nulls last, c.id`,
-    [tenantId, contactId],
+    conversationId ? [tenantId, contactId, conversationId] : [tenantId, contactId],
   );
   const conv = rows[0];
+  if (conversationId && !conv) throw new Error('followup_conversation_not_found');
   if (new Set(rows.map((r) => r.channel_session_id)).size > 1) {
     throw new Error('outbound_session_ambiguous');
   }

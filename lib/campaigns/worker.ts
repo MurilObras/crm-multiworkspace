@@ -69,7 +69,7 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
   let messageId: string | null = null;
 
   const loadContact = () => admin.from("contacts")
-    .select("id, phone_number, is_blocked, consent, is_anonymized, is_merged_into")
+    .select("id, organization_id, phone_number, is_blocked, consent, is_anonymized, is_merged_into")
     .eq("organization_id", org).eq("id", contactId).maybeSingle();
 
   try {
@@ -78,10 +78,14 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
       reason = "campaign_step_invalid";
       throw new Error(reason);
     }
-    const { data: contact } = await loadContact();
+    const { data: contact, error: contactError } = await loadContact();
+    if (contactError) { reason = 'contact_read_failed'; throw new Error(reason); }
     if (!contact) {
       reason = "contact_missing";
       throw new Error(reason);
+    }
+    if (contact.id !== contactId || contact.organization_id !== org || typeof contact.is_blocked !== 'boolean') {
+      reason = 'contact_mismatch'; throw new Error(reason);
     }
     // Recusa tem precedencia: um contato bloqueado (ou que recusou marketing)
     // nunca recebe nenhum passo.
@@ -100,10 +104,11 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
     }
 
     // Resposta do contato apos o inicio da campanha interrompe os proximos passos.
-    const { data: replied } = await admin.from("messages").select("id")
+    const { data: replied, error: replyError } = await admin.from("messages").select("id")
       .eq("organization_id", org).eq("contact_id", contactId)
       .eq("channel_session_id", campaign.channel_session_id)
       .eq("direction", "inbound").gt("created_at", campaign.started_at).limit(1).maybeSingle();
+    if (replyError) { reason = 'reply_check_failed'; throw new Error(reason); }
     if (replied) {
       status = "stopped_reply";
       reason = "contact_replied";
@@ -149,11 +154,22 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
         .eq("contact_id", contactId).eq("step_index", stepIndex).eq("id", stepId)
         .eq("status", "failed").is("message_id", null).select("id").single();
       if (linkError || !linked) throw new Error("campaign_message_link_failed");
-      const { data: recontact } = await loadContact();
-      if (recontact?.is_blocked || recontact?.consent?.marketing?.declined_at) {
+      const { data: recontact, error: recontactError } = await loadContact();
+      if (recontactError) { reason = 'contact_recheck_failed'; throw new Error(reason); }
+      if (!recontact || recontact.id !== contactId || recontact.organization_id !== org || typeof recontact.is_blocked !== 'boolean') {
+        reason = 'contact_recheck_mismatch'; throw new Error(reason);
+      }
+      if (recontact.is_blocked || recontact.consent?.marketing?.declined_at) {
         status = "skipped_opt_out";
         reason = "contact_opt_out";
         throw new Error(reason);
+      }
+      const recheck = checarGuardasDeContato({
+        admin, organizationId: org, ruleId: campaignId, ruleName: campaign.name,
+        event: row, context: { contact: recontact }, requestId: row.id,
+      });
+      if (!recheck.ok || recontact.is_anonymized || recontact.is_merged_into || recontact.phone_number !== contact.phone_number) {
+        reason = 'contact_changed_before_send'; throw new Error(reason);
       }
     } });
     messageId = message.id;

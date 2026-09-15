@@ -42,11 +42,20 @@ export function selectOutboundSession(rows: OutboundSession[], input: OutboundSe
  * os canais da organização. Vínculo inutilizável não autoriza fallback. */
 export async function resolveOutboundSession(
   db: SupabaseClient,
-  input: OutboundSelection & { contactId?: string },
+  input: OutboundSelection & { contactId?: string; conversationId?: string },
 ): Promise<OutboundSession | null> {
   if (input.sessionId !== undefined && !input.sessionId) return null;
   let sessionId = input.sessionId;
-  if (!sessionId && input.contactId) {
+  if (input.conversationId !== undefined) {
+    if (!input.conversationId) return null;
+    let q = db.from('conversations').select('channel_session_id')
+      .eq('id', input.conversationId).eq('organization_id', input.organizationId).eq('is_group', false);
+    if (input.contactId) q = q.eq('contact_id', input.contactId);
+    const { data, error } = await q.maybeSingle();
+    if (error) throw new Error(`outbound_conversation_lookup_failed: ${error.message}`);
+    if (!data?.channel_session_id || (sessionId && sessionId !== data.channel_session_id)) return null;
+    sessionId = data.channel_session_id;
+  } else if (!sessionId && input.contactId) {
     const { data, error } = await db.from("conversations")
       .select("channel_session_id").eq("organization_id", input.organizationId)
       .eq("contact_id", input.contactId).eq("is_group", false);

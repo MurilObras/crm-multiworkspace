@@ -21,8 +21,9 @@ export async function sessaoProntaParaEnvio(
   organizationId: string,
   contactId?: string,
   sessionId?: string,
+  conversationId?: string,
 ): Promise<string | null> {
-  return (await resolveOutboundSession(supabase, { organizationId, contactId, sessionId, kind: "text" }))?.id ?? null;
+  return (await resolveOutboundSession(supabase, { organizationId, contactId, sessionId, conversationId, kind: "text" }))?.id ?? null;
 }
 
 export async function ensureConversation(
