@@ -74,7 +74,7 @@ export async function enviarTextoFixoPendente(
         await admin.from("job_queue").update({ status: "done" }).eq("id", job.id);
         continue;
       }
-      const sessionId = await sessaoProntaParaEnvio(admin, job.organization_id as string);
+      const sessionId = await sessaoProntaParaEnvio(admin, job.organization_id as string, contactId);
       if (!sessionId) {
         logger.warn("[dev.pipeline] sem sessão de canal — job volta pra pending");
         await admin.from("job_queue").update({ status: "pending" }).eq("id", job.id);

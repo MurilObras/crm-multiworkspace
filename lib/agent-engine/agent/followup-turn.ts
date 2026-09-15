@@ -17,6 +17,7 @@
  */
 import { z } from 'zod';
 import type pg from 'pg';
+import { selectOutboundSession, type OutboundSession } from '@/lib/channels/resolve-outbound';
 
 import { withFields } from '../obs/logger';
 import type { JobRow } from '../queue/queue';
@@ -305,7 +306,7 @@ interface ReentrySendTarget {
 /**
  * Conversa 1:1 + sessão de envio. Captação por webhook não passa pelo WAHA, então
  * o contato chega sem thread — o follow-up de recepção é o primeiro outbound e
- * precisa ABRIR a conversa no número WORKING da org (mesmo papel de
+ * precisa ABRIR a conversa no único número elegível da org (mesmo papel de
  * `ensureConversation` na ação send_whatsapp).
  *
  * `to_jsonb(cs) ->> 'archived_at'` em vez de `cs.archived_at`: clone sem a
@@ -320,21 +321,35 @@ async function resolveSendTarget(
     id: string;
     channel_session_id: string | null;
     channel_archived_at: string | null;
+    resolved_session_id: string | null;
+    organization_id: string;
+    provider: OutboundSession['provider'];
+    channel_status: string;
   }>(
     `select c.id,
-            c.channel_session_id,
+             c.channel_session_id,
+             cs.id as resolved_session_id, cs.organization_id, cs.provider, cs.status as channel_status,
             to_jsonb(cs) ->> 'archived_at' as channel_archived_at
        from conversations c
        left join channel_sessions cs
          on cs.id = c.channel_session_id and cs.organization_id = c.organization_id
       where c.organization_id = $1 and c.contact_id = $2 and c.is_group = false
-      order by c.last_message_at desc nulls last limit 1`,
+       order by c.last_message_at desc nulls last, c.id`,
     [tenantId, contactId],
   );
   const conv = rows[0];
+  if (new Set(rows.map((r) => r.channel_session_id)).size > 1) {
+    throw new Error('outbound_session_ambiguous');
+  }
   if (conv !== undefined && conv.channel_session_id !== null) {
     if (conv.channel_archived_at !== null) {
       throw new Error('followup_turn para canal arquivado — o número foi excluído da Central de Conexões');
+    }
+    if (!conv.resolved_session_id || !selectOutboundSession([{
+      id: conv.resolved_session_id, organization_id: conv.organization_id,
+      provider: conv.provider, status: conv.channel_status, archived_at: conv.channel_archived_at,
+    }], { organizationId: tenantId, sessionId: conv.channel_session_id, kind: 'text' })) {
+      throw new Error('outbound_session_unavailable');
     }
     return {
       tenantId,
@@ -344,16 +359,17 @@ async function resolveSendTarget(
     };
   }
 
-  const session = await pool.query<{ id: string }>(
-    `select cs.id
+  if (conv) throw new Error('outbound_session_unavailable');
+  const session = await pool.query<OutboundSession>(
+    `select cs.id, cs.organization_id, cs.provider, cs.status,
+            to_jsonb(cs) ->> 'archived_at' as archived_at
        from channel_sessions cs
       where cs.organization_id = $1
         and (to_jsonb(cs) ->> 'archived_at') is null
-      order by case when cs.status = 'WORKING' then 0 else 1 end, cs.created_at asc
-      limit 1`,
+       order by cs.created_at asc, cs.id`,
     [tenantId],
   );
-  const channelSessionId = session.rows[0]?.id;
+  const channelSessionId = selectOutboundSession(session.rows, { organizationId: tenantId, kind: 'text' })?.id;
   if (channelSessionId === undefined) {
     throw new Error('followup_turn sem conversa/número do contato — impossível retomar o contato');
   }
