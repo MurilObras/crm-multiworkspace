@@ -3,7 +3,8 @@ import type { HandlerCtx } from '@/lib/api/handlers/types';
 import { ApiError } from '@/lib/api/types';
 import type { SendMessageInput as SinkInput } from '@/lib/schemas';
 import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
-import { OutboundLeaseLostError } from '@/lib/channels/delivery-error';
+import { OutboundLeaseLostError, type OutboundAttemptWrite } from '@/lib/channels/delivery-error';
+import type { Message } from '@/lib/types/messaging';
 import { cancelJob, type Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
 import type { SendMessageInput, SendOutcome } from './send-message';
@@ -52,6 +53,36 @@ export async function executeOutboundAttempt(
     if (rows.length > 1) throw new Error('outbound_duplicate_identity');
     return rows[0] ?? null;
   };
+  // O mesmo fence protege resultado, erro e requeue. Em particular, o booleano
+  // local "transportStarted=false" de A não autoriza apagar o started de B.
+  const writeAttemptState = async (id: string, change: OutboundAttemptWrite): Promise<Message> => {
+    const { rows } = await db.query<Message>(
+      `with owner as materialized (
+         select id from job_queue where id=$1 and organization_id=$2 and locked_by=$3
+           and contact_id is not distinct from $10 and status='running' for update
+       ) update messages m set
+         status=coalesce($8::jsonb->>'status',m.status),
+         error_code=case when $8::jsonb ? 'error_code' then $8::jsonb->>'error_code' else m.error_code end,
+         error_message=case when $8::jsonb ? 'error_message' then $8::jsonb->>'error_message' else m.error_message end,
+         external_id=case when $8::jsonb ? 'external_id' then $8::jsonb->>'external_id' else m.external_id end,
+         ack=case when $8::jsonb ? 'ack' then ($8::jsonb->>'ack')::integer else m.ack end,
+         template_name=case when $8::jsonb ? 'template_name' then $8::jsonb->>'template_name' else m.template_name end,
+         template_language=case when $8::jsonb ? 'template_language' then $8::jsonb->>'template_language' else m.template_language end,
+         metadata=coalesce(m.metadata,'{}'::jsonb) || $6::jsonb || jsonb_build_object(
+           'outbound_attempt',coalesce(m.metadata->'outbound_attempt','{}'::jsonb) || $7::jsonb)
+       where m.id=$4 and m.organization_id=$2 and m.contact_id is not distinct from $10
+         and m.metadata->>'idempotency_key'=$9
+         and (m.metadata->'outbound_attempt'->>'phase') is not distinct from $5::text
+         and (m.status not in ('sent','delivered','read') or m.external_id is null)
+         and exists(select 1 from owner) returning m.*`,
+      [job, org, owner, id, change.expectedPhase,
+        JSON.stringify(change.queuedReason === undefined ? {} : { queued_reason: change.queuedReason }),
+        JSON.stringify({ phase: change.phase, ...(change.retryable === undefined ? {} : { retryable: change.retryable }) }),
+        JSON.stringify(change.patch), key, contact],
+    );
+    if (!rows[0]) throw new OutboundLeaseLostError();
+    return rows[0];
+  };
   const saveLedger = async (status: string, messageId: string | null, error: string | null) => {
     const {rows} = await db.query(`with owner as materialized (
       select id from job_queue where id=$6 and organization_id=$5 and status='running' and locked_by=$8 for update
@@ -74,9 +105,16 @@ export async function executeOutboundAttempt(
     }
     const reason = decision === 'uncertain' ? 'outbound_delivery_uncertain' : 'outbound_rejected_terminal';
     if (message && decision === 'uncertain') {
-      await db.query(`update messages set status='failed',error_code=$1,
-        metadata=jsonb_set(coalesce(metadata,'{}'::jsonb),'{outbound_attempt,phase}','"uncertain"'::jsonb)
-        where id=$2 and organization_id=$3 and (status not in ('sent','delivered','read') or external_id is null)`, [reason, message.id, org]);
+      const phase = (message.metadata?.outbound_attempt as { phase?: string } | undefined)?.phase ?? null;
+      try {
+        await writeAttemptState(message.id, { expectedPhase: phase, phase: 'uncertain', patch: { status: 'failed', error_code: reason } });
+      } catch (error) {
+        if (error instanceof OutboundLeaseLostError) {
+          const latest = await readMessage();
+          if (decideOutboundRecovery(ledger!.status, latest) === 'confirmed') return settle(latest, afterSend);
+        }
+        throw error;
+      }
       const latest = await readMessage();
       if (decideOutboundRecovery(ledger!.status, latest) === 'confirmed') return settle(latest, afterSend);
     }
@@ -102,6 +140,7 @@ export async function executeOutboundAttempt(
         outbound_attempt: { phase: 'prepared', input: { ...prepared, metadata: undefined } } },
     }, {
       messageId,
+      writeAttemptState: (message, change) => writeAttemptState(message.id, change),
       beforeSend: async () => {
         const { rows } = await db.query<{ id: string }>(
           `with owner as materialized (select id from job_queue where id=$1 and organization_id=$2

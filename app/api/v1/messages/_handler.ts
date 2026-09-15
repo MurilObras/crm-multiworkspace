@@ -11,7 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
-import { DeliveryRejectedError, OutboundLeaseLostError } from "@/lib/channels/delivery-error";
+import { DeliveryRejectedError, OutboundLeaseLostError, type OutboundAttemptWrite } from "@/lib/channels/delivery-error";
 import { isWindowOpen } from "@/lib/agent-engine/guardrails/messaging-window";
 import {
   capabilitiesOf,
@@ -265,7 +265,12 @@ export async function sendMessageHandler(
   supabase: SB,
   ctx: HandlerCtx,
   input: SendMessageInput,
-  options?: { messageId?: string; beforeSend: (message: Message) => Promise<void>; beforeTransport?: (message: Message) => Promise<void> },
+  options?: {
+    messageId?: string;
+    beforeSend: (message: Message) => Promise<void>;
+    beforeTransport?: (message: Message) => Promise<void>;
+    writeAttemptState?: (message: Message, change: OutboundAttemptWrite) => Promise<Message>;
+  },
 ): Promise<Message> {
   // `archived_at` entra pelo helper tolerante porque este é O caminho de saída do
   // sistema inteiro (UI, automação, MCP e o agente passam por aqui): num clone que
@@ -501,16 +506,36 @@ export async function sendMessageHandler(
   let message = created as unknown as Message;
   if (options?.messageId && ['sent', 'delivered', 'read'].includes(message.status) && message.external_id) return message;
 
+  // Tentativas do ledger escrevem pelo fence transacional do executor. Uma
+  // checagem antes deste UPDATE não bastaria: o lease pode mudar durante o await.
+  const writeState = async (
+    patch: Record<string, unknown>, expectedPhase: 'prepared' | 'started' = 'prepared',
+    phase: OutboundAttemptWrite['phase'] = expectedPhase, retryable?: boolean,
+  ) => {
+    if (options?.writeAttemptState) {
+      const { metadata, ...fields } = patch;
+      const queuedReason = (metadata as Record<string, unknown> | undefined)?.queued_reason;
+      return { data: await options.writeAttemptState(message, {
+        patch: fields, expectedPhase, phase, retryable,
+        ...(typeof queuedReason === 'string' ? { queuedReason } : {}),
+      }), error: null };
+    }
+    return supabase.from('messages').update(patch).eq('id', message.id)
+      .eq('organization_id', ctx.organization_id).select(MSG_COLS).maybeSingle();
+  };
+
   // Campanha vincula a linha e repete opt-out antes de qualquer transporte.
   if (options) {
     try {
       await options.beforeSend(message);
     } catch (error) {
       if (error instanceof OutboundLeaseLostError) throw error;
-      await supabase.from("messages").update({
+      const rejected = {
         status: "failed", error_code: "send_guard_rejected",
         error_message: "Envio interrompido antes do transporte.",
-      }).eq("id", message.id).eq("organization_id", ctx.organization_id);
+      };
+      if (options.writeAttemptState) await writeState(rejected);
+      else await supabase.from('messages').update(rejected).eq('id', message.id).eq('organization_id', ctx.organization_id);
       throw error;
     }
   }
@@ -540,16 +565,11 @@ export async function sendMessageHandler(
     // e é o que o ledger do agente lê como desfecho TERMINAL — em `queued` o
     // follow-up ficaria retentando contra um número que não existe mais.
     // Vem ANTES de `isConfigured`: um canal excluído não espera configuração.
-    const { data: updated } = await supabase
-      .from("messages")
-      .update({
+    const { data: updated } = await writeState({
         status: "failed",
         error_code: "channel_archived",
         error_message: "Este número foi excluído da Central de Conexões.",
-      })
-      .eq("id", message.id)
-      .select(MSG_COLS)
-      .maybeSingle();
+      });
     if (updated) message = updated as unknown as Message;
   } else if (
     input.type !== "template" &&
@@ -560,57 +580,36 @@ export async function sendMessageHandler(
     // já roda antes daqui; repeti-la consumiria pacing/quotas duas vezes.
     // Janela fechada não espera configuração nem sessão: falha terminal na linha,
     // nunca queued (que reagendaria sem consumir attempts). Só inbound reabre.
-    const { data: updated, error } = await supabase
-      .from("messages")
-      .update({
+    const { data: updated, error } = await writeState({
         status: "failed",
         error_code: "messaging_window_closed",
         error_message: "Janela de atendimento encerrada. Envie um template aprovado ou aguarde uma resposta do contato.",
-      })
-      .eq("id", message.id)
-      .eq("organization_id", ctx.organization_id)
-      .select(MSG_COLS)
-      .maybeSingle();
+      });
     if (error || !updated) {
       throw new ApiError(500, "internal_error", undefined, ctx.requestId, error?.message ?? "message_update_failed");
     }
     message = updated as unknown as Message;
   } else if (!adapter.isConfigured({ channelSessionId: c.channel_session_id })) {
-    const { data: updated } = await supabase
-      .from("messages")
-      .update({
+    const { data: updated } = await writeState({
         status: 'queued',
         metadata: { ...(message.metadata ?? {}), queued_reason: adapter.codes.notConfigured },
-      })
-      .eq("id", message.id)
-      .select(MSG_COLS)
-      .maybeSingle();
+      });
     if (updated) message = updated as unknown as Message;
   } else if (!chatId) {
-    const { data: updated } = await supabase
-      .from("messages")
-      .update({
+    const { data: updated } = await writeState({
         status: "failed",
         error_code: "missing_phone_number",
         error_message: "Contato sem telefone para envio WhatsApp.",
-      })
-      .eq("id", message.id)
-      .select(MSG_COLS)
-      .maybeSingle();
+      });
     if (updated) message = updated as unknown as Message;
   } else if (!c.channel_sessions || c.channel_sessions.status !== "WORKING") {
-    const { data: updated } = await supabase
-      .from("messages")
-      .update({
+    const { data: updated } = await writeState({
         status: 'queued',
         metadata: {
           ...(message.metadata ?? {}),
           queued_reason: "channel_session_not_working",
         },
-      })
-      .eq("id", message.id)
-      .select(MSG_COLS)
-      .maybeSingle();
+      });
     if (updated) message = updated as unknown as Message;
   } else {
     let transportStarted = false;
@@ -753,9 +752,7 @@ export async function sendMessageHandler(
         externalId,
         externalId ? (adapter.echoExternalIds?.({ externalId, recipient: chatId }) ?? [externalId]) : [],
       );
-      const { data: updated } = await supabase
-        .from("messages")
-        .update({
+      const { data: updated } = await writeState({
           status: "sent",
           external_id: externalId,
           ack: 0,
@@ -764,10 +761,7 @@ export async function sendMessageHandler(
           ...(input.type === "template"
             ? { template_name: input.template_name, template_language: input.template_language }
             : {}),
-        })
-        .eq("id", message.id)
-        .select(MSG_COLS)
-        .maybeSingle();
+        }, 'started');
       if (updated) message = updated as unknown as Message;
     } catch (err) {
       if (err instanceof OutboundLeaseLostError) throw err;
@@ -790,34 +784,25 @@ export async function sendMessageHandler(
       // Quem sabe é `send()`, que pode consultar o banco — então ele lança, e a
       // tradução do desfecho acontece aqui.
       if (msg.startsWith(adapter.codes.notConfigured)) {
-        const { data: emFila } = await supabase
-          .from("messages")
-          .update({
+        const { data: emFila } = await writeState({
             status: "queued",
             metadata: { ...(message.metadata ?? {}), queued_reason: adapter.codes.notConfigured },
-          })
-          .eq("id", message.id)
-          .select(MSG_COLS)
-          .maybeSingle();
+          }, transportStarted ? 'started' : 'prepared', 'prepared');
         if (emFila) message = emFila as unknown as Message;
         return message;
       }
 
-      const { data: updated } = await supabase
-        .from("messages")
-        .update({
+      const phase = !transportStarted ? 'prepared' : err instanceof DeliveryRejectedError ? 'rejected' : 'uncertain';
+      const { data: updated } = await writeState({
           status: "failed",
           error_code: code,
           error_message: msg,
           ...(options?.messageId ? { metadata: { ...message.metadata, outbound_attempt: {
             ...(message.metadata?.outbound_attempt as Record<string, unknown>),
-            phase: !transportStarted ? 'prepared' : err instanceof DeliveryRejectedError ? 'rejected' : 'uncertain',
+            phase,
             ...(err instanceof DeliveryRejectedError ? { retryable: err.retryable } : {}),
           } } } : {}),
-        })
-        .eq("id", message.id)
-        .select(MSG_COLS)
-        .maybeSingle();
+        }, transportStarted ? 'started' : 'prepared', phase, err instanceof DeliveryRejectedError ? err.retryable : undefined);
       if (updated) message = updated as unknown as Message;
     }
   }

@@ -368,9 +368,19 @@ describe("janela universal no sink de outbound", () => {
   it("agent-engine registra failed no ledger e não reagenda como queued", async () => {
     const send = vi.spyOn(getAdapter("meta_cloud"), "send");
     const { supabase, estado } = makeSupabase({ ...conversaCompleta({ provider: "meta_cloud" }), last_inbound_at: null });
-    const query = vi.fn(async (sql: string, _args?: unknown[]) => ({
-      rows: sql.startsWith('select id,status,external_id') ? (estado.message ? [estado.message] : []) : [{ id: 'ledger-1', status: 'requested' }], rowCount: 1,
-    }));
+    const query = vi.fn(async (sql: string, args?: unknown[]) => {
+      if (sql.includes('update messages m set')) {
+        if (!estado.message) throw new Error('fake_pg: message_missing');
+        const metadata = (estado.message.metadata ?? {}) as Row;
+        Object.assign(estado.message, JSON.parse(String(args?.[7])), { metadata: {
+          ...metadata, ...JSON.parse(String(args?.[5])),
+          outbound_attempt: { ...(metadata.outbound_attempt as Row), ...JSON.parse(String(args?.[6])) },
+        } });
+        return {rows:[{...estado.message}],rowCount:1};
+      }
+      return { rows: sql.startsWith('select id,status,external_id') ? (estado.message ? [estado.message] : [])
+        : [{ id: 'ledger-1', status: 'requested' }], rowCount: 1 };
+    });
     const db = { query } as unknown as Queryable;
 
     const outcome = await sendTurnMessage(db, { supabase }, {

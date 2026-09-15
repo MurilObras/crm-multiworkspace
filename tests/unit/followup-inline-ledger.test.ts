@@ -10,6 +10,7 @@ import { DeliveryRejectedError } from '@/lib/channels/delivery-error';
 import { recoverStuckMessages } from '@/app/api/v1/cron/recover-stuck-messages/route';
 import { decideOutboundRecovery } from '@/lib/agent-engine/edge/crm/outbound-recovery';
 import { enviarTextoFixoPendente } from '@/lib/followup/enviar-texto-fixo';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 vi.mock('@/lib/audit', () => ({ audit: vi.fn(async () => {}) }));
 vi.mock('@/lib/ai/elegibilidade/consulta-supabase', () => ({ decidirElegibilidadeDaConversaViaSupabase: async () => ({ permite:true }) }));
@@ -39,6 +40,107 @@ async function snapshot(status?: string, phase?: string, ledgerStatus = 'request
     }), ['sent','delivered','read'].includes(status)?'confirmed-id':null,SESSION]);
 }
 async function expire() { await db.pool.query("update job_queue set locked_at=now()-interval '1 hour' where id=$1",[JOB]); return reapExpiredJobs(db.pool,{visibilityTimeoutMs:1000}); }
+
+function signal() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
+}
+
+async function stalePreflightScenario(requeue = false) {
+  await db.pool.query('alter table channel_sessions add column if not exists zernio_account_id text');
+  await db.pool.query('update channel_sessions set provider=$1,zernio_account_id=$2', ['zernio','account']);
+  await db.pool.query(`create table if not exists meta_templates(organization_id uuid,channel_session_id uuid,
+    name text,language text,status text,contract_hash text,components jsonb,parameter_format text)`);
+  await db.pool.query('truncate meta_templates');
+  const definition = { name:'template',language:'pt_BR',status:'APPROVED',contract_hash:'hash',components:[{type:'BODY',text:'Oi'}] };
+  await db.pool.query('insert into meta_templates values($1,$2,$3,$4,$5,$6,$7,$8)',
+    [ORG,SESSION,definition.name,definition.language,definition.status,definition.contract_hash,JSON.stringify(definition.components),'POSITIONAL']);
+  const aGate = signal(); const aReady = signal(); const bGate = signal(); const bReady = signal();
+  const adapter = getAdapter('zernio');
+  vi.spyOn(adapter,'isConfigured').mockReturnValue(true);
+  let calls = 0;
+  const remote = vi.spyOn(adapter,'sendTemplate').mockImplementation(async () => {
+    const id = `network-${++calls}`;
+    if (calls === 1) { bReady.release(); await bGate.promise; }
+    return { externalId:id };
+  });
+  const aDb = { ...db.supabase, from(table: string) {
+    const q = db.supabase.from(table) as unknown as {
+      maybeSingle: () => Promise<{data: typeof definition | null; error: null}>;
+    };
+    if (table === 'meta_templates') q.maybeSingle = async () => {
+      aReady.release(); await aGate.promise;
+      if (requeue) throw new Error(adapter.codes.notConfigured);
+      return {data:{...definition,status:'PENDING'},error:null};
+    };
+    return q;
+  } } as unknown as SupabaseClient;
+  const attempt = (owner: string, supabase = db.supabase) => sendTurnMessage(db.pool,{supabase},{
+    ...input(owner),template:{name:'template',language:'pt_BR',values:{}},
+  });
+  const readState = async () => ({
+    messages:(await db.pool.query('select id,status,metadata,error_code,error_message,external_id from messages')).rows,
+    ledger:(await db.pool.query('select id,status,crm_message_id,body_hash,last_error from send_ledger')).rows,
+  });
+  return {aDb,aGate,aReady,bGate,bReady,remote,attempt,readState};
+}
+
+describe('N1 — owner expirado não reclassifica a tentativa atual', () => {
+  it.each([false,true])('A → B → A tardio → C mantém um único transporte (requeue=%s)', async (requeue) => {
+    const s = await stalePreflightScenario(requeue);
+    await claim('A');
+    const a = s.attempt('A',s.aDb).catch((error: Error) => error);
+    let b: Promise<unknown> | undefined;
+    try {
+      await s.aReady.promise;
+      await expire(); await claim('B');
+      b = s.attempt('B').catch((error: Error) => error);
+      await s.bReady.promise; // B já chamou a rede; sua confirmação ainda está pendente.
+      const started = await s.readState();
+      expect(started.messages[0]).toMatchObject({status:'sending',metadata:{outbound_attempt:{phase:'started'}}});
+      s.aGate.release();
+      expect(await a).toMatchObject({message:'outbound_lease_lost'});
+      expect(await s.readState()).toEqual(started); // A não escreveu message nem ledger.
+      expect((await db.pool.query('select status,locked_by from job_queue')).rows[0]).toEqual({status:'running',locked_by:'B'});
+      await expire(); await claim('C');
+      expect((await s.attempt('C')).kind).toBe('failed');
+      expect(s.remote).toHaveBeenCalledOnce();
+      const uncertain = await s.readState();
+      expect(uncertain.messages[0]).toMatchObject({status:'failed',metadata:{outbound_attempt:{phase:'uncertain'}}});
+      expect(uncertain.ledger[0]?.last_error).toBe('outbound_delivery_uncertain');
+      // Nem o sucesso tardio de B pode escrever sobre a execução de C.
+      s.bGate.release();
+      expect(await b).toMatchObject({message:'outbound_lease_lost'});
+      expect(await s.readState()).toEqual(uncertain);
+    } finally {
+      s.aGate.release(); s.bGate.release(); await Promise.allSettled([a,...(b?[b]:[])]);
+    }
+  });
+
+  it('owner antigo não escreve mesmo quando a fase ainda é prepared', async () => {
+    const s = await stalePreflightScenario(); await claim('A');
+    const a = s.attempt('A',s.aDb).catch((error: Error) => error);
+    try {
+      await s.aReady.promise; await expire(); await claim('B');
+      const before = await s.readState(); s.aGate.release();
+      expect(await a).toMatchObject({message:'outbound_lease_lost'});
+      expect(await s.readState()).toEqual(before); expect(s.remote).not.toHaveBeenCalled();
+    } finally { s.aGate.release(); s.bGate.release(); await a; }
+  });
+
+  it('fase alterada para started impede escrita pré-rede mesmo com owner igual', async () => {
+    const s = await stalePreflightScenario(); await claim('A');
+    const a = s.attempt('A',s.aDb).catch((error: Error) => error);
+    try {
+      await s.aReady.promise;
+      await db.pool.query(`update messages set status='sending',metadata=jsonb_set(metadata,'{outbound_attempt,phase}','"started"'::jsonb)`);
+      const before = await s.readState(); s.aGate.release();
+      expect(await a).toMatchObject({message:'outbound_lease_lost'});
+      expect(await s.readState()).toEqual(before); expect(s.remote).not.toHaveBeenCalled();
+    } finally { s.aGate.release(); s.bGate.release(); await a; }
+  });
+});
 
 describe('protocolo único sobre snapshots persistidos no PostgreSQL', () => {
   it('watchdog não disputa transporte de mensagens que pertencem ao ledger', async () => {
