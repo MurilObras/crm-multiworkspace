@@ -58,6 +58,7 @@ export type DesfechoDoAviso =
   | { avisado: false; porque: string };
 
 export interface AvisoDeEscalacaoIds {
+  workerId: string;
   tenantId: string;
   leadId: string;
   conversationId: string;
@@ -125,6 +126,7 @@ export async function avisarLeadDaEscalacao(
       ...(opts.disclosureMode !== undefined ? { disclosureMode: opts.disclosureMode } : {}),
       send: (finalBody) =>
         opts.channel.send({
+          workerId: ids.workerId,
           tenantId: ids.tenantId,
           leadId: ids.leadId,
           jobId: ids.jobId,

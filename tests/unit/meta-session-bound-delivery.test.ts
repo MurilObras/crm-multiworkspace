@@ -4,8 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
 import { getAdapter } from '@/lib/channels';
-import { sendTurnMessage } from '@/lib/agent-engine/edge/crm/send-message';
-import type { Queryable } from '@/lib/agent-engine/queue/queue';
+import { decideOutboundRecovery } from '@/lib/agent-engine/edge/crm/outbound-recovery';
 
 let activeDb: SupabaseClient;
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => activeDb }));
@@ -156,19 +155,12 @@ describe('transporte Meta session-bound no sink real', () => {
   });
 });
 
-describe('ledger queued só reconcilia confirmação, sem novo transporte', () => {
-  it.each(['queued', 'sent', 'delivered', 'read', 'failed'])('mensagem está %s', async (status) => {
-    const query = vi.fn(async (sql: string) => {
-      if (sql.startsWith('insert into send_ledger')) throw Object.assign(new Error('duplicate'), { code: '23505' });
-      if (sql.startsWith('select * from send_ledger')) return { rows: [{ id: 'key', status: 'queued', crm_message_id: 'msg' }] };
-      if (sql.startsWith('select id, status from messages')) return { rows: [{ id: 'msg', status }] };
-      return { rows: [] };
-    });
-    const outcome = await sendTurnMessage({ query } as unknown as Queryable, { supabase: activeDb }, {
-      tenantId: 'org', leadId: 'contact', conversationId: 'conv-A', jobId: 'job', seq: 1, body: 'Oi',
-    });
-    expect(outcome.kind).toBe(status === 'queued' ? 'queued' : status === 'failed' ? 'failed' : 'sent');
-    expect(query).toHaveBeenCalledWith(expect.stringContaining('where organization_id = $1 and id = $2'), ['org', 'msg']);
-    expect(requests).toHaveLength(0); expect(tables.messages).toHaveLength(0);
+describe('confirmação exige estado confirmado E identificador externo', () => {
+  // A travessia do ledger/retry roda em PostgreSQL em followup-inline-ledger.test.ts.
+  it.each(['queued','sending','sent','delivered','read','failed','unknown'])('mensagem %s não confirma sem ID', (status) => {
+    expect(decideOutboundRecovery('requested',{id:'msg',status,external_id:null,metadata:{}})).not.toBe('confirmed');
+  });
+  it.each(['sent','delivered','read'])('%s com ID confirma', (status) => {
+    expect(decideOutboundRecovery('queued',{id:'msg',status,external_id:'wamid',metadata:{}})).toBe('confirmed');
   });
 });

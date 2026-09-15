@@ -17,6 +17,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendTemplate } from "./send-template";
 import { resolveMetaCreds } from "./credentials";
+import { DeliveryRejectedError } from '../delivery-error';
 
 export interface SendTemplateForSessionInput {
   organizationId: string;
@@ -54,9 +55,14 @@ export async function sendTemplateForSession(
     .eq("language", input.language)
     .maybeSingle();
 
-  if (error) throw new Error(`template_lookup_failed: ${error.message}`);
-  const creds = await resolveMetaCreds(db, { organizationId: input.organizationId, channelSessionId: input.channelSessionId });
-  if (!creds) throw new Error("meta_session_credentials_missing");
+  if (error) throw new DeliveryRejectedError(`template_lookup_failed: ${error.message}`, true);
+  let creds;
+  try {
+    creds = await resolveMetaCreds(db, { organizationId: input.organizationId, channelSessionId: input.channelSessionId });
+  } catch {
+    throw new DeliveryRejectedError('meta_credentials_lookup_failed', true);
+  }
+  if (!creds) throw new DeliveryRejectedError("meta_session_credentials_missing");
 
   const resultado = await sendTemplate({
     phoneNumberId: creds.phoneNumberId,
@@ -87,14 +93,15 @@ export async function sendTemplateForSession(
 
   switch (resultado.reason) {
     case "missing":
-      throw new Error(`template_missing: ${input.name} (${input.language}) não está no espelho`);
+      throw new DeliveryRejectedError(`template_missing: ${input.name} (${input.language}) não está no espelho`);
     case "not_approved":
-      throw new Error(`template_not_approved: ${input.name} (${input.language})`);
+      throw new DeliveryRejectedError(`template_not_approved: ${input.name} (${input.language})`);
     case "stale":
-      throw new Error(`template_stale: ${input.name} mudou na Meta desde a configuração`);
+      throw new DeliveryRejectedError(`template_stale: ${input.name} mudou na Meta desde a configuração`);
     case "missing_values":
-      throw new Error(`template_missing_values: ${resultado.missing.join(", ")}`);
+      throw new DeliveryRejectedError(`template_missing_values: ${resultado.missing.join(", ")}`);
     case "api_error":
+      if (resultado.notAccepted) throw new DeliveryRejectedError(`meta_${resultado.code ?? 'erro'}: ${resultado.message}`, resultado.retryable);
       throw new Error(`meta_${resultado.code ?? "erro"}: ${resultado.message}`);
   }
 }

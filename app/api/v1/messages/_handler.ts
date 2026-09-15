@@ -11,6 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { DeliveryRejectedError, OutboundLeaseLostError } from "@/lib/channels/delivery-error";
 import { isWindowOpen } from "@/lib/agent-engine/guardrails/messaging-window";
 import {
   capabilitiesOf,
@@ -264,7 +265,7 @@ export async function sendMessageHandler(
   supabase: SB,
   ctx: HandlerCtx,
   input: SendMessageInput,
-  options?: { beforeSend: (message: Message) => Promise<void>; beforeTransport?: (message: Message) => Promise<void> },
+  options?: { messageId?: string; beforeSend: (message: Message) => Promise<void>; beforeTransport?: (message: Message) => Promise<void> },
 ): Promise<Message> {
   // `archived_at` entra pelo helper tolerante porque este é O caminho de saída do
   // sistema inteiro (UI, automação, MCP e o agente passam por aqui): num clone que
@@ -447,6 +448,7 @@ export async function sendMessageHandler(
   }
 
   const insertRow = {
+    ...(options?.messageId ? { id: options.messageId } : {}),
     organization_id: c.organization_id,
     // Guardado mesmo quando o canal não sabe citar: o fio existe no NOSSO
     // histórico de qualquer jeito, e é o que a tela desenha.
@@ -471,11 +473,21 @@ export async function sendMessageHandler(
     },
   };
 
-  const { data: created, error: insErr } = await supabase
+  let { data: created, error: insErr } = await supabase
     .from("messages")
     .insert(insertRow)
     .select(MSG_COLS)
     .single();
+
+  if (insErr?.code === '23505' && options?.messageId) {
+    const existing = await supabase.from('messages').select(MSG_COLS)
+      .eq('id', options.messageId).eq('organization_id', ctx.organization_id)
+      .eq('conversation_id', c.id).eq('contact_id', c.contact_id)
+      .eq('metadata->>idempotency_key', input.metadata?.idempotency_key).maybeSingle();
+    if (existing.error || !existing.data) throw new OutboundLeaseLostError();
+    created = existing.data;
+    insErr = null;
+  }
 
   if (insErr || !created) {
     throw new ApiError(
@@ -487,12 +499,14 @@ export async function sendMessageHandler(
     );
   }
   let message = created as unknown as Message;
+  if (options?.messageId && ['sent', 'delivered', 'read'].includes(message.status) && message.external_id) return message;
 
   // Campanha vincula a linha e repete opt-out antes de qualquer transporte.
   if (options) {
     try {
       await options.beforeSend(message);
     } catch (error) {
+      if (error instanceof OutboundLeaseLostError) throw error;
       await supabase.from("messages").update({
         status: "failed", error_code: "send_guard_rejected",
         error_message: "Envio interrompido antes do transporte.",
@@ -565,6 +579,7 @@ export async function sendMessageHandler(
     const { data: updated } = await supabase
       .from("messages")
       .update({
+        status: 'queued',
         metadata: { ...(message.metadata ?? {}), queued_reason: adapter.codes.notConfigured },
       })
       .eq("id", message.id)
@@ -587,6 +602,7 @@ export async function sendMessageHandler(
     const { data: updated } = await supabase
       .from("messages")
       .update({
+        status: 'queued',
         metadata: {
           ...(message.metadata ?? {}),
           queued_reason: "channel_session_not_working",
@@ -597,10 +613,12 @@ export async function sendMessageHandler(
       .maybeSingle();
     if (updated) message = updated as unknown as Message;
   } else {
-    try {
-      // Dono idempotente pode registrar a entrada no transporte antes da rede.
-      // Assim, queda após aceite não deixa a tentativa como fila ainda não enviada.
+    let transportStarted = false;
+    const beginTransport = async () => {
       await options?.beforeTransport?.(message);
+      transportStarted = true;
+    };
+    try {
       // O que separa mídia de texto é a presença de `media` no envelope — o
       // adapter preserva o mesmo branch (e a mesma mensagem de erro de cada
       // método) do outro lado do seam.
@@ -635,6 +653,7 @@ export async function sendMessageHandler(
           values: input.template_values ?? {},
         });
 
+        await beginTransport();
         externalId = adapter.sendTemplate
           ? (
               await adapter.sendTemplate({
@@ -665,6 +684,7 @@ export async function sendMessageHandler(
           throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
         }
         const filename = input.media_storage_path.split("/").pop() ?? undefined;
+        await beginTransport();
         ({ externalId } = await adapter.send({
           organizationId: ctx.organization_id,
           channelSessionId: c.channel_session_id,
@@ -696,6 +716,7 @@ export async function sendMessageHandler(
         // de proibido pelo invariante 1, trabalho jogado fora.
         const telefone = normalizePhoneForDisplay(sc.phone_number);
         const nome = sc.name?.trim() || telefone;
+        await beginTransport();
         ({ externalId } = await adapter.send({
           organizationId: ctx.organization_id,
           channelSessionId: c.channel_session_id,
@@ -712,6 +733,7 @@ export async function sendMessageHandler(
           },
         }));
       } else {
+        await beginTransport();
         ({ externalId } = await adapter.send({
           organizationId: ctx.organization_id,
           channelSessionId: c.channel_session_id,
@@ -748,6 +770,7 @@ export async function sendMessageHandler(
         .maybeSingle();
       if (updated) message = updated as unknown as Message;
     } catch (err) {
+      if (err instanceof OutboundLeaseLostError) throw err;
       const msg = err instanceof Error ? err.message : adapter.codes.unknownError;
       // `storage_sign_failed` fica literal: é falha do NOSSO Storage, não do
       // canal — a URL assinada é montada antes de qualquer coisa tocar o adapter.
@@ -786,6 +809,11 @@ export async function sendMessageHandler(
           status: "failed",
           error_code: code,
           error_message: msg,
+          ...(options?.messageId ? { metadata: { ...message.metadata, outbound_attempt: {
+            ...(message.metadata?.outbound_attempt as Record<string, unknown>),
+            phase: !transportStarted ? 'prepared' : err instanceof DeliveryRejectedError ? 'rejected' : 'uncertain',
+            ...(err instanceof DeliveryRejectedError ? { retryable: err.retryable } : {}),
+          } } } : {}),
         })
         .eq("id", message.id)
         .select(MSG_COLS)

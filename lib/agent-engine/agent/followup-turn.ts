@@ -22,6 +22,7 @@ import { followupNeedsTemplate, loadOfficialFollowupTemplate, type OfficialFollo
 
 import { withFields } from '../obs/logger';
 import type { JobRow } from '../queue/queue';
+import { withJobLease } from '../queue/queue';
 import { getLeadContext, type LeadContext } from '../edge/crm/get-lead-context';
 import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
@@ -114,7 +115,7 @@ export type FollowupFlowTurnResult =
  */
 export interface FollowupTurnDeps extends InboundTurnDeps {
   completeFollowupTurn?: (
-    pool: pg.Pool,
+    pool: Pick<pg.Pool, 'query'>,
     input: { organizationId: string; enrollmentId: string; nodeId: string; result: FollowupFlowTurnResult },
   ) => Promise<void>;
 }
@@ -455,12 +456,14 @@ async function runFlowDrivenTurn(
   if (input.nodeId === undefined || input.purpose === undefined) {
     throw new Error('followup_turn dirigido por fluxo sem node_id/purpose no payload — payload do engine incompleto');
   }
-  const complete = deps.completeFollowupTurn;
-  if (!complete) {
+  const completeTurn = deps.completeFollowupTurn;
+  if (!completeTurn) {
     throw new Error(
       'followup_turn dirigido por fluxo sem completeFollowupTurn nos deps do handler — a ponte não foi injetada na wiring (workers/agent-worker/main.ts)',
     );
   }
+  const complete = (_pool: pg.Pool, result: Parameters<NonNullable<FollowupTurnDeps['completeFollowupTurn']>>[1]) =>
+    withJobLease(pool, job.id, ctx.workerId, target.tenantId, (tx) => completeTurn(tx,result));
   const { enrollmentId, nodeId } = input;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
 
@@ -737,7 +740,7 @@ async function sendFixedOutbound(
             ),
         }
       : {}),
-    send: (finalBody) => channel.send({ tenantId, leadId, jobId: job.id, seq: 1, conversationId, body: finalBody,
+    send: (finalBody) => channel.send({ tenantId, leadId, jobId: job.id, workerId: ctx.workerId, seq: 1, conversationId, body: finalBody,
       ...(official ? { template: official.template } : {}) }),
   });
 

@@ -367,18 +367,18 @@ describe("janela universal no sink de outbound", () => {
 
   it("agent-engine registra failed no ledger e não reagenda como queued", async () => {
     const send = vi.spyOn(getAdapter("meta_cloud"), "send");
-    const { supabase } = makeSupabase({ ...conversaCompleta({ provider: "meta_cloud" }), last_inbound_at: null });
-    const query = vi.fn(async () => ({ rows: [{ id: "ledger-1" }], rowCount: 1 }));
+    const { supabase, estado } = makeSupabase({ ...conversaCompleta({ provider: "meta_cloud" }), last_inbound_at: null });
+    const query = vi.fn(async (sql: string, _args?: unknown[]) => ({
+      rows: sql.startsWith('select id,status,external_id') ? (estado.message ? [estado.message] : []) : [{ id: 'ledger-1', status: 'requested' }], rowCount: 1,
+    }));
     const db = { query } as unknown as Queryable;
 
     const outcome = await sendTurnMessage(db, { supabase }, {
       tenantId: ORG, leadId: CONTACT, jobId: "job-1", seq: 1, conversationId: CONV, body: "oi",
+      workerId: 'worker-1',
     });
-    expect(outcome).toMatchObject({ kind: "failed", crmMessageId: "msg-1" });
-    expect(query.mock.calls[1]).toEqual([
-      expect.stringContaining("update send_ledger"),
-      ["ledger-1", "failed", "msg-1", expect.any(String)],
-    ]);
+    expect(outcome).toMatchObject({ kind: "failed", crmMessageId: "ledger-1" });
+    expect(query.mock.calls.some(([sql,args]) => sql.includes('update send_ledger set status=') && args?.[0] === 'failed')).toBe(true);
     query.mockClear();
     expect(await applySendOutcome(db, outcome, {
       jobId: "job-1", workerId: "worker-1", tenantId: ORG, leadId: CONTACT,

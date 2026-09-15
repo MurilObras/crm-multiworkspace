@@ -43,6 +43,7 @@ const TEMPLATE = {
 function envio(extra: Record<string, unknown> = {}) {
   return {
     tenantId: "org-1",
+    workerId: "worker-1",
     leadId: "lead-1",
     jobId: "job-1",
     seq: 1,

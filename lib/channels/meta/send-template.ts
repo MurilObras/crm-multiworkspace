@@ -46,7 +46,7 @@ export type SendTemplateResult =
   // por construção, em vez de exigir um `default` que engoliria caso novo em silêncio.
   | { sent: false; reason: Exclude<BindingState, "ok"> }
   | { sent: false; reason: "missing_values"; missing: string[] }
-  | { sent: false; reason: "api_error"; code: number | null; message: string };
+  | { sent: false; reason: "api_error"; code: number | null; message: string; notAccepted?: boolean; retryable?: boolean };
 
 interface GraphResponse {
   messages?: { id?: string }[];
@@ -87,6 +87,8 @@ export async function sendTemplate(input: SendTemplateInput): Promise<SendTempla
       sent: false,
       reason: "api_error",
       code: null,
+      notAccepted: true,
+      retryable: false,
       message: err instanceof Error ? err.message : "build_failed",
     };
   }
@@ -117,6 +119,8 @@ export async function sendTemplate(input: SendTemplateInput): Promise<SendTempla
     return {
       sent: false,
       reason: "api_error",
+      ...(res.status >= 400 && res.status < 500 && res.status !== 408 && body.error?.code && !body.messages?.length
+        ? { notAccepted: true, retryable: res.status === 429 } : {}),
       code: body.error?.code ?? res.status,
       // O `details` da Meta é o que diz QUAL parâmetro divergiu; sem ele o operador
       // recebe "Parameter format does not match" e nenhuma pista.

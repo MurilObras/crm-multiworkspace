@@ -11,13 +11,23 @@ import { CHANNEL_PROVIDER_META, DEFAULT_CHANNEL_PROVIDER } from "@/lib/channels/
 const sendMessageHandler = vi.fn(async (..._a: unknown[]) => ({ id: "msg-1", status: "sent", error_code: null as string | null }));
 const decidir = vi.fn();
 const completeTurnForEnrollment = vi.fn(async (..._a: unknown[]) => {});
+let currentFallback = false;
 
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: (...a: unknown[]) => sendMessageHandler(...a) }));
 // Aqui se testa preparação/eligibilidade. A identidade durável e o retry do
 // helper real são exercitados por tests/unit/followup-inline-ledger.test.ts.
 vi.mock("@/lib/agent-engine/edge/crm/inline-send", () => ({
-  sendInlineTurnMessage: async (db: unknown, ctx: unknown, _job: string, _contact: string, prepare: () => Promise<unknown>) =>
+  sendInlineTurnMessage: async (_pool: unknown, db: unknown, ctx: unknown, _job: string, _contact: string, _owner: string, prepare: () => Promise<unknown>) =>
     sendMessageHandler(db, ctx, await prepare()),
+}));
+vi.mock('@/lib/agent-engine/db/request-pool', () => ({ getRequestPool: () => ({}) }));
+vi.mock('@/lib/agent-engine/env', () => ({ loadEnv: () => ({QUEUE_MAX_CONCURRENCY:8,SEND_QUEUED_RETRY_MS:300000}) }));
+vi.mock('@/lib/agent-engine/queue/queue', () => ({
+  claimJobs: async () => [{...JOB,payload:{...JOB.payload,...(currentFallback?{fallback_template_id:'11111111-1111-4111-8111-111111111111'}:{})}}],
+  completeJob: async (_p: unknown,_id: string,_owner: string,fn?: (tx: unknown)=>Promise<void>) => { await fn?.({}); statusUpdates.push('done'); },
+  cancelJob: async () => { statusUpdates.push('failed'); },
+  failJob: async () => { statusUpdates.push('pending'); },
+  rescheduleJob: async () => { statusUpdates.push('pending'); },
 }));
 vi.mock("@/lib/automation/start-conversation", () => ({
   ensureConversation: async () => "conv-1",
@@ -27,6 +37,7 @@ vi.mock("@/lib/ai/elegibilidade/consulta-supabase", () => ({
   decidirElegibilidadeDaConversaViaSupabase: (...a: unknown[]) => decidir(...a),
 }));
 vi.mock("@/lib/followup/turn-bridge", () => ({
+  createPgAdminClient: () => ({}),
   completeTurnForEnrollment: (...a: unknown[]) => completeTurnForEnrollment(...a),
 }));
 vi.mock("@/lib/followup/engine", () => ({ createSupabaseAdminClient: () => ({}) }));
@@ -45,6 +56,7 @@ const statusUpdates: string[] = [];
 
 /** Admin stub: job_queue (select pending / claim / status) + followup_enrollments. */
 function admin(provider = DEFAULT_CHANNEL_PROVIDER, inbound: string | null = null, fallback = false) {
+  currentFallback = fallback;
   const make = (table: string) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
@@ -52,6 +64,7 @@ function admin(provider = DEFAULT_CHANNEL_PROVIDER, inbound: string | null = nul
       _upd: null as Record<string, unknown> | null,
       select: () => chain,
       eq: () => chain,
+      lte: () => chain,
       order: () => chain,
       limit: () => chain,
       update: (p: Record<string, unknown>) => {
@@ -99,7 +112,7 @@ describe("enviarTextoFixoPendente · gate de elegibilidade", () => {
     expect(await enviarTextoFixoPendente(admin(CHANNEL_PROVIDER_META))).toBe(0);
     expect(sendMessageHandler).not.toHaveBeenCalled();
     expect(completeTurnForEnrollment).not.toHaveBeenCalled();
-    expect(statusUpdates).toContain("dead");
+    expect(statusUpdates).toContain("failed");
   });
 
   it("resposta reabre a janela e texto fixo volta ao envio livre", async () => {
@@ -113,14 +126,14 @@ describe("enviarTextoFixoPendente · gate de elegibilidade", () => {
     sendMessageHandler.mockResolvedValueOnce({ id: "msg-1", status: "failed", error_code: "messaging_window_closed" });
     expect(await enviarTextoFixoPendente(admin())).toBe(0);
     expect(completeTurnForEnrollment).not.toHaveBeenCalled();
-    expect(statusUpdates).toContain("dead");
+    expect(statusUpdates).toContain("pending");
   });
-  it("conversa NÃO elegível → NÃO envia, job vira 'done'", async () => {
+  it("conversa NÃO elegível → NÃO envia, lease é encerrado", async () => {
     decidir.mockResolvedValue({ permite: false, motivo: "sem_autorizacao", bloqueioPorAllowlist: true });
     const enviados = await enviarTextoFixoPendente(admin());
     expect(enviados).toBe(0);
     expect(sendMessageHandler).not.toHaveBeenCalled();
-    expect(statusUpdates).toContain("done");
+    expect(statusUpdates).toContain("failed");
   });
 
   it("conversa elegível → envia normalmente", async () => {

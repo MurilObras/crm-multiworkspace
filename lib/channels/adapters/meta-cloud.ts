@@ -22,6 +22,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { metaContactsPayload } from "@/lib/channels/meta/contact-card";
 import { resolveMetaCreds } from "../meta/credentials";
+import { DeliveryRejectedError } from '../delivery-error';
 import type {
   ChannelAdapter,
   ChannelHealth,
@@ -170,12 +171,17 @@ export const metaCloudAdapter: ChannelAdapter = {
   async send(envelope: OutboundEnvelope): Promise<{ externalId: string | null }> {
     // O ID do CRM amarra o envio à sessão validada, inclusive o phone_number_id.
     // Fallback de ambiente só é permitido no contrato legado sem esse ID.
-    const creds = await resolveMetaCreds(createAdminClient(), {
-      organizationId: envelope.organizationId,
-      phoneNumberId: envelope.sessionRef,
-      channelSessionId: envelope.channelSessionId,
-    });
-    if (!creds && envelope.channelSessionId !== undefined) throw new Error("meta_session_credentials_missing");
+    let creds;
+    try {
+      creds = await resolveMetaCreds(createAdminClient(), {
+        organizationId: envelope.organizationId,
+        phoneNumberId: envelope.sessionRef,
+        channelSessionId: envelope.channelSessionId,
+      });
+    } catch {
+      throw new DeliveryRejectedError('meta_credentials_lookup_failed', true);
+    }
+    if (!creds && envelope.channelSessionId !== undefined) throw new DeliveryRejectedError("meta_session_credentials_missing");
     // Mesmo contrato do outro canal: sem credencial é NOOP, não exceção. A UI mostra
     // o banner de "canal não conectado"; transformar em erro mudaria comportamento.
     if (!creds) return { externalId: null };
@@ -211,7 +217,11 @@ export const metaCloudAdapter: ChannelAdapter = {
       // `details` é o campo que diz QUAL parâmetro divergiu; sem ele o operador lê
       // "Parameter format does not match" e não tem pista nenhuma.
       const detalhe = body.error?.error_data?.details ?? body.error?.message ?? `http_${res.status}`;
-      throw new Error(`meta_${body.error?.code ?? res.status}: ${detalhe}`);
+      const message = `meta_${body.error?.code ?? res.status}: ${detalhe}`;
+      if (res.status >= 400 && res.status < 500 && res.status !== 408 && body.error?.code && !body.messages?.length) {
+        throw new DeliveryRejectedError(message, res.status === 429);
+      }
+      throw new Error(message);
     }
 
     return { externalId: body.messages?.[0]?.id ?? null };

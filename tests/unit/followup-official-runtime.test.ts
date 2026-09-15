@@ -23,7 +23,12 @@ function setup(provider: string, inbound: Date | null, payload: Record<string, u
   const conversations = [conversation];
   const enrollment = { id: fallback, organization_id: 'org-1', contact_id: 'contact-1', conversation_id: null as string | null };
   const ledger = { id: 'ledger-1', status: 'accepted', crm_message_id: 'msg-1' };
-  const pool = { query: async (sql: string, params: unknown[] = []) => ({ rows: /from followup_enrollments/.test(sql)
+  const pool = { connect: async () => ({
+    query: async (sql: string, params: unknown[] = []) => ({
+      rows: sql.startsWith('select id from job_queue') && params[1] === 'worker-1' ? [{id:'job-1'}] : [],
+      rowCount: sql.startsWith('select id from job_queue') && params[1] === 'worker-1' ? 1 : 0,
+    }), release: () => {},
+  }), query: async (sql: string, params: unknown[] = []) => ({ rows: /from followup_enrollments/.test(sql)
     ? (params[0] === enrollment.organization_id && params[1] === enrollment.contact_id && params[2] === enrollment.id ? [enrollment] : [])
     : /from conversations/.test(sql) ? conversations.filter((c) => c.organization_id === params[0] && c.contact_id === params[1] &&
       (!sql.includes('and c.id = $3') || c.id === params[2]))

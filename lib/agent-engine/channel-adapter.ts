@@ -14,6 +14,7 @@
 
 /** Uma mensagem de texto a enviar ao lead. Identidade da intenção = (jobId, seq). */
 export interface ChannelSendInput {
+  workerId: string;
   tenantId: string;
   leadId: string | null;
   jobId: string;
