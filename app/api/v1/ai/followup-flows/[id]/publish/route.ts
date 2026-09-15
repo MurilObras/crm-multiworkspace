@@ -134,18 +134,23 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   }
 
   const graph = pointer.draft_graph as unknown as FlowGraph;
+  // No grafo, `action` é o nó que enfileira send_message. Esperas/condições
+  // e fluxos trigger → end não enviam e não dependem de conexão outbound.
+  const sendsMessage = graph.nodes.some((node) => node.type === "action");
   let session;
-  try {
-    session = await resolveOutboundSession(admin, { organizationId: activeOrg.orgId, kind: "text" });
-  } catch {
-    return fail("internal_error", "Não foi possível conferir a conexão do fluxo.", 500, { requestId });
+  if (sendsMessage) {
+    try {
+      session = await resolveOutboundSession(admin, { organizationId: activeOrg.orgId, kind: "text" });
+    } catch {
+      return fail("internal_error", "Não foi possível conferir a conexão do fluxo.", 500, { requestId });
+    }
+    if (!session) {
+      return fail("validation_failed", "Conexão do fluxo indisponível ou ambígua.", 422, {
+        requestId, details: { reason: "followup_channel_unresolved" },
+      });
+    }
   }
-  if (!session) {
-    return fail("validation_failed", "Conexão do fluxo indisponível ou ambígua.", 422, {
-      requestId, details: { reason: "followup_channel_unresolved" },
-    });
-  }
-  const caps = capabilitiesOf(session.provider);
+  const caps = session ? capabilitiesOf(session.provider) : undefined;
   const validation = validateFlowForPublish(graph, caps);
   if (!validation.ok) {
     return fail("validation_failed", "Fluxo reprovado na validação de publish.", 422, {
@@ -154,7 +159,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     });
   }
 
-  if (!caps.freeformOutsideWindow) {
+  if (session && caps && !caps.freeformOutsideWindow) {
     for (const node of graph.nodes) {
       if (node.type !== "action") continue;
       try {

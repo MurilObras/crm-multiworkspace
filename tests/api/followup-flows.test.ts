@@ -269,6 +269,46 @@ beforeEach(() => {
 });
 
 describe("publish — fallback oficial por conexão elegível", () => {
+  const withoutSend: FlowGraph = {
+    nodes: [trigger("t1"),
+      { id: "w1", type: "wait", label: "espera", position: pos,
+        config: { mode: "fixed", duration_ms: 90_000_000 } },
+      { id: "c1", type: "condition", label: "condição", position: pos,
+        config: { combinator: "and", branching: "per_check",
+          checks: [{ id: "tag", field: "tag", op: "contains", value: "cliente" }] } },
+      end("e1"), end("e2")],
+    edges: [edge("tw", "t1", "w1"), edge("wc", "w1", "c1"),
+      { ...edge("ce", "c1", "e1"), condition: { type: "branch", branch_id: "tag" } },
+      edge("fallback", "c1", "e2")],
+  };
+  it.each([
+    ["trigger → end", VALID_GRAPH],
+    ["wait/condition sem envio", withoutSend],
+  ] as const)("%s publica sem consultar canal", async (_name, graph) => {
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const id = randomUUID();
+    const versions: Row[] = [];
+    const db = makeDb([{ id, organization_id: ORG_ID, draft_graph: graph }], versions, [], []);
+    const from = vi.spyOn(db, "from");
+    session("manager", db);
+    const response = await POST(req("POST"), ctx(id));
+    expect(response.status).toBe(200);
+    expect(versions).toHaveLength(1);
+    expect(versions[0]!.graph).toEqual(graph);
+    expect(from).not.toHaveBeenCalledWith("channel_sessions");
+    expect(from).not.toHaveBeenCalledWith("meta_templates");
+  });
+  it("sem envio e sem canal continua recusando ramo descoberto", async () => {
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const id = randomUUID();
+    const versions: Row[] = [];
+    const graph = { ...withoutSend, edges: withoutSend.edges.filter((e) => e.id !== "fallback") };
+    session("manager", makeDb([{ id, organization_id: ORG_ID, draft_graph: graph }], versions, [], []));
+    const response = await POST(req("POST"), ctx(id));
+    expect(response.status).toBe(422);
+    expect(await response.text()).toContain("missing_always_fallback");
+    expect(versions).toHaveLength(0);
+  });
   const channel = (id: string, provider: string, extra: Row = {}): Row => ({
     id, provider, organization_id: ORG_ID, status: "WORKING", archived_at: null, ...extra,
   });
@@ -303,6 +343,12 @@ describe("publish — fallback oficial por conexão elegível", () => {
   it("org ambígua falha fechado mesmo com fallback", async () => {
     const { response, versions } = await publishWith([channel("s1", "waha"), channel("s2", "meta_cloud")], true);
     expect(response.status).toBe(422); expect(versions).toHaveLength(0);
+    expect(await response.text()).toContain("followup_channel_unresolved");
+  });
+  it("send_message sem canal falha fechado", async () => {
+    const { response, versions } = await publishWith([], false);
+    expect(response.status).toBe(422);
+    expect(versions).toHaveLength(0);
     expect(await response.text()).toContain("followup_channel_unresolved");
   });
   it.each(["APPROVED", "PENDING"])("confere aprovação %s e sessão do fallback antes de publicar", async (status) => {
