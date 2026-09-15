@@ -32,9 +32,17 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => {}) }));
 vi.mock("@/lib/channels", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/channels")>(),
   getAdapter: () => ({
+    provider: "waha",
     resolveRecipient: () => "synthetic-recipient",
     isConfigured: () => true,
     send: vi.fn(async () => ({ externalId: null })),
+    // `codes` é obrigatório no contrato do adapter (lib/channels/types.ts): o
+    // sink lê `adapter.codes` no caminho de erro. Mock sem ele estoura no catch.
+    codes: {
+      notConfigured: "waha_not_configured",
+      sendFailed: "waha_send_failed",
+      unknownError: "waha_unknown",
+    },
   }),
 }));
 
@@ -95,13 +103,18 @@ function makeSupabase(conversation: Record<string, unknown>) {
               }),
             }),
           }),
-          update: () => ({
-            eq: () => ({
+          update: (patch: Record<string, unknown>) => {
+            // O sink do ledger escreve com DOIS filtros (`id` + `organization_id`).
+            // Duble encadeável, como o de messages-handler-desfechos: um `.eq`
+            // que fixa a quantidade de filtros quebra quando a escrita ganha um.
+            const chain = {
+              eq: () => chain,
               select: () => ({
-                maybeSingle: async () => ({ data: { status: "sent" }, error: null }),
+                maybeSingle: async () => ({ data: { status: "sent", ...patch }, error: null }),
               }),
-            }),
-          }),
+            };
+            return chain;
+          },
         };
       }
       throw new Error(`tabela inesperada: ${table}`);
