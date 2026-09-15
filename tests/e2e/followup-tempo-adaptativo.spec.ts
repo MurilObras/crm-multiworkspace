@@ -47,6 +47,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
+import { lerEstadoDoCanal } from "../../lib/channels/estado";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 // evidence/ é versionado; e2e-artifacts/ está no .gitignore e evidência citada
@@ -144,7 +145,24 @@ test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", (
     const flowName = `E2E Tempo Adaptativo ${stamp}`;
     const contactName = `Cliente Tempo Adaptativo ${stamp}`;
 
+    // Mesmo preparo da followup-journey: o seed nasce STARTING, mas publicar
+    // um fluxo COM envio exige uma conexão elegível, mesmo sem chegar a enviar.
+    execFileSync("npx", ["tsx", "scripts/seed-e2e-followup-agent.ts"], { stdio: "inherit" });
+    execFileSync("npx", ["tsx", "scripts/e2e-followup-journey-helpers.ts", "prepare-agent-fixtures"], {
+      stdio: "inherit",
+    });
+    const fixtures = (JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as {
+      followup_agent_fixtures: { channel_session_id: string };
+    }).followup_agent_fixtures;
+
     await login(page, creds.users.manager!.email);
+    const channelsRes = await page.request.get("/api/v1/channel-sessions");
+    expect(channelsRes.ok(), `ler conexões: ${channelsRes.status()} ${await channelsRes.text()}`).toBe(true);
+    const { data: channels } = await channelsRes.json() as { data: Array<{ id: string; status: string }> };
+    // O contrato atual resolve pela org: ambiguidade deve falhar, nunca escolher
+    // o primeiro número nem desativar canais alheios para acomodar o teste.
+    expect(channels.filter((channel) => lerEstadoDoCanal(channel.status).utilizavel).map((channel) => channel.id))
+      .toEqual([fixtures.channel_session_id]);
 
     // ─── 1. o fluxo, criado pela tela ────────────────────────────────────
     await page.goto("/app/ai/followups");
@@ -219,7 +237,13 @@ test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", (
     // ─── 4. salvar + publicar, pelos botões ──────────────────────────────
     await page.getByRole("button", { name: "Salvar" }).click();
     await expect(page.getByTestId("dirty-indicator")).toHaveCount(0, { timeout: PRAZO_SOB_CARGA });
+    const publishResponse = page.waitForResponse((response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === `/api/v1/ai/followup-flows/${flowId}/publish`,
+    );
     await page.getByTestId("publish-button").click();
+    const published = await publishResponse;
+    expect(published.status(), `publicar fluxo: ${await published.text()}`).toBe(200);
     // O selo do fluxo passa a "Ativo" (FlowStatusBadge) e a barra confirma
     // "Fluxo publicado." — não existe rótulo "Publicado" em lugar nenhum.
     await expect(page.getByText("Fluxo publicado.")).toBeVisible({ timeout: PRAZO_SOB_CARGA });

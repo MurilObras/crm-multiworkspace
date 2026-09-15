@@ -71,6 +71,8 @@ export interface FollowupJobRequest {
     fixed_body?: string;
     /** action (mode 'template') — id em `message_templates`; o turno carrega o corpo e envia sem modelo. */
     template_id?: string;
+    fallback_template_id?: string;
+    fallback_template_values?: Record<string, string>;
     volta_index?: number;
     volta_total?: number;
     /** ai_classify — Task 5.1: classes possíveis + dica opcional pro classificador. */
@@ -218,16 +220,21 @@ function turnPayloadExtras(
   smartWaits: EsperaAdaptativa[],
   events: EnrollmentEventRef[] = [],
 ): Partial<FollowupJobRequest["payload"]> {
+  const fallback = node.type === "action" && node.config.fallback_template_id
+    ? { fallback_template_id: node.config.fallback_template_id,
+        fallback_template_values: node.config.fallback_template_values ?? {} }
+    : {};
   if (node.type === "action" && node.config.mode === "ai_message") {
-    return { prompt_hint: interpolarVolta(node.config.prompt_hint, events) };
+    return { prompt_hint: interpolarVolta(node.config.prompt_hint, events), ...fallback };
   }
   if (node.type === "action" && node.config.mode === "text") {
-    return { fixed_body: interpolarVolta(node.config.body, events) };
+    return { fixed_body: interpolarVolta(node.config.body, events), ...fallback };
   }
   if (node.type === "action" && node.config.mode === "template") {
     const volta = latestRepeatIndex(events);
     return {
       template_id: node.config.template_id,
+      ...fallback,
       ...(volta ? { volta_index: volta.index, volta_total: volta.total } : {}),
     };
   }

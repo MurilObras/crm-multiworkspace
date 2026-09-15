@@ -97,11 +97,13 @@ function job(payload: Record<string, unknown>): JobRow {
 /** Pool mínimo: resolve a conversa e devolve a escolha da organização. */
 function fakePool(camadaDaOrg: boolean) {
   const query = vi.fn(async (sql: string): Promise<{ rows: Array<Record<string, unknown>> }> => {
+    if (/from followup_enrollments/.test(sql)) return { rows: [{ conversation_id: null }] };
     if (/from org_guardrail_layers/.test(sql)) {
       return { rows: [{ layer: "promessa_semantica", enabled: camadaDaOrg }] };
     }
     if (/from conversations/.test(sql)) {
-      return { rows: [{ id: CONVERSA, channel_session_id: CANAL, channel_archived_at: null }] };
+      return { rows: [{ id: CONVERSA, channel_session_id: CANAL, channel_archived_at: null,
+        resolved_session_id: CANAL, organization_id: ORG, provider: "waha", channel_status: "WORKING" }] };
     }
     return { rows: [] };
   });

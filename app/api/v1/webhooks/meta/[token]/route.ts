@@ -24,6 +24,7 @@ import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
 import { parseMetaWebhook, verificationChallenge, verifyMetaSignature } from "@/lib/channels/meta/webhook";
 import { ingestMetaInbound } from "@/lib/channels/meta/ingest";
 import { metaSessionByWebhookToken } from "@/lib/channels/meta/session";
+import { applyMetaMessageStatus } from "@/lib/channels/meta/message-status";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -103,6 +104,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
    * indistinguível de "não chegou". Custou uma hora de diagnóstico no lugar errado.
    */
   const desfechos: string[] = [];
+  let pendingReceipts = 0;
 
   for (const e of eventos) {
     // O evento chega carimbado com a WABA; se não for a desta sessão, ignoramos.
@@ -142,17 +144,33 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
         .eq("name", e.templateName)
         .eq("language", e.templateLanguage);
     } else {
-      await admin
-        .from("messages")
-        .update({ status: e.status === "failed" ? "failed" : "sent", updated_at: now })
-        .eq("organization_id", session.organizationId)
-        .eq("external_id", e.externalId);
+      try {
+        const outcome = await applyMetaMessageStatus(admin, session, e, now);
+        desfechos.push(outcome);
+        if (outcome === "pending_correlation") pendingReceipts++;
+      } catch {
+        logger.error("[meta.webhook] falha ao persistir recibo", { request_id: requestId });
+        return fail("internal_error", "status_update_failed", 500, { requestId });
+      }
     }
   }
 
-  // 200 SEMPRE que a assinatura confere, inclusive para evento que não nos
+  // Processa o lote inteiro antes de pedir reentrega: um ID ainda desconhecido
+  // não deve impedir a aplicação dos demais recibos que já podem ser correlacionados.
+  // Sem 2xx, a Meta conserva o evento para retry. Não emitimos outra fila/polling.
+  if (pendingReceipts > 0) {
+    logger.warn("[meta.webhook] recibos aguardando correlação", {
+      request_id: requestId, pending_receipts: pendingReceipts,
+    });
+    return fail("service_unavailable", "delivery_receipts_pending_correlation", 503, {
+      requestId, details: { pending_receipts: pendingReceipts, outcomes: desfechos },
+    });
+  }
+
+  // 200 para evento processado ou que não nos
   // interessa: a Meta re-entrega tudo que não recebe 2xx, e recusar o que
-  // ignoramos vira re-tentativa em backoff por horas.
+  // ignoramos vira re-tentativa em backoff por horas. Falha de persistência de
+  // recibo retorna 500: a reentrega idempotente é necessária para não perdê-lo.
   // `outcomes` no corpo: quem depura vê o que aconteceu com cada evento em vez de
   // ler um contador que não distingue sucesso de falha.
   return NextResponse.json(

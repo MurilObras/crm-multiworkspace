@@ -1227,6 +1227,7 @@ export async function runAgentTurn(
           {
             tenantId: job.organization_id,
             leadId: leadIdDoJob,
+            workerId: ctx.workerId,
             conversationId: input.conversationId,
             channelSessionId: input.channelSessionId,
             jobId: job.id,
@@ -1659,6 +1660,7 @@ async function executarTurnoDoAgente(
   /** Argumentos fixos do aviso ao lead — os dois desvios abaixo só trocam o motivo. */
   const avisoDaEscalacao = {
     ids: {
+      workerId: ctx.workerId,
       tenantId,
       leadId,
       conversationId: input.conversationId,
@@ -2101,6 +2103,7 @@ async function executarTurnoDoAgente(
           send: (finalBody: string) => {
             seq += 1;
             return channel.send({
+              workerId: ctx.workerId,
               tenantId,
               leadId,
               jobId: job.id,
@@ -2254,6 +2257,7 @@ async function executarTurnoDoAgente(
                 send: (bubble): Promise<ChannelSendResult> => {
                   seq += 1;
                   return channel.send({
+                    workerId: ctx.workerId,
                     tenantId,
                     leadId,
                     jobId: job.id,

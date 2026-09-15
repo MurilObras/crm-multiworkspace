@@ -71,7 +71,8 @@ function makeSupabase(botSilencedUntil: string | null) {
             return { select: () => ({ single: async () => ({ data: nova, error: null }) }) };
           },
           update: (patch: Row) => ({
-            eq: () => ({ select: () => ({ maybeSingle: async () => ({ data: { id: 'msg-1', ...patch }, error: null }) }) }),
+            eq() { return this; },
+            select: () => ({ maybeSingle: async () => ({ data: { id: 'msg-1', ...patch }, error: null }) }),
           }),
         };
       }

@@ -111,6 +111,8 @@ export interface ClaimOptions {
   maxConcurrency: number;
   /** Máximo de jobs por rodada de claim (default: o próprio maxConcurrency). */
   batchSize?: number;
+  /** Seleção estreita para executor inline; mantém o mesmo lock/cap/lane/lease. */
+  jobIds?: string[];
 }
 
 const CLAIM_SQL = `
@@ -119,6 +121,7 @@ const CLAIM_SQL = `
     select distinct on (coalesce(j.contact_id, j.id)) j.id
     from job_queue j
     where j.status = 'pending' and j.run_after <= now()
+      and ($3::uuid[] is null or j.id = any($3::uuid[]))
       and (j.contact_id is null
            or not exists (select 1 from job_queue r
                           where r.contact_id = j.contact_id and r.status = 'running'))
@@ -219,7 +222,7 @@ export async function claimJobs(pool: Pool, opts: ClaimOptions): Promise<JobRow[
       await client.query('rollback');
       return [];
     }
-    const { rows } = await client.query<JobRow>(CLAIM_SQL, [free, opts.workerId]);
+    const { rows } = await client.query<JobRow>(CLAIM_SQL, [free, opts.workerId, opts.jobIds ?? null]);
     await client.query('commit');
     return rows;
   } catch (err) {
@@ -267,6 +270,21 @@ export async function completeJob<T = void>(
   } finally {
     client.release();
   }
+}
+
+/** Efeito intermediário do job (ex.: avançar enrollment), sob o mesmo fence do
+ * complete. Reaper/reclaim não podem trocar o owner entre validação e efeito. */
+export async function withJobLease<T>(pool: Pool, jobId: string, workerId: string, organizationId: string, effect: (tx: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    const owned = await client.query("select id from job_queue where id=$1 and status='running' and locked_by=$2 and organization_id=$3 for update", [jobId,workerId,organizationId]);
+    if (owned.rowCount !== 1) throw new Error('outbound_lease_lost');
+    const result = await effect(client);
+    await client.query('commit');
+    return result;
+  } catch (error) { await rollback(client,error); throw error; }
+  finally { client.release(); }
 }
 
 /**

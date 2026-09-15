@@ -46,6 +46,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import type { SendMessageInput } from "@/lib/schemas";
+import { getAdapter, type ChannelProvider } from "@/lib/channels";
+import * as templateSender from "@/lib/channels/meta/send-template-for-session";
+import { applySendOutcome, sendTurnMessage } from "@/lib/agent-engine/edge/crm/send-message";
+import type { Queryable } from "@/lib/agent-engine/queue/queue";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CONV = "22222222-2222-4222-8222-222222222222";
@@ -145,6 +149,8 @@ function conversaCompleta(forma: Forma = {}): Row {
     channel_session_id: SESSION,
     is_group: false,
     group_chat_id: null,
+    // Os testes de transporte representam uma resposta dentro da janela.
+    last_inbound_at: new Date().toISOString(),
     provider_conversation_id: forma.providerConversationId ?? null,
     contacts: { phone_number: "+595991733685", wa_identity: null, wa_lid: "999888", is_blocked: false },
     channel_sessions: {
@@ -217,9 +223,8 @@ function makeSupabase(linhaCompleta: Row) {
           update: (patch: Row) => {
             estado.message = { ...estado.message, ...patch };
             return {
-              eq: () => ({
-                select: () => ({ maybeSingle: async () => ({ data: { ...estado.message }, error: null }) }),
-              }),
+              eq() { return this; },
+              select: () => ({ maybeSingle: async () => ({ data: { ...estado.message }, error: null }) }),
             };
           },
         };
@@ -273,8 +278,125 @@ function respostaOk(messageId = "wamid.OK") {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+});
+
+describe("janela universal no sink de outbound", () => {
+  const agora = new Date("2026-09-14T12:00:00Z");
+  const dentro = "2026-09-14T11:00:00Z";
+  const fora = "2026-09-13T11:00:00Z";
+
+  it.each([
+    ["waha", fora, "sent"],
+    ["waha", null, "sent"],
+    ["meta_cloud", dentro, "sent"],
+    ["meta_cloud", fora, "failed"],
+    ["meta_cloud", null, "failed"],
+    ["meta_cloud", "2026-09-13T12:00:00Z", "failed"],
+    ["meta_cloud", "data-invalida", "failed"],
+    ["zernio", dentro, "sent"],
+    ["zernio", fora, "failed"],
+    ["zernio", null, "failed"],
+  ] as const)("%s com inbound %s resulta em %s", async (provider, inbound, status) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(agora);
+    const adapter = getAdapter(provider);
+    vi.spyOn(adapter, "isConfigured").mockReturnValue(true);
+    const send = vi.spyOn(adapter, "send").mockResolvedValue({ externalId: "wamid.window" });
+    const { supabase, estado } = makeSupabase({
+      ...conversaCompleta({ provider }), last_inbound_at: inbound,
+    });
+
+    const message = await sendMessageHandler(supabase, ctx, texto());
+
+    expect(message.status).toBe(status);
+    expect(estado.message?.status).toBe(status);
+    expect(estado.selects.every((s) => colunasDoSelect(s).includes("last_inbound_at"))).toBe(true);
+    if (status === "failed") {
+      expect(message.error_code).toBe("messaging_window_closed");
+      expect(message.metadata).not.toHaveProperty("queued_reason");
+      expect(send).not.toHaveBeenCalled();
+    } else {
+      expect(send).toHaveBeenCalledOnce();
+    }
+  });
+
+  it.each(["meta_cloud", "zernio"] as ChannelProvider[])("%s permite template fora da janela", async (provider) => {
+    const adapter = getAdapter(provider);
+    vi.spyOn(adapter, "isConfigured").mockReturnValue(true);
+    const send = vi.spyOn(adapter, "send");
+    const sendTemplate = adapter.sendTemplate
+      ? vi.spyOn(adapter, "sendTemplate").mockResolvedValue({ externalId: "wamid.template" })
+      : vi.spyOn(templateSender, "sendTemplateForSession").mockResolvedValue("wamid.template");
+    const { supabase } = makeSupabase({ ...conversaCompleta({ provider }), last_inbound_at: null });
+
+    const message = await sendMessageHandler(supabase, ctx, texto({
+      type: "template", template_name: "retorno", template_language: "pt_BR", template_values: {},
+    }));
+
+    expect(message.status).toBe("sent");
+    expect(sendTemplate).toHaveBeenCalledOnce();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("janela fechada falha mesmo com canal sem configuração ou desconectado", async () => {
+    const adapter = getAdapter("meta_cloud");
+    vi.spyOn(adapter, "isConfigured").mockReturnValue(false);
+    const send = vi.spyOn(adapter, "send");
+    const row = conversaCompleta({ provider: "meta_cloud" });
+    const { supabase } = makeSupabase({
+      ...row, last_inbound_at: null,
+      channel_sessions: { ...(row.channel_sessions as Row), status: "STOPPED" },
+    });
+    const message = await sendMessageHandler(supabase, ctx, texto());
+    expect(message).toMatchObject({ status: "failed", error_code: "messaging_window_closed" });
+    expect(message.metadata).not.toHaveProperty("queued_reason");
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("mídia também não contorna a janela", async () => {
+    const send = vi.spyOn(getAdapter("meta_cloud"), "send");
+    const { supabase } = makeSupabase({ ...conversaCompleta({ provider: "meta_cloud" }), last_inbound_at: null });
+    const message = await sendMessageHandler(supabase, ctx, texto({ type: "image", media_url: "https://example.com/image.jpg" }));
+    expect(message).toMatchObject({ status: "failed", error_code: "messaging_window_closed" });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("agent-engine registra failed no ledger e não reagenda como queued", async () => {
+    const send = vi.spyOn(getAdapter("meta_cloud"), "send");
+    const { supabase, estado } = makeSupabase({ ...conversaCompleta({ provider: "meta_cloud" }), last_inbound_at: null });
+    const query = vi.fn(async (sql: string, args?: unknown[]) => {
+      if (sql.includes('update messages m set')) {
+        if (!estado.message) throw new Error('fake_pg: message_missing');
+        const metadata = (estado.message.metadata ?? {}) as Row;
+        Object.assign(estado.message, JSON.parse(String(args?.[7])), { metadata: {
+          ...metadata, ...JSON.parse(String(args?.[5])),
+          outbound_attempt: { ...(metadata.outbound_attempt as Row), ...JSON.parse(String(args?.[6])) },
+        } });
+        return {rows:[{...estado.message}],rowCount:1};
+      }
+      return { rows: sql.startsWith('select id,status,external_id') ? (estado.message ? [estado.message] : [])
+        : [{ id: 'ledger-1', status: 'requested' }], rowCount: 1 };
+    });
+    const db = { query } as unknown as Queryable;
+
+    const outcome = await sendTurnMessage(db, { supabase }, {
+      tenantId: ORG, leadId: CONTACT, jobId: "job-1", seq: 1, conversationId: CONV, body: "oi",
+      workerId: 'worker-1',
+    });
+    expect(outcome).toMatchObject({ kind: "failed", crmMessageId: "ledger-1" });
+    expect(query.mock.calls.some(([sql,args]) => sql.includes('update send_ledger set status=') && args?.[0] === 'failed')).toBe(true);
+    query.mockClear();
+    expect(await applySendOutcome(db, outcome, {
+      jobId: "job-1", workerId: "worker-1", tenantId: ORG, leadId: CONTACT,
+    }, { queuedRetryDelayMs: 300_000 })).toEqual({ action: "none" });
+    // Falhas seguem o orçamento finito da fila; não caem no retry ilimitado de queued.
+    expect(query).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
 });
 
 describe("o projetor do dublê é discriminante (guarda de vacuidade)", () => {
@@ -429,10 +551,9 @@ describe("nenhum desfecho diz `sent` sem nada ter saído", () => {
     expect(msg.status).not.toBe("sent");
   });
 
-  it("CONTROLE: o canal oficial, com env igualmente incompleto, fica `queued`", async () => {
-    // O par é o que dá sentido ao caso acima: mesma classe de má configuração,
-    // desfecho oposto. `metaCredsFromEnv()` exige as duas vars e `isConfigured()`
-    // deriva DELE, então o pre-check já barra e a linha fica em fila.
+  it("canal oficial sem credencial da sessão falha fechado, sem cair no env", async () => {
+    // A sessão vem do CRM: o pre-check permite consultar o banco, mas a ausência
+    // de credencial da sessão falha fechado em vez de enfileirar pelo env.
     vi.stubEnv("META_PHONE_NUMBER_ID", "");
     vi.stubEnv("META_SYSTEM_USER_TOKEN", "tok");
     const fetchMock = vi.fn();
@@ -441,8 +562,8 @@ describe("nenhum desfecho diz `sent` sem nada ter saído", () => {
     const { supabase } = makeSupabase(conversaCompleta({ provider: "meta_cloud" }));
     const msg = await sendMessageHandler(supabase, ctx, texto());
 
-    expect(msg.status).toBe("queued");
-    expect((msg.metadata as Record<string, unknown>).queued_reason).toBe("meta_not_configured");
+    expect(msg.status).toBe("failed");
+    expect(msg.error_message).toBe("meta_session_credentials_missing");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

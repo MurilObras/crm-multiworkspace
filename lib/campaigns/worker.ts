@@ -5,6 +5,8 @@ import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Campaign, RecipientStatus } from "./schema";
+import { campaignStepSchema } from "./schema";
+import { isTemplateStep, prepareCampaignTemplate } from "./template-step";
 
 const key = "whatsapp_campaign_send";
 
@@ -61,21 +63,29 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
 
   const stepId = c.step_id;
   const contactId = c.contact_id;
-  const stepMessage = campaign.steps[stepIndex]?.message ?? "";
 
   let status: RecipientStatus = "failed";
   let reason: string | null = "send_uncertain_manual_inspection";
   let messageId: string | null = null;
 
   const loadContact = () => admin.from("contacts")
-    .select("id, phone_number, is_blocked, consent, is_anonymized, is_merged_into")
+    .select("id, organization_id, phone_number, is_blocked, consent, is_anonymized, is_merged_into")
     .eq("organization_id", org).eq("id", contactId).maybeSingle();
 
   try {
-    const { data: contact } = await loadContact();
+    const step = campaignStepSchema.safeParse(campaign.steps[stepIndex]);
+    if (!step.success) {
+      reason = "campaign_step_invalid";
+      throw new Error(reason);
+    }
+    const { data: contact, error: contactError } = await loadContact();
+    if (contactError) { reason = 'contact_read_failed'; throw new Error(reason); }
     if (!contact) {
       reason = "contact_missing";
       throw new Error(reason);
+    }
+    if (contact.id !== contactId || contact.organization_id !== org || typeof contact.is_blocked !== 'boolean') {
+      reason = 'contact_mismatch'; throw new Error(reason);
     }
     // Recusa tem precedencia: um contato bloqueado (ou que recusou marketing)
     // nunca recebe nenhum passo.
@@ -94,10 +104,11 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
     }
 
     // Resposta do contato apos o inicio da campanha interrompe os proximos passos.
-    const { data: replied } = await admin.from("messages").select("id")
+    const { data: replied, error: replyError } = await admin.from("messages").select("id")
       .eq("organization_id", org).eq("contact_id", contactId)
       .eq("channel_session_id", campaign.channel_session_id)
       .eq("direction", "inbound").gt("created_at", campaign.started_at).limit(1).maybeSingle();
+    if (replyError) { reason = 'reply_check_failed'; throw new Error(reason); }
     if (replied) {
       status = "stopped_reply";
       reason = "contact_replied";
@@ -112,6 +123,15 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
       throw new Error(reason);
     }
 
+    let official;
+    if (isTemplateStep(step.data)) {
+      try {
+        official = await prepareCampaignTemplate(admin, org, campaign.channel_session_id, step.data);
+      } catch (err) {
+        reason = err instanceof Error ? err.message : "campaign_template_invalid";
+        throw err;
+      }
+    }
     const conversationId = await ensureConversation(admin, org, contactId, campaign.channel_session_id);
     const { data: conversation, error: convError } = await admin.from("conversations").select("id")
       .eq("id", conversationId).eq("organization_id", org).eq("contact_id", contactId)
@@ -121,7 +141,11 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
     const message = await sendMessageHandler(admin, {
       organization_id: org, actor: { type: "user", id: campaign.created_by }, requestId: row.id,
     }, {
-      conversation_id: conversationId, type: "text", body: stepMessage,
+      conversation_id: conversationId,
+      ...(official ? { type: "template" as const, body: official.body,
+        template_name: official.template.name, template_language: official.template.language,
+        template_values: official.template.values }
+        : { type: "text" as const, body: step.data.message }),
       metadata: { campaign_id: campaignId, campaign_step_index: stepIndex, campaign_contact_id: contactId },
     }, { beforeSend: async (message) => {
       messageId = message.id;
@@ -130,17 +154,30 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
         .eq("contact_id", contactId).eq("step_index", stepIndex).eq("id", stepId)
         .eq("status", "failed").is("message_id", null).select("id").single();
       if (linkError || !linked) throw new Error("campaign_message_link_failed");
-      const { data: recontact } = await loadContact();
-      if (recontact?.is_blocked || recontact?.consent?.marketing?.declined_at) {
+      const { data: recontact, error: recontactError } = await loadContact();
+      if (recontactError) { reason = 'contact_recheck_failed'; throw new Error(reason); }
+      if (!recontact || recontact.id !== contactId || recontact.organization_id !== org || typeof recontact.is_blocked !== 'boolean') {
+        reason = 'contact_recheck_mismatch'; throw new Error(reason);
+      }
+      if (recontact.is_blocked || recontact.consent?.marketing?.declined_at) {
         status = "skipped_opt_out";
         reason = "contact_opt_out";
         throw new Error(reason);
+      }
+      const recheck = checarGuardasDeContato({
+        admin, organizationId: org, ruleId: campaignId, ruleName: campaign.name,
+        event: row, context: { contact: recontact }, requestId: row.id,
+      });
+      if (!recheck.ok || recontact.is_anonymized || recontact.is_merged_into || recontact.phone_number !== contact.phone_number) {
+        reason = 'contact_changed_before_send'; throw new Error(reason);
       }
     } });
     messageId = message.id;
     if (message.status === "sent" && message.external_id) {
       status = "sent";
       reason = null;
+    } else if (message.error_code) {
+      reason = message.error_code;
     }
   } catch {
     // Inclusive timeout e queda depois do aceite: jamais chamar send de novo.

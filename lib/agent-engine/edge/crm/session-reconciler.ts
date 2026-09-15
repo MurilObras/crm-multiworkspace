@@ -192,7 +192,9 @@ export async function redriveQueued(
      join channel_sessions s on s.id = m.channel_session_id
      join conversations v on v.id = m.conversation_id
      join contacts c on c.id = m.contact_id
-     where m.sent_via = 'ai' and m.status = 'queued'
+      where m.sent_via = 'ai' and m.status = 'queued'
+        -- Tentativas novas têm dono no job/ledger e só retomam pelo fence comum.
+        and not (coalesce(m.metadata, '{}'::jsonb) ?| array['outbound_attempt','idempotency_key'])
        and s.status = 'WORKING'
        and c.is_blocked = false
        -- ─── Só as sessões que ESTE resgate consegue alcançar ───────────────
@@ -221,7 +223,8 @@ export async function redriveQueued(
     `select count(*)::text as n
      from messages m
      join channel_sessions s on s.id = m.channel_session_id
-     where m.sent_via = 'ai' and m.status = 'queued'
+      where m.sent_via = 'ai' and m.status = 'queued'
+        and not (coalesce(m.metadata, '{}'::jsonb) ?| array['outbound_attempt','idempotency_key'])
        and s.status = 'WORKING'
        and s.waha_session_name is null
        and m.created_at < now() - make_interval(secs => $1 / 1000.0)`,

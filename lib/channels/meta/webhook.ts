@@ -134,6 +134,8 @@ export interface MessageStatusEvent {
   recipient: string | null;
   errorCode: number | null;
   errorTitle: string | null;
+  errorMessage: string | null;
+  occurredAt: string | null;
 }
 
 export type MetaWebhookEvent = TemplateStatusEvent | MessageStatusEvent | InboundMessageEvent;
@@ -235,7 +237,6 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
                 : null,
           });
         }
-        continue;
       }
 
       if (change.field === "messages" && Array.isArray(v.statuses)) {
@@ -246,6 +247,11 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
             ? (raw.errors as Record<string, unknown>[])
             : [];
           const first = errors[0] ?? {};
+          const timestamp = str(raw.timestamp);
+          const date = timestamp && /^\d+$/.test(timestamp)
+            ? new Date(Number(timestamp) * 1000)
+            : null;
+          const errorData = first.error_data as Record<string, unknown> | undefined;
           out.push({
             kind: "message_status",
             wabaId,
@@ -254,6 +260,8 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
             recipient: str(raw.recipient_id),
             errorCode: typeof first.code === "number" ? first.code : null,
             errorTitle: str(first.title),
+            errorMessage: str(errorData?.details) ?? str(first.message) ?? str(first.title),
+            occurredAt: date && Number.isFinite(date.getTime()) ? date.toISOString() : null,
           });
         }
       }
