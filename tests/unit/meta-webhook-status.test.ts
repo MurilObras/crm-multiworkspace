@@ -9,6 +9,9 @@ type Row = Record<string, unknown>;
 let rows: Row[];
 let writes: number;
 let dbError: boolean;
+let readError: boolean;
+let lookupHook: (() => void) | null;
+let lookupPhase: "before" | "after";
 const resolveSession = vi.fn(async (_token: string) => SESSION as typeof SESSION | null);
 vi.mock("@/lib/channels/meta/session", () => ({ metaSessionByWebhookToken: (token: string) => resolveSession(token) }));
 vi.mock("@/lib/channels/meta/ingest", () => ({ ingestMetaInbound: vi.fn(async () => ({ status: "ingested" })) }));
@@ -20,7 +23,24 @@ function db() {
   return {
     from(table: string) {
       expect(table).toBe("messages");
-      return { update(patch: Row) {
+      return {
+        select() {
+          const predicates: Array<(row: Row) => boolean> = [];
+          const q = {
+            eq(column: string, value: unknown) { predicates.push((r) => r[column] === value); return q; },
+            async maybeSingle() {
+              if (readError) return { data: null, error: { message: "database unavailable" } };
+              const hook = lookupHook; lookupHook = null;
+              if (lookupPhase === "before") hook?.();
+              const row = rows.find((r) => predicates.every((p) => p(r)));
+              const data = row ? { id: row.id } : null;
+              if (lookupPhase === "after") hook?.();
+              return { data, error: null };
+            },
+          };
+          return q;
+        },
+        update(patch: Row) {
         const predicates: Array<(row: Row) => boolean> = [];
         const q = {
           eq(column: string, value: unknown) { predicates.push((r) => r[column] === value); return q; },
@@ -66,7 +86,11 @@ function envelope(status: string, extra: Row = {}, wabaId = "waba-a") {
 }
 
 async function post(status: string, extra: Row = {}, wabaId = "waba-a", signature = true) {
-  const raw = JSON.stringify(envelope(status, extra, wabaId));
+  return postEnvelope(envelope(status, extra, wabaId), signature);
+}
+
+async function postEnvelope(payload: ReturnType<typeof envelope>, signature = true) {
+  const raw = JSON.stringify(payload);
   return POST({
     text: async () => raw,
     headers: new Headers({ "x-hub-signature-256": signature
@@ -76,12 +100,84 @@ async function post(status: string, extra: Row = {}, wabaId = "waba-a", signatur
 
 beforeEach(() => {
   rows = [message()]; writes = 0; dbError = false;
+  readError = false;
+  lookupHook = null; lookupPhase = "after";
   resolveSession.mockResolvedValue(SESSION);
   vi.stubEnv("META_APP_SECRET", SECRET);
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("webhook Meta — recibos monotônicos e isolados", () => {
+  it("falha na leitura da correlação também pede retry, sem confirmar nem escrever", async () => {
+    readError = true;
+    expect((await post("delivered")).status).toBe(500);
+    expect(writes).toBe(0);
+    readError = false;
+    expect((await post("delivered")).status).toBe(200);
+    expect(rows[0]?.status).toBe("delivered");
+  });
+  it.each(["sent", "delivered", "read", "failed"])("%s antecipado pede retry e aplica após external_id aparecer", async (status) => {
+    rows[0]!.external_id = null;
+    const event = { errors: [{ code: 131047, title: "Window closed" }] };
+    const pending = await post(status, event);
+    expect(pending.status).toBe(503);
+    expect(await pending.json()).toMatchObject({ error: { details: {
+      pending_receipts: 1, outcomes: ["pending_correlation"],
+    } } });
+    expect(writes).toBe(0);
+    // O mesmo UPDATE que o sink faz ao receber o wamid do transporte.
+    Object.assign(rows[0]!, { external_id: "wamid.A", status: "sent" });
+    expect((await post(status, event)).status).toBe(200);
+    expect(rows[0]?.status).toBe(status);
+    if (status === "delivered") expect(rows[0]?.delivered_at).toBe("2023-11-14T22:13:20.000Z");
+    if (status === "read") expect(rows[0]?.read_at).toBe("2023-11-14T22:13:20.000Z");
+    if (status === "failed") expect(rows[0]).toMatchObject({ error_code: "131047", error_message: "Window closed" });
+    writes = 0;
+    expect((await post(status, event)).status).toBe(200);
+    expect(writes).toBe(0);
+  });
+
+  it.each(["before", "after"] as const)("external_id gravado %s da leitura concorrente não perde recibo", async (phase) => {
+    rows[0]!.external_id = null;
+    lookupPhase = phase;
+    lookupHook = () => Object.assign(rows[0]!, { external_id: "wamid.A", status: "sent" });
+    expect((await post("read")).status).toBe(phase === "before" ? 200 : 503);
+    expect((await post("read")).status).toBe(200);
+    expect(rows[0]).toMatchObject({ status: "read", read_at: "2023-11-14T22:13:20.000Z" });
+    await post("delivered", { timestamp: "1699999999" });
+    await post("failed");
+    expect(rows[0]?.status).toBe("read");
+  });
+
+  it.each([{ organization_id: "org-b" }, { channel_session_id: "session-b" }, { direction: "inbound" }])(
+    "recibo sem mensagem no escopo pede retry, nunca correlaciona %j", async (other) => {
+      rows = [message(other)];
+      const before = structuredClone(rows);
+      expect((await post("read", { organization_id: "org-b", channel_session_id: "session-b" })).status).toBe(503);
+      expect(rows).toEqual(before); expect(writes).toBe(0);
+    },
+  );
+
+  it("mensagem inexistente permanece pendente e não inventa uma linha", async () => {
+    rows = [];
+    expect((await post("delivered")).status).toBe(503);
+    expect((await post("delivered")).status).toBe(503);
+    expect(rows).toEqual([]); expect(writes).toBe(0);
+  });
+
+  it("um recibo pendente não impede os correlacionáveis do mesmo lote", async () => {
+    const payload = envelope("read", { id: "wamid.PENDING" });
+    payload.entry[0]!.changes[0]!.value.statuses.push({ id: "wamid.A", status: "delivered", timestamp: "1700000000" });
+    expect((await postEnvelope(payload)).status).toBe(503);
+    expect(rows[0]?.status).toBe("delivered");
+    writes = 0;
+    expect((await postEnvelope(payload)).status).toBe(503);
+    expect(writes).toBe(0);
+    rows.push(message({ id: "message-b", external_id: "wamid.PENDING", status: "sent" }));
+    expect((await postEnvelope(payload)).status).toBe(200);
+    expect(rows[1]?.status).toBe("read");
+  });
+
   it.each(["sent", "delivered", "read"])("%s preserva o status e o timestamp real", async (status) => {
     expect((await post(status)).status).toBe(200);
     const column = status === "sent" ? "sent_at" : status === "delivered" ? "delivered_at" : "read_at";

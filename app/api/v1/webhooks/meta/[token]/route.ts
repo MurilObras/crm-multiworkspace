@@ -104,6 +104,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
    * indistinguível de "não chegou". Custou uma hora de diagnóstico no lugar errado.
    */
   const desfechos: string[] = [];
+  let pendingReceipts = 0;
 
   for (const e of eventos) {
     // O evento chega carimbado com a WABA; se não for a desta sessão, ignoramos.
@@ -144,12 +145,26 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
         .eq("language", e.templateLanguage);
     } else {
       try {
-        desfechos.push(await applyMetaMessageStatus(admin, session, e, now));
+        const outcome = await applyMetaMessageStatus(admin, session, e, now);
+        desfechos.push(outcome);
+        if (outcome === "pending_correlation") pendingReceipts++;
       } catch {
         logger.error("[meta.webhook] falha ao persistir recibo", { request_id: requestId });
         return fail("internal_error", "status_update_failed", 500, { requestId });
       }
     }
+  }
+
+  // Processa o lote inteiro antes de pedir reentrega: um ID ainda desconhecido
+  // não deve impedir a aplicação dos demais recibos que já podem ser correlacionados.
+  // Sem 2xx, a Meta conserva o evento para retry. Não emitimos outra fila/polling.
+  if (pendingReceipts > 0) {
+    logger.warn("[meta.webhook] recibos aguardando correlação", {
+      request_id: requestId, pending_receipts: pendingReceipts,
+    });
+    return fail("service_unavailable", "delivery_receipts_pending_correlation", 503, {
+      requestId, details: { pending_receipts: pendingReceipts, outcomes: desfechos },
+    });
   }
 
   // 200 para evento processado ou que não nos

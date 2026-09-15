@@ -20,12 +20,26 @@ export async function applyMetaMessageStatus(
   session: MetaWebhookSession,
   event: MessageStatusEvent,
   now = new Date().toISOString(),
-): Promise<"processed" | "ignored_status" | "ignored_waba"> {
+): Promise<"processed" | "pending_correlation" | "ignored_status" | "ignored_waba"> {
   if (session.wabaId && event.wabaId !== session.wabaId) return "ignored_waba";
   const status = event.status;
   if (status !== "sent" && status !== "delivered" && status !== "read" && status !== "failed") {
     return "ignored_status";
   }
+
+  // Zero linhas no UPDATE pode ser duplicata/recibo atrasado OU ausência de
+  // correlação: o sink grava external_id só depois do retorno do transporte.
+  // Distingue os dois antes de confirmar o webhook. Se o ID aparecer logo após
+  // esta leitura, um 503 conservador só provoca uma reentrega idempotente.
+  const { data: message, error: lookupError } = await db.from("messages")
+    .select("id")
+    .eq("organization_id", session.organizationId)
+    .eq("channel_session_id", session.id)
+    .eq("external_id", event.externalId)
+    .eq("direction", "outbound")
+    .maybeSingle();
+  if (lookupError) throw new Error(`meta_message_status_lookup: ${lookupError.message}`);
+  if (!message) return "pending_correlation";
 
   const scopedUpdate = (patch: Record<string, unknown>) => db.from("messages")
     .update(patch)
