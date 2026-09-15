@@ -26,14 +26,21 @@ const contacts = [
   { organization_id: org, tags: ["other"], source: "manual", is_merged_into: null },
   { organization_id: org, tags: ["vip"], source: "manual", is_merged_into: "merged" },
 ];
-function database(detail = false) {
+const templateId = "11111111-1111-4111-8111-111111111111";
+const templateStep = { type: "template", template_id: templateId, language: "pt_BR", values: { "1": "Ana" }, delay_minutes: 0 };
+function database(detail = false, options: { template?: Record<string, unknown>; provider?: string; existing?: boolean } = {}) {
   const filters: Array<[string, unknown]> = [];
   const ranges: number[][] = [];
   const rpc = vi.fn().mockResolvedValue({ data: id, error: null });
   const admin = {
     rpc,
     from: vi.fn((table: string) => {
-      let rows: Array<Record<string, unknown>> = table === "contacts" ? contacts.map((c) => ({ ...c })) : [];
+      let rows: Array<Record<string, unknown>> = table === "contacts" ? contacts.map((c) => ({ ...c }))
+        : table === "channel_sessions" ? [{ id: channel, organization_id: org, provider: options.provider ?? "meta_cloud", status: "WORKING", archived_at: null }]
+        : table === "meta_templates" ? [{ id: templateId, organization_id: org, channel_session_id: channel,
+          language: "pt_BR", name: "retorno", status: "APPROVED", parameter_format: "POSITIONAL",
+          components: [{ type: "BODY", text: "Olá {{1}}" }], ...options.template }]
+        : table === "whatsapp_campaigns" && options.existing ? [{ id, organization_id: org }] : [];
       let countHead = false;
       const q = {
         select: (...args: unknown[]) => { if (args[1] && typeof args[1] === "object") countHead = true; return q; },
@@ -43,7 +50,7 @@ function database(detail = false) {
         is: (key: string, value: unknown) => { filters.push([key, value]); rows = rows.filter((r) => r[key] === value); return q; },
         in: (key: string, values: string[]) => { filters.push([key, values]); rows = rows.filter((r) => values.includes(r[key] as string)); return q; },
         contains: (key: string, values: string[]) => { filters.push([key, values]); rows = rows.filter((r) => values.every((v) => (r[key] as string[]).includes(v))); return q; },
-        maybeSingle: async () => ({ data: detail && table === "whatsapp_campaigns" ? { ...input, organization_id: org, status: "running", started_at: "2026-09-07T00:00:00.000Z" } : null, error: null }),
+        maybeSingle: async () => ({ data: detail && table === "whatsapp_campaigns" ? { ...input, organization_id: org, status: "running", started_at: "2026-09-07T00:00:00.000Z" } : rows[0] ?? null, error: null }),
         then: (fn: (v: unknown) => unknown) => Promise.resolve(resolve()).then(fn),
       };
       function resolve() {
@@ -55,7 +62,7 @@ function database(detail = false) {
         if (table === "whatsapp_campaign_recipients") {
           return { data: Array.from({ length: 101 }, (_, i) => ({ id: `r${i}`, contact_id: `c${i}` })), error: null };
         }
-        return { data: [], count: 0, error: null };
+        return { data: rows, count: 0, error: null };
       }
       return q;
     }),
@@ -69,6 +76,40 @@ beforeEach(() => {
 });
 const request = (value: unknown = input) => new Request("http://localhost/api/v1/campaigns", {
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value),
+});
+
+it.each([false, true])("template uses existing RPC with real rendered message and full official reference (extended=%s)", async (extended) => {
+  const db = database();
+  expect((await POST(request({ ...input, steps: [templateStep], ...(extended ? { scheduled_at: "2030-01-01T12:00:00.000Z" } : {}) }))).status).toBe(201);
+  expect(db.rpc).toHaveBeenCalledWith(extended ? "prepare_whatsapp_campaign" : "launch_whatsapp_campaign", expect.objectContaining({
+    p_organization_id: org, p_channel_session_id: channel,
+    p_steps: [{ ...templateStep, message: "Olá Ana" }],
+  }));
+});
+it.each([
+  { template: { status: "PENDING" } }, { template: { organization_id: "other" } },
+  { template: { channel_session_id: "other" } }, { template: { language: "en_US" } },
+  { provider: "waha" },
+])("invalid template/channel never starts a campaign: %j", async (options) => {
+  const db = database(false, options);
+  expect((await POST(request({ ...input, steps: [templateStep] }))).status).toBe(422);
+  expect(db.rpc).not.toHaveBeenCalled();
+});
+it("caller-provided message cannot replace official body", async () => {
+  const db = database();
+  expect((await POST(request({ ...input, steps: [{ ...templateStep, message: "texto adulterado" }] }))).status).toBe(201);
+  expect(db.rpc.mock.calls[0]?.[1].p_steps[0].message).toBe("Olá Ana");
+});
+it("missing template parameters fail before RPC", async () => {
+  const db = database();
+  expect((await POST(request({ ...input, steps: [{ ...templateStep, values: {} }] }))).status).toBe(422);
+  expect(db.rpc).not.toHaveBeenCalled();
+});
+it("retry of existing official campaign does not recreate or depend on template still being approved", async () => {
+  const db = database(false, { existing: true, template: { status: "REJECTED" } });
+  const res = await POST(request({ ...input, steps: [templateStep] }));
+  expect(res.status).toBe(201); expect(await res.json()).toMatchObject({ data: { id } });
+  expect(db.rpc).not.toHaveBeenCalled();
 });
 
 it("server preview applies exact tag/source and tenant, excluding merged contacts", async () => {

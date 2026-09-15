@@ -5,6 +5,8 @@ import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Campaign, RecipientStatus } from "./schema";
+import { campaignStepSchema } from "./schema";
+import { isTemplateStep, prepareCampaignTemplate } from "./template-step";
 
 const key = "whatsapp_campaign_send";
 
@@ -61,7 +63,6 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
 
   const stepId = c.step_id;
   const contactId = c.contact_id;
-  const stepMessage = campaign.steps[stepIndex]?.message ?? "";
 
   let status: RecipientStatus = "failed";
   let reason: string | null = "send_uncertain_manual_inspection";
@@ -72,6 +73,11 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
     .eq("organization_id", org).eq("id", contactId).maybeSingle();
 
   try {
+    const step = campaignStepSchema.safeParse(campaign.steps[stepIndex]);
+    if (!step.success) {
+      reason = "campaign_step_invalid";
+      throw new Error(reason);
+    }
     const { data: contact } = await loadContact();
     if (!contact) {
       reason = "contact_missing";
@@ -112,6 +118,15 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
       throw new Error(reason);
     }
 
+    let official;
+    if (isTemplateStep(step.data)) {
+      try {
+        official = await prepareCampaignTemplate(admin, org, campaign.channel_session_id, step.data);
+      } catch (err) {
+        reason = err instanceof Error ? err.message : "campaign_template_invalid";
+        throw err;
+      }
+    }
     const conversationId = await ensureConversation(admin, org, contactId, campaign.channel_session_id);
     const { data: conversation, error: convError } = await admin.from("conversations").select("id")
       .eq("id", conversationId).eq("organization_id", org).eq("contact_id", contactId)
@@ -121,7 +136,11 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
     const message = await sendMessageHandler(admin, {
       organization_id: org, actor: { type: "user", id: campaign.created_by }, requestId: row.id,
     }, {
-      conversation_id: conversationId, type: "text", body: stepMessage,
+      conversation_id: conversationId,
+      ...(official ? { type: "template" as const, body: official.body,
+        template_name: official.template.name, template_language: official.template.language,
+        template_values: official.template.values }
+        : { type: "text" as const, body: step.data.message }),
       metadata: { campaign_id: campaignId, campaign_step_index: stepIndex, campaign_contact_id: contactId },
     }, { beforeSend: async (message) => {
       messageId = message.id;
@@ -141,6 +160,8 @@ export async function processCampaign(admin: SupabaseClient, row: EventRow): Pro
     if (message.status === "sent" && message.external_id) {
       status = "sent";
       reason = null;
+    } else if (message.error_code) {
+      reason = message.error_code;
     }
   } catch {
     // Inclusive timeout e queda depois do aceite: jamais chamar send de novo.

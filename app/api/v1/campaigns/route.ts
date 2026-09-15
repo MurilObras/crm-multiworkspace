@@ -7,6 +7,7 @@ import { audit } from "@/lib/audit";
 import { campaignCreateSchema, campaignFiltersSchema, recipientStatuses } from "@/lib/campaigns/schema";
 import { contactAudienceQuery } from "@/app/api/v1/contacts/_handler";
 import { normalizaTelefone } from "@/lib/contacts/csv";
+import { isTemplateStep, prepareCampaignTemplate } from "@/lib/campaigns/template-step";
 
 export const dynamic = "force-dynamic";
 
@@ -85,9 +86,29 @@ export async function POST(req: Request) {
   const audience = p.audience?.map((c) => ({ ...c, phone_number: normalizaTelefone(c.phone_number) }));
   if (audience?.some((c) => !c.phone_number)) return fail("validation_failed", "Telefone invalido.", 422, { requestId });
   const extended = p.audience !== undefined || p.scheduled_at !== undefined;
-  const { data: campaignId, error } = await createAdminClient().rpc(extended ? "prepare_whatsapp_campaign" : "launch_whatsapp_campaign", {
+  const admin = createAdminClient();
+  const steps = [...p.steps];
+  if (steps.some(isTemplateStep)) {
+    // Retry de uma criação já concluída não depende da aprovação atual do template.
+    const { data: existing, error: existingError } = await admin.from("whatsapp_campaigns")
+      .select("id").eq("organization_id", auth.org.orgId).eq("id", p.id).maybeSingle();
+    if (existingError) return fail("internal_error", "Falha ao consultar campanha.", 500, { requestId });
+    if (existing) return ok({ id: existing.id }, { status: 201, requestId });
+    try {
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i]!;
+        if (!isTemplateStep(step)) continue;
+        const prepared = await prepareCampaignTemplate(admin, auth.org.orgId, p.channel_session_id, step);
+        steps[i] = { ...step, message: prepared.body };
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "campaign_template_invalid";
+      return fail("validation_failed", "Template oficial indisponível para esta campanha.", 422, { requestId, details: { reason } });
+    }
+  }
+  const { data: campaignId, error } = await admin.rpc(extended ? "prepare_whatsapp_campaign" : "launch_whatsapp_campaign", {
     p_id: p.id, p_organization_id: auth.org.orgId, p_created_by: auth.user.id,
-    p_name: p.name, p_channel_session_id: p.channel_session_id, p_steps: p.steps,
+    p_name: p.name, p_channel_session_id: p.channel_session_id, p_steps: steps,
     p_filters: p.filters ?? {}, p_hourly_limit: p.hourly_limit,
     ...(extended ? { p_audience: audience ?? null, p_scheduled_at: p.scheduled_at ?? null } : {}),
   });
