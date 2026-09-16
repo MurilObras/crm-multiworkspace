@@ -8,6 +8,97 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [2.0.0] — 2026-09-16
+
+### ⚠️ Requer atenção
+
+- **Recuperação de envios usa lease e distingue resultado incerto** O inline passa a usar a conexão PostgreSQL do worker para claim e conclusão
+  transacionais; instalações que usavam somente Supabase REST nesse caminho devem
+  configurar `SUPABASE_DB_URL`, já existente no projeto, antes da atualização.
+
+### Adicionado
+
+- **Campanhas aceitam passos de template oficial** O backend de campanhas aceita templates aprovados por conexão, com idioma e
+  valores dos parâmetros. A definição é conferida na criação e novamente no envio.
+  Texto livre mantém a proteção da janela de atendimento; falhas não avançam a
+  sequência. A reserva de destinatários, cotas e proteção contra reenvio continuam
+  no fluxo existente. Campanhas de texto já cadastradas permanecem compatíveis.
+
+- **Campanhas com listas de numeros, planilhas e agendamento** Campanhas WhatsApp aparece no menu lateral e aceita numeros colados ou arquivos
+  CSV/XLSX, alem do publico por tag e origem. O preview mostra validos, unicos,
+  duplicados e invalidos antes de confirmar. Contatos novos sao criados no workspace
+  da campanha, sem guardar o arquivo original.
+
+  O envio pode ser imediato ou agendado com data, hora e fuso explicitos. O publico
+  fica congelado ao confirmar e o processamento ocorre no servidor, mesmo com o
+  navegador fechado, usando o scheduler e o worker existentes.
+
+- **Campanhas WhatsApp por tag, com sequencias** Em CRM, Campanhas WhatsApp permite conferir o publico de uma tag, filtrar por
+  origem e iniciar uma sequencia de mensagens por um canal conectado. O passo 1 e
+  imediato; os passos seguintes tem delay em minutos, horas ou dias. O publico fica
+  congelado ao iniciar; cada passo confere bloqueio e recusa de marketing. A cota
+  por hora e por canal e compartilhada entre campanhas concorrentes do mesmo
+  numero. Se o contato responder depois do inicio, os passos seguintes param
+  (`stopped_reply`). Resultados incertos ficam como falha para inspecao manual,
+  sem reenvio automatico. O processamento usa o drain de eventos existente.
+
+- **Follow-ups usam fallback oficial fora da janela de atendimento** Fluxos em canais oficiais podem enviar um template aprovado configurado no passo
+  quando a janela de 24 horas estiver fechada. Após uma resposta do cliente, voltam
+  ao texto livre. A publicação confere conexão, aprovação e parâmetros do fallback;
+  canais de texto livre continuam sem essa exigência. O envio fixo também respeita
+  a janela e deixa de contabilizar falhas do transporte como sucesso.
+
+### Corrigido
+
+- **Consumo de eventos nao para por falha de importacao do PDF** Corrige o mapa de exports da dependencia de hifenizacao do PDF, que impedia
+  o registro dos handlers no worker e a importacao do cron de eventos. Mantem
+  o PDF LGPD e todos os consumidores, inclusive campanhas, sem exigir nova
+  configuracao do operador.
+
+- **Executor expirado não reclassifica tentativas de envio** As escritas de resultado, erro e requeue das tentativas gerenciadas verificam o
+  owner e a fase persistida no mesmo comando. Uma falha tardia de um executor cujo
+  lease expirou não apaga a indicação de transporte iniciado por outro executor e
+  não libera reenvio de uma mensagem possivelmente aceita.
+
+- **Fluxos sem envio voltam a publicar sem conexão de mensagens** Fluxos de follow-up que apenas aguardam, avaliam condições ou encerram podem ser
+  publicados sem uma conexão de mensagens. Fluxos com envio continuam exigindo uma
+  conexão elegível e, nos canais restritos, um template de fallback aprovado.
+
+- **Follow-ups reaproveitam tentativas e campanhas conferem as guardas antes de enviar** O envio inline de follow-up registra sua tentativa no ledger existente e reutiliza
+  a mensagem nos retries, inclusive após falha posterior ao transporte. Uma conversa
+  explicitamente vinculada ao enrollment tem prioridade sobre seleção automática.
+  Campanhas interrompem o envio quando não conseguem confirmar resposta ou opt-out
+  do contato, sem transformar falha de consulta em autorização para transporte.
+
+- **O envio comum respeita a janela de atendimento do canal oficial** Mensagens livres fora da janela de 24 horas passam a ser recusadas antes de
+  chegar ao transporte, com falha identificada como `messaging_window_closed`.
+  A proteção também vale para automações e textos fixos. Templates continuam
+  no fluxo existente de validação e envio; canais que permitem texto livre fora
+  da janela mantêm esse comportamento. Não é necessária configuração adicional.
+
+- **Recibos do canal oficial preservam entrega e leitura** O webhook passa a distinguir envio, entrega, leitura e falha, preservando os
+  horários informados pelo canal e o erro quando disponível. Recibos repetidos
+  ou atrasados não rebaixam o status, e atualizações ficam restritas ao número e
+  à organização autenticados pelo token do webhook. Nenhuma configuração adicional.
+
+- **Recibos antecipados do canal oficial aguardam correlação** Quando um recibo chega antes de o envio gravar seu identificador externo, o
+  webhook pede reentrega em vez de confirmar um evento que não foi aplicado.
+  Após a gravação do identificador, a nova tentativa atualiza a mensagem correta,
+  preservando entrega/leitura, isolamento da conexão e idempotência.
+
+- **O canal oficial envia pela credencial do número selecionado** Envios do CRM usam a credencial da própria conexão, inclusive quando ela existe
+  apenas no banco. Templates são resolvidos por organização e sessão, preservam o
+  formato de parâmetros da plataforma e não usam outro número configurado no ambiente.
+  Follow-ups aguardando confirmação de envio não avançam como se já tivessem enviado.
+
+- **Envios automáticos preservam o número do atendimento** A seleção automática de conexão respeita o vínculo existente e não escolhe
+  silenciosamente o primeiro número conectado quando há ambiguidade. Sessões
+  arquivadas, desconectadas ou de outra organização não são elegíveis. O envio
+  mantém a validação da janela de atendimento do canal escolhido.
+
+- **Recuperação de envios usa lease e distingue resultado incerto** Inline e agent-engine usam o mesmo protocolo de envio e recuperação. Tentativas
+  sem confirmação não são marcadas como enviadas nem reenviadas automaticamente.
+
 ## [1.15.1] — 2026-09-05
 
 ### Corrigido
@@ -3021,7 +3112,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.15.1...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.15.1...v2.0.0
 [1.15.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.15.0...v1.15.1
 [1.15.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.13.0...v1.14.0
