@@ -47,7 +47,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
-import { lerEstadoDoCanal } from "../../lib/channels/estado";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 // evidence/ é versionado; e2e-artifacts/ está no .gitignore e evidência citada
@@ -135,8 +134,7 @@ async function connectHandles(page: Page, sourceNodeId: string, targetNodeId: st
 const PRAZO_SOB_CARGA = 60_000;
 
 test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", () => {
-  // Canvas grande: com 4 nós o fitView chega ao maxZoom e joga handles pra fora
-  // do viewport, o que quebra os arrastes de conexão.
+  // Canvas grande para manter os handles no viewport durante os arrastes.
   test.use({ viewport: { width: 1600, height: 900 } });
   test.setTimeout(300_000);
 
@@ -145,24 +143,7 @@ test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", (
     const flowName = `E2E Tempo Adaptativo ${stamp}`;
     const contactName = `Cliente Tempo Adaptativo ${stamp}`;
 
-    // Mesmo preparo da followup-journey: o seed nasce STARTING, mas publicar
-    // um fluxo COM envio exige uma conexão elegível, mesmo sem chegar a enviar.
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-followup-agent.ts"], { stdio: "inherit" });
-    execFileSync("npx", ["tsx", "scripts/e2e-followup-journey-helpers.ts", "prepare-agent-fixtures"], {
-      stdio: "inherit",
-    });
-    const fixtures = (JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as {
-      followup_agent_fixtures: { channel_session_id: string };
-    }).followup_agent_fixtures;
-
     await login(page, creds.users.manager!.email);
-    const channelsRes = await page.request.get("/api/v1/channel-sessions");
-    expect(channelsRes.ok(), `ler conexões: ${channelsRes.status()} ${await channelsRes.text()}`).toBe(true);
-    const { data: channels } = await channelsRes.json() as { data: Array<{ id: string; status: string }> };
-    // O contrato atual resolve pela org: ambiguidade deve falhar, nunca escolher
-    // o primeiro número nem desativar canais alheios para acomodar o teste.
-    expect(channels.filter((channel) => lerEstadoDoCanal(channel.status).utilizavel).map((channel) => channel.id))
-      .toEqual([fixtures.channel_session_id]);
 
     // ─── 1. o fluxo, criado pela tela ────────────────────────────────────
     await page.goto("/app/ai/followups");
@@ -187,10 +168,10 @@ test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", (
     const flowId = page.url().split("/").pop()!;
     await expect(page.locator(".react-flow")).toBeVisible({ timeout: PRAZO_SOB_CARGA });
 
-    // ─── 2. gatilho → espera → mensagem → fim, montado no canvas ─────────
+    // ─── 2. gatilho → espera → fim, montado no canvas ────────────────────
+    // A prova é do planejamento Adaptativo: sem envio, não depende de outbound.
     await page.getByTestId("palette-add-trigger").click();
     await page.getByTestId("palette-add-wait").click();
-    await page.getByTestId("palette-add-action").click();
     await page.getByTestId("palette-add-end").click();
 
     const zoomOut = page.locator(".react-flow__controls-zoomout");
@@ -198,14 +179,12 @@ test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", (
 
     const triggerId = await page.locator('.react-flow__node[data-id^="trigger-"]').getAttribute("data-id");
     const waitId = await page.locator('.react-flow__node[data-id^="wait-"]').getAttribute("data-id");
-    const actionId = await page.locator('.react-flow__node[data-id^="action-"]').getAttribute("data-id");
     const endId = await page.locator('.react-flow__node[data-id^="end-"]').getAttribute("data-id");
-    if (!triggerId || !waitId || !actionId || !endId) throw new Error("node ids ausentes");
+    if (!triggerId || !waitId || !endId) throw new Error("node ids ausentes");
 
     await connectHandles(page, triggerId, waitId);
-    await connectHandles(page, waitId, actionId);
-    await connectHandles(page, actionId, endId);
-    await expect(page.locator(".react-flow__edge")).toHaveCount(3, { timeout: PRAZO_SOB_CARGA });
+    await connectHandles(page, waitId, endId);
+    await expect(page.locator(".react-flow__edge")).toHaveCount(2, { timeout: PRAZO_SOB_CARGA });
 
     // ─── 3. A PROMESSA: o operador escolhe Adaptativo e orienta a IA ─────
     await page.locator(`.react-flow__node[data-id="${waitId}"]`).click();
@@ -227,12 +206,6 @@ test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", (
       path: path.join(ARTIFACTS_DIR, "tempo-adaptativo-01-a-promessa-da-tela.png"),
       fullPage: true,
     });
-
-    // A ação do agente precisa de conteúdo para o fluxo publicar.
-    await page.locator(`.react-flow__node[data-id="${actionId}"]`).click();
-    await page.getByTestId("node-config-panel").locator("#action-prompt-hint").fill(
-      "Retome a conversa com o lead de forma breve e cordial.",
-    );
 
     // ─── 4. salvar + publicar, pelos botões ──────────────────────────────
     await page.getByRole("button", { name: "Salvar" }).click();
