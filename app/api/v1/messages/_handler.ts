@@ -11,7 +11,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { DeliveryRejectedError, OutboundLeaseLostError, type OutboundAttemptWrite } from "@/lib/channels/delivery-error";
+import { isWindowOpen } from "@/lib/agent-engine/guardrails/messaging-window";
 import {
+  capabilitiesOf,
   CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
   getAdapter,
@@ -262,7 +265,12 @@ export async function sendMessageHandler(
   supabase: SB,
   ctx: HandlerCtx,
   input: SendMessageInput,
-  options?: { beforeSend: (message: Message) => Promise<void> },
+  options?: {
+    messageId?: string;
+    beforeSend: (message: Message) => Promise<void>;
+    beforeTransport?: (message: Message) => Promise<void>;
+    writeAttemptState?: (message: Message, change: OutboundAttemptWrite) => Promise<Message>;
+  },
 ): Promise<Message> {
   // `archived_at` entra pelo helper tolerante porque este é O caminho de saída do
   // sistema inteiro (UI, automação, MCP e o agente passam por aqui): num clone que
@@ -270,7 +278,7 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, last_inbound_at, provider_conversation_id, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   const { data: conv, error: convErr } = await queryTolerantToMissingArchived(
     () => supabase.from("conversations").select(convSelect(true)).eq("id", input.conversation_id).eq("organization_id", ctx.organization_id).maybeSingle(),
     () => supabase.from("conversations").select(convSelect(false)).eq("id", input.conversation_id).eq("organization_id", ctx.organization_id).maybeSingle(),
@@ -291,6 +299,7 @@ export async function sendMessageHandler(
     is_group: boolean;
     group_chat_id: string | null;
     bot_silenced_until: string | null;
+    last_inbound_at: string | null;
     /** Thread do provider, quando ele endereça por thread própria (migration 0132). */
     provider_conversation_id: string | null;
     contacts: {
@@ -444,6 +453,7 @@ export async function sendMessageHandler(
   }
 
   const insertRow = {
+    ...(options?.messageId ? { id: options.messageId } : {}),
     organization_id: c.organization_id,
     // Guardado mesmo quando o canal não sabe citar: o fio existe no NOSSO
     // histórico de qualquer jeito, e é o que a tela desenha.
@@ -468,11 +478,21 @@ export async function sendMessageHandler(
     },
   };
 
-  const { data: created, error: insErr } = await supabase
+  let { data: created, error: insErr } = await supabase
     .from("messages")
     .insert(insertRow)
     .select(MSG_COLS)
     .single();
+
+  if (insErr?.code === '23505' && options?.messageId) {
+    const existing = await supabase.from('messages').select(MSG_COLS)
+      .eq('id', options.messageId).eq('organization_id', ctx.organization_id)
+      .eq('conversation_id', c.id).eq('contact_id', c.contact_id)
+      .eq('metadata->>idempotency_key', input.metadata?.idempotency_key).maybeSingle();
+    if (existing.error || !existing.data) throw new OutboundLeaseLostError();
+    created = existing.data;
+    insErr = null;
+  }
 
   if (insErr || !created) {
     throw new ApiError(
@@ -484,16 +504,38 @@ export async function sendMessageHandler(
     );
   }
   let message = created as unknown as Message;
+  if (options?.messageId && ['sent', 'delivered', 'read'].includes(message.status) && message.external_id) return message;
+
+  // Tentativas do ledger escrevem pelo fence transacional do executor. Uma
+  // checagem antes deste UPDATE não bastaria: o lease pode mudar durante o await.
+  const writeState = async (
+    patch: Record<string, unknown>, expectedPhase: 'prepared' | 'started' = 'prepared',
+    phase: OutboundAttemptWrite['phase'] = expectedPhase, retryable?: boolean,
+  ) => {
+    if (options?.writeAttemptState) {
+      const { metadata, ...fields } = patch;
+      const queuedReason = (metadata as Record<string, unknown> | undefined)?.queued_reason;
+      return { data: await options.writeAttemptState(message, {
+        patch: fields, expectedPhase, phase, retryable,
+        ...(typeof queuedReason === 'string' ? { queuedReason } : {}),
+      }), error: null };
+    }
+    return supabase.from('messages').update(patch).eq('id', message.id)
+      .eq('organization_id', ctx.organization_id).select(MSG_COLS).maybeSingle();
+  };
 
   // Campanha vincula a linha e repete opt-out antes de qualquer transporte.
   if (options) {
     try {
       await options.beforeSend(message);
     } catch (error) {
-      await supabase.from("messages").update({
+      if (error instanceof OutboundLeaseLostError) throw error;
+      const rejected = {
         status: "failed", error_code: "send_guard_rejected",
         error_message: "Envio interrompido antes do transporte.",
-      }).eq("id", message.id).eq("organization_id", ctx.organization_id);
+      };
+      if (options.writeAttemptState) await writeState(rejected);
+      else await supabase.from('messages').update(rejected).eq('id', message.id).eq('organization_id', ctx.organization_id);
       throw error;
     }
   }
@@ -502,7 +544,8 @@ export async function sendMessageHandler(
   // alcança o caso em que o embed não trouxe a sessão — impossível hoje
   // (`conversations.channel_session_id` é NOT NULL com FK ON DELETE RESTRICT),
   // e ainda assim mantido para não trocar o desfecho desse ramo defensivo.
-  const adapter = getAdapter(c.channel_sessions?.provider ?? DEFAULT_CHANNEL_PROVIDER);
+  const provider = c.channel_sessions?.provider ?? DEFAULT_CHANNEL_PROVIDER;
+  const adapter = getAdapter(provider);
   const chatId = adapter.resolveRecipient({
     isGroup: c.is_group,
     groupChatId: c.group_chat_id,
@@ -522,53 +565,58 @@ export async function sendMessageHandler(
     // e é o que o ledger do agente lê como desfecho TERMINAL — em `queued` o
     // follow-up ficaria retentando contra um número que não existe mais.
     // Vem ANTES de `isConfigured`: um canal excluído não espera configuração.
-    const { data: updated } = await supabase
-      .from("messages")
-      .update({
+    const { data: updated } = await writeState({
         status: "failed",
         error_code: "channel_archived",
         error_message: "Este número foi excluído da Central de Conexões.",
-      })
-      .eq("id", message.id)
-      .select(MSG_COLS)
-      .maybeSingle();
+      });
     if (updated) message = updated as unknown as Message;
-  } else if (!adapter.isConfigured()) {
-    const { data: updated } = await supabase
-      .from("messages")
-      .update({
+  } else if (
+    input.type !== "template" &&
+    !capabilitiesOf(provider).freeformOutsideWindow &&
+    !isWindowOpen(new Date(), c.last_inbound_at ? new Date(c.last_inbound_at) : null)
+  ) {
+    // Proteção universal do sink, inclusive mídia e texto fixo. A cadeia do agente
+    // já roda antes daqui; repeti-la consumiria pacing/quotas duas vezes.
+    // Janela fechada não espera configuração nem sessão: falha terminal na linha,
+    // nunca queued (que reagendaria sem consumir attempts). Só inbound reabre.
+    const { data: updated, error } = await writeState({
+        status: "failed",
+        error_code: "messaging_window_closed",
+        error_message: "Janela de atendimento encerrada. Envie um template aprovado ou aguarde uma resposta do contato.",
+      });
+    if (error || !updated) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, error?.message ?? "message_update_failed");
+    }
+    message = updated as unknown as Message;
+  } else if (!adapter.isConfigured({ channelSessionId: c.channel_session_id })) {
+    const { data: updated } = await writeState({
+        status: 'queued',
         metadata: { ...(message.metadata ?? {}), queued_reason: adapter.codes.notConfigured },
-      })
-      .eq("id", message.id)
-      .select(MSG_COLS)
-      .maybeSingle();
+      });
     if (updated) message = updated as unknown as Message;
   } else if (!chatId) {
-    const { data: updated } = await supabase
-      .from("messages")
-      .update({
+    const { data: updated } = await writeState({
         status: "failed",
         error_code: "missing_phone_number",
         error_message: "Contato sem telefone para envio WhatsApp.",
-      })
-      .eq("id", message.id)
-      .select(MSG_COLS)
-      .maybeSingle();
+      });
     if (updated) message = updated as unknown as Message;
   } else if (!c.channel_sessions || c.channel_sessions.status !== "WORKING") {
-    const { data: updated } = await supabase
-      .from("messages")
-      .update({
+    const { data: updated } = await writeState({
+        status: 'queued',
         metadata: {
           ...(message.metadata ?? {}),
           queued_reason: "channel_session_not_working",
         },
-      })
-      .eq("id", message.id)
-      .select(MSG_COLS)
-      .maybeSingle();
+      });
     if (updated) message = updated as unknown as Message;
   } else {
+    let transportStarted = false;
+    const beginTransport = async () => {
+      await options?.beforeTransport?.(message);
+      transportStarted = true;
+    };
     try {
       // O que separa mídia de texto é a presença de `media` no envelope — o
       // adapter preserva o mesmo branch (e a mesma mensagem de erro de cada
@@ -604,6 +652,7 @@ export async function sendMessageHandler(
           values: input.template_values ?? {},
         });
 
+        await beginTransport();
         externalId = adapter.sendTemplate
           ? (
               await adapter.sendTemplate({
@@ -618,6 +667,7 @@ export async function sendMessageHandler(
             ).externalId
           : await sendTemplateForSession(supabase, {
               organizationId: ctx.organization_id,
+              channelSessionId: c.channel_session_id,
               to: chatId,
               name: input.template_name ?? "",
               language: input.template_language ?? "",
@@ -633,8 +683,10 @@ export async function sendMessageHandler(
           throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
         }
         const filename = input.media_storage_path.split("/").pop() ?? undefined;
+        await beginTransport();
         ({ externalId } = await adapter.send({
           organizationId: ctx.organization_id,
+          channelSessionId: c.channel_session_id,
           sessionRef: resolveSessionRef(c.channel_sessions),
           to: chatId,
           providerConversationId: c.provider_conversation_id,
@@ -663,8 +715,10 @@ export async function sendMessageHandler(
         // de proibido pelo invariante 1, trabalho jogado fora.
         const telefone = normalizePhoneForDisplay(sc.phone_number);
         const nome = sc.name?.trim() || telefone;
+        await beginTransport();
         ({ externalId } = await adapter.send({
           organizationId: ctx.organization_id,
+          channelSessionId: c.channel_session_id,
           sessionRef: resolveSessionRef(c.channel_sessions),
           to: chatId,
           providerConversationId: c.provider_conversation_id,
@@ -678,8 +732,10 @@ export async function sendMessageHandler(
           },
         }));
       } else {
+        await beginTransport();
         ({ externalId } = await adapter.send({
           organizationId: ctx.organization_id,
+          channelSessionId: c.channel_session_id,
           sessionRef: resolveSessionRef(c.channel_sessions),
           to: chatId,
           providerConversationId: c.provider_conversation_id,
@@ -696,9 +752,7 @@ export async function sendMessageHandler(
         externalId,
         externalId ? (adapter.echoExternalIds?.({ externalId, recipient: chatId }) ?? [externalId]) : [],
       );
-      const { data: updated } = await supabase
-        .from("messages")
-        .update({
+      const { data: updated } = await writeState({
           status: "sent",
           external_id: externalId,
           ack: 0,
@@ -707,12 +761,10 @@ export async function sendMessageHandler(
           ...(input.type === "template"
             ? { template_name: input.template_name, template_language: input.template_language }
             : {}),
-        })
-        .eq("id", message.id)
-        .select(MSG_COLS)
-        .maybeSingle();
+        }, 'started');
       if (updated) message = updated as unknown as Message;
     } catch (err) {
+      if (err instanceof OutboundLeaseLostError) throw err;
       const msg = err instanceof Error ? err.message : adapter.codes.unknownError;
       // `storage_sign_failed` fica literal: é falha do NOSSO Storage, não do
       // canal — a URL assinada é montada antes de qualquer coisa tocar o adapter.
@@ -732,28 +784,25 @@ export async function sendMessageHandler(
       // Quem sabe é `send()`, que pode consultar o banco — então ele lança, e a
       // tradução do desfecho acontece aqui.
       if (msg.startsWith(adapter.codes.notConfigured)) {
-        const { data: emFila } = await supabase
-          .from("messages")
-          .update({
+        const { data: emFila } = await writeState({
+            status: "queued",
             metadata: { ...(message.metadata ?? {}), queued_reason: adapter.codes.notConfigured },
-          })
-          .eq("id", message.id)
-          .select(MSG_COLS)
-          .maybeSingle();
+          }, transportStarted ? 'started' : 'prepared', 'prepared');
         if (emFila) message = emFila as unknown as Message;
         return message;
       }
 
-      const { data: updated } = await supabase
-        .from("messages")
-        .update({
+      const phase = !transportStarted ? 'prepared' : err instanceof DeliveryRejectedError ? 'rejected' : 'uncertain';
+      const { data: updated } = await writeState({
           status: "failed",
           error_code: code,
           error_message: msg,
-        })
-        .eq("id", message.id)
-        .select(MSG_COLS)
-        .maybeSingle();
+          ...(options?.messageId ? { metadata: { ...message.metadata, outbound_attempt: {
+            ...(message.metadata?.outbound_attempt as Record<string, unknown>),
+            phase,
+            ...(err instanceof DeliveryRejectedError ? { retryable: err.retryable } : {}),
+          } } } : {}),
+        }, transportStarted ? 'started' : 'prepared', phase, err instanceof DeliveryRejectedError ? err.retryable : undefined);
       if (updated) message = updated as unknown as Message;
     }
   }

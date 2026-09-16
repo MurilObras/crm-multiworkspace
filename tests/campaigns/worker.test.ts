@@ -17,6 +17,9 @@ function row(payload: Record<string, unknown> = { step_index: 0 }): EventRow {
   return { id: "event", organization_id: "org-a", entity_id: "campaign", event_type: "whatsapp_campaign.requested", entity_kind: "whatsapp_campaign", payload, metadata: {}, consumed_by: [], attempts: 0 };
 }
 type Options = {
+  step?: Record<string, unknown>; template?: Record<string, unknown>; templateError?: boolean;
+  provider?: string; finalizeError?: boolean;
+  replyError?: boolean; contactErrorAt?: number; missingContactAt?: number; unexpectedContactAt?: number;
   foreign?: boolean; blocked?: boolean; declined?: boolean; replied?: boolean;
   optOutDuringSend?: boolean; foreignChannel?: boolean; foreignConversation?: boolean;
   retry?: string; done?: boolean; linkError?: boolean; firstClaimDone?: boolean;
@@ -46,7 +49,7 @@ function database(options: Options = {}) {
         claimed = true;
         return { data: { step_id: "step", contact_id: "contact" }, error: null };
       }
-      if (fn === "finalize_whatsapp_campaign_step") return { data: true, error: null };
+      if (fn === "finalize_whatsapp_campaign_step") return { data: true, error: options.finalizeError ? { message: "db failed" } : null };
       return { data: null, error: { message: "unknown rpc" } };
     }),
     from(table: string) {
@@ -62,22 +65,38 @@ function database(options: Options = {}) {
         limit: () => q,
         update: (v: Record<string, unknown>) => { patch = v; writes.push(v); return q; },
         maybeSingle: async () => resolve(), single: async () => resolve(),
-        then: (fn: (v: unknown) => unknown) => Promise.resolve(resolve()).then(fn),
+        then: (fn: (v: unknown) => unknown) => {
+          const r = resolve();
+          return Promise.resolve(table === "channel_sessions" ? { ...r, data: r.data ? [r.data] : [] } : r).then(fn);
+        },
       };
       function resolve() {
-        if (table === "whatsapp_campaigns") return { data: options.foreign ? null : { ...campaign, status: options.scheduled ? "scheduled" : "running" }, error: null };
+        if (table === "whatsapp_campaigns") return { data: options.foreign ? null : { ...campaign,
+          ...(options.step ? { steps: [options.step] } : {}), status: options.scheduled ? "scheduled" : "running" }, error: null };
         if (table === "contacts") {
           contactReads++;
+          if (contactReads === options.contactErrorAt) return { data: null, error: { message: 'db down' } };
+          if (contactReads === options.missingContactAt) return { data: null, error: null };
           const blocked = options.blocked || (options.optOutDuringSend && contactReads > 1);
-          return { data: { id: "contact", phone_number: "+5511999999999", is_blocked: blocked, consent: options.declined ? { marketing: { declined_at: "2026-09-01" } } : {} }, error: null };
+          return { data: { id: contactReads === options.unexpectedContactAt ? 'other' : "contact", organization_id: 'org-a',
+            phone_number: "+5511999999999", is_blocked: Boolean(blocked), consent: options.declined ? { marketing: { declined_at: "2026-09-01" } } : {} }, error: null };
         }
         if (table === "messages") return {
           data: messages.find((message) =>
             Object.entries(filters).every(([k, v]) => message[k] === v)
             && Object.entries(greaterThan).every(([k, v]) => typeof message[k] === "string" && message[k] > v)) ?? null,
-          error: null,
+          error: options.replyError ? { message: 'db down' } : null,
         };
-        if (table === "channel_sessions") return { data: options.foreignChannel ? null : { id: "channel" }, error: null };
+        if (table === "channel_sessions") return { data: options.foreignChannel ? null : {
+          id: "channel", organization_id: "org-a", provider: options.provider ?? "waha", status: "WORKING", archived_at: null,
+        }, error: null };
+        if (table === "meta_templates") {
+          const template: Record<string, unknown> = { id: templateId, organization_id: "org-a", channel_session_id: "channel",
+            language: "pt_BR", name: "retorno", status: "APPROVED", parameter_format: "POSITIONAL",
+            components: [{ type: "BODY", text: "Olá {{1}}" }], ...options.template };
+          return { data: Object.entries(filters).every(([k, v]) => template[k] === v) ? template : null,
+            error: options.templateError ? { message: "db failed" } : null };
+        }
         if (table === "conversations") return { data: options.foreignConversation ? null : { id: "conversation" }, error: null };
         if (table === "whatsapp_campaign_recipient_steps") return { data: { id: "step" }, error: options.linkError && patch?.message_id && !patch?.status ? { message: "DB failure" } : null };
         return { data: null, error: null };
@@ -96,6 +115,79 @@ beforeEach(() => {
     await options?.beforeSend?.(message);
     return message;
   });
+});
+
+const templateId = "11111111-1111-4111-8111-111111111111";
+const officialStep = { type: "template", template_id: templateId, language: "pt_BR", values: { "1": "Ana" }, delay_minutes: 0, message: "snapshot antigo" };
+
+it("official step renders current definition and sends template through the same guarded sink once", async () => {
+  const db = database({ step: officialStep, provider: "meta_cloud" });
+  await processCampaign(db.admin, row());
+  await processCampaign(db.admin, row());
+  expect(send).toHaveBeenCalledOnce();
+  expect(send.mock.calls[0]?.[2]).toMatchObject({ type: "template", body: "Olá Ana", template_name: "retorno",
+    template_language: "pt_BR", template_values: { "1": "Ana" } });
+  expect(db.rpcCalls.find((c) => c.fn === "finalize_whatsapp_campaign_step")?.args.p_status).toBe("sent");
+});
+
+it.each([
+  { replyError: true }, { contactErrorAt: 1 }, { contactErrorAt: 2 },
+  { missingContactAt: 1 }, { missingContactAt: 2 }, { unexpectedContactAt: 1 }, { unexpectedContactAt: 2 },
+])('guardas sem confirmação positiva impedem o transporte: %j', async (options) => {
+  const transport = vi.fn();
+  send.mockImplementation(async (_db, _ctx, _input, opts) => {
+    await opts.beforeSend({ id: 'message' });
+    transport(); return { id: 'message', status: 'sent', external_id: 'external' };
+  });
+  const db = database(options);
+  await processCampaign(db.admin, row());
+  await processCampaign(db.admin, row());
+  expect(transport).not.toHaveBeenCalled();
+  expect(db.rpcCalls.find((c) => c.fn === 'finalize_whatsapp_campaign_step')?.args.p_status).toBe('failed');
+});
+
+it.each([
+  { template: { status: "REJECTED" } }, { template: { organization_id: "org-b" } },
+  { template: { channel_session_id: "other-channel" } }, { template: { language: "en_US" } },
+  { step: { ...officialStep, values: {} } }, { provider: "waha" }, { templateError: true },
+])("invalid official template fails closed without transport: %j", async (over) => {
+  const db = database({ step: officialStep, provider: "meta_cloud", ...over });
+  await processCampaign(db.admin, row());
+  expect(send).not.toHaveBeenCalled();
+  expect(db.rpcCalls.find((c) => c.fn === "finalize_whatsapp_campaign_step")?.args.p_status).toBe("failed");
+});
+
+it.each([{ blocked: true }, { declined: true }, { replied: true }, { optOutDuringSend: true }])(
+  "official step preserves opt-out/reply guards: %j", async (over) => {
+    const db = database({ step: officialStep, provider: "meta_cloud", ...over });
+    await processCampaign(db.admin, row());
+    expect(db.rpcCalls.find((c) => c.fn === "finalize_whatsapp_campaign_step")?.args.p_status)
+      .toBe(over.replied ? "stopped_reply" : "skipped_opt_out");
+  },
+);
+
+it("failed template message is never counted as sent", async () => {
+  send.mockResolvedValue({ id: "message", status: "failed", error_code: "template_not_approved" });
+  const db = database({ step: officialStep, provider: "meta_cloud" });
+  await processCampaign(db.admin, row());
+  expect(db.rpcCalls.find((c) => c.fn === "finalize_whatsapp_campaign_step")?.args).toMatchObject({
+    p_status: "failed", p_failure_reason: "template_not_approved",
+  });
+});
+
+it("finalize failure and event retry never send the official template twice", async () => {
+  const db = database({ step: officialStep, provider: "meta_cloud", finalizeError: true });
+  await expect(processCampaign(db.admin, row())).rejects.toThrow("campaign_finalize_failed");
+  await processCampaign(db.admin, row());
+  expect(send).toHaveBeenCalledOnce();
+});
+
+it("template timeout after accept remains terminal on replay", async () => {
+  send.mockRejectedValue(new Error("timeout"));
+  const db = database({ step: officialStep, provider: "meta_cloud" });
+  await processCampaign(db.admin, row()); await processCampaign(db.admin, row());
+  expect(send).toHaveBeenCalledOnce();
+  expect(db.rpcCalls.find((c) => c.fn === "finalize_whatsapp_campaign_step")?.args.p_status).toBe("failed");
 });
 
 it("isolates tenant: foreign campaign never claims or sends", async () => {

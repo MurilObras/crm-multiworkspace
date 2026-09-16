@@ -5,10 +5,22 @@ export const campaignFiltersSchema = z.object({
   source: z.string().trim().min(1).max(100).optional(),
 }).strict();
 
-export const campaignStepSchema = z.object({
+const textStepSchema = z.object({
   message: z.string().min(1).max(4096).refine((s) => s.trim().length > 0),
   delay_minutes: z.number().int().min(0).max(43200),
 }).strict();
+
+const templateStepSchema = z.object({
+  type: z.literal("template"),
+  template_id: z.uuid(),
+  language: z.string().trim().min(1).max(35),
+  values: z.record(z.string(), z.string()).default({}),
+  delay_minutes: z.number().int().min(0).max(43200),
+  // Snapshot renderizado pelo servidor: mantém o contrato JSON das RPCs 0218/0219
+  // e a leitura do histórico atual. Nunca é o payload do transporte oficial.
+  message: z.string().min(1).max(4096).optional(),
+}).strict();
+export const campaignStepSchema = z.union([textStepSchema, templateStepSchema]);
 
 export const campaignCreateSchema = z.object({
   id: z.uuid(),
@@ -24,10 +36,7 @@ export const campaignCreateSchema = z.object({
 export const recipientStatuses = ["pending", "sent", "failed", "skipped_opt_out", "stopped_reply"] as const;
 export type RecipientStatus = typeof recipientStatuses[number];
 
-export interface CampaignStep {
-  message: string;
-  delay_minutes: number;
-}
+export type CampaignStep = z.infer<typeof campaignStepSchema>;
 
 export interface Campaign {
   id: string;

@@ -95,6 +95,8 @@ export interface ChannelTenantScope {
 }
 
 export interface OutboundEnvelope extends ChannelTenantScope {
+  /** ID da sessão validada no CRM; envio vinculado não usa credencial global. */
+  channelSessionId?: string;
   /** Identificador da sessão/número no provider (WAHA: nome da sessão). */
   sessionRef: string;
   /** Endereço já resolvido por `resolveRecipient`. */
@@ -156,7 +158,7 @@ export interface ChannelAdapter {
    * `{externalId: null}` colapsa "não tentei" com "tentei e a resposta não
    * trouxe id" — desfechos que o chamador grava de forma diferente.
    */
-  isConfigured(): boolean;
+  isConfigured(context?: { channelSessionId: string }): boolean;
   /** externalId null = canal não configurado (noop) ou resposta sem id reconhecível. */
   send(envelope: OutboundEnvelope): Promise<{ externalId: string | null }>;
   /**

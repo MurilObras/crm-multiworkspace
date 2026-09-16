@@ -46,7 +46,7 @@ function sqlLiteral(v: unknown): string {
 type QResult = { data: unknown; error: { message: string; code?: string } | null };
 type RowResult = { data: Record<string, unknown> | null; error: { message: string; code?: string } | null };
 
-type FilterOp = "eq" | "in";
+type FilterOp = "eq" | "in" | "is";
 interface Filter {
   op: FilterOp;
   col: string;
@@ -61,7 +61,7 @@ const EMBED_TABLE: Record<string, string> = {
 
 /**
  * Double mínimo de um PostgrestQueryBuilder: select (com embed PostgREST-style
- * `alias:fk_col(cols)`) / insert / update, eq/in, order/limit, maybeSingle/single.
+ * `alias:fk_col(cols)`) / insert / update, eq/in/is, order/limit, maybeSingle/single.
  */
 class FakeQuery implements PromiseLike<QResult> {
   private mode: "select" | "update" | "insert" | null = null;
@@ -100,6 +100,11 @@ class FakeQuery implements PromiseLike<QResult> {
 
   eq(col: string, val: unknown): this {
     this.filters.push({ op: "eq", col, val });
+    return this;
+  }
+
+  is(col: string, val: null | boolean): this {
+    this.filters.push({ op: "is", col, val });
     return this;
   }
 
@@ -148,6 +153,9 @@ class FakeQuery implements PromiseLike<QResult> {
         const vals = (f.val as unknown[]).map(sqlLiteral).join(", ");
         return `${prefix}${f.col} in (${vals})`;
       }
+      // O resolvedor exclui sessões arquivadas com .is("archived_at", null).
+      // SQL exige IS NULL: "= NULL" eliminaria inclusive as sessões elegíveis.
+      if (f.op === "is") return `${prefix}${f.col} is ${sqlLiteral(f.val)}`;
       return `${prefix}${f.col} = ${sqlLiteral(f.val)}`;
     });
     return ` where ${clauses.join(" and ")}`;

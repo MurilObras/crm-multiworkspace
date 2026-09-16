@@ -83,18 +83,9 @@ export async function openSharedContactConversation(
   organizationId: string,
   input: OpenSharedContactInput,
 ): Promise<OpenSharedContactResult> {
-  const sessionId = input.channel_session_id ?? (await sessaoProntaParaEnvio(admin, organizationId));
-  if (!sessionId) throw new Error("session_not_found");
-  const { data: session, error: sessErr } = await admin
-    .from("channel_sessions")
-    .select("id")
-    .eq("organization_id", organizationId)
-    .eq("id", sessionId)
-    .maybeSingle();
-  if (sessErr) throw new Error(sessErr.message);
-  if (!session) throw new Error("session_not_found");
-
   const contactId = await resolveContactId(admin, organizationId, input);
+  const sessionId = await sessaoProntaParaEnvio(admin, organizationId, contactId, input.channel_session_id);
+  if (!sessionId) throw new Error("session_not_found");
   const conversationId = await ensureConversation(
     admin,
     organizationId,

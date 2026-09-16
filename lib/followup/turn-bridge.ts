@@ -212,7 +212,7 @@ function mapEnrollmentRow(row: Record<string, unknown>): EnrollmentRow {
 }
 
 /** `TurnBridgeAdminClient` sobre `pg.Pool` — produção do worker 24/7. */
-export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
+export function createPgAdminClient(pool: Pick<pg.Pool, 'query'>): TurnBridgeAdminClient {
   return {
     async claimDueEnrollments(limit, leaseSeconds) {
       const { rows } = await pool.query(`select * from fn_claim_due_followup_enrollments($1, $2)`, [

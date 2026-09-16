@@ -33,12 +33,27 @@ const signedUrl = vi.fn<() => Promise<{ data: { signedUrl: string } | null; erro
   async () => ({ data: { signedUrl: 'https://signed.example/a.jpg' }, error: null }),
 );
 vi.mock('@/lib/supabase/admin', () => ({
-  createAdminClient: () => ({ storage: { from: () => ({ createSignedUrl: signedUrl }) } }),
+  createAdminClient: () => ({ ...credentialsDb(), storage: { from: () => ({ createSignedUrl: signedUrl }) } }),
 }));
 // Audit é fire-and-forget e escreve em outra tabela; fora do escopo dos desfechos.
 vi.mock('@/lib/audit', () => ({ audit: vi.fn(async () => {}) }));
 
 type Row = Record<string, unknown>;
+
+function credentialsDb() {
+  return {
+    from: () => {
+      const row: Row = { id: SESSION, organization_id: ORG, provider: 'meta_cloud', status: 'WORKING', archived_at: null,
+        meta_phone_number_id: '1103328999528818', meta_token_encrypted: '\\xdeadbeef' };
+      let matches = true;
+      const q = { select: () => q, eq: (k: string, v: unknown) => { matches &&= row[k] === v; return q; },
+        is: (k: string, v: unknown) => { matches &&= row[k] === v; return q; },
+        maybeSingle: async () => ({ data: matches ? row : null, error: null }) };
+      return q;
+    },
+    rpc: async () => ({ data: 'tok', error: null }),
+  };
+}
 
 interface ConversationShape {
   isGroup?: boolean;
@@ -60,6 +75,7 @@ function conversationRow(shape: ConversationShape = {}): Row {
     channel_session_id: SESSION,
     is_group: shape.isGroup ?? false,
     group_chat_id: shape.groupChatId ?? null,
+    last_inbound_at: new Date().toISOString(),
     contacts: {
       phone_number: shape.phoneNumber === undefined ? '+5531999998888' : shape.phoneNumber,
       wa_identity: shape.waIdentity ?? null,
@@ -72,6 +88,7 @@ function conversationRow(shape: ConversationShape = {}): Row {
             // `provider` sai do banco desde a migration 0087 — o handler não
             // supõe mais o canal, então a linha falsa também não pode supor.
             provider: shape.provider ?? 'waha',
+            meta_phone_number_id: '1103328999528818',
             waha_session_name: 'default',
             status: shape.sessionStatus ?? 'WORKING',
             archived_at: shape.archivedAt ?? null,
@@ -96,6 +113,7 @@ function makeSupabase(
 
   const client = {
     from(table: string) {
+      if (table === 'channel_sessions') return credentialsDb().from();
       if (table === 'conversations') {
         return {
           select: (cols?: string) => {
@@ -172,7 +190,7 @@ function makeSupabase(
       }
       throw new Error(`fake_supabase: tabela inesperada '${table}'`);
     },
-    rpc: async () => ({ error: null }),
+    rpc: async (name: string) => name === 'fn_decrypt_oauth' ? credentialsDb().rpc() : ({ error: null }),
   };
 
   return client as unknown as SupabaseClient;
@@ -196,6 +214,35 @@ afterEach(() => {
 });
 
 describe('sendMessageHandler — os 6 desfechos do envio', () => {
+  it('marca a entrada no transporte antes de qualquer envio remoto', async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn(async () => Response.json({ key: { id: 'INLINE' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const beforeTransport = vi.fn(async () => { expect(fetchMock).not.toHaveBeenCalled(); });
+    const message = await sendMessageHandler(makeSupabase(conversationRow()), ctx, textInput(), {
+      beforeSend: async () => {}, beforeTransport,
+    });
+    expect(beforeTransport).toHaveBeenCalledOnce(); expect(message.status).toBe('sent');
+  });
+
+  it('falha na marcação de transporte impede a rede', async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
+    const message = await sendMessageHandler(makeSupabase(conversationRow()), ctx, textInput(), {
+      beforeSend: async () => {}, beforeTransport: async () => { throw new Error('inline_transport_claim_failed'); },
+    });
+    expect(message.status).toBe('failed'); expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('fila por canal sem configuração não é marcada como transporte iniciado', async () => {
+    wahaConfigured(false);
+    const beforeTransport = vi.fn(async () => {});
+    const message = await sendMessageHandler(makeSupabase(conversationRow()), ctx, textInput(), {
+      beforeSend: async () => {}, beforeTransport,
+    });
+    expect(message.status).toBe('queued'); expect(beforeTransport).not.toHaveBeenCalled();
+  });
+
   it('campanha: a guarda recebe a mensagem persistida antes do transporte', async () => {
     wahaConfigured(true);
     const fetchMock = vi.fn(async () => Response.json({ key: { id: 'CAMPAIGN' } }));

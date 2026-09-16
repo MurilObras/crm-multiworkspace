@@ -17,9 +17,12 @@
  */
 import { z } from 'zod';
 import type pg from 'pg';
+import { selectOutboundSession, type OutboundSession } from '@/lib/channels/resolve-outbound';
+import { followupNeedsTemplate, loadOfficialFollowupTemplate, type OfficialFollowupTemplate } from '@/lib/channels/followup-delivery';
 
 import { withFields } from '../obs/logger';
 import type { JobRow } from '../queue/queue';
+import { withJobLease } from '../queue/queue';
 import { getLeadContext, type LeadContext } from '../edge/crm/get-lead-context';
 import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
@@ -76,6 +79,8 @@ export const followupTurnPayloadSchema = z
     fixed_body: z.string().min(1).max(4000).optional(),
     /** action mode `template` — corpo em `message_templates`. */
     template_id: z.string().uuid().optional(),
+    fallback_template_id: z.string().uuid().optional(),
+    fallback_template_values: z.record(z.string(), z.string()).optional(),
     volta_index: z.number().int().optional(),
     volta_total: z.number().int().optional(),
     classes: z.array(z.string()).optional(),
@@ -110,7 +115,7 @@ export type FollowupFlowTurnResult =
  */
 export interface FollowupTurnDeps extends InboundTurnDeps {
   completeFollowupTurn?: (
-    pool: pg.Pool,
+    pool: Pick<pg.Pool, 'query'>,
     input: { organizationId: string; enrollmentId: string; nodeId: string; result: FollowupFlowTurnResult },
   ) => Promise<void>;
 }
@@ -242,7 +247,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
     }
     const payload = followupTurnPayloadSchema.parse(job.payload);
 
-    const target = await resolveSendTarget(pool, tenantId, leadId);
+    const target = await resolveSendTarget(pool, tenantId, leadId, payload.followup_enrollment_id);
 
     const clock = deps.clock ?? ((): Date => new Date());
 
@@ -256,6 +261,8 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
         promptHint: payload.prompt_hint,
         fixedBody: payload.fixed_body,
         templateId: payload.template_id,
+        fallbackTemplateId: payload.fallback_template_id,
+        fallbackTemplateValues: payload.fallback_template_values,
         voltaIndex: payload.volta_index,
         voltaTotal: payload.volta_total,
         classes: payload.classes,
@@ -269,15 +276,13 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
     // cadeia de guardrails, sem chamar o modelo. É um CAMINHO ADICIONAL: o run do
     // agente (abaixo) segue intocado quando o modo não é 'template'.
     if (payload.mode === 'template') {
-      await runDeterministicReentry(deps, job, pool, ctx, clock, {
-        tenantId,
-        leadId,
-        channelSessionId: target.channelSessionId,
-        conversationId: target.conversationId,
-      });
+      await runDeterministicReentry(deps, job, pool, ctx, clock, target);
       return;
     }
 
+    if (followupNeedsTemplate(target.provider, target.lastInboundAt, clock())) {
+      throw new Error('messaging_window_closed: followup_fallback_missing');
+    }
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: target.channelSessionId,
       conversationId: target.conversationId,
@@ -300,12 +305,14 @@ interface ReentrySendTarget {
   leadId: string;
   channelSessionId: string;
   conversationId: string;
+  provider: OutboundSession['provider'];
+  lastInboundAt: Date | string | null;
 }
 
 /**
  * Conversa 1:1 + sessão de envio. Captação por webhook não passa pelo WAHA, então
  * o contato chega sem thread — o follow-up de recepção é o primeiro outbound e
- * precisa ABRIR a conversa no número WORKING da org (mesmo papel de
+ * precisa ABRIR a conversa no único número elegível da org (mesmo papel de
  * `ensureConversation` na ação send_whatsapp).
  *
  * `to_jsonb(cs) ->> 'archived_at'` em vez de `cs.archived_at`: clone sem a
@@ -315,45 +322,76 @@ async function resolveSendTarget(
   pool: pg.Pool,
   tenantId: string,
   contactId: string,
+  enrollmentId?: string,
 ): Promise<ReentrySendTarget> {
+  let conversationId: string | null = null;
+  if (enrollmentId) {
+    const { rows: enrollments } = await pool.query<{ conversation_id: string | null }>(
+      'select conversation_id from followup_enrollments where organization_id = $1 and contact_id = $2 and id = $3',
+      [tenantId, contactId, enrollmentId],
+    );
+    if (!enrollments[0]) throw new Error('followup_enrollment_not_found');
+    conversationId = enrollments[0].conversation_id;
+  }
   const { rows } = await pool.query<{
     id: string;
     channel_session_id: string | null;
     channel_archived_at: string | null;
+    resolved_session_id: string | null;
+    organization_id: string;
+    provider: OutboundSession['provider'];
+    channel_status: string;
+    last_inbound_at: Date | string | null;
   }>(
-    `select c.id,
-            c.channel_session_id,
+    `select c.id, c.last_inbound_at,
+             c.channel_session_id,
+             cs.id as resolved_session_id, cs.organization_id, cs.provider, cs.status as channel_status,
             to_jsonb(cs) ->> 'archived_at' as channel_archived_at
        from conversations c
        left join channel_sessions cs
          on cs.id = c.channel_session_id and cs.organization_id = c.organization_id
-      where c.organization_id = $1 and c.contact_id = $2 and c.is_group = false
-      order by c.last_message_at desc nulls last limit 1`,
-    [tenantId, contactId],
+       where c.organization_id = $1 and c.contact_id = $2 and c.is_group = false
+         ${conversationId ? 'and c.id = $3' : ''}
+       order by c.last_message_at desc nulls last, c.id`,
+    conversationId ? [tenantId, contactId, conversationId] : [tenantId, contactId],
   );
   const conv = rows[0];
+  if (conversationId && !conv) throw new Error('followup_conversation_not_found');
+  if (new Set(rows.map((r) => r.channel_session_id)).size > 1) {
+    throw new Error('outbound_session_ambiguous');
+  }
   if (conv !== undefined && conv.channel_session_id !== null) {
     if (conv.channel_archived_at !== null) {
       throw new Error('followup_turn para canal arquivado — o número foi excluído da Central de Conexões');
+    }
+    if (!conv.resolved_session_id || !selectOutboundSession([{
+      id: conv.resolved_session_id, organization_id: conv.organization_id,
+      provider: conv.provider, status: conv.channel_status, archived_at: conv.channel_archived_at,
+    }], { organizationId: tenantId, sessionId: conv.channel_session_id, kind: 'text' })) {
+      throw new Error('outbound_session_unavailable');
     }
     return {
       tenantId,
       leadId: contactId,
       channelSessionId: conv.channel_session_id,
       conversationId: conv.id,
+      provider: conv.provider,
+      lastInboundAt: conv.last_inbound_at ?? null,
     };
   }
 
-  const session = await pool.query<{ id: string }>(
-    `select cs.id
+  if (conv) throw new Error('outbound_session_unavailable');
+  const session = await pool.query<OutboundSession>(
+    `select cs.id, cs.organization_id, cs.provider, cs.status,
+            to_jsonb(cs) ->> 'archived_at' as archived_at
        from channel_sessions cs
       where cs.organization_id = $1
         and (to_jsonb(cs) ->> 'archived_at') is null
-      order by case when cs.status = 'WORKING' then 0 else 1 end, cs.created_at asc
-      limit 1`,
+       order by cs.created_at asc, cs.id`,
     [tenantId],
   );
-  const channelSessionId = session.rows[0]?.id;
+  const selectedSession = selectOutboundSession(session.rows, { organizationId: tenantId, kind: 'text' });
+  const channelSessionId = selectedSession?.id;
   if (channelSessionId === undefined) {
     throw new Error('followup_turn sem conversa/número do contato — impossível retomar o contato');
   }
@@ -369,7 +407,7 @@ async function resolveSendTarget(
     if (conversationId === undefined) {
       throw new Error('followup_turn sem conversa/número do contato — impossível retomar o contato');
     }
-    return { tenantId, leadId: contactId, channelSessionId, conversationId };
+    return { tenantId, leadId: contactId, channelSessionId, conversationId, provider: selectedSession!.provider, lastInboundAt: null };
   } catch (err) {
     const code = (err as { code?: string } | null)?.code;
     if (code !== '23505') throw err;
@@ -381,7 +419,7 @@ async function resolveSendTarget(
     );
     const conversationId = winner.rows[0]?.id;
     if (conversationId === undefined) throw err;
-    return { tenantId, leadId: contactId, channelSessionId, conversationId };
+    return { tenantId, leadId: contactId, channelSessionId, conversationId, provider: selectedSession!.provider, lastInboundAt: null };
   }
 }
 
@@ -406,6 +444,8 @@ async function runFlowDrivenTurn(
     promptHint: string | undefined;
     fixedBody: string | undefined;
     templateId: string | undefined;
+    fallbackTemplateId: string | undefined;
+    fallbackTemplateValues: Record<string, string> | undefined;
     voltaIndex: number | undefined;
     voltaTotal: number | undefined;
     classes: string[] | undefined;
@@ -416,16 +456,25 @@ async function runFlowDrivenTurn(
   if (input.nodeId === undefined || input.purpose === undefined) {
     throw new Error('followup_turn dirigido por fluxo sem node_id/purpose no payload — payload do engine incompleto');
   }
-  const complete = deps.completeFollowupTurn;
-  if (!complete) {
+  const completeTurn = deps.completeFollowupTurn;
+  if (!completeTurn) {
     throw new Error(
       'followup_turn dirigido por fluxo sem completeFollowupTurn nos deps do handler — a ponte não foi injetada na wiring (workers/agent-worker/main.ts)',
     );
   }
+  const complete = (_pool: pg.Pool, result: Parameters<NonNullable<FollowupTurnDeps['completeFollowupTurn']>>[1]) =>
+    withJobLease(pool, job.id, ctx.workerId, target.tenantId, (tx) => completeTurn(tx,result));
   const { enrollmentId, nodeId } = input;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
 
   if (input.purpose === 'send_message') {
+    if (followupNeedsTemplate(target.provider, target.lastInboundAt, clock())) {
+      const official = await loadOfficialFollowupTemplate(deps.crmCfg.supabase,
+        target.tenantId, target.channelSessionId, input.fallbackTemplateId, input.fallbackTemplateValues);
+      const sent = await sendFixedOutbound(deps, job, pool, ctx, clock, target, official.body, false, official);
+      if (sent) await complete(pool, { organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'sent' } });
+      return;
+    }
     const body = await resolveFlowSendBody(pool, target.tenantId, input);
     if (body !== null) {
       // Texto do operador: sem camada semântica (ver o cabeçalho de sendFixedOutbound).
@@ -445,6 +494,7 @@ async function runFlowDrivenTurn(
         return `${opening}\n\n## Orientação do passo do fluxo\n${input.promptHint}`;
       },
     });
+    await confirmFlowDelivery(deps, job, pool, ctx, target);
     await complete(pool, { organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'sent' } });
     return;
   }
@@ -508,6 +558,25 @@ async function runFlowDrivenTurn(
     nodeId,
     result: { kind: 'planned', propostas: plano.propostas, modelo: plano.modelo },
   });
+}
+
+/** O turno de IA retornar não prova envio: confirma no ledger antes de avançar. */
+async function confirmFlowDelivery(
+  deps: InboundTurnDeps, job: JobRow, pool: pg.Pool,
+  ctx: { workerId: string }, target: ReentrySendTarget,
+): Promise<void> {
+  const { rows } = await pool.query<{ id: string; status: string; crm_message_id: string | null }>(
+    'select id, status, crm_message_id from send_ledger where organization_id = $1 and job_id = $2',
+    [target.tenantId, job.id],
+  );
+  const queued = rows.find((r) => r.status === 'queued');
+  if (queued) {
+    await applySendOutcome(pool, { kind: 'queued', idempotencyKey: queued.id, crmMessageId: queued.crm_message_id },
+      { jobId: job.id, workerId: ctx.workerId, tenantId: target.tenantId, leadId: target.leadId },
+      { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs });
+    throw new JobSettledError('followup aguardando confirmação do envio — passo não concluído');
+  }
+  if (!rows.length || rows.some((r) => r.status !== 'accepted')) throw new Error('followup_send_not_confirmed');
 }
 
 /**
@@ -609,9 +678,13 @@ async function sendFixedOutbound(
   body: string,
   /** `true` só na re-entrada por template — ver o cabeçalho. */
   comCamadaSemantica: boolean,
+  official?: OfficialFollowupTemplate,
 ): Promise<boolean> {
   const { tenantId, leadId, channelSessionId, conversationId } = target;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
+  if (!official && followupNeedsTemplate(target.provider, target.lastInboundAt, clock())) {
+    throw new Error('messaging_window_closed: followup_fallback_missing');
+  }
 
   if (await isLeadInHandoff(pool, tenantId, leadId)) {
     runLog.info('envio fixo pulado — lead silenciado (handoff/opt-out)', { kind: job.kind });
@@ -648,6 +721,7 @@ async function sendFixedOutbound(
     jobId: job.id,
     channelSessionId,
     body,
+    ...(official ? { isTemplate: true } : {}),
     optedOutThisTurn,
     crmDailyLimit: null,
     now: clock(),
@@ -666,7 +740,8 @@ async function sendFixedOutbound(
             ),
         }
       : {}),
-    send: (finalBody) => channel.send({ tenantId, leadId, jobId: job.id, seq: 1, conversationId, body: finalBody }),
+    send: (finalBody) => channel.send({ tenantId, leadId, jobId: job.id, workerId: ctx.workerId, seq: 1, conversationId, body: finalBody,
+      ...(official ? { template: official.template } : {}) }),
   });
 
   if (chain.status === 'vetoed') {
@@ -692,9 +767,13 @@ async function sendFixedOutbound(
   switch (outcome.kind) {
     case 'sent':
     case 'already_sent':
-    case 'queued':
       runLog.info('envio fixo concluído', { kind: outcome.kind });
       return true;
+    case 'queued':
+      await applySendOutcome(pool, { kind: 'queued', idempotencyKey: outcome.idempotencyKey, crmMessageId: outcome.messageId },
+        { jobId: job.id, workerId: ctx.workerId, tenantId, leadId },
+        { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs });
+      throw new JobSettledError('followup aguardando confirmação do envio — passo não concluído');
     case 'blocked':
       await applySendOutcome(pool, outcome, { jobId: job.id, workerId: ctx.workerId, tenantId, leadId }, {
         queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs,

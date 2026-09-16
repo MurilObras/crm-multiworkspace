@@ -18,6 +18,7 @@ export const PUBLISH_ERROR_CODES = [
   'missing_always_fallback',
   'grace_too_short',
   'long_wait_needs_template',
+  'template_fallback_required',
   'cycle_without_wait',
   'max_steps_exceeded',
 ] as const;
@@ -268,7 +269,10 @@ function cobrirRamos(
   }
 }
 
-export function validateFlowForPublish(graph: FlowGraph): PublishValidationResult {
+export function validateFlowForPublish(
+  graph: FlowGraph,
+  channel?: { freeformOutsideWindow: boolean },
+): PublishValidationResult {
   const { nodes, edges } = graph;
   const errors: PublishValidationError[] = [];
   const nodesById = new Map(nodes.map((n) => [n.id, n]));
@@ -324,12 +328,23 @@ export function validateFlowForPublish(graph: FlowGraph): PublishValidationResul
       nodesById,
       outEdges
     );
-    for (const id of [...longWaitNodeIds].sort()) {
+    // Sem contexto de canal, preserva a análise estrutural histórica. No publish
+    // real o canal é obrigatório: um enrollment pode começar com a janela fechada,
+    // mesmo que o grafo só espere cinco minutos.
+    for (const id of channel === undefined ? [...longWaitNodeIds].sort() : []) {
       errors.push({
         node_id: id,
         code: 'long_wait_needs_template',
         message: `Nó "${id}" acumula ≥24h de espera e precisa de fallback_template_id.`,
       });
+    }
+    if (channel?.freeformOutsideWindow === false) {
+      for (const node of nodes) {
+        if (reachable.has(node.id) && node.type === 'action' && !node.config.fallback_template_id) {
+          errors.push({ node_id: node.id, code: 'template_fallback_required',
+            message: `Nó "${node.id}" precisa de fallback_template_id aprovado para janela fechada.` });
+        }
+      }
     }
     if (maxStepsExceeded) {
       errors.push({

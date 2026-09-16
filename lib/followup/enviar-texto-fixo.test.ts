@@ -6,12 +6,29 @@
  * `allowlist` barra.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CHANNEL_PROVIDER_META, DEFAULT_CHANNEL_PROVIDER } from "@/lib/channels/capabilities";
 
-const sendMessageHandler = vi.fn(async (..._a: unknown[]) => ({ id: "msg-1" }));
+const sendMessageHandler = vi.fn(async (..._a: unknown[]) => ({ id: "msg-1", status: "sent", error_code: null as string | null }));
 const decidir = vi.fn();
 const completeTurnForEnrollment = vi.fn(async (..._a: unknown[]) => {});
+let currentFallback = false;
 
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: (...a: unknown[]) => sendMessageHandler(...a) }));
+// Aqui se testa preparação/eligibilidade. A identidade durável e o retry do
+// helper real são exercitados por tests/unit/followup-inline-ledger.test.ts.
+vi.mock("@/lib/agent-engine/edge/crm/inline-send", () => ({
+  sendInlineTurnMessage: async (_pool: unknown, db: unknown, ctx: unknown, _job: string, _contact: string, _owner: string, prepare: () => Promise<unknown>) =>
+    sendMessageHandler(db, ctx, await prepare()),
+}));
+vi.mock('@/lib/agent-engine/db/request-pool', () => ({ getRequestPool: () => ({}) }));
+vi.mock('@/lib/agent-engine/env', () => ({ loadEnv: () => ({QUEUE_MAX_CONCURRENCY:8,SEND_QUEUED_RETRY_MS:300000}) }));
+vi.mock('@/lib/agent-engine/queue/queue', () => ({
+  claimJobs: async () => [{...JOB,payload:{...JOB.payload,...(currentFallback?{fallback_template_id:'11111111-1111-4111-8111-111111111111'}:{})}}],
+  completeJob: async (_p: unknown,_id: string,_owner: string,fn?: (tx: unknown)=>Promise<void>) => { await fn?.({}); statusUpdates.push('done'); },
+  cancelJob: async () => { statusUpdates.push('failed'); },
+  failJob: async () => { statusUpdates.push('pending'); },
+  rescheduleJob: async () => { statusUpdates.push('pending'); },
+}));
 vi.mock("@/lib/automation/start-conversation", () => ({
   ensureConversation: async () => "conv-1",
   sessaoProntaParaEnvio: async () => "sess-1",
@@ -20,6 +37,7 @@ vi.mock("@/lib/ai/elegibilidade/consulta-supabase", () => ({
   decidirElegibilidadeDaConversaViaSupabase: (...a: unknown[]) => decidir(...a),
 }));
 vi.mock("@/lib/followup/turn-bridge", () => ({
+  createPgAdminClient: () => ({}),
   completeTurnForEnrollment: (...a: unknown[]) => completeTurnForEnrollment(...a),
 }));
 vi.mock("@/lib/followup/engine", () => ({ createSupabaseAdminClient: () => ({}) }));
@@ -37,7 +55,8 @@ const JOB = {
 const statusUpdates: string[] = [];
 
 /** Admin stub: job_queue (select pending / claim / status) + followup_enrollments. */
-function admin() {
+function admin(provider = DEFAULT_CHANNEL_PROVIDER, inbound: string | null = null, fallback = false) {
+  currentFallback = fallback;
   const make = (table: string) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
@@ -45,6 +64,7 @@ function admin() {
       _upd: null as Record<string, unknown> | null,
       select: () => chain,
       eq: () => chain,
+      lte: () => chain,
       order: () => chain,
       limit: () => chain,
       update: (p: Record<string, unknown>) => {
@@ -53,6 +73,9 @@ function admin() {
         return chain;
       },
       maybeSingle: () => {
+        if (table === "conversations") return Promise.resolve({ data: { last_inbound_at: inbound, channel_sessions: { provider } }, error: null });
+        if (table === "meta_templates") return Promise.resolve({ data: { name: "retorno", language: "pt_BR", status: "APPROVED",
+          parameter_format: "POSITIONAL", components: [{ type: "BODY", text: "Olá!" }] }, error: null });
         if (table === "job_queue" && chain._upd) return Promise.resolve({ data: { id: JOB.id }, error: null });
         if (table === "followup_enrollments")
           return Promise.resolve({ data: { current_node_id: "node-1" }, error: null });
@@ -60,7 +83,8 @@ function admin() {
       },
       then: (r: (v: unknown) => unknown) => {
         if (table === "job_queue" && !chain._upd) {
-          return Promise.resolve({ data: [JOB], error: null }).then(r);
+          return Promise.resolve({ data: [{ ...JOB, payload: { ...JOB.payload,
+            ...(fallback ? { fallback_template_id: "11111111-1111-4111-8111-111111111111" } : {}) } }], error: null }).then(r);
         }
         return Promise.resolve({ data: null, error: null }).then(r);
       },
@@ -76,12 +100,40 @@ beforeEach(() => {
 });
 
 describe("enviarTextoFixoPendente · gate de elegibilidade", () => {
-  it("conversa NÃO elegível → NÃO envia, job vira 'done'", async () => {
+  it("Meta fora da janela usa fallback oficial no sink", async () => {
+    decidir.mockResolvedValue({ permite: true });
+    expect(await enviarTextoFixoPendente(admin(CHANNEL_PROVIDER_META, null, true))).toBe(1);
+    expect(sendMessageHandler.mock.calls[0]?.[2]).toMatchObject({ type: "template", template_name: "retorno", template_language: "pt_BR" });
+    expect(completeTurnForEnrollment).toHaveBeenCalledOnce();
+  });
+
+  it("Meta sem fallback bloqueia explicitamente e não completa o passo", async () => {
+    decidir.mockResolvedValue({ permite: true });
+    expect(await enviarTextoFixoPendente(admin(CHANNEL_PROVIDER_META))).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(completeTurnForEnrollment).not.toHaveBeenCalled();
+    expect(statusUpdates).toContain("failed");
+  });
+
+  it("resposta reabre a janela e texto fixo volta ao envio livre", async () => {
+    decidir.mockResolvedValue({ permite: true });
+    expect(await enviarTextoFixoPendente(admin(CHANNEL_PROVIDER_META, new Date().toISOString(), true))).toBe(1);
+    expect(sendMessageHandler.mock.calls[0]?.[2]).toMatchObject({ type: "text", body: JOB.payload.fixed_body });
+  });
+
+  it("sink failed não é contado como envio nem completa o passo", async () => {
+    decidir.mockResolvedValue({ permite: true });
+    sendMessageHandler.mockResolvedValueOnce({ id: "msg-1", status: "failed", error_code: "messaging_window_closed" });
+    expect(await enviarTextoFixoPendente(admin())).toBe(0);
+    expect(completeTurnForEnrollment).not.toHaveBeenCalled();
+    expect(statusUpdates).toContain("pending");
+  });
+  it("conversa NÃO elegível → NÃO envia, lease é encerrado", async () => {
     decidir.mockResolvedValue({ permite: false, motivo: "sem_autorizacao", bloqueioPorAllowlist: true });
     const enviados = await enviarTextoFixoPendente(admin());
     expect(enviados).toBe(0);
     expect(sendMessageHandler).not.toHaveBeenCalled();
-    expect(statusUpdates).toContain("done");
+    expect(statusUpdates).toContain("failed");
   });
 
   it("conversa elegível → envia normalmente", async () => {
