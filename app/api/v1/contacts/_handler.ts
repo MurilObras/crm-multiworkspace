@@ -405,7 +405,7 @@ export async function createContactHandler(
   const contact = created as Contact;
   if (contact.phone_number) {
     try {
-      const sessionId = await sessaoProntaParaEnvio(supabase, ctx.organization_id);
+      const sessionId = await sessaoProntaParaEnvio(supabase, ctx.organization_id, contact.id);
       if (sessionId) {
         await ensureConversation(supabase, ctx.organization_id, contact.id, sessionId);
       }

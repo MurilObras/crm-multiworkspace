@@ -11,32 +11,19 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
+import { resolveOutboundSession } from "@/lib/channels/resolve-outbound";
 
 const OPEN_STATUSES = ["open", "pending", "claimed", "ai_handling"];
 
-/** Sessão viva da org: WORKING primeiro; senão qualquer uma não arquivada. */
+/** Mantém vínculo existente; sem vínculo, exige um único canal elegível. */
 export async function sessaoProntaParaEnvio(
   supabase: SupabaseClient,
   organizationId: string,
+  contactId?: string,
+  sessionId?: string,
+  conversationId?: string,
 ): Promise<string | null> {
-  const listar = (soWorking: boolean, ignorarArquivadas: boolean) => {
-    let q = supabase
-      .from("channel_sessions")
-      .select("id")
-      .eq("organization_id", organizationId);
-    if (soWorking) q = q.eq("status", "WORKING");
-    if (ignorarArquivadas) q = q.is(ARCHIVED_AT, null);
-    return q.order("created_at", { ascending: true }).limit(1);
-  };
-  const tentar = async (soWorking: boolean) => {
-    const { data } = await queryTolerantToMissingArchived(
-      () => listar(soWorking, true),
-      () => listar(soWorking, false),
-    );
-    return (data as Array<{ id: string }> | null)?.[0]?.id ?? null;
-  };
-  return (await tentar(true)) ?? (await tentar(false));
+  return (await resolveOutboundSession(supabase, { organizationId, contactId, sessionId, conversationId, kind: "text" }))?.id ?? null;
 }
 
 export async function ensureConversation(
@@ -45,6 +32,9 @@ export async function ensureConversation(
   contactId: string,
   channelSessionId: string,
 ): Promise<string> {
+  if (!(await resolveOutboundSession(admin, { organizationId, sessionId: channelSessionId, kind: "text" }))) {
+    throw new Error("outbound_session_unavailable");
+  }
   const { data: existing } = await admin
     .from("conversations")
     .select("id, status")

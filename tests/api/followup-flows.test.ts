@@ -75,7 +75,9 @@ const LONG_WAIT_NO_FALLBACK_GRAPH: FlowGraph = {
 
 type Row = Record<string, unknown>;
 
-function makeDb(pointers: Row[], versions: Row[], stages: Row[] = [], channels: Row[] = []) {
+function makeDb(pointers: Row[], versions: Row[], stages: Row[] = [],
+  channels: Row[] = [{ id: "session-1", organization_id: ORG_ID, provider: "waha", status: "WORKING", archived_at: null }],
+  templates: Row[] = []) {
   const tables: Record<string, Row[]> = {
     followup_flow_pointers: pointers,
     followup_flow_versions: versions,
@@ -84,9 +86,8 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = [], channels: 
     // apagada/arquivada = fluxo `active` que nunca matricula ninguém). Sem esta
     // tabela no mock, o caso positivo do `stage_change` não teria como existir.
     crm_stages: stages,
-    // O publish resolve a capability do canal da org (exige template fora da
-    // janela?) para decidir se cobra fallback_template_id.
     channel_sessions: channels,
+    meta_templates: templates,
   };
 
   function builder(table: string) {
@@ -191,6 +192,7 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = [], channels: 
         filters.push([col, val]);
         return b;
       },
+      is(col: string, val: unknown) { filters.push([col, val]); return b; },
       order(col: string, opts?: { ascending?: boolean }) {
         orderCol = col;
         orderAsc = opts?.ascending ?? true;
@@ -279,6 +281,99 @@ function ctx(id: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("publish — fallback oficial por conexão elegível", () => {
+  const withoutSend: FlowGraph = {
+    nodes: [trigger("t1"),
+      { id: "w1", type: "wait", label: "espera", position: pos,
+        config: { mode: "fixed", duration_ms: 90_000_000 } },
+      { id: "c1", type: "condition", label: "condição", position: pos,
+        config: { combinator: "and", branching: "per_check",
+          checks: [{ id: "tag", field: "tag", op: "contains", value: "cliente" }] } },
+      end("e1"), end("e2")],
+    edges: [edge("tw", "t1", "w1"), edge("wc", "w1", "c1"),
+      { ...edge("ce", "c1", "e1"), condition: { type: "branch", branch_id: "tag" } },
+      edge("fallback", "c1", "e2")],
+  };
+  it.each([
+    ["trigger → end", VALID_GRAPH],
+    ["wait/condition sem envio", withoutSend],
+  ] as const)("%s publica sem consultar canal", async (_name, graph) => {
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const id = randomUUID();
+    const versions: Row[] = [];
+    const db = makeDb([{ id, organization_id: ORG_ID, draft_graph: graph }], versions, [], []);
+    const from = vi.spyOn(db, "from");
+    session("manager", db);
+    const response = await POST(req("POST"), ctx(id));
+    expect(response.status).toBe(200);
+    expect(versions).toHaveLength(1);
+    expect(versions[0]!.graph).toEqual(graph);
+    expect(from).not.toHaveBeenCalledWith("channel_sessions");
+    expect(from).not.toHaveBeenCalledWith("meta_templates");
+  });
+  it("sem envio e sem canal continua recusando ramo descoberto", async () => {
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const id = randomUUID();
+    const versions: Row[] = [];
+    const graph = { ...withoutSend, edges: withoutSend.edges.filter((e) => e.id !== "fallback") };
+    session("manager", makeDb([{ id, organization_id: ORG_ID, draft_graph: graph }], versions, [], []));
+    const response = await POST(req("POST"), ctx(id));
+    expect(response.status).toBe(422);
+    expect(await response.text()).toContain("missing_always_fallback");
+    expect(versions).toHaveLength(0);
+  });
+  const channel = (id: string, provider: string, extra: Row = {}): Row => ({
+    id, provider, organization_id: ORG_ID, status: "WORKING", archived_at: null, ...extra,
+  });
+  const fallbackId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  async function publishWith(channels: Row[], fallback: boolean, templates: Row[] = [], mode: "text" | "ai_message" = "ai_message") {
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const id = randomUUID();
+    const config = { ...(mode === "text" ? { mode, body: "oi" } : { mode, prompt_hint: "retome" }),
+      ...(fallback ? { fallback_template_id: fallbackId } : {}) };
+    const graph: FlowGraph = { nodes: [trigger("t1"),
+      { id: "w1", type: "wait", label: "espera", position: pos, config: { mode: "fixed", duration_ms: 90_000_000 } },
+      { id: "a1", type: "action", label: "envio", position: pos, config }, end("e1")],
+    edges: [edge("tw", "t1", "w1"), edge("wa", "w1", "a1"), edge("ae", "a1", "e1")] };
+    const versions: Row[] = [];
+    session("manager", makeDb([{ id, organization_id: ORG_ID, draft_graph: graph }], versions, [], channels, templates));
+    return { response: await POST(req("POST"), ctx(id)), versions };
+  }
+  it.each([
+    [channel("s1", "waha")],
+    [channel("s1", "waha"), channel("s2", "meta_cloud", { archived_at: "2026-09-01" })],
+    [channel("s1", "waha"), channel("s2", "meta_cloud", { status: "STOPPED" })],
+    [channel("s1", "waha"), channel("s2", "meta_cloud", { organization_id: OTHER_ORG_ID })],
+  ].map((channels) => [channels] as const))("canal livre ignora sessões inelegíveis e publica sem fallback (%j)", async (channels) => {
+    const { response, versions } = await publishWith(channels, false);
+    expect(response.status).toBe(200); expect(versions).toHaveLength(1);
+  });
+  it.each(["text", "ai_message"] as const)("canal restrito exige fallback em %s", async (mode) => {
+    const { response, versions } = await publishWith([channel("s1", "meta_cloud")], false, [], mode);
+    expect(response.status).toBe(422); expect(versions).toHaveLength(0);
+    expect(await response.text()).toContain("template_fallback_required");
+  });
+  it("org ambígua falha fechado mesmo com fallback", async () => {
+    const { response, versions } = await publishWith([channel("s1", "waha"), channel("s2", "meta_cloud")], true);
+    expect(response.status).toBe(422); expect(versions).toHaveLength(0);
+    expect(await response.text()).toContain("followup_channel_unresolved");
+  });
+  it("send_message sem canal falha fechado", async () => {
+    const { response, versions } = await publishWith([], false);
+    expect(response.status).toBe(422);
+    expect(versions).toHaveLength(0);
+    expect(await response.text()).toContain("followup_channel_unresolved");
+  });
+  it.each(["APPROVED", "PENDING"])("confere aprovação %s e sessão do fallback antes de publicar", async (status) => {
+    const { response, versions } = await publishWith([channel("s1", "meta_cloud")], true, [{
+      id: fallbackId, organization_id: ORG_ID, channel_session_id: "s1", name: "retorno", language: "pt_BR", status,
+      parameter_format: "POSITIONAL", components: [{ type: "BODY", text: "Olá!" }],
+    }]);
+    expect(response.status).toBe(status === "APPROVED" ? 200 : 422);
+    expect(versions).toHaveLength(status === "APPROVED" ? 1 : 0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -682,7 +777,8 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
       ],
       [],
       [],
-      [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", organization_id: ORG_ID, provider: "waha" }],
+      [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", organization_id: ORG_ID,
+        provider: "waha", status: "WORKING", archived_at: null }],
     );
     session("manager", db);
     const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
@@ -690,7 +786,7 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
     expect(res.status).toBe(200);
   });
 
-  it("canal oficial (Meta): espera ≥24h sem fallback rejeita (long_wait_needs_template)", async () => {
+  it.each(["meta_cloud", "zernio"])("canal oficial (%s): espera ≥24h sem fallback rejeita", async (provider) => {
     const db = makeDb(
       [
         {
@@ -703,7 +799,8 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
       ],
       [],
       [],
-      [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", organization_id: ORG_ID, provider: "meta_cloud" }],
+      [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", organization_id: ORG_ID,
+        provider, status: "WORKING", archived_at: null }],
     );
     session("manager", db);
     const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
@@ -713,7 +810,7 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
       error: { code: string; details: { errors: Array<{ code: string }> } };
     };
     expect(body.error.code).toBe("validation_failed");
-    expect(body.error.details.errors.map((e) => e.code)).toContain("long_wait_needs_template");
+    expect(body.error.details.errors.map((e) => e.code)).toContain("template_fallback_required");
   });
 });
 

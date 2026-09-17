@@ -18,6 +18,7 @@ export const PUBLISH_ERROR_CODES = [
   'missing_always_fallback',
   'grace_too_short',
   'long_wait_needs_template',
+  'template_fallback_required',
   'cycle_without_wait',
   'max_steps_exceeded',
 ] as const;
@@ -34,23 +35,6 @@ export type PublishValidationError = {
 export type PublishValidationResult =
   | { ok: true }
   | { ok: false; errors: PublishValidationError[] };
-
-/**
- * Opções de validação de publish. A regra da janela de 24h
- * (`long_wait_needs_template`) só se aplica quando o canal exige template fora
- * da janela (hetero-restrição da plataforma); canais de texto livre não têm
- * essa restrição. O valor é RESOLVIDO pelo chamador a partir da capability
- * canônica do canal (`freeformOutsideWindow`) — o validador permanece puro e
- * sem conhecer provider.
- */
-export interface PublishValidationOptions {
-  /**
-   * `false` desativa a exigência de `fallback_template_id` para `action
-   * ai_message` alcançável após ≥24h. Default `true` preserva o comportamento
-   * atual e mantém a exigência para a API oficial.
-   */
-  requiresTemplateOutsideWindow?: boolean;
-}
 
 const LONG_WAIT_THRESHOLD_MS = 86_400_000; // 24h
 const MIN_CYCLE_WAIT_MS = 300_000; // 5min
@@ -176,8 +160,7 @@ function analyzeCondensedPaths(
   startId: string,
   nodes: FlowNode[],
   nodesById: Map<string, FlowNode>,
-  outEdges: Map<string, FlowEdge[]>,
-  requiresTemplateOutsideWindow: boolean
+  outEdges: Map<string, FlowEdge[]>
 ): { longWaitNodeIds: Set<string>; maxStepsExceeded: boolean } {
   const longWaitNodeIds = new Set<string>();
   let maxStepsExceeded = false;
@@ -230,7 +213,6 @@ function analyzeCondensedPaths(
     for (const id of components[idx]!) {
       const node = nodesById.get(id);
       if (
-        requiresTemplateOutsideWindow &&
         node &&
         node.type === 'action' &&
         node.config.mode === 'ai_message' &&
@@ -289,10 +271,9 @@ function cobrirRamos(
 
 export function validateFlowForPublish(
   graph: FlowGraph,
-  options: PublishValidationOptions = {},
+  channel?: { freeformOutsideWindow: boolean },
 ): PublishValidationResult {
   const { nodes, edges } = graph;
-  const requiresTemplateOutsideWindow = options.requiresTemplateOutsideWindow !== false;
   const errors: PublishValidationError[] = [];
   const nodesById = new Map(nodes.map((n) => [n.id, n]));
   const outEdges = buildOutEdges(edges);
@@ -345,15 +326,25 @@ export function validateFlowForPublish(
       startTrigger.id,
       nodes,
       nodesById,
-      outEdges,
-      requiresTemplateOutsideWindow
+      outEdges
     );
-    for (const id of [...longWaitNodeIds].sort()) {
+    // Sem contexto de canal, preserva a análise estrutural histórica. No publish
+    // real o canal é obrigatório: um enrollment pode começar com a janela fechada,
+    // mesmo que o grafo só espere cinco minutos.
+    for (const id of channel === undefined ? [...longWaitNodeIds].sort() : []) {
       errors.push({
         node_id: id,
         code: 'long_wait_needs_template',
         message: `Nó "${id}" acumula ≥24h de espera e precisa de fallback_template_id.`,
       });
+    }
+    if (channel?.freeformOutsideWindow === false) {
+      for (const node of nodes) {
+        if (reachable.has(node.id) && node.type === 'action' && !node.config.fallback_template_id) {
+          errors.push({ node_id: node.id, code: 'template_fallback_required',
+            message: `Nó "${node.id}" precisa de fallback_template_id aprovado para janela fechada.` });
+        }
+      }
     }
     if (maxStepsExceeded) {
       errors.push({

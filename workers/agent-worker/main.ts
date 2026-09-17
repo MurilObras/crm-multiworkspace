@@ -62,6 +62,7 @@ if (!sentryDsn) {
 
 import http from 'node:http';
 import { hostname } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import type pg from 'pg';
@@ -365,13 +366,15 @@ export async function startWorker(
   };
 
   const runJob = async (job: JobRow): Promise<void> => {
+    const leaseOwner = job.locked_by;
+    if (!leaseOwner) throw new Error('job_without_lease');
     try {
       const handler = handlers.get(job.kind);
       if (!handler) {
         throw new Error(`nenhum handler registrado para kind=${job.kind}`);
       }
-      await handler(job, pool, { workerId });
-      await completeJob(pool, job.id, workerId);
+      await handler(job, pool, { workerId: leaseOwner });
+      await completeJob(pool, job.id, leaseOwner);
       log.info('job concluído', { job_id: job.id, kind: job.kind });
       try {
         const wrote = await recordRunMetrics(pool, job);
@@ -402,9 +405,9 @@ export async function startWorker(
       }
       try {
         if (terminal) {
-          await cancelJob(pool, job.id, workerId, errMsg(err));
+          await cancelJob(pool, job.id, leaseOwner, errMsg(err));
         } else {
-          await failJob(pool, job.id, workerId, err);
+          await failJob(pool, job.id, leaseOwner, err);
         }
       } catch (failErr) {
         log.error('disposição do job indisponível — lease expira via reaper', {
@@ -421,7 +424,7 @@ export async function startWorker(
 
   const workerLoop = rodarLoopDaFila<JobRow>({
     relogio: () => faltaParaOProximoJob(pool),
-    claimar: () => claimJobs(pool, { workerId, maxConcurrency: env.QUEUE_MAX_CONCURRENCY }),
+    claimar: () => claimJobs(pool, { workerId: `${workerId}:${randomUUID()}`, maxConcurrency: env.QUEUE_MAX_CONCURRENCY }),
     aoClaimar: (jobs) => {
       for (const job of jobs) {
         const running = runJob(job);

@@ -368,10 +368,9 @@ describe('validateFlowForPublish', () => {
 });
 
 /**
- * A regra da janela de 24h é condicionada ao CANAL: só quem tem hetero-restrição
- * de janela exige `fallback_template_id` num `action ai_message` alcançável após
- * ≥24h. Canais de texto livre não exigem. O default (`requiresTemplateOutsideWindow`
- * ausente) preserva o comportamento atual.
+ * No publish com canal resolvido, canais restritos exigem fallback mesmo com
+ * espera curta: o enrollment pode começar com a janela já fechada. Canais de
+ * texto livre dispensam fallback, mas mantêm as demais validações do grafo.
  */
 describe('validateFlowForPublish — janela 24h x canal (fallback_template_id)', () => {
   function grafoComAiMessage(waitMs: number, fallback?: string): FlowGraph {
@@ -386,27 +385,29 @@ describe('validateFlowForPublish — janela 24h x canal (fallback_template_id)',
     );
   }
 
-  it('canal com hetero-restrição: <24h sem fallback publica', () => {
+  it('sem contexto de canal: <24h sem fallback preserva a validação estrutural', () => {
     expect(validateFlowForPublish(grafoComAiMessage(300_000)).ok).toBe(true);
   });
 
-  it('canal com hetero-restrição: ≥24h sem fallback rejeita', () => {
-    const result = validateFlowForPublish(grafoComAiMessage(86_400_000));
+  it.each([300_000, 86_400_000])('canal restrito: espera de %i ms sem fallback rejeita', (duration) => {
+    const result = validateFlowForPublish(grafoComAiMessage(duration), { freeformOutsideWindow: false });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.errors.map((e) => e.code)).toEqual(['long_wait_needs_template']);
+      expect(result.errors.map((e) => e.code)).toEqual(['template_fallback_required']);
       expect(result.errors[0]!.node_id).toBe('a1');
     }
   });
 
   it('canal com hetero-restrição: ≥24h com fallback aceita', () => {
-    expect(validateFlowForPublish(grafoComAiMessage(86_400_000, TEMPLATE_ID)).ok).toBe(true);
+    expect(validateFlowForPublish(grafoComAiMessage(86_400_000, TEMPLATE_ID), {
+      freeformOutsideWindow: false,
+    }).ok).toBe(true);
   });
 
   it('canal de texto livre: ≥24h sem fallback aceita', () => {
     expect(
       validateFlowForPublish(grafoComAiMessage(86_400_000), {
-        requiresTemplateOutsideWindow: false,
+        freeformOutsideWindow: true,
       }).ok,
     ).toBe(true);
   });
@@ -424,7 +425,7 @@ describe('validateFlowForPublish — janela 24h x canal (fallback_template_id)',
         edge('c2', 'e1', condResult(false)),
       ]
     );
-    const result = validateFlowForPublish(g, { requiresTemplateOutsideWindow: false });
+    const result = validateFlowForPublish(g, { freeformOutsideWindow: true });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.map((e) => e.code)).toEqual(['cycle_without_wait']);

@@ -84,6 +84,10 @@ function fakePool(opts: PoolOpts = {}) {
         {
           id: CONVERSA,
           channel_session_id: CANAL,
+          resolved_session_id: CANAL,
+          organization_id: ORG,
+          provider: "waha",
+          channel_status: "WORKING",
           channel_archived_at: opts.semColuna === true ? null : (opts.archivedAt ?? null),
         },
       ],
@@ -130,6 +134,44 @@ function handler() {
 }
 
 describe("followup_turn — canal arquivado", () => {
+  it.each([
+    { organization_id: "org-2" }, { channel_status: "STOPPED" }, { resolved_session_id: null },
+  ])("vínculo inutilizável %j não busca número alternativo", async (over) => {
+    runAgentTurn.mockClear();
+    const { pool, query } = fakePool();
+    query.mockResolvedValue({ rows: [{ id: CONVERSA, channel_session_id: CANAL, channel_archived_at: null,
+      resolved_session_id: CANAL, organization_id: ORG, provider: "meta_cloud", channel_status: "WORKING", ...over }] });
+    await expect(handler()(job(), pool, ctx)).rejects.toThrow("outbound_session_unavailable");
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(runAgentTurn).not.toHaveBeenCalled();
+  });
+
+  it("fallback misto ambíguo falha antes de criar conversa", async () => {
+    runAgentTurn.mockClear();
+    const { pool, query } = fakePool();
+    query.mockImplementation(async (sql: string) => {
+      if (/from conversations/.test(sql)) return { rows: [] };
+      return { rows: [
+        { id: "s-1", organization_id: ORG, status: "WORKING", provider: "waha", archived_at: null },
+        { id: "s-2", organization_id: ORG, status: "WORKING", provider: "meta_cloud", archived_at: null },
+      ] };
+    });
+    await expect(handler()(job(), pool, ctx)).rejects.toThrow(/impossível retomar/);
+    expect(query.mock.calls.some(([sql]) => /insert into conversations/.test(sql))).toBe(false);
+    expect(runAgentTurn).not.toHaveBeenCalled();
+  });
+
+  it("vínculo com canal oficial é preservado sem consultar alternativas", async () => {
+    runAgentTurn.mockClear();
+    const { pool, query } = fakePool();
+    query.mockResolvedValue({ rows: [{ id: CONVERSA, channel_session_id: CANAL, channel_archived_at: null,
+      resolved_session_id: CANAL, organization_id: ORG, provider: "meta_cloud", channel_status: "WORKING",
+      last_inbound_at: new Date().toISOString() }] });
+    await handler()(job(), pool, ctx);
+    expect(runAgentTurn).toHaveBeenCalledOnce();
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
   it("⭐ canal EXCLUÍDO: o job morre com o motivo escrito, sem pagar o turno de modelo", async () => {
     runAgentTurn.mockClear();
     const { pool } = fakePool({ archivedAt: "2026-08-01T10:00:00.000Z" });
@@ -183,7 +225,7 @@ describe("followup_turn — canal arquivado", () => {
     const { pool, query } = fakePool();
     query.mockImplementation(async (sql: string) => {
       if (/from conversations/.test(sql) && /select c\.id/.test(sql)) return { rows: [] };
-      if (/from channel_sessions/.test(sql)) return { rows: [{ id: CANAL }] };
+      if (/from channel_sessions/.test(sql)) return { rows: [{ id: CANAL, organization_id: ORG, provider: "waha", status: "WORKING", archived_at: null }] };
       if (/insert into conversations/.test(sql)) return { rows: [{ id: CONVERSA }] };
       return { rows: [] };
     });

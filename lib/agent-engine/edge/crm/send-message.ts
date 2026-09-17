@@ -11,21 +11,16 @@
  *      `send_ledger.id` É a idempotency_key, enviada em `metadata.idempotency_key`
  *      da mensagem;
  *   2. chamada ao handler; 'sent' → accepted; 'queued'/'failed' → registrados;
- *   3. retry pós-crash: 'accepted' pula; 'requested' PRIMEIRO procura em
- *      `messages` uma linha com essa idempotency_key (o crash pode ter sido
- *      DEPOIS do envio) — achou, reconcilia o ledger sem reenviar; 'failed'
- *      rotaciona o id (tentativa lógica nova).
+ *   3. `outbound-attempt` aplica a política única de recuperação por fase,
+ *      confirmação do provedor e lease. Não rotaciona key por status failed;
+ *      resultados incertos são terminais, nunca autorização de reenvio.
  */
-import { createHash } from 'node:crypto';
-
-import { ApiError } from '@/lib/api/types';
-import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
-import type { Message } from '@/lib/types/messaging';
+import { executeOutboundAttempt, type OutboundAttemptOptions } from './outbound-attempt';
 
 import type { Queryable } from '../../queue/queue';
 import { cancelJob, rescheduleJob, type JobRow } from '../../queue/queue';
 import { cancelPendingCronsForLead } from '../../cron/scheduler';
-import { CrmTransportError, type CrmEdgeConfig } from './mcp-client';
+import type { CrmEdgeConfig } from './mcp-client';
 
 export type SendLedgerStatus = 'requested' | 'accepted' | 'queued' | 'vetoed' | 'failed';
 
@@ -59,10 +54,11 @@ export type SendOutcome =
   | { kind: 'queued'; idempotencyKey: string; crmMessageId: string | null }
   /** 403 is_blocked — veto PERMANENTE de negócio (opt-out, regra dura nº 2). */
   | { kind: 'blocked'; idempotencyKey: string }
-  /** handler registrou a mensagem como 'failed' (sem telefone / erro WAHA) — retry rotaciona a key. */
+  /** Falha sem confirmação: a política central decide se retry é seguro ou terminal. */
   | { kind: 'failed'; idempotencyKey: string; crmMessageId: string | null };
 
 export interface SendMessageInput {
+  workerId: string;
   tenantId: string;
   leadId: string | null;
   jobId: string;
@@ -84,190 +80,16 @@ export const AGENT_ACTOR_ID = 'agent-engine';
 
 /**
  * Envia UMA mensagem do turno pelo handler do app. Intenção exactly-once,
- * entrega at-least-once: throws (transporte) deixam o ledger em 'requested' —
- * o retry reconcilia por `messages.metadata.idempotency_key` antes de reenviar.
+ * Todo consumidor usa o mesmo executor. Retry pré-rede retoma a identidade;
+ * após entrada no transporte, só prova de rejeição permite retry automático.
  */
 export async function sendTurnMessage(
   db: Queryable,
   cfg: CrmEdgeConfig,
   input: SendMessageInput,
+  options?: OutboundAttemptOptions,
 ): Promise<SendOutcome> {
-  const bodyHash = createHash('sha256').update(input.body).digest('hex');
-  const ledger = await claimLedgerRow(db, input, bodyHash);
-  if (ledger.shortCircuit) {
-    return ledger.shortCircuit;
-  }
-  const idempotencyKey = ledger.key;
-
-  // Replay de 'requested': o crash pode ter sido DEPOIS do handler gravar a
-  // mensagem — procurar pela key evita duplicar o envio.
-  if (ledger.replay) {
-    const { rows } = await db.query<{ id: string; status: string }>(
-      `select id, status from messages
-       where organization_id = $1 and metadata->>'idempotency_key' = $2
-       limit 1`,
-      [input.tenantId, idempotencyKey],
-    );
-    const existing = rows[0];
-    if (existing) {
-      return reconcile(db, idempotencyKey, existing.id, existing.status);
-    }
-  }
-
-  let message: Message;
-  try {
-    message = await sendMessageHandler(
-      cfg.supabase,
-      {
-        organization_id: input.tenantId,
-        actor: { type: 'ai_agent', id: cfg.agentActorId ?? AGENT_ACTOR_ID, role: 'manager' },
-        requestId: idempotencyKey,
-      },
-      {
-        conversation_id: input.conversationId,
-        ...(input.template
-          ? {
-              type: 'template' as const,
-              template_name: input.template.name,
-              template_language: input.template.language,
-              template_values: input.template.values,
-            }
-          : { type: 'text' as const }),
-        body: input.body,
-        metadata: { idempotency_key: idempotencyKey },
-      },
-    );
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 403) {
-      await updateLedger(db, idempotencyKey, 'vetoed', null, 'handler 403: contato bloqueado (is_blocked)');
-      return { kind: 'blocked', idempotencyKey };
-    }
-    if (err instanceof ApiError && err.status === 404) {
-      await touchLedgerError(db, idempotencyKey, 'conversa não encontrada');
-      throw new SendToolError('envio recusado: conversa não encontrada');
-    }
-    // Qualquer outra falha (Supabase fora, erro interno do handler): transiente —
-    // o ledger fica 'requested' e o replay reconcilia pela key.
-    const msg = err instanceof Error ? err.message : String(err);
-    await touchLedgerError(db, idempotencyKey, msg);
-    throw new CrmTransportError(`handler de envio indisponível: ${msg.slice(0, 120)}`);
-  }
-
-  return reconcile(db, idempotencyKey, message.id, message.status);
-}
-
-/** Mapeia o status da linha `messages` para o outcome + atualiza o ledger. */
-async function reconcile(
-  db: Queryable,
-  idempotencyKey: string,
-  messageId: string,
-  status: string,
-): Promise<SendOutcome> {
-  switch (status) {
-    case 'sent':
-      await updateLedger(db, idempotencyKey, 'accepted', messageId, null);
-      return { kind: 'sent', idempotencyKey, crmMessageId: messageId };
-    case 'queued':
-      await updateLedger(db, idempotencyKey, 'queued', messageId, null);
-      return { kind: 'queued', idempotencyKey, crmMessageId: messageId };
-    case 'failed':
-      await updateLedger(db, idempotencyKey, 'failed', messageId, 'handler marcou a mensagem como failed');
-      return { kind: 'failed', idempotencyKey, crmMessageId: messageId };
-    default:
-      // status desconhecido (ex.: delivered em replay tardio = já saiu) — trate
-      // como aceito: a mensagem existe sob custódia do CRM.
-      await updateLedger(db, idempotencyKey, 'accepted', messageId, null);
-      return { kind: 'sent', idempotencyKey, crmMessageId: messageId };
-  }
-}
-
-/**
- * Passo 1 do fluxo: garante a linha do ledger para (job_id, seq) e decide o caminho.
- * Linha nova → envio normal. 'requested' → replay (reconciliar antes de reenviar).
- * 'accepted'/'queued'/'vetoed' → short-circuit. 'failed' → rotaciona o id.
- */
-async function claimLedgerRow(
-  db: Queryable,
-  input: SendMessageInput,
-  bodyHash: string,
-): Promise<{ key: string; replay?: boolean; shortCircuit?: SendOutcome }> {
-  try {
-    const { rows } = await db.query<{ id: string }>(
-      `insert into send_ledger (organization_id, contact_id, job_id, seq, body_hash)
-       values ($1, $2, $3, $4, $5)
-       returning id`,
-      [input.tenantId, input.leadId, input.jobId, input.seq, bodyHash],
-    );
-    const id = rows[0]?.id;
-    if (!id) throw new Error('insert em send_ledger não devolveu linha');
-    return { key: id };
-  } catch (err) {
-    if (!isUniqueViolation(err)) throw err;
-  }
-
-  const { rows } = await db.query<SendLedgerRow>(
-    'select * from send_ledger where job_id = $1 and seq = $2',
-    [input.jobId, input.seq],
-  );
-  const existing = rows[0];
-  if (!existing) throw new Error('linha do send_ledger sumiu entre o 23505 e o select');
-
-  switch (existing.status) {
-    case 'accepted':
-      return {
-        key: existing.id,
-        shortCircuit: { kind: 'already_sent', idempotencyKey: existing.id, crmMessageId: existing.crm_message_id },
-      };
-    case 'queued':
-      // A mensagem JÁ está sob custódia do CRM (linha 'queued' em messages) —
-      // reenviar duplicaria; reconciliar o estado real é leitura no turno.
-      return {
-        key: existing.id,
-        shortCircuit: { kind: 'queued', idempotencyKey: existing.id, crmMessageId: existing.crm_message_id },
-      };
-    case 'vetoed':
-      return { key: existing.id, shortCircuit: { kind: 'blocked', idempotencyKey: existing.id } };
-    case 'failed': {
-      // Tentativa lógica NOVA: rotacionar o id preserva unique (job_id, seq) e
-      // desvincula da linha 'failed' antiga em messages.
-      const rotated = await db.query<{ id: string }>(
-        `update send_ledger
-         set id = gen_random_uuid(), status = 'requested', body_hash = $3,
-             crm_message_id = null, last_error = null, updated_at = now()
-         where job_id = $1 and seq = $2
-         returning id`,
-        [input.jobId, input.seq, bodyHash],
-      );
-      const id = rotated.rows[0]?.id;
-      if (!id) throw new Error('rotação de key no send_ledger não devolveu linha');
-      return { key: id };
-    }
-    default: // 'requested': crash entre insert e resposta — reconciliar pela key
-      return { key: existing.id, replay: true };
-  }
-}
-
-async function updateLedger(
-  db: Queryable,
-  id: string,
-  status: SendLedgerStatus,
-  crmMessageId: string | null,
-  lastError: string | null,
-): Promise<void> {
-  await db.query(
-    `update send_ledger
-     set status = $2, crm_message_id = coalesce($3, crm_message_id),
-         last_error = $4, updated_at = now()
-     where id = $1`,
-    [id, status, crmMessageId, lastError],
-  );
-}
-
-async function touchLedgerError(db: Queryable, id: string, errorText: string): Promise<void> {
-  await db.query(
-    `update send_ledger set last_error = $2, updated_at = now() where id = $1`,
-    [id, errorText.slice(0, 300)],
-  );
+  return executeOutboundAttempt(db, cfg, input, options);
 }
 
 export type SendDisposition =
@@ -316,14 +138,4 @@ export async function applySendOutcome(
     default:
       return { action: 'none' };
   }
-}
-
-// Mesmo predicado de queue.ts (não exportado lá de propósito — módulos sem deps cruzadas).
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    (err as { code?: unknown }).code === '23505'
-  );
 }

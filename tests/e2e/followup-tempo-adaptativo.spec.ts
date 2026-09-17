@@ -134,8 +134,7 @@ async function connectHandles(page: Page, sourceNodeId: string, targetNodeId: st
 const PRAZO_SOB_CARGA = 60_000;
 
 test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", () => {
-  // Canvas grande: com 4 nós o fitView chega ao maxZoom e joga handles pra fora
-  // do viewport, o que quebra os arrastes de conexão.
+  // Canvas grande para manter os handles no viewport durante os arrastes.
   test.use({ viewport: { width: 1600, height: 900 } });
   test.setTimeout(300_000);
 
@@ -169,10 +168,10 @@ test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", (
     const flowId = page.url().split("/").pop()!;
     await expect(page.locator(".react-flow")).toBeVisible({ timeout: PRAZO_SOB_CARGA });
 
-    // ─── 2. gatilho → espera → mensagem → fim, montado no canvas ─────────
+    // ─── 2. gatilho → espera → fim, montado no canvas ────────────────────
+    // A prova é do planejamento Adaptativo: sem envio, não depende de outbound.
     await page.getByTestId("palette-add-trigger").click();
     await page.getByTestId("palette-add-wait").click();
-    await page.getByTestId("palette-add-action").click();
     await page.getByTestId("palette-add-end").click();
 
     const zoomOut = page.locator(".react-flow__controls-zoomout");
@@ -180,14 +179,12 @@ test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", (
 
     const triggerId = await page.locator('.react-flow__node[data-id^="trigger-"]').getAttribute("data-id");
     const waitId = await page.locator('.react-flow__node[data-id^="wait-"]').getAttribute("data-id");
-    const actionId = await page.locator('.react-flow__node[data-id^="action-"]').getAttribute("data-id");
     const endId = await page.locator('.react-flow__node[data-id^="end-"]').getAttribute("data-id");
-    if (!triggerId || !waitId || !actionId || !endId) throw new Error("node ids ausentes");
+    if (!triggerId || !waitId || !endId) throw new Error("node ids ausentes");
 
     await connectHandles(page, triggerId, waitId);
-    await connectHandles(page, waitId, actionId);
-    await connectHandles(page, actionId, endId);
-    await expect(page.locator(".react-flow__edge")).toHaveCount(3, { timeout: PRAZO_SOB_CARGA });
+    await connectHandles(page, waitId, endId);
+    await expect(page.locator(".react-flow__edge")).toHaveCount(2, { timeout: PRAZO_SOB_CARGA });
 
     // ─── 3. A PROMESSA: o operador escolhe Adaptativo e orienta a IA ─────
     await page.locator(`.react-flow__node[data-id="${waitId}"]`).click();
@@ -210,16 +207,16 @@ test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", (
       fullPage: true,
     });
 
-    // A ação do agente precisa de conteúdo para o fluxo publicar.
-    await page.locator(`.react-flow__node[data-id="${actionId}"]`).click();
-    await page.getByTestId("node-config-panel").locator("#action-prompt-hint").fill(
-      "Retome a conversa com o lead de forma breve e cordial.",
-    );
-
     // ─── 4. salvar + publicar, pelos botões ──────────────────────────────
     await page.getByRole("button", { name: "Salvar" }).click();
     await expect(page.getByTestId("dirty-indicator")).toHaveCount(0, { timeout: PRAZO_SOB_CARGA });
+    const publishResponse = page.waitForResponse((response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === `/api/v1/ai/followup-flows/${flowId}/publish`,
+    );
     await page.getByTestId("publish-button").click();
+    const published = await publishResponse;
+    expect(published.status(), `publicar fluxo: ${await published.text()}`).toBe(200);
     // O selo do fluxo passa a "Ativo" (FlowStatusBadge) e a barra confirma
     // "Fluxo publicado." — não existe rótulo "Publicado" em lugar nenhum.
     await expect(page.getByText("Fluxo publicado.")).toBeVisible({ timeout: PRAZO_SOB_CARGA });
