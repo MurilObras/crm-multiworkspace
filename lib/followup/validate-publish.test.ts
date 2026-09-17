@@ -368,6 +368,72 @@ describe('validateFlowForPublish', () => {
 });
 
 /**
+ * No publish com canal resolvido, canais restritos exigem fallback mesmo com
+ * espera curta: o enrollment pode começar com a janela já fechada. Canais de
+ * texto livre dispensam fallback, mas mantêm as demais validações do grafo.
+ */
+describe('validateFlowForPublish — janela 24h x canal (fallback_template_id)', () => {
+  function grafoComAiMessage(waitMs: number, fallback?: string): FlowGraph {
+    return graph(
+      [
+        trigger('t1'),
+        wait('w1', { mode: 'fixed', duration_ms: waitMs }),
+        actionAiMessage('a1', fallback === undefined ? {} : { fallback }),
+        end('e1'),
+      ],
+      [edge('t1', 'w1', always()), edge('w1', 'a1', always()), edge('a1', 'e1', always())]
+    );
+  }
+
+  it('sem contexto de canal: <24h sem fallback preserva a validação estrutural', () => {
+    expect(validateFlowForPublish(grafoComAiMessage(300_000)).ok).toBe(true);
+  });
+
+  it.each([300_000, 86_400_000])('canal restrito: espera de %i ms sem fallback rejeita', (duration) => {
+    const result = validateFlowForPublish(grafoComAiMessage(duration), { freeformOutsideWindow: false });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.map((e) => e.code)).toEqual(['template_fallback_required']);
+      expect(result.errors[0]!.node_id).toBe('a1');
+    }
+  });
+
+  it('canal com hetero-restrição: ≥24h com fallback aceita', () => {
+    expect(validateFlowForPublish(grafoComAiMessage(86_400_000, TEMPLATE_ID), {
+      freeformOutsideWindow: false,
+    }).ok).toBe(true);
+  });
+
+  it('canal de texto livre: ≥24h sem fallback aceita', () => {
+    expect(
+      validateFlowForPublish(grafoComAiMessage(86_400_000), {
+        freeformOutsideWindow: true,
+      }).ok,
+    ).toBe(true);
+  });
+
+  it('canal de texto livre: as demais regras do fluxo continuam valendo', () => {
+    // Ciclo sem espera mínima continua reprovado mesmo com a regra de template
+    // desligada — o afrouxamento é SÓ da exigência de fallback_template_id.
+    const g = graph(
+      [trigger('t1'), condition('c1'), condition('c2'), end('e1')],
+      [
+        edge('t1', 'c1', always()),
+        edge('c1', 'c2', condResult(true)),
+        edge('c2', 'c1', condResult(true)),
+        edge('c1', 'e1', condResult(false)),
+        edge('c2', 'e1', condResult(false)),
+      ]
+    );
+    const result = validateFlowForPublish(g, { freeformOutsideWindow: true });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.map((e) => e.code)).toEqual(['cycle_without_wait']);
+    }
+  });
+});
+
+/**
  * Cobertura por ramo no modo 'per_check'. A regra é NOVA e vale só para a forma
  * nova: um nó de condição combinado continua publicando sob as mesmas exigências
  * de sempre, senão o publish passaria a reprovar fluxo que já está rodando.

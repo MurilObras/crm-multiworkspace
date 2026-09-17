@@ -53,6 +53,21 @@ const INVALID_GRAPH: FlowGraph = {
   edges: [edge("edge1", "t1", "e1")],
 };
 
+/**
+ * trigger -> wait(24h) -> action ai_message (sem fallback) -> end.
+ * Só reprova quando o canal exige template fora da janela (Meta) — o caso que o
+ * publish resolve pela capability do canal.
+ */
+const LONG_WAIT_NO_FALLBACK_GRAPH: FlowGraph = {
+  nodes: [
+    trigger("t1"),
+    { id: "w1", type: "wait", label: "w1", position: pos, config: { mode: "fixed", duration_ms: 86_400_000 } },
+    { id: "a1", type: "action", label: "a1", position: pos, config: { mode: "ai_message", prompt_hint: "hint" } },
+    end("e1"),
+  ],
+  edges: [edge("edge1", "t1", "w1"), edge("edge2", "w1", "a1"), edge("edge3", "a1", "e1")],
+};
+
 // ---------------------------------------------------------------------------
 // In-memory fake Supabase client (chainable: select/insert/update/eq/order/
 // maybeSingle/single, thenable for implicit awaits after order()).
@@ -747,6 +762,55 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
     const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
     const res = await POST(req("POST"), ctx("33333333-3333-4333-8333-333333333333"));
     expect(res.status).toBe(200);
+  });
+
+  it("canal de texto livre (WAHA/QR): espera ≥24h sem fallback publica", async () => {
+    const db = makeDb(
+      [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          organization_id: ORG_ID,
+          status: "draft",
+          draft_graph: LONG_WAIT_NO_FALLBACK_GRAPH,
+          trigger_config: { kind: "manual" },
+        },
+      ],
+      [],
+      [],
+      [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", organization_id: ORG_ID,
+        provider: "waha", status: "WORKING", archived_at: null }],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const res = await POST(req("POST"), ctx("33333333-3333-4333-8333-333333333333"));
+    expect(res.status).toBe(200);
+  });
+
+  it.each(["meta_cloud", "zernio"])("canal oficial (%s): espera ≥24h sem fallback rejeita", async (provider) => {
+    const db = makeDb(
+      [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          organization_id: ORG_ID,
+          status: "draft",
+          draft_graph: LONG_WAIT_NO_FALLBACK_GRAPH,
+          trigger_config: { kind: "manual" },
+        },
+      ],
+      [],
+      [],
+      [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", organization_id: ORG_ID,
+        provider, status: "WORKING", archived_at: null }],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const res = await POST(req("POST"), ctx("33333333-3333-4333-8333-333333333333"));
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as {
+      error: { code: string; details: { errors: Array<{ code: string }> } };
+    };
+    expect(body.error.code).toBe("validation_failed");
+    expect(body.error.details.errors.map((e) => e.code)).toContain("template_fallback_required");
   });
 });
 
