@@ -145,6 +145,16 @@ declare `REVERSE_PROXY=traefik` no `.env` — aí a escolha é sua e ele segue s
 | `reset-mfa.sh` | Remove o MFA de um usuário travado |
 | `healthcheck.sh` | Diagnóstico dos serviços |
 
+O snapshot `waha-*.tgz` contém as **sessões** do mount `/app/.sessions` do serviço
+WAHA identificado pelo Compose, sem reconstruir nomes de volumes. O script exige
+um único contêiner, monta seus dados somente para leitura e valida gzip/tar antes
+de confirmar o arquivo. Mount ausente ou sem arquivos é erro; uma falha deixa
+`.partial` para diagnóstico. Os novos arquivos são privados (permissão `600`).
+É um snapshot com o serviço em operação: valide a restauração em local isolado;
+a validação do arquivo não garante consistência transacional sob escritas concorrentes.
+O volume de mídia `/app/.media` não faz parte desse snapshot de sessões, e
+`restore.sh` restaura somente o banco — não o use como prova de restauração WAHA.
+
 ## Automações e webhooks
 
 O `install.sh` (e o `update.sh`, a cada atualização) já ativa sozinho um cron que roda todo minuto e "puxa" a fila de eventos pendentes (`/api/v1/cron/event-log-drain`) — é isso que faz uma automação disparar de verdade no seu servidor (ex.: enviar uma mensagem de WhatsApp quando um pedido muda de status). **Sem esse cron, as automações ficam paradas na fila e nunca rodam** — é um requisito, não um extra.

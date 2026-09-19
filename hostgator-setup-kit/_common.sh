@@ -433,10 +433,47 @@ psql_run() { docker run --rm -i postgres:17-alpine psql "$(url_do_schema)" -v ON
 # `docker-compose.prod.yml`, `.env.hostgator.example` e a matriz de
 # `publish-image.yml` digam o mesmo. Se você é um fork, é lá que está a lista do
 # que trocar junto.
-IMG_NS="ghcr.io/melgarafael"
+IMG_NS="ghcr.io/murilobras"
 IMG_APP="${IMG_NS}/deskcommcrm"
 IMG_WORKER="${IMG_NS}/deskcomm-worker"
 IMG_SCHEDULER="${IMG_NS}/deskcomm-scheduler"
+
+# Snapshot do mount REAL do serviço, não de um nome de volume reconstruído a
+# partir da pasta. Compose aceita hífen, -p, COMPOSE_PROJECT_NAME e volumes externos.
+# --volumes-from reutiliza os mounts existentes em somente leitura; nunca cria
+# silenciosamente um volume vazio por um nome incorreto passado a `-v`.
+backup_waha() (
+  umask 077
+  set -o noclobber
+  local destino="$1" cid mount parcial
+  cid="$(dc ps -aq waha)" || return 1
+  if [ -z "$cid" ] || [[ "$cid" == *$'\n'* ]]; then
+    c_red "Não foi possível identificar um único contêiner WAHA para o backup."
+    return 1
+  fi
+  mount="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/app/.sessions"}}{{.Type}}{{end}}{{end}}' "$cid")" || return 1
+  case "$mount" in
+    volume|bind) ;;
+    *) c_red "WAHA sem mount persistente em /app/.sessions; backup recusado."; return 1 ;;
+  esac
+  # Não sobrescreve um snapshot existente; falhas deixam .partial para diagnóstico.
+  parcial="${destino}.partial"
+  if [ -e "$destino" ] || [ -e "$parcial" ]; then
+    c_red "Destino do backup WhatsApp já existe; escolha outro timestamp."
+    return 1
+  fi
+  if ! docker run --rm --network none --volumes-from "${cid}:ro" alpine:3.20 \
+    sh -ec 'test -n "$(find /app/.sessions -type f -print -quit)"; tar czf - -C /app/.sessions .' > "$parcial"; then
+    c_red "Snapshot WhatsApp falhou ou o mount está vazio; backup não confirmado."
+    return 1
+  fi
+  if ! gzip -t "$parcial" || ! tar tzf "$parcial" >/dev/null; then
+    c_red "Snapshot WhatsApp inválido; backup não confirmado."
+    return 1
+  fi
+  mv "$parcial" "$destino" || return 1
+  c_grn "✓ sessões WhatsApp salvas e arquivo validado (mount do contêiner $cid)"
+)
 
 # A última versão publicada (ex.: "1.2.1"), ou vazio se não deu para saber.
 #
@@ -450,7 +487,7 @@ IMG_SCHEDULER="${IMG_NS}/deskcomm-scheduler"
 # alguém porque não deu para resolver um número de versão seria trocar um
 # problema de previsibilidade por um de disponibilidade.
 ultima_versao_publicada() {
-  local url="${1:-https://github.com/melgarafael/DeskcommCRM.git}" ref
+  local url="${1:-https://github.com/MurilObras/crm-multiworkspace.git}" ref
   command -v git >/dev/null 2>&1 || return 0
   # `grep -v -- -` descarta PRERELEASE (v1.11.0-rc1, v1.1.1-jmpo.1 — esta última
   # existe de verdade neste repo). O `--sort=-v:refname` do git põe o prerelease
@@ -470,15 +507,15 @@ ultima_versao_publicada() {
 # mão, o `docker compose pull` de toda VPS é negado — e como `pull` de serviço
 # com `image:` falha a operação inteira, a instalação morre no passo de subir.
 ghcr_status() {
-  local img="$1" tag="$2" tok
+  local img="$1" tag="$2" tok owner="${IMG_NS#ghcr.io/}"
   tok="$(curl -fsS --max-time 6 \
-          "https://ghcr.io/token?scope=repository:melgarafael/${img}:pull&service=ghcr.io" 2>/dev/null \
+          "https://ghcr.io/token?scope=repository:${owner}/${img}:pull&service=ghcr.io" 2>/dev/null \
         | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')" || true
   if [ -z "$tok" ]; then printf '000'; return 0; fi
   curl -s -o /dev/null --max-time 6 -w '%{http_code}' \
     -H "Authorization: Bearer $tok" \
     -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json' \
-    "https://ghcr.io/v2/melgarafael/${img}/manifests/${tag}" 2>/dev/null || printf '000'
+    "https://ghcr.io/v2/${owner}/${img}/manifests/${tag}" 2>/dev/null || printf '000'
 }
 
 # As TRÊS imagens existem e são públicas nesta referência?
