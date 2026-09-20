@@ -400,3 +400,75 @@ receipts. Nenhuma assertion, policy, grant ou lista de dívida foi afrouxada.
 Evidência do achado: run `35529639657`, job `106127845816`.
 Resultados finais do SHA mais recente devem ser consultados no PR; sucesso de
 um SHA anterior não aprova o posterior. Sem merge, release ou deploy.
+
+## Correções dos três achados da revisão final
+
+Referencial da reprodução: `bd190e82a985cd787b9571ad1ed2b7702166dfb6`.
+Antes de alterar a implementação, foram adicionados testes de regressão:
+
+- PostgreSQL: **3 falhas e 27 aprovações**. Falharam especificamente a supressão
+  por `declined_at`, o título impessoal após anonimização e o ator da auditoria
+  (era null). Contatos elegíveis sem recusa continuaram passando.
+- API de configuração: **1 falha e 6 aprovações**. Faltava `p_actor_user_id` na
+  chamada à RPC; a rejeição de ator injetado no body já passava.
+
+### Correções
+
+1. **Recusa explícita:** a RPC lê o consentimento do contato bloqueado por row lock
+   e aplica a mesma semântica de `checarGuardasDeContato`. Não confunde ausência
+   de concessão com recusa. O registro de consentimento não é alterado; o lead pode
+   ser capturado, mas `event_id` fica null e o motivo `consent_declined` é gravado
+   no receipt, captura e auditoria. Retry retorna duplicate sem criar evento.
+2. **Contato ausente:** título constante `Compra Kiwify` quando `contact_id` é null.
+   Não faz associação por email. Descrição, campos livres e captura não recebem
+   nome/email/telefone do comprador nesse caminho; ficam apenas os identificadores
+   de rastreabilidade já definidos. O fingerprint existente é preservado para não
+   invalidar retries: é um dado pseudonimizado de idempotência, não anonimização
+   absoluta do ledger. O reparo de títulos órfãos da 0220 não muda IDs/fingerprints
+   nem cria eventos, e não inventa associações com contatos.
+3. **Autoria:** a API passa `auth.user.id` em parâmetro próprio à RPC. O body continua
+   estrito e recusa `actor_user_id`/`p_actor_user_id`. O banco exige ator ativo
+   manager/admin da organização e grava `api_audit_log.actor_user_id`. A antiga RPC
+   de cinco argumentos foi removida; a nova tem seis e EXECUTE apenas para service_role.
+   Registros históricos sem autor não recebem uma identidade inventada.
+
+### Migrations, atualização e tipos
+
+Forward-fix **`20260920220000_0221_kiwify_consent_privacy_actor.sql`**, com cópia
+idêntica no baseline, antes da varredura final, e linha no MANIFEST. A migration
+0220 foi preservada. Nenhuma aplicação em produção.
+
+Passaram baseline install/reapply e base `24a9a3b0` + migrations 0220/0221/reapply,
+com catálogos relevantes iguais. Teste dedicado também instala o comportamento
+0220 numa transação isolada, cria um título pessoal órfão, aplica a 0221 duas vezes
+e verifica título reparado, mesmo receipt/fingerprint/external_id, retry duplicate
+e zero eventos. O teste termina em rollback.
+
+Os tipos foram novamente gerados do schema real com o gerador oficial Supabase;
+somente o argumento novo `p_actor_user_id: string` mudou no bloco da RPC. Os cinco
+blocos Kiwify integrados coincidem com a saída gerada. Saída nova preservada em
+`%LOCALAPPDATA%\Temp\opencode\kiwify-review-generated.types.ts`.
+
+### Evidência focal após a correção
+
+- **47 testes PostgreSQL/HTTP passaram em 3 arquivos**: 41 de ingestão/segurança,
+  5 HTTP e 1 de atualização com dados legados.
+- A comparação SQL × guarda TypeScript cobre dez valores de `declined_at`, inclusive
+  ausência representada por null, string vazia, false/zero e valores truthy. Há
+  também controle positivo com a chave realmente ausente.
+- Teste de privacidade: nome/email sintéticos, contato correspondente e mesmo email
+  em outro tenant; depois da anonimização, lead/captura/receipt não contêm esses
+  campos em claro, lead sem vínculo e sem evento; retry não recria efeitos.
+- Testes de autoria: parâmetro vindo da sessão; falsificação no body rejeitada;
+  propriedade homônima em p_config não substitui o ator confiável; ator nulo,
+  alheio ou viewer é recusado sem configuração criada; RPC antiga ausente e grants
+  efetivos da nova conferidos para anon/authenticated/service_role.
+- **64 testes unitários focais passaram em 5 arquivos**, cobrindo assinatura,
+  regressão genérica, API de configuração e paridade migration/baseline/hardening.
+
+Revisão crítica: correções restritas à entrada, privacidade e autoria; nenhuma
+refatoração de consumidores ou transporte WhatsApp. A autoria é validada novamente
+na organização pelo banco, não só copiada para o log. Supressão e motivo fazem parte
+da mesma transação da captura. Asserções e guardas anteriores foram preservadas.
+Os cinco checks do novo commit devem ser acompanhados no PR; o verde do HEAD
+anterior não substitui essa confirmação. Homologação externa permanece separada.

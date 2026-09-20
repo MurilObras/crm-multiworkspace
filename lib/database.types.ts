@@ -7330,6 +7330,7 @@ export type Database = {
       }
       fn_configure_kiwify: {
         Args: {
+          p_actor_user_id: string
           p_config: Json
           p_organization_id: string
           p_request_id: string

@@ -14,8 +14,8 @@ const payload = {
 };
 const sign = (p: unknown) => createHmac("sha1", secret).update(JSON.stringify(p), "utf8").digest("hex");
 describe("contrato Kiwify", () => {
-  it("baseline distribui exatamente a migration revisada", () => {
-    const migration = readFileSync("supabase/migrations/20260920120000_0220_kiwify_ingestion.sql", "utf8").replaceAll("\r\n", "\n").trim();
+  it.each(["20260920120000_0220_kiwify_ingestion.sql", "20260920220000_0221_kiwify_consent_privacy_actor.sql"])("baseline distribui exatamente a migration revisada: %s", file => {
+    const migration = readFileSync(`supabase/migrations/${file}`, "utf8").replaceAll("\r\n", "\n").trim();
     const baseline = readFileSync("supabase/baseline.sql", "utf8").replaceAll("\r\n", "\n");
     expect(baseline).toContain(migration);
   });

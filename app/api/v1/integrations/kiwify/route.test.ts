@@ -9,7 +9,7 @@ const config = { name: "Synthetic", store_id: "store-test", secret: "synthetic-o
 const call = (body = config) => POST(new Request("https://test.invalid/api/v1/integrations/kiwify", { method: "POST", body: JSON.stringify(body) }));
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.role.mockResolvedValue({ ok: true, org: { orgId: "org-session" } });
+  mocks.role.mockResolvedValue({ ok: true, org: { orgId: "org-session" }, user: { id: "actor-session" } });
   mocks.encrypt.mockResolvedValue("encrypted"); mocks.rpc.mockResolvedValue({ data: "integration" });
 });
 it("manager obrigatório antes de ler/cifrar dados", async () => {
@@ -30,4 +30,12 @@ it("cifra indisponível e produtos ausentes impedem configuração", async () =>
 it("rejeita IDs duplicados no mapeamento e organização injetada", async () => {
   expect((await call({ ...config, products: [...config.products, ...config.products] })).status).toBe(400);
   expect((await call(Object.assign({}, config, { organization_id: "forged" }))).status).toBe(400);
+});
+it("ator vem da autenticação do servidor e é propagado para a RPC", async () => {
+  expect((await call()).status).toBe(201);
+  expect(mocks.rpc.mock.calls[0]?.[1]).toMatchObject({ p_actor_user_id: "actor-session", p_organization_id: "org-session" });
+});
+it.each(["actor_user_id", "p_actor_user_id"])("recusa falsificação de ator pelo payload: %s", async field => {
+  expect((await call(Object.assign({}, config, { [field]: "forged-actor" }))).status).toBe(400);
+  expect(mocks.rpc).not.toHaveBeenCalled();
 });

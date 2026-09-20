@@ -19,7 +19,8 @@ POST deve receber 2xx; sem 2xx são até cinco reenvios, timeout de 40 segundos.
 ## Configuração
 
 Pré-requisitos em **ambiente isolado**: baseline atualizado com migration
-`20260920120000_0220_kiwify_ingestion.sql`, chave da cifra existente
+`20260920120000_0220_kiwify_ingestion.sql` e a forward-fix
+`20260920220000_0221_kiwify_consent_privacy_actor.sql`, chave da cifra existente
 `app.nuvemshop_oauth_key`, funil/etapa e produtos no `catalog_products` da organização.
 Migration também está no apêndice do baseline, antes da varredura final de privilégios,
 e no MANIFEST. Nenhuma migration foi aplicada em produção.
@@ -40,6 +41,10 @@ e no MANIFEST. Nenhuma migration foi aplicada em produção.
 Os placeholders UUID devem ser substituídos por UUIDs válidos de teste. Resposta 201
 inclui `integration_id` e `endpoint`. Usar esse endpoint com origem HTTPS no cadastro
 Kiwify, produto exato e evento Compra aprovada. O segredo nunca volta na resposta.
+A identidade do usuário autenticado é enviada pelo servidor como `p_actor_user_id`
+à RPC e registrada em `api_audit_log.actor_user_id`. Não é campo do payload público.
+A RPC exige ator ativo manager/admin da organização; sua antiga assinatura sem
+ator foi removida pela 0221 e continua indisponível a anon/authenticated.
 `GET /api/v1/integrations/kiwify` retorna configurações sem ciphertext, mapeamentos e
 últimos 20 receipts (inclusive contador de conflitos), sempre da organização autenticada.
 
@@ -65,15 +70,22 @@ Organização vem da configuração, loja vem dessa mesma linha. `store_id` do p
   email sintaticamente inválido, telefone fora do formato aceito: normalizado para null.
   Telefone é validação estrutural, não prova de existência de conta WhatsApp.
 - Nome ausente/inválido: título `Compra Kiwify`, contato novo `Comprador Kiwify`.
-- Sem telefone válido: lead sem vínculo de contato e **nenhum `lead.created`** na
-  fila. Nem e-mail coincidente autoriza usar telefone antigo. Estado `accepted_no_phone`.
+- Sem telefone válido: lead sem vínculo de contato, título impessoal `Compra Kiwify`
+  e **nenhum `lead.created`** na fila. Nome/email do comprador não são copiados para
+  o lead, captura ou auditoria; nem e-mail coincidente autoriza usar telefone antigo.
+  Estado `accepted_no_phone`. A 0221 também repara títulos órfãos criados pela 0220.
 - Contato ativo com telefone/variante brasileira reconhecida pelo helper existente é reutilizado sem atualizar nome, email,
   consentimento, bloqueio ou flags. Email que aponta para outro contato é
   `contact_identity_conflict` e não cria lead. Contato anonimizado também é recusado
-  sem novo lead; bloqueado pode ter lead, mas não emite evento. Outras guardas
-  existentes continuam aplicáveis na automação.
+  sem novo lead; bloqueado pode ter lead, mas não emite evento. Recusa explícita
+  em `consent.marketing.declined_at` também suprime o evento na transação, com motivo
+  `consent_declined` no receipt, captura e auditoria, inclusive após retry. A semântica
+  é a da guarda existente: ausência de concessão não equivale a recusa. O consentimento
+  não é atualizado pelo pedido. Outras guardas existentes continuam aplicáveis.
 - Não fabrica consentimento. Não autoriza IA nem executa drain/envio no request.
-- Ledger guarda identidade/fingerprint/estado e vínculos, sem payload bruto nem PII.
+- Ledger guarda identidade/fingerprint/estado e vínculos, sem payload bruto nem nome,
+  email ou telefone em claro. Fingerprint e IDs externos são dados de rastreabilidade
+  pseudonimizados; não se afirma anonimização absoluta desses identificadores.
   Histórico de captura existente recebe correlação, sem cópia dos dados pessoais.
   Logs do aplicativo não recebem corpo, segredo, assinatura ou URL; scrub do Sentry
   também remove corpo/query nas duas entradas Kiwify. O proxy externo precisa omitir

@@ -17,6 +17,7 @@ const secret = "synthetic-webhook-secret";
 const jwtSecret = "synthetic-jwt-secret-only-for-isolated-validation";
 const token = "b".repeat(64);
 const org = randomUUID();
+const actor = randomUUID();
 let rest: ChildProcess | undefined, server: Server | undefined, endpoint: string;
 let handler: typeof KiwifyPost;
 let restPort: number;
@@ -29,13 +30,15 @@ async function listen(s: Server) {
 beforeAll(async () => {
   await pool.query("alter database kiwify_test set app.nuvemshop_oauth_key='synthetic-encryption-key-only-for-tests'");
   await pool.query("insert into organizations(id,slug,legal_name,display_name) values($1::uuid,$1::text,'Synthetic','Synthetic')", [org]);
+  await pool.query("insert into auth.users(id,email) values($1,'http-actor@example.invalid')", [actor]);
+  await pool.query("insert into user_organizations(user_id,organization_id,role,accepted_at) values($1,$2,'manager',now())", [actor, org]);
   const p = (await pool.query("insert into crm_pipelines(organization_id,name,slug,position) values($1,'Test','test',1) returning id", [org])).rows[0].id;
   const s = (await pool.query("insert into crm_stages(organization_id,pipeline_id,name,slug,position) values($1,$2,'Test','test',1) returning id", [org,p])).rows[0].id;
   const product = (await pool.query("insert into catalog_products(organization_id,codigo,nome,preco_cents) values($1,'test','Synthetic',100) returning id", [org])).rows[0].id;
   const configClient = await pool.connect();
   try {
     await configClient.query("set role service_role; set app.nuvemshop_oauth_key='synthetic-encryption-key-only-for-tests'");
-    await configClient.query("select fn_configure_kiwify($1,$2,$3,fn_encrypt_oauth($4),$5)", [org,{ name: "Synthetic", store_id: "store-test", pipeline_id: p, stage_id: s, products: [{ external_product_id: "product-test", product_id: product }] },token,secret,randomUUID()]);
+    await configClient.query("select fn_configure_kiwify($1,$2,$3,fn_encrypt_oauth($4),$5,$6)", [org,{ name: "Synthetic", store_id: "store-test", pipeline_id: p, stage_id: s, products: [{ external_product_id: "product-test", product_id: product }] },token,secret,randomUUID(),actor]);
   } finally { await configClient.query("reset role"); configClient.release(); }
   const probe = createServer(); restPort = await listen(probe); await new Promise<void>(resolve => probe.close(() => resolve()));
   rest = spawn(process.env.KIWIFY_TEST_POSTGREST!, [], {

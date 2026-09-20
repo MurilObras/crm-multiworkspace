@@ -58,11 +58,14 @@ try {
   await db.query(`alter database ${dbName} set app.nuvemshop_oauth_key='synthetic-next-encryption-key-only-for-isolated-tests'`);
   pool=new pg.Pool({host:"127.0.0.1",port,user:"postgres",database:dbName});
   const org=randomUUID();
+  const actor=randomUUID();
   await pool.query("insert into organizations(id,slug,legal_name,display_name) values($1::uuid,$1::text,'Synthetic','Synthetic')",[org]);
+  await pool.query("insert into auth.users(id,email) values($1,'next-actor@example.invalid')",[actor]);
+  await pool.query("insert into user_organizations(user_id,organization_id,role,accepted_at) values($1,$2,'manager',now())",[actor,org]);
   const pipeline=(await pool.query("insert into crm_pipelines(organization_id,name,slug,position) values($1,'Test','test',1) returning id",[org])).rows[0].id;
   const stage=(await pool.query("insert into crm_stages(organization_id,pipeline_id,name,slug,position) values($1,$2,'Test','test',1) returning id",[org,pipeline])).rows[0].id;
   const product=(await pool.query("insert into catalog_products(organization_id,codigo,nome,preco_cents) values($1,'test','Synthetic',100) returning id",[org])).rows[0].id;
-  await pool.query("select fn_configure_kiwify($1,$2,$3,fn_encrypt_oauth($4),$5)",[org,{name:"Next smoke",store_id:"test-store",pipeline_id:pipeline,stage_id:stage,products:[{external_product_id:"test-product",product_id:product}]},token,secret,randomUUID()]);
+  await pool.query("select fn_configure_kiwify($1,$2,$3,fn_encrypt_oauth($4),$5,$6)",[org,{name:"Next smoke",store_id:"test-store",pipeline_id:pipeline,stage_id:stage,products:[{external_product_id:"test-product",product_id:product}]},token,secret,randomUUID(),actor]);
   const restPort=await unusedPort();
   rest=spawn(restExe,[],{windowsHide:true,stdio:"ignore",env:{...safeEnv,PGRST_DB_URI:`postgresql://postgres@127.0.0.1:${port}/${dbName}`,PGRST_DB_SCHEMAS:"public",PGRST_DB_ANON_ROLE:"anon",PGRST_JWT_SECRET:jwtSecret,PGRST_SERVER_HOST:"127.0.0.1",PGRST_SERVER_PORT:String(restPort),PGRST_LOG_LEVEL:"crit"}});
   await ready(`http://127.0.0.1:${restPort}/`,rest);

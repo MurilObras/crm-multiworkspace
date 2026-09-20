@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { kiwifyFingerprint, normalizeKiwify } from "@/lib/webhooks/kiwify";
+import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
 
 // Só o harness efêmero do repositório. Nunca usa DATABASE_URL/.env.
 if (!process.env.TEST_DB_CONTAINER && process.env.KIWIFY_TEST_NATIVE !== "1") throw new Error("Execute via harness PostgreSQL descartável");
@@ -9,7 +10,7 @@ const database = process.env.KIWIFY_TEST_NATIVE === "1" ? "kiwify_test" : "postg
 const connectionString = `postgresql://postgres:postgres@127.0.0.1:${Number(process.env.TEST_DB_PORT)}/${database}`;
 const pool = new pg.Pool({ connectionString, max: 8 });
 const service = new pg.Pool({ connectionString, max: 8, options: "-c role=service_role" });
-const org = randomUUID(), otherOrg = randomUUID(), user = randomUUID();
+const org = randomUUID(), otherOrg = randomUUID(), user = randomUUID(), otherUser = randomUUID();
 let integration: string, secondStore: string, otherIntegration: string, product: string, otherProduct: string;
 const secret = Buffer.from("synthetic-encrypted-test");
 async function setup(id: string) {
@@ -19,16 +20,16 @@ async function setup(id: string) {
   const prod = (await pool.query("insert into catalog_products(organization_id,codigo,nome,preco_cents) values($1,'test','Synthetic',100) returning id", [id])).rows[0].id;
   async function config(store: string) {
     const c = { name: "Synthetic", store_id: store, pipeline_id: p, stage_id: s, products: [{ external_product_id: "product-test", product_id: prod }] };
-    return (await service.query("select fn_configure_kiwify($1,$2,$3,$4,$5) id", [id,c,randomUUID().replaceAll("-","").repeat(2),secret,randomUUID()])).rows[0].id;
+    return (await service.query("select fn_configure_kiwify($1,$2,$3,$4,$5,$6) id", [id,c,randomUUID().replaceAll("-","").repeat(2),secret,randomUUID(),id === org ? user : otherUser])).rows[0].id;
   }
   return { prod, config };
 }
 beforeAll(async () => {
   const a = await setup(org), b = await setup(otherOrg);
   product = a.prod; otherProduct = b.prod;
+  await pool.query("insert into auth.users(id,email) values($1,'synthetic@example.invalid'),($2,'synthetic-other@example.invalid')", [user, otherUser]);
+  await pool.query("insert into user_organizations(user_id,organization_id,role,accepted_at) values($1,$2,'manager',now()),($3,$4,'manager',now())", [user,org,otherUser,otherOrg]);
   integration = await a.config("store-test"); secondStore = await a.config("store-second"); otherIntegration = await b.config("store-test");
-  await pool.query("insert into auth.users(id,email) values($1,'synthetic@example.invalid')", [user]);
-  await pool.query("insert into user_organizations(user_id,organization_id,role,accepted_at) values($1,$2,'manager',now())", [user,org]);
 });
 afterAll(async () => { await service.end(); await pool.end(); });
 function order(id = randomUUID(), overrides = {}) {
@@ -94,6 +95,85 @@ it("preserva nome/email/opt-out existente, sem evento para bloqueado", async () 
   expect(actual).toEqual({ name: "Preservar", email: "keep@example.invalid", is_blocked: true, consent: contact.consent });
   expect((await pool.query("select event_id from kiwify_receipts where id=$1", [r.receipt_id])).rows[0].event_id).toBeNull();
 });
+
+it("recusa explícita com is_blocked=false suprime automação inclusive no retry", async () => {
+  const consent = { marketing: { granted_at: null, declined_at: "2026-09-20T00:00:00Z" } };
+  const phone = "+12025550141";
+  const contact = (await pool.query("insert into contacts(organization_id,name,phone_number,is_blocked,consent) values($1,'Synthetic refusal',$2,false,$3) returning id", [org, phone, consent])).rows[0].id;
+  const o = order(randomUUID(), { Customer: { full_name: "Synthetic refusal", mobile: phone } });
+  const first = await ingest(o);
+  const retry = await ingest(o);
+  expect(first).toMatchObject({ status: "accepted", reason: "consent_declined" });
+  expect(retry).toMatchObject({ status: "duplicate", lead_id: first.lead_id });
+  expect((await pool.query("select event_id,reason from kiwify_receipts where id=$1", [first.receipt_id])).rows[0]).toEqual({ event_id: null, reason: "consent_declined" });
+  expect((await pool.query("select count(*)::int n from event_log where entity_id=$1 and event_type='lead.created'", [first.lead_id])).rows[0].n).toBe(0);
+  expect((await pool.query("select is_blocked,consent from contacts where id=$1", [contact])).rows[0]).toEqual({ is_blocked: false, consent });
+  expect((await pool.query("select metadata from api_audit_log where resource_id=$1 and action='kiwify.received'", [first.receipt_id])).rows[0].metadata).toEqual({ status: "accepted", reason: "consent_declined" });
+  expect((await pool.query("select reject_reason from webhook_lead_captures where lead_id=$1", [first.lead_id])).rows[0].reject_reason).toBe("consent_declined");
+});
+
+it.each([null, "", false, 0, "2026-09-20T00:00:00Z", " ", true, 1, {}, []].map((value, i) => ({ value, phone: `+120255501${50 + i}` })))("gate SQL concorda com a guarda existente para declined_at=$value", async ({ value, phone }) => {
+  const consent = { marketing: { declined_at: value } };
+  const contact = (await pool.query("insert into contacts(organization_id,name,phone_number,consent) values($1,'Synthetic parity',$2,$3) returning id", [org, phone, consent])).rows[0].id;
+  // Guarda pura: só lê context.contact; os demais campos de ActionCtx são I/O.
+  const expected = checarGuardasDeContato({ context: { contact: { id: contact, phone_number: phone, is_blocked: false, consent } } } as unknown as Parameters<typeof checarGuardasDeContato>[0]);
+  const result = await ingest(order(randomUUID(), { Customer: { mobile: phone } }));
+  const event = (await pool.query("select event_id from kiwify_receipts where id=$1", [result.receipt_id])).rows[0].event_id;
+  expect(event !== null).toBe(expected.ok);
+});
+
+it.each([
+  { consent: {}, phone: "+12025550143" },
+  { consent: { marketing: { declined_at: null } }, phone: "+12025550144" },
+  { consent: { marketing: { declined_at: "" } }, phone: "+12025550145" },
+])("sem recusa explícita continua elegível: $consent", async ({ consent, phone }) => {
+  await pool.query("insert into contacts(organization_id,name,phone_number,is_blocked,consent) values($1,'Synthetic eligible',$2,false,$3)", [org, phone, consent]);
+  const result = await ingest(order(randomUUID(), { Customer: { mobile: phone } }));
+  expect(result.status).toBe("accepted");
+  expect((await pool.query("select event_id from kiwify_receipts where id=$1", [result.receipt_id])).rows[0].event_id).not.toBeNull();
+});
+
+it("nome/email sem telefone não deixam PII no lead desvinculado após anonimização", async () => {
+  const name = "Synthetic privacy subject";
+  const email = "privacy-subject@example.invalid";
+  const contact = (await pool.query("insert into contacts(organization_id,name,email,phone_number) values($1,$2,$3,'+12025550142') returning id", [org, name, email])).rows[0].id;
+  // Mesmo e-mail em outro tenant não pode criar associação implícita.
+  await pool.query("insert into contacts(organization_id,name,email,phone_number) values($1,$2,$3,'+12025550142')", [otherOrg, name, email]);
+  const o = order(randomUUID(), { Customer: { full_name: name, email } });
+  const result = await ingest(o);
+  await pool.query("select fn_lgpd_cascade_redact_contact($1,$2,$3)", [org, contact, randomUUID()]);
+  const lead = (await pool.query("select * from crm_leads where id=$1", [result.lead_id])).rows[0];
+  const captures = (await pool.query("select * from webhook_lead_captures where lead_id=$1", [result.lead_id])).rows;
+  const receipt = (await pool.query("select * from kiwify_receipts where id=$1", [result.receipt_id])).rows[0];
+  expect(result.status).toBe("accepted_no_phone");
+  expect(lead.contact_id).toBeNull(); expect(lead.title).toBe("Compra Kiwify");
+  expect(receipt.event_id).toBeNull();
+  for (const row of [lead, ...captures, receipt]) {
+    expect(JSON.stringify(row)).not.toContain(name);
+    expect(JSON.stringify(row)).not.toContain(email);
+  }
+  expect((await ingest(o)).status).toBe("duplicate");
+  expect((await pool.query("select count(*)::int n from event_log where entity_id=$1", [result.lead_id])).rows[0].n).toBe(0);
+});
+
+it("auditoria de configuração registra o usuário responsável", async () => {
+  const s = (await pool.query("select pipeline_id,stage_id from kiwify_integrations where id=$1", [integration])).rows[0];
+  const config = { name: "Synthetic actor", store_id: randomUUID(), ...s, actor_user_id: otherUser, products: [{ external_product_id: "product-test", product_id: product }] };
+  const id = (await service.query("select fn_configure_kiwify($1,$2,$3,$4,$5,$6) id", [org, config, randomUUID().replaceAll("-", "").repeat(2), secret, randomUUID(), user])).rows[0].id;
+  expect((await pool.query("select actor_user_id from api_audit_log where resource_id=$1 and action='kiwify.configured'", [id])).rows[0].actor_user_id).toBe(user);
+});
+it("RPC de configuração não aceita ator nulo, alheio ou sem papel manager", async () => {
+  const s = (await pool.query("select pipeline_id,stage_id from kiwify_integrations where id=$1", [integration])).rows[0];
+  const config = { name: "Synthetic bad actor", store_id: randomUUID(), ...s, products: [{ external_product_id: "product-test", product_id: product }] };
+  const viewer = randomUUID();
+  await pool.query("insert into auth.users(id,email) values($1,'viewer@example.invalid')", [viewer]);
+  await pool.query("insert into user_organizations(user_id,organization_id,role,accepted_at) values($1,$2,'viewer',now())", [viewer,org]);
+  for (const actor of [null, otherUser, viewer]) {
+    await expect(service.query("select fn_configure_kiwify($1,$2,$3,$4,$5,$6)", [org, config, randomUUID().replaceAll("-", "").repeat(2), secret, randomUUID(), actor])).rejects.toMatchObject({ code: "42501" });
+  }
+  expect((await pool.query("select to_regprocedure('public.fn_configure_kiwify(uuid,jsonb,text,bytea,uuid)') legacy")).rows[0].legacy).toBeNull();
+  expect((await pool.query("select count(*)::int n from kiwify_integrations where organization_id=$1 and store_id=$2", [org, config.store_id])).rows[0].n).toBe(0);
+});
 it("conflito não substitui original nem recria efeitos", async () => {
   const o = order(); const r = await ingest(o);
   expect((await ingest({ ...o, email: "changed@example.invalid" })).status).toBe("conflict");
@@ -148,7 +228,7 @@ it.each(["anon", "authenticated"])("%s não lê segredos, não escreve tabelas e
       "update kiwify_receipts set status='accepted'",
       "insert into kiwify_receipts default values",
       "truncate kiwify_receipts",
-      "select fn_configure_kiwify(null,null,null,null,null)",
+      "select fn_configure_kiwify(null,null,null,null,null,null)",
       "select fn_ingest_kiwify(null,null,null,null,null,null)",
     ]) {
       await client.query(`begin; set local role ${role}`);
@@ -165,6 +245,8 @@ it("RPCs são invoker com search_path fixo; definer de cifra permanece restrita"
   for (const r of rows) { expect(r.prosecdef).toBe(false); expect(r.proconfig).toContain("search_path=public, pg_temp"); }
   const grants = (await pool.query("select has_function_privilege('anon','fn_decrypt_oauth(bytea)','execute') a, has_function_privilege('authenticated','fn_decrypt_oauth(bytea)','execute') b, has_function_privilege('service_role','fn_decrypt_oauth(bytea)','execute') c")).rows[0];
   expect(grants).toEqual({ a: false, b: false, c: true });
+  const configureGrants = (await pool.query("select has_function_privilege('anon','fn_configure_kiwify(uuid,jsonb,text,bytea,uuid,uuid)','execute') a, has_function_privilege('authenticated','fn_configure_kiwify(uuid,jsonb,text,bytea,uuid,uuid)','execute') b, has_function_privilege('service_role','fn_configure_kiwify(uuid,jsonb,text,bytea,uuid,uuid)','execute') c")).rows[0];
+  expect(configureGrants).toEqual({ a: false, b: false, c: true });
   const helpers = (await pool.query("select proname,prosecdef,proconfig,has_function_privilege('anon',oid,'execute') anon from pg_proc where pronamespace='public'::regnamespace and proname in ('emit_event','fn_encrypt_oauth','fn_decrypt_oauth')")).rows;
   expect(helpers).toHaveLength(3);
   for (const helper of helpers) {

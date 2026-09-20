@@ -38,6 +38,7 @@ export async function POST(req: Request): Promise<Response> {
     const { data, error } = await admin.rpc("fn_configure_kiwify", {
       p_organization_id: auth.org.orgId, p_config: config, p_token: token,
       p_secret_encrypted: encrypted, p_request_id: requestId,
+      p_actor_user_id: auth.user.id,
     });
     if (error) return fail("invalid_request", "Verifique loja, funil, etapa e produtos da organização.", 422, { requestId });
     return ok({ integration_id: data, endpoint: `/api/v1/webhooks/kiwify/${token}` }, { status: 201, requestId });

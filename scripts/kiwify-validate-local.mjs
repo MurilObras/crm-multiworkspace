@@ -17,6 +17,7 @@ assert(prelude?.includes('create extension if not exists vector'), 'prelude ofic
 const baseline = readFileSync(resolve(root,'supabase/baseline.sql'),'utf8');
 const previous = execFileSync('git',['show','24a9a3b07d59048dfa254f6df340317334a88b95:supabase/baseline.sql'],{encoding:'utf8',maxBuffer:20*1024*1024});
 const migration = readFileSync(resolve(root,'supabase/migrations/20260920120000_0220_kiwify_ingestion.sql'),'utf8');
+const correction = readFileSync(resolve(root,'supabase/migrations/20260920220000_0221_kiwify_consent_privacy_actor.sql'),'utf8');
 
 const catalog = `select jsonb_build_object(
   'tables',(select jsonb_agg(to_jsonb(x) order by table_name,ordinal_position) from (select table_name,column_name,ordinal_position,data_type,is_nullable,column_default from information_schema.columns where table_schema='public' and table_name like 'kiwify_%') x),
@@ -43,10 +44,12 @@ try {
   console.info('PASS baseline REAPPLY + catálogo invariável');
   run('kiwify_upgrade',previous);
   run('kiwify_upgrade',migration);
+  run('kiwify_upgrade',correction);
   assert.deepEqual(await inspect('kiwify_upgrade'),fresh);
   run('kiwify_upgrade',migration);
+  run('kiwify_upgrade',correction);
   assert.deepEqual(await inspect('kiwify_upgrade'),fresh);
-  console.info('PASS base 24a9a3b0 + migration + REAPPLY: tabelas/constraints/índices/funções/grants/policies iguais');
+  console.info('PASS base 24a9a3b0 + migrations 0220/0221 + REAPPLY: tabelas/constraints/índices/funções/grants/policies iguais');
   run('template1',"comment on database kiwify_fresh is 'kiwify-disposable-validation';");
   run('template1','drop database if exists kiwify_test with (force); create database kiwify_test template kiwify_fresh;');
   console.info('PASS kiwify_test preparado; sem consumidores de eventos');
