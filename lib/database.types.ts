@@ -4585,6 +4585,184 @@ export type Database = {
           },
         ]
       }
+      kiwify_integrations: {
+        Row: {
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          path_token: string
+          pipeline_id: string
+          secret_encrypted: string
+          stage_id: string
+          store_id: string
+        }
+        Insert: {
+          id?: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          path_token: string
+          pipeline_id: string
+          secret_encrypted: string
+          stage_id: string
+          store_id: string
+        }
+        Update: {
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          path_token?: string
+          pipeline_id?: string
+          secret_encrypted?: string
+          stage_id?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kiwify_integrations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiwify_integrations_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "crm_pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiwify_integrations_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "crm_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kiwify_product_mappings: {
+        Row: {
+          external_product_id: string
+          integration_id: string
+          organization_id: string
+          product_id: string
+        }
+        Insert: {
+          external_product_id: string
+          integration_id: string
+          organization_id: string
+          product_id: string
+        }
+        Update: {
+          external_product_id?: string
+          integration_id?: string
+          organization_id?: string
+          product_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kiwify_product_mappings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiwify_product_mappings_organization_id_integration_id_fkey"
+            columns: ["organization_id", "integration_id"]
+            isOneToOne: false
+            referencedRelation: "kiwify_integrations"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "kiwify_product_mappings_organization_id_product_id_fkey"
+            columns: ["organization_id", "product_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_products"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
+      kiwify_receipts: {
+        Row: {
+          conflict_count: number
+          created_at: string
+          event_id: string | null
+          event_type: string
+          external_id: string
+          fingerprint: string
+          id: string
+          integration_id: string
+          lead_id: string | null
+          order_id: string
+          organization_id: string
+          reason: string | null
+          status: string
+        }
+        Insert: {
+          conflict_count?: number
+          created_at?: string
+          event_id?: string | null
+          event_type: string
+          external_id: string
+          fingerprint: string
+          id?: string
+          integration_id: string
+          lead_id?: string | null
+          order_id: string
+          organization_id: string
+          reason?: string | null
+          status: string
+        }
+        Update: {
+          conflict_count?: number
+          created_at?: string
+          event_id?: string | null
+          event_type?: string
+          external_id?: string
+          fingerprint?: string
+          id?: string
+          integration_id?: string
+          lead_id?: string | null
+          order_id?: string
+          organization_id?: string
+          reason?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kiwify_receipts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "event_log"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiwify_receipts_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "crm_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiwify_receipts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiwify_receipts_organization_id_integration_id_fkey"
+            columns: ["organization_id", "integration_id"]
+            isOneToOne: false
+            referencedRelation: "kiwify_integrations"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
       knowledge_searches: {
         Row: {
           agent_id: string | null
@@ -7150,6 +7328,17 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      fn_configure_kiwify: {
+        Args: {
+          p_actor_user_id: string
+          p_config: Json
+          p_organization_id: string
+          p_request_id: string
+          p_secret_encrypted: string
+          p_token: string
+        }
+        Returns: string
+      }
       fn_conversation_assign: {
         Args: {
           p_conversation_id: string
@@ -7231,6 +7420,17 @@ export type Database = {
         Returns: number
       }
       fn_gasto_de_ia_do_mes: { Args: { p_org: string }; Returns: number }
+      fn_ingest_kiwify: {
+        Args: {
+          p_fingerprint: string
+          p_integration_id: string
+          p_order: Json
+          p_organization_id: string
+          p_request_id: string
+          p_secret_encrypted: string
+        }
+        Returns: Json
+      }
       fn_is_platform_admin: { Args: never; Returns: boolean }
       fn_lgpd_cascade_redact_contact: {
         Args: {
@@ -7946,4 +8146,3 @@ export const Constants = {
     },
   },
 } as const
-
