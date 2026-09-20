@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": { "title": "Kiwify: entrada autenticada e persistência", "output": "kiwify.html", "quality_profile": "standard" },
+  "lanes": [{ "id": "api", "label": "Servidor" }, { "id": "db", "label": "PostgreSQL" }, { "id": "ops", "label": "Operação" }],
+  "mainPath": ["source", "entry", "transaction", "events", "consumer"],
+  "nodes": [
+    { "id": "source", "lane": "api", "col": 1, "type": "api", "label": "/api/v1/integrations/kiwify", "sublabel": "manager, cifra existente, produtos explícitos" },
+    { "id": "entry", "lane": "api", "col": 2, "type": "api", "label": "/api/v1/webhooks/kiwify/[token]", "sublabel": "HMAC obrigatório antes de normalizar" },
+    { "id": "transaction", "lane": "db", "col": 1, "type": "database", "label": "fn_ingest_kiwify", "sublabel": "ledger UNIQUE + contatos + leads + captura + outbox" },
+    { "id": "events", "lane": "db", "col": 2, "type": "database", "label": "event_log", "sublabel": "lead.created com external_id" },
+    { "id": "consumer", "lane": "api", "col": 3, "type": "service", "label": "lib/automation/engine.ts", "sublabel": "drain e guardas existentes; fora do request" },
+    { "id": "history", "lane": "ops", "col": 1, "type": "frontend", "label": "Leads recebidos", "sublabel": "webhook_lead_captures; diagnóstico completo via GET" }
+  ],
+  "edges": [
+    { "id": "k1", "from": "source", "to": "entry", "label": "organização/loja pela configuração" },
+    { "id": "k2", "from": "entry", "to": "transaction", "label": "autenticado e normalizado" },
+    { "id": "k3", "from": "transaction", "to": "events", "label": "commit atômico" },
+    { "id": "k4", "from": "events", "to": "consumer", "label": "worker existente" },
+    { "id": "k5", "from": "transaction", "to": "history", "label": "estado e correlação" },
+    { "id": "k6", "from": "transaction", "to": "entry", "label": "rollback → 503 → retry; conflito → 409" }
+  ]
+}

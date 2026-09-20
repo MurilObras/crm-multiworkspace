@@ -248,6 +248,7 @@ aplica.
 
 | `20260907120000` | `0218_whatsapp_campaigns` | Campanhas WhatsApp por tag e origem opcional, com sequencia de mensagens (passo 1 imediato; demais com delay em minutos). Publico congelado + passo 0 atomicos; progresso por destinatario E por passo com idempotencia (campaign, contact, step); FKs tenant-consistentes, leitura RLS e escrita server-side. Reserva irreversivel com lock na sessao do canal e teto compartilhado entre campanhas do mesmo numero em hora deslizante; incerteza de transporte exige inspecao manual. Resposta do contato interrompe os passos seguintes (`stopped_reply`). |
 | `20260908120000` | `0219_campaigns_audience_scheduling` | Publicos paste/CSV/XLSX normalizados com upsert de contatos na mesma org e recipients congelados. Agendamento atomico em event_log.next_attempt_at, ativacao com guarda de prazo no banco e retries sem novo passo 0. Preserva RPC 0218 e quota/transportes existentes. |
+| `20260920120000` | `0220_kiwify_ingestion` | Entrada Kiwify: configuração cifrada separada, produtos por FK tenant-aware, ledger único e captura + lead + event_log transacionais. Não aplicada em produção nesta implementação. |
 
 ## Reproducibility
 
