@@ -76,6 +76,28 @@ interface Excecao {
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
   {
+    tabela: "kiwify_integrations",
+    razao:
+      "tests/invariants/kiwify-ingestion.test.ts — anon e authenticated recebem " +
+      "permission denied ao ler/inserir/excluir, medido com SET LOCAL ROLE e JWT; " +
+      "a configuração com segredo é server-side. RPCs também são recusadas. " +
+      "Deny-all: não cabe no controle positivo de leitura de TABLES.",
+  },
+  {
+    tabela: "kiwify_product_mappings",
+    razao:
+      "tests/invariants/kiwify-ingestion.test.ts — mesmo teste de negação de " +
+      "leitura/inserção/exclusão sob anon/authenticated; gravação service_role " +
+      "com produto de outra organização falha pela FK composta.",
+  },
+  {
+    tabela: "kiwify_receipts",
+    razao:
+      "tests/invariants/kiwify-ingestion.test.ts — SET LOCAL ROLE authenticated " +
+      "com JWT prova leitura própria (controle positivo) e zero linhas da outra " +
+      "organização; escrita/truncate/RPCs são recusados aos papéis públicos.",
+  },
+  {
     tabela: "webhook_lead_captures",
     razao:
       "tests/invariants/historico-de-captacao-rls.test.ts prova isolamento " +

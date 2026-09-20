@@ -380,3 +380,23 @@ Integração completa continua não homologada: faltam prova externa controlada,
 configuração/observabilidade do proxy real e toda a validação de efeitos de
 WhatsApp, incluindo idempotência do envio e recuperação. Nenhuma funcionalidade
 de WhatsApp, commit, push, merge, release ou deploy foi realizada nesta rodada.
+
+## Publicação para revisão — PR #9
+
+Com autorização posterior, a implementação foi publicada em rascunho no
+[PR #9](https://github.com/MurilObras/crm-multiworkspace/pull/9), contra a main do
+fork, inicialmente no commit `9d76f49f7f3c2b18730640e06605ab227b215612`.
+A auditoria preexistente permaneceu fora dos commits.
+
+O primeiro CI encontrou uma regressão de integração com o gate global:
+`rls-completude-varredura.test.ts` não reconhecia as três tabelas novas porque
+faltava declarar seus testes em `PROVA_PROPRIA`. No mesmo run, os **24 testes
+Kiwify passaram**, assim como baseline install/update; a suíte global teve
+1 falha/1267 aprovações, além de 1 falha esperada e 1 skip preexistentes.
+
+Correção: registrar as três provas existentes no catálogo do gate, distinguindo
+deny-all server-side de configuração/mapeamentos da leitura tenant-aware de
+receipts. Nenhuma assertion, policy, grant ou lista de dívida foi afrouxada.
+Evidência do achado: run `35529639657`, job `106127845816`.
+Resultados finais do SHA mais recente devem ser consultados no PR; sucesso de
+um SHA anterior não aprova o posterior. Sem merge, release ou deploy.
