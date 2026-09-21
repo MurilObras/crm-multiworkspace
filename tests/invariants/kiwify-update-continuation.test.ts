@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import pg from "pg";
-import { beforeAll, afterAll, it, expect, vi } from "vitest";
+import { beforeAll, beforeEach, afterEach, afterAll, it, expect, vi } from "vitest";
 import { acquireActionIntent, freezeEventPlan } from "@/lib/automation/action-intent";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 vi.mock("@/lib/audit",()=>({audit:vi.fn()}));
@@ -15,36 +15,59 @@ if (!Number.isInteger(port) || port<1024 || port===5432) throw new Error("Porta 
 const name=`kiwify_update_${randomUUID().replaceAll("-","")}`;
 const connection={host:"127.0.0.1",port,user:"postgres",password:"postgres"};
 const control=new pg.Pool({...connection,database:native?"kiwify_test":"postgres"});
-const db=new pg.Pool({...connection,database:name});
+let db: pg.Pool;
 const baseline=readFileSync("supabase/baseline.sql","utf8");
 const recovery=readFileSync("supabase/migrations/20260921150000_0225_automation_plan_recovery_guard.sql","utf8");
 const privacy=readFileSync("supabase/migrations/20260921120000_0224_automation_plan_redaction.sql","utf8");
+const identity=readFileSync("supabase/migrations/20260921010000_0222_automation_action_identity.sql","utf8");
+const plan=readFileSync("supabase/migrations/20260921030000_0223_automation_event_plan.sql","utf8");
 const prelude=readFileSync("scripts/test-db.sh","utf8").split("psql_install <<'SQL'")[1]!.split("\nSQL")[0]!;
-const start=baseline.indexOf("-- ---- Anonimização irreversível do plano (migration 0224) ----");
+const start=baseline.indexOf("-- ---- Identidade de ação de automação (migration 0222) ----");
 const end=baseline.indexOf("-- ---- VARREDURA anon:",start);
 const oldBaseline=baseline.slice(0,start)+baseline.slice(end);
 let created=false;
 
-function psql(text:string,stop:boolean) {
+function psql(text:string,stop:boolean,transaction=false,conflict=false) {
   const args=["-X","-U","postgres","-d",name,"-f","-"];
-  // O UPDATE é psql -f em autocommit: sem BEGIN, ON_ERROR_STOP ou savepoint.
+  // Autocommit reproduz update.sh; --single-transaction reproduz atomicidade do runner.
   if(stop)args.push("-v","ON_ERROR_STOP=1");
+  if(transaction)args.push("--single-transaction");
   const result=native
     ?spawnSync(join(process.env.KIWIFY_TEST_PG_BIN!,process.platform==="win32"?"psql.exe":"psql"),["-h","127.0.0.1","-p",String(port),...args],{input:text,encoding:"utf8",maxBuffer:20*1024*1024})
     :spawnSync("docker",["exec","-i",container!,"psql",...args],{input:text,encoding:"utf8",maxBuffer:20*1024*1024});
-  expect(result.error).toBeUndefined();expect(result.status).toBe(0);
+  expect(result.error).toBeUndefined();expect(result.status).toBe(conflict && stop?3:0);
   return result;
 }
 beforeAll(async()=>{
   expect(start).toBeGreaterThan(0);expect(end).toBeGreaterThan(start);
   expect(baseline).toContain(recovery.trim());expect(baseline).toContain(privacy.trim());
-  expect(baseline.indexOf(recovery.trim())).toBeLessThan(baseline.indexOf(privacy.trim()));
+  expect(privacy.indexOf("create trigger zz_automation_plan_recovery")).toBeLessThan(privacy.indexOf("do $backfill$"));
+});
+beforeEach(async()=>{
   await control.query(`create database ${name}`);created=true;
+  db=new pg.Pool({...connection,database:name});
   psql(prelude,true);psql(oldBaseline,true);
+  // Partida anterior à etapa 2; avançar normalmente até 0223 é necessário para
+  // existir a tabela de planos onde semeamos o lote anterior ao backfill 0224.
+  psql(identity,true);psql(plan,true);
 },120000);
-afterAll(async()=>{await db.end();if(created)await control.query(`drop database ${name} with (force)`);await control.end();});
+afterEach(async()=>{await db?.end();if(created)await control.query(`drop database ${name} with (force)`);created=false;});
+afterAll(()=>control.end());
 
-it("update.sh: erro preserva lote válido/conflitante/órfão; reparo permite reaplicar sem duplicar",async()=>{
+it.each([
+  {path:"baseline",transaction:false},{path:"chronological",transaction:false},
+  {path:"baseline",transaction:true},{path:"chronological",transaction:true},
+])("$path / transaction=$transaction: conflito preserva lote; reparo, anonimização e retry seguros",async({path,transaction})=>{
+  const update=(conflict=false)=>{
+    const results=[];
+    // Ordem NORMAL dos arquivos. A 0225 não roda antes nem é antecipada no teste.
+    for(const text of path==="baseline"?[baseline]:[privacy,recovery]) {
+      const result=psql(text+"\nselect 'continued_after_error';",transaction,transaction,conflict);
+      results.push(result);
+      if(result.status!==0)break; // Runner transacional interrompe na migration falha.
+    }
+    return {stdout:results.map(r=>r.stdout).join("\n"),stderr:results.map(r=>r.stderr).join("\n")};
+  };
   const org=randomUUID(),a=randomUUID(),b=randomUUID(),rule=randomUUID();
   await db.query("insert into organizations(id,slug,legal_name,display_name) values($1::uuid,$1::text,'Synthetic','Synthetic')",[org]);
   await db.query("insert into contacts(id,organization_id,name) values($1,$3,'Synthetic A'),($2,$3,'Synthetic B')",[a,b,org]);
@@ -63,16 +86,22 @@ it("update.sh: erro preserva lote válido/conflitante/órfão; reparo permite re
   const snapshot=async()=>(await db.query("select event_id,rules,created_at from automation_event_plans where organization_id=$1 order by event_id",[org])).rows;
   const before=await snapshot();
 
-  const failed=psql(baseline+"\nselect 'continued_after_error';",false);
+  const failed=update(true);
   expect(failed.stderr).toContain("automation_plan_subject_ambiguous");
-  expect(failed.stdout).toContain("continued_after_error");
   expect(await snapshot()).toEqual(before);
-  expect((await db.query("select count(*)::int n from automation_event_plans where organization_id=$1 and redacted_at is not null",[org])).rows[0].n).toBe(0);
-  expect(await acquireActionIntent(db,{...ctx,event:conflict},0,"send_whatsapp_message",true)).toBeNull();
+  if(transaction) {
+    expect(failed.stdout).not.toContain("continued_after_error");
+    // A própria instalação da guarda da 0224 foi revertida; 0225 não executou.
+    expect((await db.query("select to_regprocedure('public.fn_guard_automation_plan_recovery()') f")).rows[0].f).toBeNull();
+  } else {
+    expect(failed.stdout).toContain("continued_after_error");
+    expect((await db.query("select count(*)::int n from automation_event_plans where organization_id=$1 and redacted_at is not null",[org])).rows[0].n).toBe(0);
+    expect(await acquireActionIntent(db,{...ctx,event:conflict},0,"send_whatsapp_message",true)).toBeNull();
+  }
 
-  // A guarda da 0224 já existe nesta segunda tentativa (upgrade parcial).
+  // Autocommit retoma o upgrade parcial; transacional reaplica a migration revertida.
   await db.query("delete from crm_lead_links where organization_id=$1 and id=$2",[org,link]);
-  const repaired=psql(baseline,false);expect(repaired.stderr).not.toMatch(/ERROR:/);
+  const repaired=update();expect(repaired.stderr).not.toMatch(/ERROR:/);
   const plans=(await db.query("select * from automation_event_plans where organization_id=$1",[org])).rows;
   for(const event of [valid,conflict]) {
     const p=plans.find(p=>p.event_id===event.id);
@@ -85,7 +114,7 @@ it("update.sh: erro preserva lote válido/conflitante/órfão; reparo permite re
   expect(await acquireActionIntent(db,{...ctx,event:orphan},0,"send_whatsapp_message",true)).toBeNull();
   expect(await freezeEventPlan(db,org,orphan.id,rules)).toEqual([]);
 
-  const preserved=await snapshot();expect(psql(baseline,false).stderr).not.toMatch(/ERROR:/);
+  const preserved=await snapshot();expect(update().stderr).not.toMatch(/ERROR:/);
   expect(await snapshot()).toEqual(preserved);
   await db.query("update contacts set is_anonymized=true,anonymized_at=now() where organization_id=$1 and id=$2",[org,a]);
   for(const event of [valid,conflict])expect(await freezeEventPlan(db,org,event.id,rules)).toEqual([]);

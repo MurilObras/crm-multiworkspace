@@ -16,5 +16,6 @@ Anonimização remove todo o conteúdo executável do plano e conserva sua ident
 com marcador irreversível. Planos antigos comprovadamente sem titular recuperável
 também são neutralizados; excluir somente a regra não afeta um plano válido.
 O conteúdo removido não poderá ser replanejado ou executado novamente.
-Na atualização, vínculos conflitantes preservam o lote por rollback mesmo quando
-o executor SQL continua após erro; a proteção é instalada antes do backfill.
+Na atualização por baseline ou por migrations em ordem cronológica, vínculos
+conflitantes preservam o lote por rollback mesmo quando o executor SQL continua
+após erro. A própria 0224 instala a proteção antes do backfill, sem ordem manual.

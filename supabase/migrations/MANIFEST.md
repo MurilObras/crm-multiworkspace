@@ -254,21 +254,23 @@ aplica.
 
 | `20260921030000` | `0223_automation_event_plan` | Plano privado e estável por evento, sem catálogo de versões. Preserva identidade do run quando a regra é removida; execução usa ações planejadas, não posições da regra mutável. |
 
-| `20260921120000` | `0224_automation_plan_redaction` | Vínculo durável ao titular, remoção irreversível do conteúdo executável e fences de anonimização. Backfill dos vínculos históricos; neutraliza somente órfãos comprovados. Validada apenas em banco descartável, sem aplicação em produção. |
+| `20260921120000` | `0224_automation_plan_redaction` | Vínculo durável, tombstone e fences de anonimização. Instala a própria guarda antes do backfill atômico: erro preserva o lote mesmo com continuação do psql. Revisão autorizada enquanto exclusiva do PR #10 não distribuído; aplicada somente em banco descartável. |
 
-| `20260921150000` | `0225_automation_plan_recovery_guard` | Recuperação e decisão de neutralização atômicas; protege o baseline ANTES do backfill 0224, inclusive com continuação após erro. Conflito preserva o lote; NULL não comprova órfão. |
+| `20260921150000` | `0225_automation_plan_recovery_guard` | Reafirma idempotentemente a guarda já instalada pela 0224, na ordem cronológica normal. Não exige execução antecipada; NULL não comprova ausência de titular. |
 
 ## Reproducibility
 
 ### Ordem de proteção do backfill 0224
 
-`20260921150000_0225_automation_plan_recovery_guard.sql` é forward-fix: a 0224
-já aplicada não foi editada. No baseline a proteção da 0225 é instalada após a
-0223 e **antes do DML da 0224**, porque `update.sh` continua após erros SQL.
-Replay manual sem transação deve aplicar 0225 antes de reaplicar 0224. Runners
-transacionais que param numa 0224 conflitante preservam o lote pelo rollback;
-a proteção antecipada é indispensável para execução que continua após erro.
-Nenhuma correção consegue recuperar conteúdo descartado por uma execução antiga.
+A própria **0224** instala a guarda antes de qualquer backfill e faz recuperação
+e neutralização em um bloco atômico. A 0225 reaplica a guarda na sua posição normal.
+Baseline e migrations em ordem **0222 → 0223 → 0224 → 0225** são seguros tanto
+com continuação após erro quanto com transação por arquivo. Não há ordem manual
+especial. As revisões de 0224/0225 foram expressamente autorizadas enquanto
+exclusivas do PR #10, ainda não integradas/distribuídas pelo repositório; essa
+exceção não se aplica a migrations já distribuídas. Nenhuma correção recupera
+conteúdo descartado por uma execução antiga. Provas dos dois caminhos em
+`tests/invariants/kiwify-update-continuation.test.ts` (CI).
 
 Migrations were applied directly via the Supabase MCP `apply_migration` tool during the autonomous bootstrap session. The SQL of each migration is also embedded in the corresponding spec under `docs/specs/0X-spec-*.md` and the database keeps them in `supabase_migrations.schema_migrations`.
 

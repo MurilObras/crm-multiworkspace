@@ -19021,12 +19021,10 @@ create trigger trg_automation_rule_identity before insert or update on public.au
 notify pgrst, 'reload schema';
 
 -- ---- Anonimização irreversível do plano (migration 0224) ----
--- Proteção antecipada (migration 0225): deve preceder o primeiro DML da 0224.
--- Forward-fix da 0224, que permanece imutável.
--- IMPORTANTE: no baseline este bloco entra ANTES da 0224. update.sh continua
--- após erro; instalar a proteção somente no fim não evitaria o descarte.
--- Para replay manual sem transação: aplicar 0225 antes de reaplicar 0224.
--- Pré-requisito: tabela da 0223. O resolvedor da 0224 é chamado apenas no DML;
+-- Guarda instalada pela própria 0224 ANTES do backfill; a 0225 a reafirma
+-- idempotentemente na ordem cronológica normal, inclusive em bancos de teste
+-- que já receberam revisões anteriores deste PR ainda não distribuído.
+-- Pré-requisito: tabela da 0223. O resolvedor é chamado apenas no DML;
 -- função ausente/erro/conflito aborta o statement, nunca autoriza descarte.
 alter table public.automation_event_plans add column if not exists subject_contact_id uuid;
 alter table public.automation_event_plans add column if not exists redacted_at timestamptz;
@@ -19122,14 +19120,19 @@ $$;
 revoke execute on function public.fn_automation_plan_subject(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.fn_automation_plan_subject(uuid,uuid) to service_role;
 
--- Backfill antes das constraints/guardas. Só órfão comprovado é neutralizado.
-update public.automation_event_plans p set subject_contact_id=public.fn_automation_plan_subject(p.organization_id,p.event_id)
-  where p.subject_contact_id is null and p.redacted_at is null;
-update public.automation_event_plans p set rules='[]',redacted_at=coalesce(p.redacted_at,now())
-  where p.redacted_at is not null or p.subject_contact_id is null or not exists(
-    select 1 from public.contacts c where c.organization_id=p.organization_id and c.id=p.subject_contact_id and not c.is_anonymized);
-update public.automation_event_plans p set subject_contact_id=null where p.subject_contact_id is not null
-  and not exists(select 1 from public.contacts c where c.id=p.subject_contact_id and c.organization_id=p.organization_id);
+-- Backfill atômico: erro em qualquer resolução desfaz TODAS as decisões do lote,
+-- inclusive se o psql continuar no próximo statement. A guarda acima distingue
+-- recovered/confirmed_absent; NULL da coluna nunca é critério de descarte.
+do $backfill$
+begin
+  update public.automation_event_plans p
+    set subject_contact_id=public.fn_automation_plan_subject(p.organization_id,p.event_id)
+    where p.subject_contact_id is null and p.redacted_at is null;
+  update public.automation_event_plans p set rules='[]',redacted_at=coalesce(p.redacted_at,now())
+    where p.redacted_at is not null or (p.subject_contact_id is not null and exists(
+      select 1 from public.contacts c where c.organization_id=p.organization_id
+        and c.id=p.subject_contact_id and c.is_anonymized));
+end $backfill$;
 do $$ begin
   alter table public.automation_event_plans add constraint automation_plan_subject_tenant_fk
     foreign key(organization_id,subject_contact_id) references public.contacts(organization_id,id)

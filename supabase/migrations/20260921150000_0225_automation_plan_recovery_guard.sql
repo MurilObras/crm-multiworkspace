@@ -1,8 +1,7 @@
--- Forward-fix da 0224, que permanece imutável.
--- IMPORTANTE: no baseline este bloco entra ANTES da 0224. update.sh continua
--- após erro; instalar a proteção somente no fim não evitaria o descarte.
--- Para replay manual sem transação: aplicar 0225 antes de reaplicar 0224.
--- Pré-requisito: tabela da 0223. O resolvedor da 0224 é chamado apenas no DML;
+-- Guarda instalada pela própria 0224 ANTES do backfill; a 0225 a reafirma
+-- idempotentemente na ordem cronológica normal, inclusive em bancos de teste
+-- que já receberam revisões anteriores deste PR ainda não distribuído.
+-- Pré-requisito: tabela da 0223. O resolvedor é chamado apenas no DML;
 -- função ausente/erro/conflito aborta o statement, nunca autoriza descarte.
 alter table public.automation_event_plans add column if not exists subject_contact_id uuid;
 alter table public.automation_event_plans add column if not exists redacted_at timestamptz;

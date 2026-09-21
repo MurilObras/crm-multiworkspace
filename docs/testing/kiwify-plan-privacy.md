@@ -1,19 +1,30 @@
 # Kiwify — correção de anonimização do plano (0224)
 
-## Correção da continuação após erro — 0225
+## Correção definitiva — 0224 segura na ordem cronológica normal
+
+Autorização específica do titular do PR: editar migrations exclusivas deste PR
+ainda não integradas/distribuídas. Conferido no HEAD
+`fe0381490df5c34e82e9edef53c2028b364ecd5d`: somente 0222–0225 são novas em relação
+à main; PR aberto/draft, cinco commits à frente, zero atrás; release `v2.0.0`
+anterior à etapa 2; deployments `[]`; todos os runs de imagem da branch são
+`pull_request` (não publicam). Não há evidência de distribuição dessas migrations
+pelo repositório. Isso não afirma ausência de cópias/aplicações manuais externas.
+Sob essa autorização, 0224/0225 foram corrigidas; nenhuma migration já integrada
+foi reescrita, renumerada ou removida.
 
 A conferência final do HEAD `d83d043d73edbd3aaa2efdb5aa75dcc5bb297ceb` encontrou
 um bloqueio que os checks anteriores não mediam: `update.sh` usa `psql -f` sem
 `ON_ERROR_STOP`. Um conflito abortava o UPDATE de recuperação da 0224; o UPDATE
 seguinte confundia os NULL ainda não preenchidos com órfãos e apagava o lote.
 
-A 0224 publicada no PR permanece byte a byte inalterada. A forward-fix
-`20260921150000_0225_automation_plan_recovery_guard.sql` instala uma guarda de
-recuperação. **No baseline ela é executada após a 0223 e antes do primeiro DML
-da 0224**, não no fim: proteger depois de descartar seria tarde demais. O instalador
-não foi refatorado. Para replay manual sem transação, aplicar 0225 antes de
-reaplicar 0224; um runner transacional que interrompe a 0224 conflitante preserva
-o lote pelo rollback. Conteúdo já perdido numa execução antiga não é recuperado.
+A solução anterior protegia o baseline, mas exigia antecipar manualmente a 0225
+na cadeia de arquivos. Esse requisito foi eliminado. **A própria 0224 instala
+a guarda antes do primeiro DML e envolve recuperação/neutralização num único
+`DO $backfill$` atômico**, independentemente de ON_ERROR_STOP ou transação do
+chamador. A 0225 reafirma a mesma guarda idempotentemente na sua posição normal.
+Baseline e arquivos seguem agora **0222 → 0223 → 0224 → 0225**, sem intervenção
+manual na ordem e sem refatoração do instalador. Conteúdo já perdido numa execução
+antiga não pode ser recuperado por esta correção.
 
 A guarda decide no mesmo UPDATE em que resolve o titular: `unresolved` nunca
 autoriza descarte; retorno bem-sucedido distingue `recovered` de
@@ -27,31 +38,41 @@ titular durante a reaplicação. Tombstones existentes nunca são reabertos.
 ### Regressão do caminho real de atualização
 
 `tests/invariants/kiwify-update-continuation.test.ts` está incluído no `test:db`
-do CI e no harness nativo. Cria um banco PostgreSQL independente, instala o
-baseline até 0223 e semeia **no mesmo lote** plano válido, conflitante e órfão,
-além de uma intenção já adquirida cuja regra original é excluída.
+do CI e no harness nativo. Cada caso cria um banco PostgreSQL independente,
+instala o schema **anterior à etapa 2**, aplica 0222/0223 em ordem e semeia os
+planos no ponto em que a tabela passa a existir, antes da primeira execução da
+0224. O mesmo lote contém plano válido, conflitante e órfão, além de uma intenção
+já adquirida cuja regra original é excluída.
 
-Executa o baseline completo via `psql -f -`, **em autocommit, sem ON_ERROR_STOP,
-sem BEGIN e sem savepoints**. Asserções:
+Matriz executada, sem reordenação:
 
-1. O stderr contém `automation_plan_subject_ambiguous` e um SELECT posterior
-   confirma que o psql continuou. Todos os conteúdos/IDs/timestamps anteriores
-   permanecem iguais, sem tombstone por erro; o runtime não adquire o plano pendente.
+| Caminho | Autocommit, sem ON_ERROR_STOP/BEGIN/savepoints | Transacional |
+|---|---|---|
+| Baseline completo | continua após erro | `psql --single-transaction`, aborta com rollback |
+| Arquivos 0224 → 0225 | continua após erro | transação por arquivo, para na 0224 falha |
+
+Asserções em todos os casos:
+
+1. O stderr contém `automation_plan_subject_ambiguous`. Em autocommit um SELECT
+   posterior confirma continuação; no transacional a guarda instalada pela 0224
+   também é revertida e a 0225 não é executada. Todos os conteúdos/IDs/timestamps
+   permanecem iguais. Em autocommit não surge tombstone por erro e o runtime não
+   adquire o plano pendente.
 2. Removido o vínculo conflitante, a reaplicação completa não gera ERROR. Os dois
    planos recuperáveis conservam seu conteúdo e titular; só o órfão fica vazio.
 3. O UUID/identidade da intenção permanece; retry não readquire; o órfão não pode
    ser replanejado. Nova reaplicação preserva o estado; anonimização posterior
    continua esvaziando os planos vinculados.
 
-Resultado local: **51/51 testes PostgreSQL em quatro arquivos** (regressão acima,
-privacidade, identidade e integração/receiver). Baseline limpo + reaplicação e
-upgrade com proteção antecipada passaram, incluindo equivalência de colunas,
+Resultado local: **4/4 casos da matriz + 50/50 regressões PostgreSQL em três
+arquivos** (privacidade, identidade e integração/receiver). Baseline limpo +
+reaplicação e upgrade em ordem cronológica normal passaram, incluindo equivalência de colunas,
 constraints, funções, ACL e triggers. Typecheck e lint dos arquivos alterados
 passaram; gates unitários de manifest/baseline/LGPD: **27/27 em quatro arquivos**.
 Nenhum teste usou produção. O banco criado pela regressão é removido ao final.
 
 Os registros abaixo são históricos; a avaliação do novo HEAD deve usar os checks
-e a evidência da 0225 registrados no PR.
+e a evidência dos dois caminhos registrados no PR.
 
 ## Distribuição e ambiente
 

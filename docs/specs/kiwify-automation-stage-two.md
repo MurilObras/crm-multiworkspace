@@ -93,9 +93,11 @@ Conteúdo removido nunca é replanejado/executado por retry, mesmo se vínculos 
 restaurados. Contrato de concorrência, limites e provas da migration 0224:
 [anonimização do plano](../testing/kiwify-plan-privacy.md).
 
-No caminho de atualização, a proteção 0225 é instalada no baseline **antes** do
-backfill 0224. Recuperação malsucedida não autoriza descarte por NULL: conflito
-desfaz o statement e preserva o lote mesmo quando o psql continua após o erro.
+Nos dois caminhos de atualização (baseline e arquivos em ordem cronológica), a
+própria 0224 instala a guarda **antes** do seu backfill atômico. A 0225 a reafirma
+na posição normal, sem antecipação manual. Recuperação malsucedida não autoriza
+descarte por NULL: conflito desfaz o bloco e preserva o lote mesmo quando o psql
+continua após o erro.
 
 - Contexto Kiwify é relido por ação. Recusa explícita, bloqueio, anonimização e
   destinatário inexistente impedem o efeito. A ausência de concessão não foi
