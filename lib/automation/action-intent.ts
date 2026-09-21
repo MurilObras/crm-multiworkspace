@@ -18,6 +18,13 @@ export async function freezeEventPlan<T>(db: Queryable, org: string, event: stri
   return saved;
 }
 
+/** Fence curto, compartilhado com a anonimização; nunca envolve transporte. */
+export async function actionPlanLive(db: Queryable, org: string, event: string): Promise<boolean> {
+  const { rows } = await db.query<{ live: boolean }>(
+    "select fn_automation_plan_live($1,$2) live", [org,event]);
+  return rows[0]?.live === true;
+}
+
 /** A intenção usa o histórico existente. INSERT/UNIQUE é a aquisição; nenhuma
  * transação permanece aberta durante a execução da ação ou chamada externa.
  * Uma intenção adquirida nunca volta a ser adquirível por retry do evento.

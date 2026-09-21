@@ -11,7 +11,7 @@
     { "id": "events", "lane": "db", "col": 2, "type": "database", "label": "event_log", "sublabel": "lead.created com external_id" },
     { "id": "consumer", "lane": "api", "col": 3, "type": "service", "label": "lib/automation/engine.ts", "sublabel": "drain e guardas existentes; fora do request" },
     { "id": "history", "lane": "ops", "col": 1, "type": "frontend", "label": "Leads recebidos", "sublabel": "webhook_lead_captures; diagnóstico completo via GET" },
-    { "id": "plan", "lane": "db", "col": 4, "type": "database", "label": "automation_event_plans", "sublabel": "privado; conteúdo estável por evento" },
+    { "id": "plan", "lane": "db", "col": 4, "type": "database", "label": "automation_event_plans", "sublabel": "titular durável; conteúdo estável até anonimização; tombstone irreversível" },
     { "id": "intent", "lane": "db", "col": 3, "type": "database", "label": "automation_rule_runs", "sublabel": "UNIQUE evento/regra/posição no plano; fase durável" },
     { "id": "message", "lane": "api", "col": 4, "type": "service", "label": "sendMessageHandler + adapters", "sublabel": "guardas atuais, templates e callbacks existentes" },
     { "id": "tracking", "lane": "ops", "col": 3, "type": "frontend", "label": "Webhooks › Kiwify", "sublabel": "consulta sob RLS; cadastro e conversa; sem reenvio" }
@@ -29,6 +29,7 @@
     { "id": "k10", "from": "intent", "to": "tracking", "label": "incerteza e bloqueio visíveis" },
     { "id": "k11", "from": "intent", "to": "consumer", "label": "retry não readquire ação" },
     { "id": "k12", "from": "consumer", "to": "plan", "label": "primeiro planejamento vence" },
-    { "id": "k13", "from": "plan", "to": "intent", "label": "ações originais inclusive após edição" }
+    { "id": "k13", "from": "plan", "to": "intent", "label": "ações originais inclusive após edição; redact bloqueia aquisição" },
+    { "id": "k14", "from": "plan", "to": "message", "label": "fence LGPD antes do transporte e da atualização de preview" }
   ]
 }

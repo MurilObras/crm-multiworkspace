@@ -640,6 +640,12 @@ export async function sendMessageHandler(
           throw new ApiError(403,"forbidden",undefined,ctx.requestId,"messaging_window_closed");
         }
       }
+      if (options?.messageId) {
+        const { data, error } = await supabase.rpc("fn_automation_message_live", {
+          p_org:ctx.organization_id,p_message:message.id,p_contact:c.contact_id,
+        });
+        if (error || data !== true) throw new ApiError(403,"forbidden",undefined,ctx.requestId,"contact_anonymized");
+      }
       await options?.beforeTransport?.(message);
       transportStarted = true;
     };
@@ -868,7 +874,18 @@ export async function sendMessageHandler(
     if (silenceUntil) conversationUpdate.bot_silenced_until = silenceUntil;
   }
 
-  await supabase.from("conversations").update(conversationUpdate).eq("id", c.id);
+  // Uma resposta tardia não pode restaurar o texto do input após o redact.
+  // A RPC usa a mensagem persistida sob o mesmo fence do contato.
+  let protectedPreview = false;
+  if (options?.messageId) {
+    const { data, error } = await supabase.rpc("fn_automation_message_preview", {
+      p_org:ctx.organization_id,p_message:message.id,
+    });
+    if (error) throw new Error("automation_preview_unavailable");
+    protectedPreview = data === true;
+  }
+  if (!protectedPreview) await supabase.from("conversations").update(conversationUpdate)
+    .eq("id", c.id);
 
   // Envio pelo CRM não passa por `fn_mark_conversation_message` — carimba o
   // contato aqui para /app/contacts refletir a resposta (migration 0162).

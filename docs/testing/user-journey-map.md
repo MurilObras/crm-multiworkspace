@@ -16,6 +16,10 @@ agendamento em `tests/campaigns/` e detalhes em
 Esta cobertura usa PostgreSQL descartavel e frontend real com API simulada;
 nao equivale a PASS de jornada VPS fresca com Supabase/WAHA reais.
 
+Kiwify/LGPD `[P1]`: anonimização também elimina conteúdo executável do plano;
+identidade e tombstone impedem replay. Exclusão de regra preserva plano válido.
+Provas de banco/receiver, concorrência e limites em [0224](kiwify-plan-privacy.md).
+
 Kiwify `[P1]`: **Webhooks › Kiwify** consulta compra, destinatário e desfecho, sem
 reenvio. PostgreSQL 15/PostgREST e receiver HTTP local: 100 cenários aprovados;
 preview Playwright do componente real com dados sintéticos: cinco situações,

@@ -1,5 +1,9 @@
 # Revisão focal da etapa 2 — 2026-09-21
 
+> A revisão de privacidade posterior encontrou retenção de PII no plano. Correção
+> 0224, política autorizada para órfãos e novas provas:
+> [anonimização do plano](kiwify-plan-privacy.md).
+
 Base: `4d6d957d01766891a6eb9f4a88b4576a40b24440`. Evidências anteriores preservadas
 em `kiwify-stage-two-validation.md` e `.superpowers/evidence/kiwify-stage-two/`.
 

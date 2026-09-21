@@ -254,6 +254,8 @@ aplica.
 
 | `20260921030000` | `0223_automation_event_plan` | Plano privado e estável por evento, sem catálogo de versões. Preserva identidade do run quando a regra é removida; execução usa ações planejadas, não posições da regra mutável. |
 
+| `20260921120000` | `0224_automation_plan_redaction` | Vínculo durável ao titular, remoção irreversível do conteúdo executável e fences de anonimização. Backfill dos vínculos históricos; neutraliza somente órfãos comprovados. Validada apenas em banco descartável, sem aplicação em produção. |
+
 ## Reproducibility
 
 Migrations were applied directly via the Supabase MCP `apply_migration` tool during the autonomous bootstrap session. The SQL of each migration is also embedded in the corresponding spec under `docs/specs/0X-spec-*.md` and the database keeps them in `supabase_migrations.schema_migrations`.

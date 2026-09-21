@@ -101,7 +101,7 @@ export async function outboundPostgres() {
       async single() { return q.maybeSingle(); },
       async then(resolve: (v: Awaited<ReturnType<typeof execute>>)=>unknown) { return resolve(await execute()); },
     };return q;
-  }, rpc: async () => ({data:null,error:null}) } as unknown as SupabaseClient;
+  }, rpc: async (name: string) => ({data:name==='fn_automation_message_live'?true:name==='fn_automation_message_preview'?false:null,error:null}) } as unknown as SupabaseClient;
 
   async function seed() {
     await sql.exec('truncate send_ledger,messages,job_queue,channel_sessions,contacts,conversations,followup_enrollments,agent_inbox_items,followup_flow_versions,followup_enrollment_events cascade');

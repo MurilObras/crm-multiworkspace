@@ -21,7 +21,7 @@ import type { ActionResultDetail } from "@/lib/automation/types";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { acquireActionIntent, finishActionIntent, readEventPlan, freezeEventPlan } from "./action-intent";
+import { acquireActionIntent, finishActionIntent, readEventPlan, freezeEventPlan, actionPlanLive } from "./action-intent";
 import { checarGuardasDeContato } from "./guarda-do-contato";
 import { actionSchema } from "@/lib/schemas/webhooks";
 
@@ -224,7 +224,9 @@ export async function runAutomationForEvent(
       if (kiwify && !intentId) continue;
       let result: ActionResultDetail;
       try {
-        result = await executor.execute(
+        result = kiwify && !await actionPlanLive(getRequestPool(),row.organization_id,row.id)
+          ? { type:action.type,status:"skipped",detail:{reason:"contact_anonymized"} }
+          : await executor.execute(
             { ...actionCtx, ...(intentId ? { actionIntentId: intentId } : {}) },
             action.config ?? {},
           );

@@ -8,6 +8,25 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
+import type { Json } from "@/lib/database.types";
+
+/** Exporta o conteúdo de mensagem do titular, nunca URL, headers ou segredos da regra. */
+export function plannedMessageContent(rules: Json): Json[] {
+  if (!Array.isArray(rules)) return [];
+  return rules.flatMap(rule => {
+    if (!rule || typeof rule!=="object" || Array.isArray(rule) || !Array.isArray(rule.actions)) return [];
+    return rule.actions.flatMap(action => {
+      if (!action || typeof action!=="object" || Array.isArray(action)) return [];
+      const c=action.config;
+      if (!c || typeof c!=="object" || Array.isArray(c)) return [];
+      return [{type:action.type ?? null,template:typeof c.template==="string"?c.template:null,
+        template_values:c.template_values ?? null}];
+    });
+  });
+}
+
+interface AutomationPlanExport { event_id:string; created_at:string; redacted_at:string|null; messages:Json[] }
+interface AutomationRunExport { id:string; event_id:string|null; rule_identity:string|null; status:string; execution_state:string|null; plan_redacted_at:string|null }
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -198,6 +217,8 @@ export interface ExportPayload {
   tasks: TaskRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
+  automation_plans?: AutomationPlanExport[];
+  automation_runs?: AutomationRunExport[];
 }
 
 // ---------------------------------------------------------------------------
@@ -571,6 +592,27 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // 0224: a mesma âncora durável usada para redigir, sem exportar a regra executável.
+  let automation_plans: AutomationPlanExport[] = [];
+  let automation_runs: AutomationRunExport[] = [];
+  if (contactId) {
+    const { data, error } = await admin.from("automation_event_plans")
+      .select("event_id,created_at,redacted_at,rules")
+      .eq("organization_id",organizationId).eq("subject_contact_id",contactId)
+      .order("created_at",{ascending:false}).limit(500);
+    if (error) throw new Error("lgpd_automation_plans_unavailable");
+    automation_plans=(data ?? []).map(p=>({event_id:p.event_id,created_at:p.created_at,
+      redacted_at:p.redacted_at,messages:plannedMessageContent(p.rules)}));
+    if (automation_plans.length) {
+      const runs=await admin.from("automation_rule_runs")
+        .select("id,event_id,rule_identity,status,execution_state,plan_redacted_at")
+        .eq("organization_id",organizationId).in("event_id",automation_plans.map(p=>p.event_id))
+        .order("created_at",{ascending:false}).limit(500);
+      if (runs.error) throw new Error("lgpd_automation_runs_unavailable");
+      automation_runs=runs.data ?? [];
+    }
+  }
+
   // Audit log extract (best-effort: rows where metadata.contact_id matches).
   let audit_log_extract: AuditRow[] = [];
   if (contactId) {
@@ -617,6 +659,8 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     tasks,
     webhook_captures,
     audit_log_extract,
+    automation_plans,
+    automation_runs,
   };
 }
 

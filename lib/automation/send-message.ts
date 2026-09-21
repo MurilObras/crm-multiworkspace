@@ -41,6 +41,7 @@ export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageIn
         select m.id,c.phone_number from messages m join contacts c on c.id=m.contact_id
           and c.organization_id=m.organization_id where m.id=$3 and m.organization_id=$2
           and not c.is_blocked and not c.is_anonymized and c.phone_number=$4
+          and public.fn_automation_run_live($2,$1,c.id)
           and coalesce(c.consent #> '{marketing,declined_at}','null'::jsonb) in ('null'::jsonb,'false'::jsonb,'0'::jsonb,'""'::jsonb)
           and m.metadata->'outbound_attempt'->>'phase'='prepared' for update of c
       ), acquired as (

@@ -1,7 +1,7 @@
 # Kiwify → automações → mensagens: etapa 2
 
 Base: PR #9, `4d6d957d01766891a6eb9f4a88b4576a40b24440`.
-Implementação local, sem publicação ou implantação. Evidências e limites em
+Implementação em PR rascunho, sem release ou implantação pelo fluxo do repositório. Evidências e limites em
 [validação da etapa 2](../testing/kiwify-stage-two-validation.md).
 
 ## Componentes e contrato
@@ -32,7 +32,7 @@ existente; o histórico as alcança por inscrição → job → ledger → mensa
 
 ## Configurar a regra
 
-Pré-requisitos: migrations 0220/0221/0222/0223 (também no baseline), conexão PostgreSQL
+Pré-requisitos: migrations 0220–0224 (também no baseline), conexão PostgreSQL
 do servidor em `SUPABASE_DB_URL`, drain e scheduler existentes, canal configurado
 e modelos oficiais já sincronizados quando necessários. Nada configura ou ativa
 uma integração/canal automaticamente.
@@ -85,6 +85,13 @@ espelho ou erro de leitura bloqueiam **envio automático**. O comportamento do
 envio manual não foi relaxado. Template obrigatório nunca é substituído por texto.
 
 ## Guardas e desfechos
+
+O plano tem vínculo durável ao titular e tombstone irreversível. Anonimização apaga
+todo o conteúdo executável; só planos comprovadamente sem titular recuperável são
+neutralizados pelo backfill. Excluir uma regra não neutraliza plano válido.
+Conteúdo removido nunca é replanejado/executado por retry, mesmo se vínculos forem
+restaurados. Contrato de concorrência, limites e provas da migration 0224:
+[anonimização do plano](../testing/kiwify-plan-privacy.md).
 
 - Contexto Kiwify é relido por ação. Recusa explícita, bloqueio, anonimização e
   destinatário inexistente impedem o efeito. A ausência de concessão não foi

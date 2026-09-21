@@ -7,7 +7,8 @@ import pg from "pg";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { beforeAll, afterAll, it, expect, vi } from "vitest";
 import { runAutomationForEvent } from "@/lib/automation/engine";
-import { expireActionIntents } from "@/lib/automation/action-intent";
+import { expireActionIntents, freezeEventPlan, acquireActionIntent } from "@/lib/automation/action-intent";
+import { executeCallWebhook } from "@/lib/automation/actions/call-webhook";
 import { queryKiwifyHistory,historyExplanation } from "@/lib/automation/kiwify-history";
 import { normalizeKiwify, kiwifyFingerprint } from "@/lib/webhooks/kiwify";
 import { DeliveryRejectedError } from "@/lib/channels/delivery-error";
@@ -18,6 +19,7 @@ import "@/lib/automation/actions/send-whatsapp";
 if (process.env.KIWIFY_TEST_NATIVE !== "1" || !process.env.KIWIFY_TEST_POSTGREST) throw new Error("Requires isolated native PostgreSQL/PostgREST harness");
 const runtime = vi.hoisted(() => ({ db: null as unknown as pg.Pool, official:false,configured:true,
   endpoint:"", mode:"ok", waitUntil:null as string | null, received:[] as unknown[], openTransactions:[] as number[],
+  onReceive:null as (()=>Promise<void>) | null,
   send: vi.fn(async (envelope: unknown) => {
     const response=await fetch(runtime.endpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(envelope)});
     if(!response.ok) throw new DeliveryRejectedError("synthetic_rejected");
@@ -41,6 +43,7 @@ beforeAll(async () => {
   runtime.db=pool;
   await pool.query(readFileSync("supabase/migrations/20260921010000_0222_automation_action_identity.sql","utf8"));
   await pool.query(readFileSync("supabase/migrations/20260921030000_0223_automation_event_plan.sql","utf8"));
+  await pool.query(readFileSync("supabase/migrations/20260921120000_0224_automation_plan_redaction.sql","utf8"));
   await pool.query("insert into organizations(id,slug,legal_name,display_name) values($1::uuid,$1::text,'Synthetic','Synthetic')",[org]);
   await pool.query("insert into auth.users(id,email) values($1,'automation@example.invalid')",[user]);
   await pool.query("insert into user_organizations(user_id,organization_id,role,accepted_at) values($1,$2,'manager',now())",[user,org]);
@@ -55,7 +58,8 @@ beforeAll(async () => {
   await vi.waitFor(async()=>expect((await fetch(`http://127.0.0.1:${port}/`)).ok).toBe(true),{timeout:15000});
   proxy=createServer(async(req,res)=>{const chunks:Buffer[]=[];for await(const c of req) chunks.push(Buffer.from(c));const body=Buffer.concat(chunks);
     if(req.url?.startsWith("/provider")) {
-      runtime.received.push(JSON.parse(body.toString("utf8")));
+       runtime.received.push(JSON.parse(body.toString("utf8")));
+       await runtime.onReceive?.();
       runtime.openTransactions.push((await pool.query("select count(*)::int n from pg_stat_activity where datname=current_database() and state='idle in transaction'")).rows[0].n);
       if(runtime.mode==="timeout"){res.destroy();return;}
       res.writeHead(runtime.mode==="rejection"?400:200,{"content-type":"application/json"});
@@ -76,7 +80,7 @@ async function fixture(actions=1) {
   runtime.official=false;
   runtime.configured=true;
   await pool.query("update channel_sessions set status='WORKING' where id=$1",[session]);
-  runtime.mode="ok";runtime.waitUntil=null;runtime.received=[];runtime.openTransactions=[];
+  runtime.mode="ok";runtime.waitUntil=null;runtime.received=[];runtime.openTransactions=[];runtime.onReceive=null;
   await pool.query("update automation_rules set is_active=false where organization_id=$1",[org]);
   const rule=(await pool.query("insert into automation_rules(organization_id,name,trigger_event,conditions,actions,is_active) values($1,'Compra aprovada','lead.created','[]',$2,true) returning id",[org,JSON.stringify(Array.from({length:actions},()=>({type:"send_whatsapp_message",config:{channel_session_id:session,template:"Olá {{contact.name}}"}})))])).rows[0].id;
   const order=normalizeKiwify({order_id:randomUUID(),webhook_event_type:"order_approved",order_status:"paid",Product:{product_id:"test"},Customer:{full_name:"Cliente sintético",mobile:`+120255501${sequence++}`}});
@@ -321,4 +325,80 @@ it("tentativa ainda ativa ultrapassa o limiar sem transferência de propriedade 
   await runAutomationForEvent(admin,f.event);
   expect(runtime.received).toHaveLength(1);
   expect((await queryKiwifyHistory(pool,org,{page:1,limit:20,search:f.receipt.order_id})).rows[0]?.status).toBe("read");
+});
+it("anonimização elimina texto e parâmetros literais do plano mesmo após excluir a regra",async()=>{
+  const f=await fixture();
+  const name="Pessoa Sintética Privacidade Plano";
+  const phone=(await pool.query("select phone_number from contacts where id=$1",[f.contact])).rows[0].phone_number;
+  await pool.query("update automation_rules set actions=$2 where id=$1",[f.rule,JSON.stringify([{type:"send_whatsapp_message",
+    config:{channel_session_id:session,template:`Olá ${name}: ${phone}`,template_values:{"1":name,"2":phone}}}])]);
+  await runAutomationForEvent(admin,f.event);
+  await pool.query("delete from automation_rules where id=$1",[f.rule]);
+  await pool.query("select fn_lgpd_cascade_redact_contact($1,$2,$3)",[org,f.contact,randomUUID()]);
+  const plan=(await pool.query("select rules from automation_event_plans where organization_id=$1 and event_id=$2",[org,f.event.id])).rows[0];
+  expect(JSON.stringify(plan.rules)).not.toContain(name);
+  expect(JSON.stringify(plan.rules)).not.toContain(phone);
+  expect(plan.rules).toEqual([]);
+  runtime.send.mockClear();await runAutomationForEvent(admin,f.event);
+  expect(runtime.send).not.toHaveBeenCalled();
+});
+it("anonimização durante espaçamento bloqueia snapshot em memória sem repersistir plano",async()=>{
+  const f=await fixture();
+  runtime.spacing.mockImplementationOnce(async()=>{await pool.query("select fn_lgpd_cascade_redact_contact($1,$2,$3)",[org,f.contact,randomUUID()]);});
+  await runAutomationForEvent(admin,f.event);await runAutomationForEvent(admin,f.event);
+  expect(runtime.send).not.toHaveBeenCalled();
+  expect((await pool.query("select rules from automation_event_plans where event_id=$1",[f.event.id])).rows[0].rules).toEqual([]);
+});
+it("anonimização com chamada ativa não espera rede; resposta tardia não restaura texto nem reenvia",async()=>{
+  const f=await fixture();let release!:()=>void;
+  const gate=new Promise<void>(r=>{release=r;});
+  runtime.send.mockImplementationOnce(async(envelope)=>{
+    const response=await fetch(runtime.endpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(envelope)});
+    const result=await response.json();await gate;return result;
+  });
+  const active=runAutomationForEvent(admin,f.event);
+  try {
+    await vi.waitFor(()=>expect(runtime.received).toHaveLength(1));
+    await pool.query("select fn_lgpd_cascade_redact_contact($1,$2,$3)",[org,f.contact,randomUUID()]);
+    expect((await pool.query("select rules from automation_event_plans where event_id=$1",[f.event.id])).rows[0].rules).toEqual([]);
+    await runAutomationForEvent(admin,f.event);expect(runtime.received).toHaveLength(1);
+  } finally {release();await active;}
+  const m=(await pool.query("select m.* from messages m join automation_rule_runs r on r.message_id=m.id where r.event_id=$1",[f.event.id])).rows[0];
+  expect(m.body).toBe("[redacted]");expect(JSON.stringify(m.metadata)).not.toContain("Cliente sintético");
+  expect((await pool.query("select last_message_preview from conversations where id=$1",[m.conversation_id])).rows[0].last_message_preview).toBeNull();
+  expect(runtime.openTransactions).toEqual([0]);
+  await runAutomationForEvent(admin,f.event);expect(runtime.received).toHaveLength(1);
+});
+it("webhook externo não repete após anonimização durante a primeira chamada",async()=>{
+  const f=await fixture();const config={url:runtime.endpoint};
+  await freezeEventPlan(pool,org,f.event.id,[{id:f.rule,actions:[{type:"call_webhook",config}]}]);
+  const ctx={admin,organizationId:org,ruleId:f.rule,ruleName:"Synthetic",event:f.event,context:{},requestId:f.event.id};
+  const id=await acquireActionIntent(pool,ctx,0,"call_webhook",true);expect(id).toBeTruthy();
+  runtime.mode="rejection";
+  runtime.onReceive=async()=>{await pool.query("select fn_lgpd_cascade_redact_contact($1,$2,$3)",[org,f.contact,randomUUID()]);};
+  const result=await executeCallWebhook({...ctx,actionIntentId:id!},config,{skipUrlCheck:true,retryDelaysMs:[0,0]});
+  expect(result).toMatchObject({status:"skipped",detail:{reason:"contact_anonymized"}});
+  expect(runtime.received).toHaveLength(1);expect(runtime.openTransactions).toEqual([0]);
+});
+it("vínculos históricos recuperam o titular via receipt/captura e mensagem mesmo sem regra",async()=>{
+  const f=await fixture();
+  await pool.query("update event_log set entity_id=null where id=$1",[f.event.id]);
+  expect((await pool.query("select fn_automation_plan_subject($1,$2) id",[org,f.event.id])).rows[0].id).toBe(f.contact);
+  await pool.query("update event_log set entity_id=$2 where id=$1",[f.event.id,f.receipt.lead_id]);
+  await runAutomationForEvent(admin,f.event);
+  await pool.query("delete from automation_rules where id=$1",[f.rule]);
+  await pool.query("update event_log set entity_id=null where id=$1",[f.event.id]);
+  await pool.query("update kiwify_receipts set event_id=null where id=$1",[f.receipt.id]);
+  expect((await pool.query("select fn_automation_plan_subject($1,$2) id",[org,f.event.id])).rows[0].id).toBe(f.contact);
+  const plan=(await pool.query("select rules,redacted_at from automation_event_plans where event_id=$1",[f.event.id])).rows[0];
+  expect(plan.rules).toHaveLength(1);expect(plan.redacted_at).toBeNull();
+});
+it("vínculos conflitantes não são tratados como órfão nem neutralizados",async()=>{
+  const a=await fixture(),b=await fixture();
+  await pool.query("update webhook_lead_captures set contact_id=$2 where organization_id=$1 and lead_id=$3",[org,b.contact,a.receipt.lead_id]);
+  const rules=[{id:a.rule,actions:[{type:"send_whatsapp_message",config:{template:"Synthetic"}}]}];
+  await expect(freezeEventPlan(pool,org,a.event.id,rules)).rejects.toThrow("automation_plan_subject_ambiguous");
+  expect((await pool.query("select 1 from automation_event_plans where event_id=$1",[a.event.id])).rows).toEqual([]);
+  await pool.query("update webhook_lead_captures set contact_id=$2 where organization_id=$1 and lead_id=$3",[org,a.contact,a.receipt.lead_id]);
+  expect(await freezeEventPlan(pool,org,a.event.id,rules)).toEqual(rules);
 });

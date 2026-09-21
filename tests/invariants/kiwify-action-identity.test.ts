@@ -12,7 +12,8 @@ let event: EventRow;
 beforeAll(async()=>{
   await pool.query("insert into organizations(id,slug,legal_name,display_name) values($1::uuid,$1::text,'Synthetic','Synthetic')",[org]);
   await pool.query("insert into automation_rules(id,organization_id,name,trigger_event,conditions,actions,is_active) values($1,$2,'Synthetic','lead.created','[]','[]',true)",[rule,org]);
-  event=(await pool.query("insert into event_log(organization_id,event_type,entity_kind,payload) values($1,'lead.created','crm_lead','{}') returning *",[org])).rows[0];
+  const contact=(await pool.query("insert into contacts(organization_id,name) values($1,'Synthetic') returning id",[org])).rows[0].id;
+  event=(await pool.query("insert into event_log(organization_id,event_type,entity_kind,entity_id,payload) values($1,'contact.tag_added','contact',$2,'{}') returning *",[org,contact])).rows[0];
 });
 afterAll(()=>pool.end());
 const ctx=()=>({organizationId:org,ruleId:rule,event});

@@ -1698,19 +1698,25 @@ export type Database = {
           created_at: string
           event_id: string
           organization_id: string
+          redacted_at: string | null
           rules: Json
+          subject_contact_id: string | null
         }
         Insert: {
           created_at?: string
           event_id: string
           organization_id: string
+          redacted_at?: string | null
           rules: Json
+          subject_contact_id?: string | null
         }
         Update: {
           created_at?: string
           event_id?: string
           organization_id?: string
+          redacted_at?: string | null
           rules?: Json
+          subject_contact_id?: string | null
         }
         Relationships: [
           {
@@ -1727,6 +1733,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "automation_plan_subject_tenant_fk"
+            columns: ["organization_id", "subject_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["organization_id", "id"]
+          },
         ]
       }
       automation_rule_runs: {
@@ -1741,6 +1754,7 @@ export type Database = {
           id: string
           message_id: string | null
           organization_id: string
+          plan_redacted_at: string | null
           rule_id: string | null
           rule_identity: string | null
           status: string
@@ -1756,6 +1770,7 @@ export type Database = {
           id?: string
           message_id?: string | null
           organization_id: string
+          plan_redacted_at?: string | null
           rule_id?: string | null
           rule_identity?: string | null
           status: string
@@ -1771,6 +1786,7 @@ export type Database = {
           id?: string
           message_id?: string | null
           organization_id?: string
+          plan_redacted_at?: string | null
           rule_id?: string | null
           rule_identity?: string | null
           status?: string
@@ -7293,6 +7309,30 @@ export type Database = {
       }
     }
     Functions: {
+      fn_automation_message_preview: {
+        Args: { p_message: string; p_org: string }
+        Returns: boolean
+      }
+      fn_automation_message_live: {
+        Args: { p_contact: string; p_message: string; p_org: string }
+        Returns: boolean
+      }
+      fn_automation_run_live: {
+        Args: { p_contact: string; p_org: string; p_run: string }
+        Returns: boolean
+      }
+      fn_automation_message_run: {
+        Args: { p_message: string; p_org: string }
+        Returns: string
+      }
+      fn_automation_plan_live: {
+        Args: { p_contact?: string; p_event: string; p_org: string }
+        Returns: boolean
+      }
+      fn_automation_plan_subject: {
+        Args: { p_event: string; p_org: string }
+        Returns: string
+      }
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string }
         Returns: undefined

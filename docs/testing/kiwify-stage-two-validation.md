@@ -1,5 +1,9 @@
 # Validação local — Kiwify etapa 2
 
+> A correção posterior de retenção de PII no plano está em
+> [anonimização do plano — 0224](kiwify-plan-privacy.md). Os checks antigos não
+> comprovam essa correção.
+
 > Registro da implementação inicial. A revisão posterior corrigiu a identidade por
 > posição e comprovou as falhas de ambiente por comparação: ver
 > [revisão focal](kiwify-stage-two-review.md). Seus resultados posteriores prevalecem.
