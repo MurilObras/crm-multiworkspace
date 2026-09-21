@@ -250,8 +250,27 @@ aplica.
 | `20260908120000` | `0219_campaigns_audience_scheduling` | Publicos paste/CSV/XLSX normalizados com upsert de contatos na mesma org e recipients congelados. Agendamento atomico em event_log.next_attempt_at, ativacao com guarda de prazo no banco e retries sem novo passo 0. Preserva RPC 0218 e quota/transportes existentes. |
 | `20260920120000` | `0220_kiwify_ingestion` | Entrada Kiwify: configuração cifrada separada, produtos por FK tenant-aware, ledger único e captura + lead + event_log transacionais. Não aplicada em produção nesta implementação. |
 | `20260920220000` | `0221_kiwify_consent_privacy_actor` | Forward-fix: recusa explícita suprime evento na transação, título impessoal sem contato (inclui reparo do caminho 0220), ator autenticado obrigatório na configuração e auditoria. Remove RPC legada sem ator; preserva isolamento e identidade dos retries. |
+| `20260921010000` | `0222_automation_action_identity` | Intenção durável por evento/regra/posição em automation_rule_runs; vínculo da mensagem e estados de execução. Unicidade PostgreSQL, escrita somente pelo servidor e limpeza do destinatário da tentativa ao anonimizar. |
+
+| `20260921030000` | `0223_automation_event_plan` | Plano privado e estável por evento, sem catálogo de versões. Preserva identidade do run quando a regra é removida; execução usa ações planejadas, não posições da regra mutável. |
+
+| `20260921120000` | `0224_automation_plan_redaction` | Vínculo durável, tombstone e fences de anonimização. Instala a própria guarda antes do backfill atômico: erro preserva o lote mesmo com continuação do psql. Revisão autorizada enquanto exclusiva do PR #10 não distribuído; aplicada somente em banco descartável. |
+
+| `20260921150000` | `0225_automation_plan_recovery_guard` | Reafirma idempotentemente a guarda já instalada pela 0224, na ordem cronológica normal. Não exige execução antecipada; NULL não comprova ausência de titular. |
 
 ## Reproducibility
+
+### Ordem de proteção do backfill 0224
+
+A própria **0224** instala a guarda antes de qualquer backfill e faz recuperação
+e neutralização em um bloco atômico. A 0225 reaplica a guarda na sua posição normal.
+Baseline e migrations em ordem **0222 → 0223 → 0224 → 0225** são seguros tanto
+com continuação após erro quanto com transação por arquivo. Não há ordem manual
+especial. As revisões de 0224/0225 foram expressamente autorizadas enquanto
+exclusivas do PR #10, ainda não integradas/distribuídas pelo repositório; essa
+exceção não se aplica a migrations já distribuídas. Nenhuma correção recupera
+conteúdo descartado por uma execução antiga. Provas dos dois caminhos em
+`tests/invariants/kiwify-update-continuation.test.ts` (CI).
 
 Migrations were applied directly via the Supabase MCP `apply_migration` tool during the autonomous bootstrap session. The SQL of each migration is also embedded in the corresponding spec under `docs/specs/0X-spec-*.md` and the database keeps them in `supabase_migrations.schema_migrations`.
 

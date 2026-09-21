@@ -43,6 +43,7 @@ import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { expireActionIntentsViaApi } from "@/lib/automation/action-intent";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,7 @@ export interface RecoverResult {
   scanned: number;
   failed: number;
   organizations: number;
+  expired_actions?: number;
 }
 
 /**
@@ -217,7 +219,10 @@ async function handle(req: NextRequest): Promise<Response> {
 
   let result: RecoverResult;
   try {
-    result = await recoverStuckMessages(createAdminClient(), new Date(), requestId);
+    const admin = createAdminClient();
+    const now = new Date();
+    const expired = await expireActionIntentsViaApi(admin,now);
+    result = { ...await recoverStuckMessages(admin,now,requestId), expired_actions:expired };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[recover-stuck-messages] falhou", { error: detail, requestId });
@@ -226,7 +231,7 @@ async function handle(req: NextRequest): Promise<Response> {
 
   // Varredura que não marcou nada não é mutação e não ocupa linha de auditoria
   // (mesmo critério do snooze-watcher e do followup-flow-worker).
-  if (result.failed > 0) {
+  if (result.failed > 0 || (result.expired_actions ?? 0) > 0) {
     void audit({
       action: "message.recover_stuck_run",
       organizationId: null,

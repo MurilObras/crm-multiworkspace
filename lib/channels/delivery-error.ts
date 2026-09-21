@@ -16,9 +16,11 @@ export interface OutboundAttemptWrite {
 /** Só usar quando há prova de rejeição: timeout/erro de rede não são prova. */
 export class DeliveryRejectedError extends Error {
   readonly retryable: boolean;
-  constructor(message: string, retryable = false) {
+  readonly beforeTransport: boolean;
+  constructor(message: string, retryable = false, beforeTransport = false) {
     super(message);
     this.retryable = retryable;
+    this.beforeTransport = beforeTransport;
     this.name = 'DeliveryRejectedError';
   }
 }

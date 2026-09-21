@@ -71,6 +71,13 @@ function statusBadgeLabel(status: AutomationRuleRunRow["status"], t: (texto: str
  * que nascem no próprio executor.
  */
 const MOTIVO_DA_PARADA: Record<string, string> = {
+  provider_accepted: "Aceita pelo provedor. A entrega ainda depende da confirmação do canal.",
+  action_completed: "Ação concluída.",
+  action_failed: "A ação não foi concluída. Consulte o acompanhamento Kiwify para ver a situação da mensagem.",
+  outbound_delivery_uncertain: "Confira a conversa antes de enviar manualmente: o cliente pode já ter recebido.",
+  consent_declined: "O contato recusou o consentimento. Envio bloqueado.",
+  contact_anonymized: "Contato anonimizado.",
+  invalid_config: "A configuração da ação é inválida ou incompleta.",
   no_contact: "Esse lead entrou sem contato vinculado, então não havia para quem escrever.",
   contact_blocked: "O contato pediu para não receber mensagens (opt-out).",
   no_phone: "O contato não tem telefone cadastrado.",

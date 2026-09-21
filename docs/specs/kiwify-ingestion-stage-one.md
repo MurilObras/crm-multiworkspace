@@ -2,6 +2,9 @@
 
 Data: 2026-09-20. **Entrada validada nos cenários PostgreSQL/HTTP descritos no [relatório de validação](../testing/kiwify-validation-2026-09-20.md); integração não homologada.**
 
+Continuidade: [automações e acompanhamento da etapa 2](kiwify-automation-stage-two.md).
+Este documento preserva o contrato e as evidências da entrada integrada pelo PR #9.
+
 ## Contrato oficial confirmado nesta sessão
 
 - [Central de ajuda](https://ajuda.kiwify.com.br/pt-br/article/como-funcionam-os-webhooks-2ydtgl/): JSON, seleção de produto/eventos, teste/logs/reenvio; afiliados podem não receber dados pessoais.

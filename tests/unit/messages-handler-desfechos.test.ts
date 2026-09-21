@@ -190,7 +190,8 @@ function makeSupabase(
       }
       throw new Error(`fake_supabase: tabela inesperada '${table}'`);
     },
-    rpc: async (name: string) => name === 'fn_decrypt_oauth' ? credentialsDb().rpc() : ({ error: null }),
+    rpc: async (name: string) => name === 'fn_decrypt_oauth' ? credentialsDb().rpc()
+      : ({ data:name==='fn_automation_message_live'?true:name==='fn_automation_message_preview'?false:null,error:null }),
   };
 
   return client as unknown as SupabaseClient;

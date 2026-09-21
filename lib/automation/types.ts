@@ -17,6 +17,8 @@ export interface ActionCtx {
   event: EventRow;
   context: Record<string, unknown>; // mesmo objeto avaliado pelas condições
   requestId: string;
+  /** Intenção durável adquirida pelo motor; nunca recebida da API pública. */
+  actionIntentId?: string;
 }
 
 export interface ActionExecutor {

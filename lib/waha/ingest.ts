@@ -930,7 +930,9 @@ async function handleOutboundFromUserPhone(
 
 async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promise<void> {
   if (!p.id) return;
-  const ack = p.ack ?? 0;
+  const ack = p.ack;
+  // Vocabulário documentado: desconhecido/ausente não é prova de leitura.
+  if (typeof ack !== "number" || !Number.isInteger(ack) || ack < -1 || ack > 4) return;
   const status = ackToStatus(ack);
   const now = new Date().toISOString();
 
@@ -944,11 +946,17 @@ async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promis
   // inbound (que é full e sustenta o dedup 23505).
   const bare = bareWaMessageId(p.id);
   const candidates = bare === p.id ? [p.id] : [p.id, bare];
-  await admin
+  const query = admin
     .from("messages")
     .update(update)
     .eq("organization_id", session.organization_id)
+    .eq("channel_session_id", session.id)
+    .eq("direction", "outbound")
     .in("external_id", candidates);
+  // Recibos atrasados e duplicados não rebaixam entrega/leitura nem apagam
+  // rejeição comprovada. A condição é avaliada no UPDATE pelo PostgreSQL.
+  if (ack < 0) await query.in("status", ["queued", "sending", "sent"]);
+  else await query.neq("status", "failed").or(`ack.is.null,ack.lt.${ack}`);
 }
 
 interface SessionStatusRow extends Session {

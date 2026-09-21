@@ -10,6 +10,8 @@ import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { actionPlanLive } from "../action-intent";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 
 const TIMEOUT_MS = 10_000;
 const RETRY_DELAYS_MS = [1_000, 5_000]; // total 3 tentativas
@@ -109,6 +111,9 @@ export async function executeCallWebhook(
   let lastStatus: number | null = null;
   for (let attempt = 1; attempt <= retryDelaysMs.length + 1; attempt++) {
     try {
+      if (ctx.actionIntentId && !await actionPlanLive(getRequestPool(),ctx.organizationId,ctx.event.id)) {
+        return { type:"call_webhook",status:"skipped",detail:{reason:"contact_anonymized"} };
+      }
       // redirect: "manual" — nunca seguir 3xx automaticamente. fetch por padrão
       // segue redirect, e uma URL de tenant que passou no guard anti-SSRF pode
       // 302 pra um endpoint interno (ex.: http://169.254.169.254/...). Um 3xx

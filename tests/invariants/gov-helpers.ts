@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { join } from "node:path";
 
 /**
  * G1-03 — shared harness for the governance invariants (gov-*.test.ts).
@@ -12,15 +13,25 @@ import { execFileSync } from "node:child_process";
  */
 
 const container = process.env.TEST_DB_CONTAINER;
-if (!container) {
+const native = process.env.KIWIFY_TEST_NATIVE === "1";
+if (!container && !native) {
   throw new Error(
     "TEST_DB_CONTAINER not set — run this suite via `pnpm test:invariants` (scripts/test-db.sh)",
   );
 }
-const containerName: string = container;
+const containerName: string = container ?? "";
 
 /** Runs a SQL script in ONE psql session inside the container; returns stdout (tuples-only). */
 export function sql(script: string): string {
+  if (native) {
+    const bin=process.env.KIWIFY_TEST_PG_BIN;
+    const port=Number(process.env.TEST_DB_PORT);
+    if (!bin || !Number.isInteger(port) || port<1024 || port===5432) throw new Error("Native disposable harness configuration required");
+    // kiwify-native-reset confirma o marcador do cluster antes de cada arquivo.
+    return execFileSync(join(bin,process.platform === "win32" ? "psql.exe" : "psql"),
+      ["-X","-h","127.0.0.1","-p",String(port),"-U","postgres","-d","kiwify_test","-v","ON_ERROR_STOP=1","-tA","-f","-"],
+      {input:script,encoding:"utf8"}).trim();
+  }
   return execFileSync(
     "docker",
     [

@@ -10,7 +10,7 @@ export default async function WebhooksPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   const canManage = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
-  if (!canManage) redirect("/app/inbox");
+  if (!canManage || !activeOrg) redirect("/app/inbox");
   const idioma = user.idioma;
 
   return (
@@ -24,7 +24,7 @@ export default async function WebhooksPage() {
           )}
         </p>
       </header>
-      <WebhooksClient />
+      <WebhooksClient organizationId={activeOrg.orgId} />
     </div>
   );
 }

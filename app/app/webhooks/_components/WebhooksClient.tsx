@@ -5,10 +5,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SourcesTab } from "./SourcesTab";
 import { RulesTab } from "./RulesTab";
 import { ActivityTab } from "./ActivityTab";
+import { KiwifyHistoryTab } from "./KiwifyHistoryTab";
 import { CapturasTab } from "./CapturasTab";
 import { useT } from "@/hooks/i18n/useT";
 
-export function WebhooksClient() {
+export function WebhooksClient({organizationId}:{organizationId:string}) {
   const t = useT();
   // Radix Tabs gera ids via useId; com SSR streamado (Next 15) os ids divergem
   // entre server e client e o React acusa hydration mismatch. Nenhuma outra
@@ -21,31 +22,28 @@ export function WebhooksClient() {
   );
 
   if (!mounted) {
-    // Mesma altura do TabsList (h-9) e largura MEDIDA da tablist — zero layout
-    // shift. 432px é a medida com QUATRO abas (`getBoundingClientRect` em
-    // 1440px, aba "Leads recebidos" incluída); eram 306px com três, e um
-    // skeleton estreito demais faz a página saltar no primeiro paint.
-    // Ao acrescentar ou renomear aba, MEDIR de novo — este número não se
-    // estima a olho.
+    // Placeholder responsivo: a aba de acompanhamento também cabe no container.
     return (
       <div className="flex-1">
-        <Skeleton className="h-9 w-[432px]" />
+        <Skeleton className="h-9 w-full max-w-lg" />
       </div>
     );
   }
 
   return (
     <Tabs defaultValue="sources" className="flex-1">
-      <TabsList>
+      <TabsList className="h-auto flex-wrap">
         <TabsTrigger value="sources">{t("Receber dados")}</TabsTrigger>
         <TabsTrigger value="capturas">{t("Leads recebidos")}</TabsTrigger>
         <TabsTrigger value="rules">{t("Automações")}</TabsTrigger>
         <TabsTrigger value="activity">{t("Atividade")}</TabsTrigger>
+        <TabsTrigger value="kiwify">Kiwify</TabsTrigger>
       </TabsList>
       <TabsContent value="sources"><SourcesTab /></TabsContent>
       <TabsContent value="capturas"><CapturasTab /></TabsContent>
       <TabsContent value="rules"><RulesTab /></TabsContent>
       <TabsContent value="activity"><ActivityTab /></TabsContent>
+      <TabsContent value="kiwify"><KiwifyHistoryTab organizationId={organizationId} /></TabsContent>
     </Tabs>
   );
 }

@@ -35,7 +35,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { missingSlots } from "./meta/build-components";
+import { missingSlots, slotKey } from "./meta/build-components";
 import { bindingState } from "./meta/template-binding";
 import { deriveTemplateContract } from "./meta/template-contract";
 
@@ -53,6 +53,8 @@ export interface PedidoDeDefinicao {
   name: string;
   language: string;
   values: Record<string, string>;
+  /** Automações só podem usar uma definição aprovada e conhecida. */
+  requireApproved?: boolean;
 }
 
 /**
@@ -85,7 +87,10 @@ export async function conferirDefinicao(
 
   // Falha de leitura não é definição inválida. Barrar aqui trocaria um envio
   // que ia dar certo por um erro nosso.
-  if (error) return;
+  if (error) {
+    if (pedido.requireApproved) throw new Error("template_definition_unavailable");
+    return;
+  }
 
   const linha = data as {
     name: string;
@@ -97,7 +102,10 @@ export async function conferirDefinicao(
   } | null;
 
   // Não espelhada: deixa passar. Ver o cabeçalho.
-  if (!linha) return;
+  if (!linha) {
+    if (pedido.requireApproved) throw new Error("template_not_found");
+    return;
+  }
 
   const estado = bindingState(
     {
@@ -128,6 +136,10 @@ export async function conferirDefinicao(
     components: linha.components as Parameters<typeof deriveTemplateContract>[0]["components"],
   });
   const faltando = missingSlots(contrato, pedido.values);
+  if (pedido.requireApproved && Object.keys(pedido.values).some(key =>
+    !contrato.slots.some(slot => slotKey(slot.address,slot.key) === key))) {
+    throw new Error("template_invalid_values");
+  }
 
   if (faltando.length > 0) {
     // O nome de cada buraco, e não "faltam 2": o operador precisa saber QUAL

@@ -1693,35 +1693,102 @@ export type Database = {
           },
         ]
       }
+      automation_event_plans: {
+        Row: {
+          created_at: string
+          event_id: string
+          organization_id: string
+          redacted_at: string | null
+          rules: Json
+          subject_contact_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          organization_id: string
+          redacted_at?: string | null
+          rules: Json
+          subject_contact_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          organization_id?: string
+          redacted_at?: string | null
+          rules?: Json
+          subject_contact_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_event_plans_organization_id_event_id_fkey"
+            columns: ["organization_id", "event_id"]
+            isOneToOne: true
+            referencedRelation: "event_log"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "automation_event_plans_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_plan_subject_tenant_fk"
+            columns: ["organization_id", "subject_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
       automation_rule_runs: {
         Row: {
+          action_index: number | null
           actions_result: Json
           created_at: string
           error: string | null
           event_id: string | null
+          execution_state: string | null
+          execution_updated_at: string | null
           id: string
+          message_id: string | null
           organization_id: string
-          rule_id: string
+          plan_redacted_at: string | null
+          rule_id: string | null
+          rule_identity: string | null
           status: string
         }
         Insert: {
+          action_index?: number | null
           actions_result?: Json
           created_at?: string
           error?: string | null
           event_id?: string | null
+          execution_state?: string | null
+          execution_updated_at?: string | null
           id?: string
+          message_id?: string | null
           organization_id: string
-          rule_id: string
+          plan_redacted_at?: string | null
+          rule_id?: string | null
+          rule_identity?: string | null
           status: string
         }
         Update: {
+          action_index?: number | null
           actions_result?: Json
           created_at?: string
           error?: string | null
           event_id?: string | null
+          execution_state?: string | null
+          execution_updated_at?: string | null
           id?: string
+          message_id?: string | null
           organization_id?: string
-          rule_id?: string
+          plan_redacted_at?: string | null
+          rule_id?: string | null
+          rule_identity?: string | null
           status?: string
         }
         Relationships: [
@@ -1730,6 +1797,13 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "event_log"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_rule_runs_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
             referencedColumns: ["id"]
           },
           {
@@ -4171,6 +4245,7 @@ export type Database = {
         Row: {
           agent_id: string | null
           attempts: number
+          automation_run_id: string | null
           cancel_reason: string | null
           claimed_until: string | null
           completed_at: string | null
@@ -4194,6 +4269,7 @@ export type Database = {
         Insert: {
           agent_id?: string | null
           attempts?: number
+          automation_run_id?: string | null
           cancel_reason?: string | null
           claimed_until?: string | null
           completed_at?: string | null
@@ -4217,6 +4293,7 @@ export type Database = {
         Update: {
           agent_id?: string | null
           attempts?: number
+          automation_run_id?: string | null
           cancel_reason?: string | null
           claimed_until?: string | null
           completed_at?: string | null
@@ -4239,10 +4316,24 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "followup_automation_run_tenant_fk"
+            columns: ["organization_id", "automation_run_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rule_runs"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
             foreignKeyName: "followup_enrollments_agent_id_fkey"
             columns: ["agent_id"]
             isOneToOne: false
             referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "followup_enrollments_automation_run_id_fkey"
+            columns: ["automation_run_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rule_runs"
             referencedColumns: ["id"]
           },
           {
@@ -7218,6 +7309,30 @@ export type Database = {
       }
     }
     Functions: {
+      fn_automation_message_preview: {
+        Args: { p_message: string; p_org: string }
+        Returns: boolean
+      }
+      fn_automation_message_live: {
+        Args: { p_contact: string; p_message: string; p_org: string }
+        Returns: boolean
+      }
+      fn_automation_run_live: {
+        Args: { p_contact: string; p_org: string; p_run: string }
+        Returns: boolean
+      }
+      fn_automation_message_run: {
+        Args: { p_message: string; p_org: string }
+        Returns: string
+      }
+      fn_automation_plan_live: {
+        Args: { p_contact?: string; p_event: string; p_org: string }
+        Returns: boolean
+      }
+      fn_automation_plan_subject: {
+        Args: { p_event: string; p_org: string }
+        Returns: string
+      }
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string }
         Returns: undefined

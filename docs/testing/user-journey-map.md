@@ -16,6 +16,19 @@ agendamento em `tests/campaigns/` e detalhes em
 Esta cobertura usa PostgreSQL descartavel e frontend real com API simulada;
 nao equivale a PASS de jornada VPS fresca com Supabase/WAHA reais.
 
+Kiwify/LGPD `[P1]`: anonimização também elimina conteúdo executável do plano;
+identidade e tombstone impedem replay. Exclusão de regra preserva plano válido.
+Provas de banco/receiver, concorrência e limites em [0224](kiwify-plan-privacy.md).
+
+Kiwify `[P1]`: **Webhooks › Kiwify** consulta compra, destinatário e desfecho, sem
+reenvio. PostgreSQL 15/PostgREST e receiver HTTP local: 100 cenários aprovados;
+preview Playwright do componente real com dados sintéticos: cinco situações,
+paginação, editor de template e largura 390px sem overflow. Evidências em
+`.superpowers/evidence/kiwify-stage-two/`. A spec autenticada
+`tests/e2e/kiwify-history.spec.ts` está registrada no workflow; sua execução local
+está pendente do rig com Supabase Auth/Docker. **Não é PASS de VPS fresca nem
+homologação externa.** Ver [relatório](kiwify-stage-two-validation.md).
+
 - `[P0]` primeira impressão — bug aqui é vergonha pública; prioridade máxima.
 - `[P1]` rotina diária do operador/atendente.
 - `[P2]` exploração/edge.

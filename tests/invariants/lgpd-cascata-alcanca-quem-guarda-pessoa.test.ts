@@ -37,7 +37,7 @@ import { sql } from "./gov-helpers";
  * ─── Por que a dívida é congelada em vez de reprovar hoje ──────────────────
  *
  * Um invariante que nasce vermelho por dívida legada não entra: ou é ignorado,
- * ou é desligado. As três entradas abaixo são o retrato de 2026-08-26, cada uma
+ * ou é desligado. A dívida abaixo deriva do retrato de 2026-08-26, cada entrada
  * com a razão escrita. A catraca é o teste do fim: entrada NOVA sem
  * justificativa não passa, e tabela que sai da dívida nunca volta.
  */
@@ -51,28 +51,9 @@ const PADRAO_PII =
  * razão precisa dizer QUANDO sai, não só por que está.
  */
 const DIVIDA_LGPD_CONHECIDA: Record<string, string> = {
-  calendar_appointments:
-    "Achado do levantamento 13 §2 (QAVivo/maestro). Guarda title e notes do compromisso. " +
-    "Conserto DESPACHADO ao Arquiteto — sai desta lista no mesmo commit que acrescentar a tabela à cascata.",
   lead_notes:
     "Anotação livre do atendente SOBRE o contato (coluna body). Dívida anterior à agenda; " +
     "nenhum commit a declarou. Sai quando o cascade a alcançar.",
-  crm_tasks:
-    "Migration 0210 (extração do PR #418). A tabela guarda `title` — texto livre que " +
-    "na prática nomeia a pessoa (\"Ligar para Fulano confirmar o orçamento\"). " +
-    "⚠️ ELA JÁ ESTÁ PROTEGIDA: o trigger `trg_redigir_tarefas_ao_anonimizar` troca o " +
-    "título e apaga a descrição na transição `is_anonymized false → true`, e " +
-    "`tests/invariants/lgpd-tarefa-do-contato-anonimizado.test.ts` prova o efeito " +
-    "pelo comportamento, não pelo símbolo. A entrada existe só porque ESTE instrumento " +
-    "lê UMA função (`fn_lgpd_cascade_redact_contact`) e não enxerga trigger — a mesma " +
-    "razão pela qual `webhook_lead_captures` (0174) e `calendar_appointments` (0184) " +
-    "estão aqui, as duas também já cobertas por trigger. Sai no dia em que " +
-    "`tabelasNaCascata()` passar a derivar do catálogo também os triggers de " +
-    "`contacts`, ou no dia em que a função ganhar o passo.",
-  webhook_lead_captures:
-    "captured_name, captured_email e captured_phone — o payload cru de captação. " +
-    "A própria migration 0174 escreveu que 'o cascade de anonimização precisa alcançar esta tabela' " +
-    "e o passo nunca foi acrescentado. Sai quando for.",
 };
 
 /** Tabelas no escopo: FK para contacts E coluna de conteúdo pessoal. */
@@ -99,7 +80,11 @@ function tabelasComDadoDePessoa(): string[] {
     .filter(Boolean);
 }
 
-/** Tabelas que a função REALMENTE toca — lida do corpo no banco, não do arquivo. */
+/** RPC e triggers de redação ATIVOS em contacts, lidos do catálogo.
+ * A existência de uma função solta não comprova que a cascata a chama.
+ * Comportamento: agenda-lgpd-alcanca, lgpd-tarefa-do-contato-anonimizado,
+ * kiwify-ingestion e kiwify-plan-privacy (todos contra PostgreSQL real).
+ */
 function tabelasNaCascata(): string[] {
   return sql(`
     select distinct m[1]
@@ -108,6 +93,11 @@ function tabelasNaCascata(): string[] {
              pg_get_functiondef(p.oid),
              '(?:update|delete from)\\s+(?:public\\.)?"?([a-z_]+)"?', 'gi') m
      where p.proname = 'fn_lgpd_cascade_redact_contact'
+        or (p.proname ~ '(redact|redigir|anonim)' and exists (
+          select 1 from pg_trigger t where t.tgfoid=p.oid
+            and t.tgrelid='public.contacts'::regclass and not t.tgisinternal
+            and t.tgenabled in ('O','A') and (t.tgtype & 16)=16
+        ))
      order by 1;
   `)
     .trim()
@@ -117,6 +107,11 @@ function tabelasNaCascata(): string[] {
 }
 
 describe("LGPD: a cascata alcança toda tabela que guarda dado de pessoa", () => {
+  it("CONTROLE: triggers ativos de redação entram na cobertura sem lista de dispensa",()=>{
+    expect(tabelasNaCascata()).toEqual(expect.arrayContaining([
+      "calendar_appointments","crm_tasks","webhook_lead_captures","automation_event_plans",
+    ]));
+  });
   it("CONTROLE: o mecanismo enxerga `contacts` — se não enxergar, o verde não vale nada", () => {
     // `contacts` satisfaz as duas condições por construção. Se ela sumir do
     // escopo, o regex quebrou ou a FK mudou de nome, e QUALQUER resultado abaixo

@@ -12,6 +12,7 @@ import {
   resolveAgentForAutomaticTrigger,
 } from "@/lib/followup/agent-followup-gate";
 import { flowGraphSchema } from "@/lib/followup/graph-schema";
+import { automaticRecipientReason } from "@/lib/automation/current-recipient";
 
 export const ENROLLMENT_LIST_COLUMNS =
   "id, pointer_id, version_id, contact_id, status, current_node_id, next_eval_at, outcome, started_at, completed_at, updated_at";
@@ -23,6 +24,7 @@ export type EnrollFollowupInput = {
   agentId?: string;
   actorUserId: string | null;
   requestId: string;
+  automationRunId?: string;
 };
 
 export type EnrollFollowupOk = { ok: true; enrollment: Record<string, unknown> };
@@ -60,12 +62,14 @@ export async function enrollFollowupFlow(
 
   const { data: contact, error: contactErr } = await supabase
     .from("contacts")
-    .select("id")
+    .select("id, phone_number, is_blocked, is_anonymized, consent")
     .eq("organization_id", organizationId)
     .eq("id", contactId)
     .maybeSingle();
   if (contactErr) return { ok: false, code: "internal_error", message: contactErr.message, status: 500 };
   if (!contact) return { ok: false, code: "not_found", message: "Contato não encontrado.", status: 404 };
+  const blocked = automaticRecipientReason(contact);
+  if (blocked) return { ok: false, code: "recipient_blocked", message: blocked, status: 403 };
 
   const { data: version, error: versionErr } = await supabase
     .from("followup_flow_versions")
@@ -119,6 +123,7 @@ export async function enrollFollowupFlow(
       // next_eval_at omite: default now() do banco (migration 0147). new Date()
       // do processo fica 17–34 ms à frente e o claim `<= now()` pula o tick.
       agent_id: agentId,
+      ...(input.automationRunId ? { automation_run_id: input.automationRunId } : {}),
     })
     .select(ENROLLMENT_LIST_COLUMNS)
     .single();

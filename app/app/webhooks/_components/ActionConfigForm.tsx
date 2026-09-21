@@ -21,10 +21,15 @@ import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSes
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { apiClient } from "@/lib/api/client";
 import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
+import { AutomationTemplateFields } from "./AutomationTemplateFields";
 
+type WhatsappActionConfig = {
+  channel_session_id: string; template?: string;
+  template_name?: string; template_language?: string; template_values?: Record<string,string>;
+};
 export type ActionItem =
   | { type: "create_or_move_lead"; config: { pipeline_id: string; stage_id: string } }
-  | { type: "send_whatsapp_message"; config: { channel_session_id: string; template: string } }
+  | { type: "send_whatsapp_message"; config: WhatsappActionConfig }
   | {
       type: "send_ai_message";
       config: { agent_id: string; channel_session_id: string; instruction: string };
@@ -125,14 +130,14 @@ const TEMPLATE_VARS = [
 function SendWhatsappForm({
   config,
   onChange,
-}: FormProps<{ channel_session_id: string; template: string }>) {
+}: FormProps<WhatsappActionConfig>) {
   const t = useT();
   const { data: sessions } = useChannelSessions();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   const insertVar = (token: string) => {
     const el = textareaRef.current;
-    const current = config.template;
+    const current = config.template ?? "";
     const start = el?.selectionStart ?? current.length;
     const end = el?.selectionEnd ?? current.length;
     const next = current.slice(0, start) + token + current.slice(end);
@@ -170,6 +175,13 @@ function SendWhatsappForm({
       </div>
       <div className="space-y-1">
         <Label>Mensagem</Label>
+        <Select value={config.template_name !== undefined ? "official" : "text"} onValueChange={mode=>
+          onChange(mode === "official" ? {channel_session_id:config.channel_session_id,template_name:"",template_language:"",template_values:{}}
+            : {channel_session_id:config.channel_session_id,template:""})}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="text">{t("Texto livre")}</SelectItem><SelectItem value="official">{t("Template aprovado")}</SelectItem></SelectContent>
+        </Select>
+        {config.template_name !== undefined ? <AutomationTemplateFields config={config} onChange={onChange} /> : <>
         <div className="flex flex-wrap gap-1">
           {TEMPLATE_VARS.map((v) => (
             <Button
@@ -186,10 +198,11 @@ function SendWhatsappForm({
         <Textarea
           ref={textareaRef}
           rows={4}
-          value={config.template}
+          value={config.template ?? ""}
           onChange={(e) => onChange({ ...config, template: e.target.value })}
           placeholder="Oi {{nome}}, tudo bem?"
         />
+        </>}
         <p className="text-xs text-muted-foreground">
           {/* NÃO cravar "7h e 22h": a janela passou a vir dos ajustes DO NÚMERO
               (Conexões), no fuso da sua organização, e quem a mudou lá veria a

@@ -76,6 +76,10 @@ interface Excecao {
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
   {
+    tabela: "automation_event_plans",
+    razao: "tests/invariants/kiwify-action-identity.test.ts — plano privado: SET LOCAL ROLE/JWT nega SELECT a anon/authenticated, serviço lê mas não reescreve; FK composta recusa evento de outra organização.",
+  },
+  {
     tabela: "kiwify_integrations",
     razao:
       "tests/invariants/kiwify-ingestion.test.ts — anon e authenticated recebem " +

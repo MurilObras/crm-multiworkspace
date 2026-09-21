@@ -15,14 +15,15 @@ export async function loadOfficialTemplate(
   db: SupabaseClient,
   organizationId: string,
   channelSessionId: string,
-  templateId: string,
+  templateId: string | { name: string; language: string },
   values: Record<string, string> = {},
   language?: string,
 ): Promise<PreparedOfficialTemplate> {
   let query = db.from("meta_templates")
     .select("name, language, status, components, parameter_format")
-    .eq("organization_id", organizationId).eq("channel_session_id", channelSessionId)
-    .eq("id", templateId);
+    .eq("organization_id", organizationId).eq("channel_session_id", channelSessionId);
+  query = typeof templateId === "string" ? query.eq("id",templateId)
+    : query.eq("name",templateId.name).eq("language",templateId.language);
   if (language !== undefined) query = query.eq("language", language);
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error("official_template_lookup_failed");

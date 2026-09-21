@@ -117,11 +117,12 @@ describe("webhook_sources + automation_rules + automation_rule_runs — RLS (mig
   });
 
   it("manager A NÃO consegue INSERT direto em automation_rule_runs (select-only p/ authenticated)", () => {
-    const inserted = writeCountAs(
-      GOV_MANAGER,
-      `insert into public.automation_rule_runs (organization_id, rule_id, status)
-       values ('${GOV_ORG}', '${WH_RULE}', 'success')`,
-    );
-    expect(inserted).toBe(0);
+    // 0222 revoga o privilégio de escrita: a negação ocorre antes da policy.
+    expect(sql("select has_table_privilege('authenticated','public.automation_rule_runs','INSERT')")).toBe("f");
+    expect(() => sql(`set role authenticated;
+      select set_config('request.jwt.claims','{"sub":"${GOV_MANAGER}"}',false);
+      insert into public.automation_rule_runs (organization_id,rule_id,status)
+        values('${GOV_ORG}','${WH_RULE}','success');`))
+      .toThrow(/permission denied for table automation_rule_runs/);
   });
 });

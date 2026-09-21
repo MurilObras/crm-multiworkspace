@@ -88,8 +88,13 @@ function makeSupabase(botSilencedUntil: string | null) {
           then: (resolve: (v: { error: null }) => unknown) =>
             Promise.resolve({ error: null }).then(resolve),
         };
-        return { update: () => cadeiaContacts };
+        return { update: () => cadeiaContacts, select: () => ({ eq() { return this; },
+          maybeSingle: async () => ({data:{...(conversationRow(botSilencedUntil).contacts as Row),id:CONTACT},error:null}),
+        }) };
       }
+      if (table === 'channel_sessions') return { select: () => ({ eq() { return this; },
+        maybeSingle: async () => ({data:{status:'WORKING',archived_at:null},error:null}),
+      }) };
       throw new Error(`fake_supabase: tabela inesperada '${table}'`);
     },
     rpc: async () => ({ error: null }),

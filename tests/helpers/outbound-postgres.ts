@@ -26,6 +26,7 @@ export async function outboundPostgres() {
       contact_id uuid, job_id uuid references job_queue(id), seq smallint, body_hash text,
       status text default 'requested', crm_message_id uuid, last_error text,
       created_at timestamptz default now(), updated_at timestamptz default now(), unique(job_id,seq));
+    create table automation_rule_runs(id uuid primary key,organization_id uuid);
     create table messages(id uuid primary key default gen_random_uuid(), organization_id uuid,
       conversation_id uuid, contact_id uuid, channel_session_id uuid, status text, external_id text,
       type text, body text, direction text, metadata jsonb default '{}', ack int,
@@ -36,7 +37,8 @@ export async function outboundPostgres() {
     create table channel_sessions(id uuid primary key, organization_id uuid, provider text default 'waha',
       status text default 'WORKING', archived_at timestamptz, waha_session_name text default 'default');
     create table contacts(id uuid primary key, organization_id uuid, phone_number text,
-      is_blocked boolean default false, last_activity_at timestamptz, wa_identity text, wa_lid text);
+      is_blocked boolean default false, is_anonymized boolean default false, consent jsonb default '{}',
+      last_activity_at timestamptz, wa_identity text, wa_lid text);
     create table conversations(id uuid primary key, organization_id uuid, contact_id uuid, channel_session_id uuid,
       status text default 'open', is_group boolean default false, group_chat_id text, bot_silenced_until timestamptz,
       provider_conversation_id text, last_inbound_at timestamptz, last_outbound_at timestamptz,
@@ -99,7 +101,7 @@ export async function outboundPostgres() {
       async single() { return q.maybeSingle(); },
       async then(resolve: (v: Awaited<ReturnType<typeof execute>>)=>unknown) { return resolve(await execute()); },
     };return q;
-  }, rpc: async () => ({data:null,error:null}) } as unknown as SupabaseClient;
+  }, rpc: async (name: string) => ({data:name==='fn_automation_message_live'?true:name==='fn_automation_message_preview'?false:null,error:null}) } as unknown as SupabaseClient;
 
   async function seed() {
     await sql.exec('truncate send_ledger,messages,job_queue,channel_sessions,contacts,conversations,followup_enrollments,agent_inbox_items,followup_flow_versions,followup_enrollment_events cascade');
