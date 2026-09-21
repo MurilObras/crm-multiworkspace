@@ -1,5 +1,58 @@
 # Kiwify — correção de anonimização do plano (0224)
 
+## Correção da continuação após erro — 0225
+
+A conferência final do HEAD `d83d043d73edbd3aaa2efdb5aa75dcc5bb297ceb` encontrou
+um bloqueio que os checks anteriores não mediam: `update.sh` usa `psql -f` sem
+`ON_ERROR_STOP`. Um conflito abortava o UPDATE de recuperação da 0224; o UPDATE
+seguinte confundia os NULL ainda não preenchidos com órfãos e apagava o lote.
+
+A 0224 publicada no PR permanece byte a byte inalterada. A forward-fix
+`20260921150000_0225_automation_plan_recovery_guard.sql` instala uma guarda de
+recuperação. **No baseline ela é executada após a 0223 e antes do primeiro DML
+da 0224**, não no fim: proteger depois de descartar seria tarde demais. O instalador
+não foi refatorado. Para replay manual sem transação, aplicar 0225 antes de
+reaplicar 0224; um runner transacional que interrompe a 0224 conflitante preserva
+o lote pelo rollback. Conteúdo já perdido numa execução antiga não é recuperado.
+
+A guarda decide no mesmo UPDATE em que resolve o titular: `unresolved` nunca
+autoriza descarte; retorno bem-sucedido distingue `recovered` de
+`confirmed_absent`; erro/conflito não é capturado e desfaz o statement inteiro.
+NULL na coluna não é evidência. Titular recuperado ativo preserva conteúdo e
+identidade; titular já anonimizado segue a política de redação existente; ausência
+comprovada permite neutralização. A guarda roda depois da guarda imutável da 0224,
+permitindo preencher um vínculo legado sem confundir NULL → UUID com troca de
+titular durante a reaplicação. Tombstones existentes nunca são reabertos.
+
+### Regressão do caminho real de atualização
+
+`tests/invariants/kiwify-update-continuation.test.ts` está incluído no `test:db`
+do CI e no harness nativo. Cria um banco PostgreSQL independente, instala o
+baseline até 0223 e semeia **no mesmo lote** plano válido, conflitante e órfão,
+além de uma intenção já adquirida cuja regra original é excluída.
+
+Executa o baseline completo via `psql -f -`, **em autocommit, sem ON_ERROR_STOP,
+sem BEGIN e sem savepoints**. Asserções:
+
+1. O stderr contém `automation_plan_subject_ambiguous` e um SELECT posterior
+   confirma que o psql continuou. Todos os conteúdos/IDs/timestamps anteriores
+   permanecem iguais, sem tombstone por erro; o runtime não adquire o plano pendente.
+2. Removido o vínculo conflitante, a reaplicação completa não gera ERROR. Os dois
+   planos recuperáveis conservam seu conteúdo e titular; só o órfão fica vazio.
+3. O UUID/identidade da intenção permanece; retry não readquire; o órfão não pode
+   ser replanejado. Nova reaplicação preserva o estado; anonimização posterior
+   continua esvaziando os planos vinculados.
+
+Resultado local: **51/51 testes PostgreSQL em quatro arquivos** (regressão acima,
+privacidade, identidade e integração/receiver). Baseline limpo + reaplicação e
+upgrade com proteção antecipada passaram, incluindo equivalência de colunas,
+constraints, funções, ACL e triggers. Typecheck e lint dos arquivos alterados
+passaram; gates unitários de manifest/baseline/LGPD: **27/27 em quatro arquivos**.
+Nenhum teste usou produção. O banco criado pela regressão é removido ao final.
+
+Os registros abaixo são históricos; a avaliação do novo HEAD deve usar os checks
+e a evidência da 0225 registrados no PR.
+
 ## Distribuição e ambiente
 
 Em 2026-09-21, antes do push desta correção, o PR #10 estava OPEN/draft,

@@ -256,7 +256,19 @@ aplica.
 
 | `20260921120000` | `0224_automation_plan_redaction` | Vínculo durável ao titular, remoção irreversível do conteúdo executável e fences de anonimização. Backfill dos vínculos históricos; neutraliza somente órfãos comprovados. Validada apenas em banco descartável, sem aplicação em produção. |
 
+| `20260921150000` | `0225_automation_plan_recovery_guard` | Recuperação e decisão de neutralização atômicas; protege o baseline ANTES do backfill 0224, inclusive com continuação após erro. Conflito preserva o lote; NULL não comprova órfão. |
+
 ## Reproducibility
+
+### Ordem de proteção do backfill 0224
+
+`20260921150000_0225_automation_plan_recovery_guard.sql` é forward-fix: a 0224
+já aplicada não foi editada. No baseline a proteção da 0225 é instalada após a
+0223 e **antes do DML da 0224**, porque `update.sh` continua após erros SQL.
+Replay manual sem transação deve aplicar 0225 antes de reaplicar 0224. Runners
+transacionais que param numa 0224 conflitante preservam o lote pelo rollback;
+a proteção antecipada é indispensável para execução que continua após erro.
+Nenhuma correção consegue recuperar conteúdo descartado por uma execução antiga.
 
 Migrations were applied directly via the Supabase MCP `apply_migration` tool during the autonomous bootstrap session. The SQL of each migration is also embedded in the corresponding spec under `docs/specs/0X-spec-*.md` and the database keeps them in `supabase_migrations.schema_migrations`.
 

@@ -32,7 +32,7 @@ existente; o histórico as alcança por inscrição → job → ledger → mensa
 
 ## Configurar a regra
 
-Pré-requisitos: migrations 0220–0224 (também no baseline), conexão PostgreSQL
+Pré-requisitos: migrations 0220–0225 (também no baseline), conexão PostgreSQL
 do servidor em `SUPABASE_DB_URL`, drain e scheduler existentes, canal configurado
 e modelos oficiais já sincronizados quando necessários. Nada configura ou ativa
 uma integração/canal automaticamente.
@@ -92,6 +92,10 @@ neutralizados pelo backfill. Excluir uma regra não neutraliza plano válido.
 Conteúdo removido nunca é replanejado/executado por retry, mesmo se vínculos forem
 restaurados. Contrato de concorrência, limites e provas da migration 0224:
 [anonimização do plano](../testing/kiwify-plan-privacy.md).
+
+No caminho de atualização, a proteção 0225 é instalada no baseline **antes** do
+backfill 0224. Recuperação malsucedida não autoriza descarte por NULL: conflito
+desfaz o statement e preserva o lote mesmo quando o psql continua após o erro.
 
 - Contexto Kiwify é relido por ação. Recusa explícita, bloqueio, anonimização e
   destinatário inexistente impedem o efeito. A ausência de concessão não foi
