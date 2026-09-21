@@ -76,6 +76,11 @@ usa a mensagem persistida sob o fence, não o input antigo em memória.
 - Lint: zero erros (311 avisos existentes); typecheck passou. Resultados posteriores
   e checks do SHA publicado devem ser registrados no PR; checks do HEAD anterior
   não aprovam esta correção.
+- CI de `abc5b00f`: verify/build/imagens passaram; invariants apontou que o
+  instrumento de cobertura LGPD ignorava triggers. A sonda passou a consultar os
+  triggers de redação ativos de UPDATE em `contacts`, além da RPC. Removidas três
+  dispensas legadas já cobertas por triggers; nenhuma dispensa nova foi criada.
+  Reexecução local do gate corrigido: **6/6** contra PostgreSQL real.
 
 ## Integração no sistema existente
 
