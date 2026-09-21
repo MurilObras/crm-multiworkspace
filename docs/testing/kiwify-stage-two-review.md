@@ -57,6 +57,15 @@ a verificação da branch completa em ambiente compatível.
 
 ## E2E e limites
 
+Primeiro CI (`c9eb7f43`): verify, build e imagens passaram. Invariants encontrou
+uma expectativa antiga (negação por RLS versus privilégio agora revogado); o teste
+passou a exigir explicitamente permission denied, sem restaurar a permissão.
+E2E encontrou slug em maiúsculas na fixture; também foi corrigido o uso de
+processed_at inexistente para status='done'. beforeAll/afterAll da própria spec
+foram executados contra PostgreSQL isolado com credenciais sintéticas substituídas:
+25 receipts criados e limpeza completa aprovada, inclusive a ordem de exclusão
+ledger → integração exigida pela FK. O recorte webhooks-rls passou com 6 testes.
+
 Checks locais posteriores à correção: baseline INSTALL/REAPPLY e atualização
 0222/0223 passaram; **9 arquivos / 108 testes PostgreSQL** passaram, incluindo as
 reproduções de mutação e a chamada ativa além do limiar. **6 arquivos / 99 testes

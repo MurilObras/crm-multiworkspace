@@ -25,7 +25,7 @@ test.describe("Kiwify: consulta autenticada",()=>{
     if(creds.org_slug!=="e2e-test-org"||!local(creds.supabase_url)) throw new Error("Credenciais sintéticas do rig local obrigatórias");
     db=new pg.Pool({connectionString:dbUrl});
     const org=creds.org_id;
-    pipeline=(await db.query("insert into crm_pipelines(organization_id,name,slug,position) values($1,$2,$2,1000) returning id",[org,prefix])).rows[0].id;
+    pipeline=(await db.query("insert into crm_pipelines(organization_id,name,slug,position) values($1,$2,$3,1000) returning id",[org,prefix,prefix.toLowerCase()])).rows[0].id;
     stage=(await db.query("insert into crm_stages(organization_id,pipeline_id,name,slug,position) values($1,$2,'Synthetic','synthetic',1000) returning id",[org,pipeline])).rows[0].id;
     product=(await db.query("insert into catalog_products(organization_id,codigo,nome,preco_cents) values($1,$2,'Produto sintético',100) returning id",[org,prefix])).rows[0].id;
     session=(await db.query("insert into channel_sessions(organization_id,waha_session_name,status,webhook_secret_encrypted) values($1,$2,'STOPPED',$3) returning id",[org,prefix,Buffer.from("synthetic-unused")])).rows[0].id;
@@ -45,7 +45,7 @@ test.describe("Kiwify: consulta autenticada",()=>{
       const lead=(await db.query("insert into crm_leads(organization_id,pipeline_id,stage_id,contact_id,title,source,position_in_stage,custom_fields) values($1,$2,$3,$4,'Compra Kiwify','webhook',$5,$6) returning id",[org,pipeline,stage,contact,(i+1)*1000,{product_id:product}])).rows[0].id;
       leadIds.push(lead);
       // Fixture de histórico, encerrada ANTES de ficar visível ao drain.
-      const event=state==="no_phone"?null:(await db.query("insert into event_log(organization_id,event_type,entity_kind,entity_id,payload,processed_at) values($1,'lead.created','crm_lead',$2,'{}',now()) returning id",[org,lead])).rows[0].id;
+      const event=state==="no_phone"?null:(await db.query("insert into event_log(organization_id,event_type,entity_kind,entity_id,payload,status) values($1,'lead.created','crm_lead',$2,'{}','done') returning id",[org,lead])).rows[0].id;
       if(event)eventIds.push(event);
       await db.query("insert into kiwify_receipts(organization_id,integration_id,order_id,event_type,fingerprint,status,external_id,lead_id,event_id) values($1,$2,$3,'order_approved',$4,$5,$6,$7,$8)",[org,integration,`${prefix}-${String(i).padStart(2,"0")}`,"a".repeat(64),state==="no_phone"?"accepted_no_phone":"accepted",`${prefix}:${i}`,lead,event]);
       if(!event)continue;
@@ -64,6 +64,7 @@ test.describe("Kiwify: consulta autenticada",()=>{
       await db.query("delete from automation_rules where id=$1",[rule]);
       await db.query("delete from messages where id=any($1::uuid[])",[messageIds]);
       await db.query("delete from conversations where id=any($1::uuid[])",[conversationIds]);
+      await db.query("delete from kiwify_receipts where integration_id=$1",[integration]);
       await db.query("delete from kiwify_integrations where id=$1",[integration]);
       await db.query("delete from event_log where id=any($1::uuid[]) or entity_id=any($2::uuid[])",[eventIds,messageIds]);
       await db.query("delete from crm_leads where id=any($1::uuid[])",[leadIds]);
