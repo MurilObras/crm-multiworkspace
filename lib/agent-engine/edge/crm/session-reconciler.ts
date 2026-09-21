@@ -194,7 +194,11 @@ export async function redriveQueued(
      join contacts c on c.id = m.contact_id
       where m.sent_via = 'ai' and m.status = 'queued'
         -- Tentativas novas têm dono no job/ledger e só retomam pelo fence comum.
-        and not (coalesce(m.metadata, '{}'::jsonb) ?| array['outbound_attempt','idempotency_key'])
+         and not (coalesce(m.metadata, '{}'::jsonb) ?| array['outbound_attempt','idempotency_key'])
+         -- A anonimização pode limpar metadata. A identidade persistida continua
+         -- sendo a dona da mensagem e nunca autoriza este consumidor legado.
+         and not exists(select 1 from automation_rule_runs r where r.id=m.id and r.organization_id=m.organization_id)
+         and not exists(select 1 from send_ledger l where l.id=m.id and l.organization_id=m.organization_id)
        and s.status = 'WORKING'
        and c.is_blocked = false
        -- ─── Só as sessões que ESTE resgate consegue alcançar ───────────────
@@ -224,7 +228,9 @@ export async function redriveQueued(
      from messages m
      join channel_sessions s on s.id = m.channel_session_id
       where m.sent_via = 'ai' and m.status = 'queued'
-        and not (coalesce(m.metadata, '{}'::jsonb) ?| array['outbound_attempt','idempotency_key'])
+         and not (coalesce(m.metadata, '{}'::jsonb) ?| array['outbound_attempt','idempotency_key'])
+         and not exists(select 1 from automation_rule_runs r where r.id=m.id and r.organization_id=m.organization_id)
+         and not exists(select 1 from send_ledger l where l.id=m.id and l.organization_id=m.organization_id)
        and s.status = 'WORKING'
        and s.waha_session_name is null
        and m.created_at < now() - make_interval(secs => $1 / 1000.0)`,

@@ -164,7 +164,10 @@ export async function executeOutboundAttempt(
           `with owner as materialized (select id from job_queue where id=$1 and organization_id=$2
              and status='running' and locked_by=$3 for update)
            update messages set status='sending',
-             metadata=jsonb_set(metadata,'{outbound_attempt,phase}','"started"'::jsonb)
+              metadata=jsonb_set(metadata,'{outbound_attempt,phase}','"started"'::jsonb)
+                || coalesce((select jsonb_build_object('automation_destination_phone',c.phone_number)
+                  from contacts c where c.id=messages.contact_id and c.organization_id=$2
+                    and not c.is_anonymized), '{}'::jsonb)
            where id=$4 and organization_id=$2 and status='queued'
              and metadata->'outbound_attempt'->>'phase'='prepared'
              and exists(select 1 from owner) returning id`, [job, org, owner, messageId],

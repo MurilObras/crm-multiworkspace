@@ -19,6 +19,8 @@ import { normalizeRejectedReason } from "@/lib/channels/meta/webhook";
 import { deriveTemplateContract, describeAddress } from "@/lib/channels/meta/template-contract";
 import { syncTemplates } from "@/lib/channels/meta/template-sync";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { z } from "zod";
+import { slotKey } from "@/lib/channels/meta/build-components";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -36,6 +38,7 @@ export interface TemplateView {
   syncedAt: string;
   slots: Array<{
     key: string;
+    value_key: string;
     expects: string;
     onde: string;
   }>;
@@ -75,20 +78,22 @@ type OrgGate =
   | { autorizado: true; orgId: string }
   | { autorizado: false; resposta: NextResponse };
 
-async function orgOrFail(requestId: string): Promise<OrgGate> {
-  const authz = await requireRole("admin", { requestId, resource: "channels_templates" });
+async function orgOrFail(requestId: string, role: "manager" | "admin" = "admin"): Promise<OrgGate> {
+  const authz = await requireRole(role, { requestId, resource: "channels_templates" });
   if (!authz.ok) return { autorizado: false, resposta: authz.response };
   return { autorizado: true, orgId: authz.org.orgId };
 }
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(req?: NextRequest): Promise<NextResponse> {
   const requestId = randomUUID();
-  const r = await orgOrFail(requestId);
+  const sessionId = req?.nextUrl.searchParams.get("channel_session_id");
+  const r = await orgOrFail(requestId,sessionId ? "manager" : "admin");
   if (!r.autorizado) return r.resposta;
+  if (sessionId && !z.uuid().safeParse(sessionId).success) return fail("validation_error","Canal inválido.",400,{requestId});
 
-  const sessao = await metaSessionForOrg(r.orgId);
+  const sessao = sessionId ? null : await metaSessionForOrg(r.orgId);
   const admin = createAdminClient();
-  const { data, error } = await admin
+  let query = admin
     .from("meta_templates")
     .select(
       "name, language, status, category, rejected_reason, quality_score, parameter_format, contract_hash, components, synced_at",
@@ -96,6 +101,10 @@ export async function GET(): Promise<NextResponse> {
     .eq("organization_id", r.orgId)
     .order("status")
     .order("name");
+  // Seletor de automações: somente definições aprovadas do canal escolhido.
+  // O GET administrativo sem filtro conserva o contrato de gestão existente.
+  if (sessionId) query = query.eq("channel_session_id",sessionId).eq("status","APPROVED");
+  const { data, error } = await query;
 
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
@@ -120,6 +129,7 @@ export async function GET(): Promise<NextResponse> {
       syncedAt: row.synced_at,
       slots: contrato.slots.map((s) => ({
         key: s.key,
+        value_key: slotKey(s.address,s.key),
         expects: s.expects,
         onde: describeAddress(s.address),
       })),

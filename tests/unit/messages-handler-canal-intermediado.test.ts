@@ -248,6 +248,9 @@ function makeSupabase(linhaCompleta: Row) {
             Promise.resolve({ error: null }).then(resolve),
         };
         return {
+          select: () => ({ eq() { return this; }, maybeSingle: async () => ({
+            data: { ...linhaCompleta.contacts as Record<string,unknown>, id: linhaCompleta.contact_id }, error:null,
+          }) }),
           update: (patch: Row) => {
             estado.contactPatch = patch;
             return cadeia;

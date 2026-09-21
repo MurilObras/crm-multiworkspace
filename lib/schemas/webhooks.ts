@@ -21,7 +21,13 @@ export const conditionSchema = z.object({
 
 export const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("create_or_move_lead"), config: z.object({ pipeline_id: z.string().uuid(), stage_id: z.string().uuid() }) }),
-  z.object({ type: z.literal("send_whatsapp_message"), config: z.object({ channel_session_id: z.string().uuid(), template: z.string().min(1).max(2000) }) }),
+  z.object({ type: z.literal("send_whatsapp_message"), config: z.object({
+    channel_session_id: z.string().uuid(),
+    template: z.string().min(1).max(2000).optional(),
+    template_name: z.string().min(1).max(512).optional(),
+    template_language: z.string().min(1).max(20).optional(),
+    template_values: z.record(z.string(), z.string().max(2000)).optional(),
+  }).refine(c => Boolean(c.template || (c.template_name && c.template_language)), "Informe texto ou template aprovado.") }),
   z.object({ type: z.literal("add_tag"), config: z.object({ tags: z.array(z.string().min(1).max(60)).min(1).max(10) }) }),
   z.object({ type: z.literal("assign_owner"), config: z.object({ user_id: z.string().uuid() }) }),
   z.object({

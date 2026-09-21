@@ -20,7 +20,8 @@ import { checkDailyLimit, espacarEnvio } from "@/lib/automation/throttle";
 import { reportarEnvio, type MensagemEnviada } from "@/lib/automation/desfecho-do-envio";
 import { dadosDoFormularioDoContexto } from "@/lib/automation/dados-do-formulario";
 import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
-import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
+import type { sendMessageHandler } from "@/app/api/v1/messages/_handler";
+import { sendAutomationMessage } from "@/lib/automation/send-message";
 import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-de-formulario";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
@@ -113,13 +114,8 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       reason: `automacao:${ctx.ruleId}`,
     });
     await espacarEnvio(sessionId);
-    const message = await sendMessageHandler(
-      ctx.admin,
-      {
-        organization_id: ctx.organizationId,
-        actor: { type: "webhook_source", id: ctx.ruleId },
-        requestId: `rule:${ctx.ruleId}`,
-      },
+    const message = await sendAutomationMessage(
+      ctx,
       { conversation_id: conversationId, type: "text", body: texto } as Parameters<
         typeof sendMessageHandler
       >[2],

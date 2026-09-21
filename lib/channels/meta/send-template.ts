@@ -95,6 +95,7 @@ export async function sendTemplate(input: SendTemplateInput): Promise<SendTempla
 
   const url = `https://graph.facebook.com/${input.graphVersion}/${input.phoneNumberId}/messages`;
   const res = await fetch(url, {
+    signal: AbortSignal.timeout(15_000),
     method: "POST",
     headers: {
       Authorization: `Bearer ${input.token}`,

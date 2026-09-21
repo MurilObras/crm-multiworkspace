@@ -9,6 +9,7 @@
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { enrollFollowupFlow } from "@/lib/followup/enroll";
+import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
 
 const TYPE = "start_message_flow";
 
@@ -25,6 +26,10 @@ export async function executeStartMessageFlow(
   config: Record<string, unknown>,
 ): Promise<ActionResultDetail> {
   const pointerId = typeof config.flow_pointer_id === "string" ? config.flow_pointer_id : null;
+  if (ctx.actionIntentId) {
+    const guard = checarGuardasDeContato(ctx);
+    if (!guard.ok) return { type: TYPE,status:"skipped",detail:{reason:guard.reason} };
+  }
   if (!pointerId) {
     return { type: TYPE, status: "failed", error: "missing_config" };
   }
@@ -40,9 +45,13 @@ export async function executeStartMessageFlow(
     contactId,
     actorUserId: null,
     requestId: `rule:${ctx.ruleId}`,
+    automationRunId: ctx.actionIntentId,
   });
 
   if (!result.ok) {
+    if (result.code === "recipient_blocked") {
+      return { type: TYPE, status: "skipped", detail: { reason: result.message } };
+    }
     if (result.code === "conflict") {
       return {
         type: TYPE,

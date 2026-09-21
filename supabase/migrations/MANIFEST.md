@@ -250,6 +250,9 @@ aplica.
 | `20260908120000` | `0219_campaigns_audience_scheduling` | Publicos paste/CSV/XLSX normalizados com upsert de contatos na mesma org e recipients congelados. Agendamento atomico em event_log.next_attempt_at, ativacao com guarda de prazo no banco e retries sem novo passo 0. Preserva RPC 0218 e quota/transportes existentes. |
 | `20260920120000` | `0220_kiwify_ingestion` | Entrada Kiwify: configuração cifrada separada, produtos por FK tenant-aware, ledger único e captura + lead + event_log transacionais. Não aplicada em produção nesta implementação. |
 | `20260920220000` | `0221_kiwify_consent_privacy_actor` | Forward-fix: recusa explícita suprime evento na transação, título impessoal sem contato (inclui reparo do caminho 0220), ator autenticado obrigatório na configuração e auditoria. Remove RPC legada sem ator; preserva isolamento e identidade dos retries. |
+| `20260921010000` | `0222_automation_action_identity` | Intenção durável por evento/regra/posição em automation_rule_runs; vínculo da mensagem e estados de execução. Unicidade PostgreSQL, escrita somente pelo servidor e limpeza do destinatário da tentativa ao anonimizar. |
+
+| `20260921030000` | `0223_automation_event_plan` | Plano privado e estável por evento, sem catálogo de versões. Preserva identidade do run quando a regra é removida; execução usa ações planejadas, não posições da regra mutável. |
 
 ## Reproducibility
 

@@ -57,6 +57,10 @@ export function desfechoDoEnvio(
   mensagem: MensagemEnviada,
 ): ActionResultDetail {
   const base = { message_id: mensagem.id };
+  if (!SAIU.has(mensagem.status) && (mensagem.metadata?.outbound_attempt as { phase?: string } | undefined)?.phase === "uncertain") {
+    return { type:tipo,status:"failed",error:"Confira a conversa antes de enviar manualmente: o cliente pode já ter recebido.",
+      detail:{...base,reason:"outbound_delivery_uncertain"} };
+  }
 
   if (SAIU.has(mensagem.status)) {
     return { type: tipo, status: "success", detail: base };
@@ -204,7 +208,7 @@ export async function avisarEnvioQueFalhou(
     severity: "critical",
     title: "Uma automação não conseguiu falar com o cliente",
     body:
-      `A automação "${entrada.ruleName}" disparou e a mensagem não chegou. ${entrada.motivo} ` +
+      `A automação "${entrada.ruleName}" disparou e o envio não foi confirmado. ${entrada.motivo} ` +
       `Nada foi reenviado automaticamente — reenviar sem saber a causa arrisca mandar a mesma mensagem duas vezes.`,
     ref_kind: entrada.conversationId ? "conversation" : null,
     ref_id: entrada.conversationId ?? null,

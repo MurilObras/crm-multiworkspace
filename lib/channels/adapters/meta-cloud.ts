@@ -179,9 +179,9 @@ export const metaCloudAdapter: ChannelAdapter = {
         channelSessionId: envelope.channelSessionId,
       });
     } catch {
-      throw new DeliveryRejectedError('meta_credentials_lookup_failed', true);
+      throw new DeliveryRejectedError('meta_credentials_lookup_failed', true, true);
     }
-    if (!creds && envelope.channelSessionId !== undefined) throw new DeliveryRejectedError("meta_session_credentials_missing");
+    if (!creds && envelope.channelSessionId !== undefined) throw new DeliveryRejectedError("meta_session_credentials_missing", false, true);
     // Mesmo contrato do outro canal: sem credencial é NOOP, não exceção. A UI mostra
     // o banner de "canal não conectado"; transformar em erro mudaria comportamento.
     if (!creds) return { externalId: null };
@@ -195,6 +195,7 @@ export const metaCloudAdapter: ChannelAdapter = {
       `https://graph.facebook.com/${creds.graphVersion}/${creds.phoneNumberId}/messages`,
       {
         method: "POST",
+        signal: AbortSignal.timeout(15_000),
         headers: {
           Authorization: `Bearer ${creds.token}`,
           "Content-Type": "application/json",

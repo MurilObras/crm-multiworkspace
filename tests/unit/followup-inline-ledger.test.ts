@@ -150,8 +150,14 @@ describe('protocolo único sobre snapshots persistidos no PostgreSQL', () => {
     const cfg = {redriveMinAgeMs:1,redriveBatchSize:10,redriveSpacingMs:0,wahaBaseUrl:'http://test.invalid',wahaApiKey:'synthetic'} as WatchdogConfig;
     const log = {info:vi.fn(),warn:vi.fn(),error:vi.fn(),debug:vi.fn()};
     expect(await redriveQueued(db.pool,cfg,log)).toBe(0); expect(fetch).not.toHaveBeenCalled();
-    // Controle positivo do filtro: a mensagem legada sem ledger continua visível.
+    // Limpar metadata (LGPD) não remove a propriedade durável do ledger.
     await db.pool.query("update messages set metadata='{}'::jsonb");
+    expect(await redriveQueued(db.pool,cfg,log)).toBe(0); expect(fetch).not.toHaveBeenCalled();
+    // Controle positivo: OUTRA mensagem, realmente sem ledger, continua visível.
+    await db.pool.query(`insert into messages(id,organization_id,contact_id,conversation_id,channel_session_id,
+      status,type,body,direction,metadata,created_at,sent_via)
+      select gen_random_uuid(),organization_id,contact_id,conversation_id,channel_session_id,
+      status,type,body,direction,'{}'::jsonb,created_at,sent_via from messages where id=$1`,[KEY]);
     expect(await redriveQueued(db.pool,cfg,log)).toBe(1); expect(fetch).toHaveBeenCalledOnce();
   });
   it('executor inline usa claim canônico e completa grafo/job atomicamente', async () => {

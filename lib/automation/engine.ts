@@ -20,6 +20,10 @@ import { getAction } from "@/lib/automation/actions";
 import type { ActionResultDetail } from "@/lib/automation/types";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { acquireActionIntent, finishActionIntent, readEventPlan, freezeEventPlan } from "./action-intent";
+import { checarGuardasDeContato } from "./guarda-do-contato";
+import { actionSchema } from "@/lib/schemas/webhooks";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
 
@@ -149,7 +153,9 @@ export async function runAutomationForEvent(
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "entity_kind_mismatch" };
   }
 
-  const { data: rules, error } = await admin
+  const kiwify = row.payload.kiwify_event_type === "order_approved";
+  const plan = kiwify ? await readEventPlan<RuleRow>(getRequestPool(),row.organization_id,row.id) : null;
+  const { data: rules, error } = plan !== null ? {data:plan,error:null} : await admin
     .from("automation_rules")
     .select("id, name, conditions, actions")
     .eq("organization_id", row.organization_id)
@@ -160,12 +166,20 @@ export async function runAutomationForEvent(
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: error.message };
   }
   const matched = (rules ?? []) as unknown as RuleRow[];
-  if (!matched.length) {
+  if (!matched.length && !kiwify) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_rules" };
   }
 
   const context = await buildContext(admin, row);
-  const applicable = matched.filter((r) => evaluateConditions(r.conditions ?? [], context));
+  // A origem é comprovada no ledger, não pelo nome ou telefone do comprador.
+  if (kiwify) {
+    const { data: receipt, error: receiptError } = await admin.from("kiwify_receipts")
+      .select("id").eq("organization_id", row.organization_id).eq("event_id", row.id)
+      .eq("status", "accepted").maybeSingle();
+    if (receiptError || !receipt) return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: "kiwify_receipt_unavailable" };
+  }
+  const candidates = matched.filter((r) => evaluateConditions(r.conditions ?? [], context));
+  const applicable = plan ?? (kiwify ? await freezeEventPlan(getRequestPool(),row.organization_id,row.id,candidates) : candidates);
   if (!applicable.length) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_match" };
   }
@@ -176,6 +190,11 @@ export async function runAutomationForEvent(
     for (const action of rule.actions ?? []) {
       const executor = getAction(action.type);
       if (!executor?.postponeUntil) continue;
+      // Recusa/configuração inválida não devem ficar escondidas atrás de um
+      // adiamento que promete envio futuro. O execute registrará o bloqueio.
+      if (kiwify && (!actionSchema.safeParse(action).success || !checarGuardasDeContato({
+        admin,organizationId:row.organization_id,ruleId:rule.id,ruleName:rule.name,event:row,context,requestId:row.id,
+      }).ok)) continue;
       const until = await executor.postponeUntil(
         { admin, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id },
         action.config ?? {},
@@ -193,27 +212,36 @@ export async function runAutomationForEvent(
 
   for (const rule of applicable) {
     const results: ActionResultDetail[] = [];
-    for (const action of rule.actions ?? []) {
+    for (const [index, action] of (rule.actions ?? []).entries()) {
       const executor = getAction(action.type);
       if (!executor) {
         results.push({ type: action.type, status: "failed", error: "unknown_action" });
         continue;
       }
+      const actionCtx = { admin, organizationId: row.organization_id, ruleId: rule.id,
+        ruleName: rule.name, event: row, context: kiwify ? await buildContext(admin, row) : context, requestId: row.id };
+      const intentId = kiwify ? await acquireActionIntent(getRequestPool(), actionCtx, index, action.type,true) : null;
+      if (kiwify && !intentId) continue;
+      let result: ActionResultDetail;
       try {
-        results.push(
-          await executor.execute(
-            { admin, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id },
+        result = await executor.execute(
+            { ...actionCtx, ...(intentId ? { actionIntentId: intentId } : {}) },
             action.config ?? {},
-          ),
-        );
+          );
       } catch (err) {
-        results.push({
+        result = {
           type: action.type,
           status: "failed",
           error: err instanceof Error ? err.message : String(err),
-        });
+        };
       }
+      results.push(result);
+      if (intentId) await finishActionIntent(getRequestPool(), row.organization_id, intentId, result);
+      if (intentId && index === 0) await recordRuleExecution(admin,row.organization_id,rule.id);
     }
+
+    // Cada ação Kiwify já é um run durável, correlacionado à mensagem.
+    if (kiwify) continue;
 
     // ═══ O AGREGADOR TAMBÉM PRECISA DIZER A VERDADE ═══
     //
@@ -284,12 +312,16 @@ export async function runAutomationForEvent(
 
     // run_count sem RPC de increment: read-modify-write é aceitável aqui
     // (contador informativo de UI, não invariante).
-    const { data: cur } = await admin.from("automation_rules").select("run_count").eq("id", rule.id).maybeSingle();
-    await admin
-      .from("automation_rules")
-      .update({ last_run_at: new Date().toISOString(), run_count: (cur?.run_count ?? 0) + 1 })
-      .eq("id", rule.id);
+    await recordRuleExecution(admin,row.organization_id,rule.id);
   }
 
   return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok" };
+}
+
+async function recordRuleExecution(admin: SupabaseClient, organizationId: string, ruleId: string) {
+  const { data: cur } = await admin.from("automation_rules").select("run_count")
+    .eq("id",ruleId).eq("organization_id",organizationId).maybeSingle();
+  await admin.from("automation_rules")
+    .update({ last_run_at:new Date().toISOString(),run_count:(cur?.run_count ?? 0)+1 })
+    .eq("id",ruleId).eq("organization_id",organizationId);
 }

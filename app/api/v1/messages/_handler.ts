@@ -34,6 +34,7 @@ import type { ListMessagesQuery, SendMessageInput } from "@/lib/schemas";
 import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
+import { currentAutomaticRecipient } from "@/lib/automation/current-recipient";
 
 type SB = SupabaseClient;
 
@@ -311,6 +312,9 @@ export async function sendMessageHandler(
     channel_sessions: (ChannelSessionRef & { status: string; archived_at?: string | null }) | null;
   };
   const c = conv as unknown as Joined;
+  if (ctx.actor.type !== "user") {
+    await currentAutomaticRecipient(supabase,ctx.organization_id,c.contact_id);
+  }
 
   if (c.contacts?.is_blocked) {
     throw new ApiError(
@@ -462,6 +466,7 @@ export async function sendMessageHandler(
     channel_session_id: c.channel_session_id,
     contact_id: c.contact_id,
     type: input.type,
+    ...(input.type === "template" ? {template_name:input.template_name,template_language:input.template_language} : {}),
     direction: "outbound" as const,
     status: "queued",
     body: input.body ?? null,
@@ -614,6 +619,27 @@ export async function sendMessageHandler(
   } else {
     let transportStarted = false;
     const beginTransport = async () => {
+      if (ctx.actor.type !== "user") {
+        const current = await currentAutomaticRecipient(supabase, ctx.organization_id, c.contact_id);
+        if (current.phone_number !== c.contacts?.phone_number || current.wa_identity !== c.contacts?.wa_identity ||
+            current.wa_lid !== c.contacts?.wa_lid) {
+          throw new ApiError(403, "forbidden", undefined, ctx.requestId, "recipient_changed");
+        }
+        const { data: latest, error: latestError } = await supabase.from("conversations")
+          .select("contact_id, channel_session_id, last_inbound_at")
+          .eq("id",c.id).eq("organization_id",ctx.organization_id).maybeSingle();
+        const { data: channel, error: channelError } = await supabase.from("channel_sessions")
+          .select("status, archived_at").eq("id",c.channel_session_id)
+          .eq("organization_id",ctx.organization_id).maybeSingle();
+        if (latestError || channelError || !latest || latest.contact_id !== current.id ||
+            latest.channel_session_id !== c.channel_session_id || !channel || channel.archived_at || channel.status !== "WORKING") {
+          throw new ApiError(403,"forbidden",undefined,ctx.requestId,"channel_unavailable");
+        }
+        if (input.type !== "template" && !capabilitiesOf(provider).freeformOutsideWindow &&
+            !isWindowOpen(new Date(),latest.last_inbound_at ? new Date(latest.last_inbound_at) : null)) {
+          throw new ApiError(403,"forbidden",undefined,ctx.requestId,"messaging_window_closed");
+        }
+      }
       await options?.beforeTransport?.(message);
       transportStarted = true;
     };
@@ -623,6 +649,9 @@ export async function sendMessageHandler(
       // método) do outro lado do seam.
       let externalId: string | null;
       if (input.type === "template") {
+        if (ctx.actor.type !== "user" && !capabilitiesOf(provider).requiresTemplates) {
+          throw new Error("template_not_supported");
+        }
         // Template é caminho próprio: não passa pelo `adapter.send` (que fala em
         // texto/mídia) porque o payload da plataforma é outro — e porque o envio
         // exige checar o contrato ANTES de sair (bind vigente, valores completos),
@@ -650,6 +679,7 @@ export async function sendMessageHandler(
           name: input.template_name ?? "",
           language: input.template_language ?? "",
           values: input.template_values ?? {},
+          requireApproved: ctx.actor.type !== "user",
         });
 
         await beginTransport();
@@ -768,7 +798,13 @@ export async function sendMessageHandler(
       const msg = err instanceof Error ? err.message : adapter.codes.unknownError;
       // `storage_sign_failed` fica literal: é falha do NOSSO Storage, não do
       // canal — a URL assinada é montada antes de qualquer coisa tocar o adapter.
-      const code = msg.startsWith("storage_sign_failed")
+      const templateFailure = ["template_not_found", "template_definition_unavailable", "template_not_approved",
+        "template_invalid_values", "template_missing_values", "template_not_supported", "template_incompleto",
+        "meta_credentials_lookup_failed", "meta_session_credentials_missing", "template_lookup_failed", "template_missing", "template_stale"]
+        .find(reason => msg === reason || msg.startsWith(`${reason}:`));
+      const code = (!transportStarted || (err instanceof DeliveryRejectedError && err.beforeTransport)) && templateFailure ? templateFailure
+        : !transportStarted && ctx.actor.type !== "user" && err instanceof ApiError && err.status === 403
+        ? "automatic_send_blocked" : msg.startsWith("storage_sign_failed")
         ? "storage_sign_failed"
         : adapter.codes.sendFailed;
 
@@ -792,7 +828,8 @@ export async function sendMessageHandler(
         return message;
       }
 
-      const phase = !transportStarted ? 'prepared' : err instanceof DeliveryRejectedError ? 'rejected' : 'uncertain';
+      const phase = !transportStarted || (err instanceof DeliveryRejectedError && err.beforeTransport)
+        ? 'prepared' : err instanceof DeliveryRejectedError ? 'rejected' : 'uncertain';
       const { data: updated } = await writeState({
           status: "failed",
           error_code: code,

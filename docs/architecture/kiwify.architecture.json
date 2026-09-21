@@ -10,7 +10,11 @@
     { "id": "transaction", "lane": "db", "col": 1, "type": "database", "label": "fn_ingest_kiwify", "sublabel": "ledger UNIQUE + contatos + leads + captura + outbox" },
     { "id": "events", "lane": "db", "col": 2, "type": "database", "label": "event_log", "sublabel": "lead.created com external_id" },
     { "id": "consumer", "lane": "api", "col": 3, "type": "service", "label": "lib/automation/engine.ts", "sublabel": "drain e guardas existentes; fora do request" },
-    { "id": "history", "lane": "ops", "col": 1, "type": "frontend", "label": "Leads recebidos", "sublabel": "webhook_lead_captures; diagnóstico completo via GET" }
+    { "id": "history", "lane": "ops", "col": 1, "type": "frontend", "label": "Leads recebidos", "sublabel": "webhook_lead_captures; diagnóstico completo via GET" },
+    { "id": "plan", "lane": "db", "col": 4, "type": "database", "label": "automation_event_plans", "sublabel": "privado; conteúdo estável por evento" },
+    { "id": "intent", "lane": "db", "col": 3, "type": "database", "label": "automation_rule_runs", "sublabel": "UNIQUE evento/regra/posição no plano; fase durável" },
+    { "id": "message", "lane": "api", "col": 4, "type": "service", "label": "sendMessageHandler + adapters", "sublabel": "guardas atuais, templates e callbacks existentes" },
+    { "id": "tracking", "lane": "ops", "col": 3, "type": "frontend", "label": "Webhooks › Kiwify", "sublabel": "consulta sob RLS; cadastro e conversa; sem reenvio" }
   ],
   "edges": [
     { "id": "k1", "from": "source", "to": "entry", "label": "organização/loja pela configuração" },
@@ -18,6 +22,13 @@
     { "id": "k3", "from": "transaction", "to": "events", "label": "commit atômico" },
     { "id": "k4", "from": "events", "to": "consumer", "label": "worker existente" },
     { "id": "k5", "from": "transaction", "to": "history", "label": "estado e correlação" },
-    { "id": "k6", "from": "transaction", "to": "entry", "label": "rollback → 503 → retry; conflito → 409" }
+    { "id": "k6", "from": "transaction", "to": "entry", "label": "rollback → 503 → retry; conflito → 409" },
+    { "id": "k7", "from": "consumer", "to": "intent", "label": "aquisição antes do efeito" },
+    { "id": "k8", "from": "intent", "to": "message", "label": "somente o vencedor envia" },
+    { "id": "k9", "from": "message", "to": "tracking", "label": "estado atual e callbacks" },
+    { "id": "k10", "from": "intent", "to": "tracking", "label": "incerteza e bloqueio visíveis" },
+    { "id": "k11", "from": "intent", "to": "consumer", "label": "retry não readquire ação" },
+    { "id": "k12", "from": "consumer", "to": "plan", "label": "primeiro planejamento vence" },
+    { "id": "k13", "from": "plan", "to": "intent", "label": "ações originais inclusive após edição" }
   ]
 }

@@ -32,11 +32,38 @@
  * do que estava.
  */
 import type { Idioma } from "./idiomas";
+import { KIWIFY_HISTORY_TRANSLATIONS } from "./kiwify";
 
 /** `pt-BR` não aparece: é a chave. Só o que DIFERE precisa de linha. */
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  ...KIWIFY_HISTORY_TRANSLATIONS,
+  "Texto livre": { es:"Texto libre" },
+  "Não disponível": { es:"No disponible" },
+  "Acompanhamento Kiwify": { es:"Seguimiento Kiwify" },
+  "Última atualização": { es:"Última actualización" },
+  "Template aprovado": { es:"Plantilla aprobada" },
+  "Escolha um template aprovado": { es:"Elija una plantilla aprobada" },
+  "Não foi possível consultar os templates deste canal.": { es:"No se pudieron consultar las plantillas de este canal." },
+  "Nenhum template aprovado disponível neste canal. Confira os modelos em Conexões.": { es:"No hay plantillas aprobadas disponibles en este canal. Revise los modelos en Conexiones." },
+  "Preencha os parâmetros obrigatórios. Você pode usar {{nome}} nos valores de texto.": { es:"Complete los parámetros obligatorios. Puede usar {{nome}} en los valores de texto." },
+  "Consulta de compras e mensagens. O recebimento da compra e o envio são fases diferentes.": { es:"Consulta de compras y mensajes. La recepción de la compra y el envío son fases diferentes." },
+  "Compra, nome ou telefone": { es:"Compra, nombre o teléfono" },
+  "De (UTC)": { es:"Desde (UTC)" },
+  "Até (UTC)": { es:"Hasta (UTC)" },
+  "Carregando histórico": { es:"Cargando historial" },
+  "Não foi possível consultar o histórico. Atualize a página para consultar novamente.": { es:"No se pudo consultar el historial. Actualice la página para volver a consultar." },
+  "Nenhuma compra encontrada para esses filtros.": { es:"No se encontraron compras con estos filtros." },
+  "Compra": { es:"Compra" },
+  "Entrada": { es:"Recepción" },
+  "Compra aceita": { es:"Compra aceptada" },
+  "Compra não aceita": { es:"Compra no aceptada" },
+  "Cadastros relacionados": { es:"Registros relacionados" },
+  "Abrir lead": { es:"Abrir lead" },
+  "Abrir contato": { es:"Abrir contacto" },
+  "Abrir conversa": { es:"Abrir conversación" },
+  "Sem conversa disponível para este registro.": { es:"No hay una conversación disponible para este registro." },
   // Campanhas: texto da interface, nunca o conteudo escrito para envio.
   "Campanhas WhatsApp": { es: "Campañas WhatsApp" },
   "Sequencias para listas ou tags, agora ou agendadas, com limite por canal.": {

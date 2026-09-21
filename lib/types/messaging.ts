@@ -97,10 +97,11 @@ export interface Note {
 }
 
 /**
- * Mapeia ack do WAHA (0..3) para o status canônico em messages.status.
- * 0=pending/sent server-side, 1=server-confirmed, 2=delivered (device), 3=read.
+ * Mapeia ack do WAHA (-1..4) para o status canônico em messages.status.
+ * -1=erro, 0=pendente, 1=servidor, 2=dispositivo, 3=leitura, 4=reproduzida.
  */
 export function ackToStatus(ack: number | null | undefined): Message["status"] {
+  if (ack === -1) return "failed";
   if (ack == null) return "sent";
   if (ack >= 3) return "read";
   if (ack >= 2) return "delivered";

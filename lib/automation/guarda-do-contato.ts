@@ -55,7 +55,7 @@
  */
 import type { ActionCtx } from "@/lib/automation/types";
 
-export type MotivoDeBloqueio = "no_contact" | "contact_blocked" | "no_phone" | "consent_declined";
+export type MotivoDeBloqueio = "no_contact" | "contact_blocked" | "contact_anonymized" | "no_phone" | "consent_declined";
 
 export interface ContatoLiberadoParaEnvio {
   id: string;
@@ -65,6 +65,7 @@ export interface ContatoLiberadoParaEnvio {
 interface ContatoDoContexto {
   id: string;
   is_blocked?: boolean;
+  is_anonymized?: boolean;
   phone_number?: string | null;
   consent?: { marketing?: { granted_at?: string | null; declined_at?: string | null } | null } | null;
 }
@@ -81,6 +82,7 @@ export type ResultadoDaGuarda =
 export function checarGuardasDeContato(ctx: ActionCtx): ResultadoDaGuarda {
   const contact = ctx.context.contact as ContatoDoContexto | undefined;
   if (!contact) return { ok: false, reason: "no_contact" };
+  if (contact.is_anonymized) return { ok: false, reason: "contact_anonymized" };
   if (contact.is_blocked) return { ok: false, reason: "contact_blocked" };
   if (!contact.phone_number) return { ok: false, reason: "no_phone" };
   // Recusa registrada — não "grant ausente". Ver o cabeçalho.

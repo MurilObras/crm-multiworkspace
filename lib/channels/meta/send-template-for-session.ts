@@ -55,14 +55,14 @@ export async function sendTemplateForSession(
     .eq("language", input.language)
     .maybeSingle();
 
-  if (error) throw new DeliveryRejectedError(`template_lookup_failed: ${error.message}`, true);
+  if (error) throw new DeliveryRejectedError(`template_lookup_failed: ${error.message}`, true, true);
   let creds;
   try {
     creds = await resolveMetaCreds(db, { organizationId: input.organizationId, channelSessionId: input.channelSessionId });
   } catch {
-    throw new DeliveryRejectedError('meta_credentials_lookup_failed', true);
+    throw new DeliveryRejectedError('meta_credentials_lookup_failed', true, true);
   }
-  if (!creds) throw new DeliveryRejectedError("meta_session_credentials_missing");
+  if (!creds) throw new DeliveryRejectedError("meta_session_credentials_missing", false, true);
 
   const resultado = await sendTemplate({
     phoneNumberId: creds.phoneNumberId,
@@ -93,13 +93,13 @@ export async function sendTemplateForSession(
 
   switch (resultado.reason) {
     case "missing":
-      throw new DeliveryRejectedError(`template_missing: ${input.name} (${input.language}) não está no espelho`);
+      throw new DeliveryRejectedError(`template_missing: ${input.name} (${input.language}) não está no espelho`, false, true);
     case "not_approved":
-      throw new DeliveryRejectedError(`template_not_approved: ${input.name} (${input.language})`);
+      throw new DeliveryRejectedError(`template_not_approved: ${input.name} (${input.language})`, false, true);
     case "stale":
-      throw new DeliveryRejectedError(`template_stale: ${input.name} mudou na Meta desde a configuração`);
+      throw new DeliveryRejectedError(`template_stale: ${input.name} mudou na Meta desde a configuração`, false, true);
     case "missing_values":
-      throw new DeliveryRejectedError(`template_missing_values: ${resultado.missing.join(", ")}`);
+      throw new DeliveryRejectedError(`template_missing_values: ${resultado.missing.join(", ")}`, false, true);
     case "api_error":
       if (resultado.notAccepted) throw new DeliveryRejectedError(`meta_${resultado.code ?? 'erro'}: ${resultado.message}`, resultado.retryable);
       throw new Error(`meta_${resultado.code ?? "erro"}: ${resultado.message}`);

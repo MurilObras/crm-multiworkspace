@@ -6,6 +6,7 @@ import { apiClient } from "@/lib/api/client";
 
 export interface TemplateSlotView {
   key: string;
+  value_key?: string;
   expects: string;
   /** Rótulo humano do endereço: "corpo", "cabeçalho", "card 2 › cabeçalho". */
   onde: string;
