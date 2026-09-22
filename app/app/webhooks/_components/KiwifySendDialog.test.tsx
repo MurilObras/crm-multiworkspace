@@ -15,6 +15,7 @@ import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import { KiwifySendDialog } from "./KiwifySendDialog";
 import type { KiwifyHistoryRow } from "@/lib/automation/kiwify-history";
+import type { Message } from "@/lib/types/messaging";
 
 // Polyfills que o Radix Select exige e o jsdom não tem.
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -39,6 +40,17 @@ const row: KiwifyHistoryRow = {
   status: "not_started", reason: null,
 };
 
+function msg(status: Message["status"], external_id: string | null): Message {
+  return {
+    id: "m1", organization_id: "org", conversation_id: "conversation", channel_session_id: CHANNEL.id,
+    contact_id: "contact", external_id, type: "text", direction: "outbound", status, ack: 0,
+    error_code: null, error_message: null, body: "Oi", media_url: null, media_mime: null,
+    media_size_bytes: null, media_storage_path: null, sent_via: "user", sent_by_user_id: null,
+    sent_at: "2026-09-20T10:00:00Z", delivered_at: null, read_at: null, metadata: {},
+    edited_at: null, revoked_at: null, reply_to_message_id: null, created_at: "2026-09-20T10:00:00Z",
+  };
+}
+
 function mount() {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
@@ -62,7 +74,7 @@ describe("KiwifySendDialog", () => {
       if (path === "/api/v1/conversations/open-with-contact") {
         return { data: { conversation_id: "conversation", contact_id: "contact" } };
       }
-      return { data: {} };
+      return { data: msg("sent", "wamid-1") };
     });
     mount();
 
@@ -89,7 +101,7 @@ describe("KiwifySendDialog", () => {
       if (path === "/api/v1/conversations/open-with-contact") {
         return { data: { conversation_id: "conversation", contact_id: "contact" } };
       }
-      return { data: {} };
+      return { data: msg("sent", "wamid-1") };
     });
     mount();
 
@@ -102,6 +114,46 @@ describe("KiwifySendDialog", () => {
     fireEvent.click(btn);
     await waitFor(() => expect(vi.mocked(apiClient.post).mock.calls.filter((c) => c[0] === "/api/v1/conversations/open-with-contact").length).toBe(1));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Mensagem enviada."));
+  });
+
+  it("queued não vira sucesso — avisa fila", async () => {
+    const user = userEvent.setup({ delay: null });
+    vi.mocked(apiClient.post).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/conversations/open-with-contact") {
+        return { data: { conversation_id: "conversation", contact_id: "contact" } };
+      }
+      return { data: msg("queued", null) };
+    });
+    mount();
+
+    await user.click(await screen.findByRole("combobox", { name: "Número de WhatsApp" }));
+    await user.click(await screen.findByRole("option", { name: "Número 1" }));
+    await user.type(screen.getByRole("textbox", { name: "Texto da mensagem" }), "Oi");
+    await user.click(screen.getByRole("button", { name: "Confirmar envio" }));
+
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith("Mensagem na fila. Será enviada quando o número estiver disponível."));
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("failed mostra o erro e mantém o diálogo aberto para corrigir", async () => {
+    const user = userEvent.setup({ delay: null });
+    vi.mocked(apiClient.post).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/conversations/open-with-contact") {
+        return { data: { conversation_id: "conversation", contact_id: "contact" } };
+      }
+      return { data: { ...msg("failed", null), error_code: "messaging_window_closed", error_message: "Janela de atendimento encerrada." } };
+    });
+    mount();
+
+    await user.click(await screen.findByRole("combobox", { name: "Número de WhatsApp" }));
+    await user.click(await screen.findByRole("option", { name: "Número 1" }));
+    await user.type(screen.getByRole("textbox", { name: "Texto da mensagem" }), "Oi");
+    await user.click(screen.getByRole("button", { name: "Confirmar envio" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Janela de atendimento encerrada."));
+    expect(toast.success).not.toHaveBeenCalled();
+    // Mantém aberto: o botão de confirmar segue presente.
+    expect(screen.getByRole("button", { name: "Confirmar envio" })).toBeVisible();
   });
 
   it("falha ao abrir a conversa não mostra sucesso nem envia mensagem", async () => {

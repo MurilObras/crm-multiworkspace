@@ -26,6 +26,8 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { AutomationTemplateFields } from "./AutomationTemplateFields";
 import { useT } from "@/hooks/i18n/useT";
+import { desfechoDoEnvio } from "@/lib/messaging/desfecho-do-envio";
+import type { Message } from "@/lib/types/messaging";
 import type { KiwifyHistoryRow } from "@/lib/automation/kiwify-history";
 
 interface Props {
@@ -85,23 +87,39 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
         { contact_id: row.contact_id, channel_session_id: channelSessionId },
       );
       const conversationId = opened.data.conversation_id;
+      // Lê o resultado TIPADO da rota: HTTP 201 também devolve `queued`/`failed`,
+      // então sucesso HTTP NÃO é confirmação de envio/entrega.
+      let mensagem: Message;
       if (mode === "text") {
-        await apiClient.post("/api/v1/messages", {
-          conversation_id: conversationId,
-          type: "text",
-          body: body.trim(),
-        });
+        mensagem = (
+          await apiClient.post<{ data: Message }>("/api/v1/messages", {
+            conversation_id: conversationId,
+            type: "text",
+            body: body.trim(),
+          })
+        ).data;
       } else {
-        await apiClient.post("/api/v1/messages", {
-          conversation_id: conversationId,
-          type: "template",
-          template_name: templateName,
-          template_language: templateLanguage,
-          template_values: templateValues,
-        });
+        mensagem = (
+          await apiClient.post<{ data: Message }>("/api/v1/messages", {
+            conversation_id: conversationId,
+            type: "template",
+            template_name: templateName,
+            template_language: templateLanguage,
+            template_values: templateValues,
+          })
+        ).data;
       }
-      toast.success(t("Mensagem enviada."));
-      onOpenChange(false);
+      const desfecho = desfechoDoEnvio(mensagem);
+      if (desfecho.variant === "success") {
+        toast.success(t(desfecho.text));
+        onOpenChange(false);
+      } else if (desfecho.variant === "warning") {
+        toast.warning(t(desfecho.text));
+        onOpenChange(false);
+      } else {
+        toast.error(t(desfecho.text));
+        // Mantém o diálogo aberto: o operador precisa corrigir (ex.: trocar por template).
+      }
     } catch (err) {
       showApiError(err);
     } finally {
