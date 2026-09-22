@@ -57,6 +57,7 @@ export function KiwifyIntegrationBlock() {
   const [pipelineId, setPipelineId] = React.useState("");
   const [stageId, setStageId] = React.useState("");
   const [mappings, setMappings] = React.useState<MappingRow[]>([novaLinha()]);
+  const submitting = React.useRef(false);
 
   const { data: boardRes } = usePipelineStages(pipelineId || null);
   const stages = boardRes?.data?.stages ?? [];
@@ -93,6 +94,7 @@ export function KiwifyIntegrationBlock() {
   };
 
   const submit = async () => {
+    if (submitting.current) return;
     const produtos = mappings
       .filter((m) => m.external_product_id.trim() && m.product_id)
       .map((m) => ({ external_product_id: m.external_product_id.trim(), product_id: m.product_id }));
@@ -100,19 +102,27 @@ export function KiwifyIntegrationBlock() {
       toast.error(t("Preencha nome, loja, segredo, funil, etapa e ao menos um produto."));
       return;
     }
-    const result = await create.mutateAsync({
-      name: name.trim(),
-      store_id: storeId.trim(),
-      secret,
-      pipeline_id: pipelineId,
-      stage_id: stageId,
-      products: produtos,
-    });
-    // O segredo nunca volta a viver fora do envio: some do formulário na hora.
-    setSecret("");
-    setCreatedUrl(webhookUrlKiwify(origem(), result.data.endpoint));
-    resetForm();
-    setFormOpen(false);
+    // Trava síncrona contra duplo clique: `create.isPending` só desabilita o
+    // botão no render seguinte; um segundo clique no MESMO tick criaria duas
+    // integrações (ou esbarraria no UNIQUE com um erro confuso).
+    submitting.current = true;
+    try {
+      const result = await create.mutateAsync({
+        name: name.trim(),
+        store_id: storeId.trim(),
+        secret,
+        pipeline_id: pipelineId,
+        stage_id: stageId,
+        products: produtos,
+      });
+      // O segredo nunca volta a viver fora do envio: some do formulário na hora.
+      setSecret("");
+      setCreatedUrl(webhookUrlKiwify(origem(), result.data.endpoint));
+      resetForm();
+      setFormOpen(false);
+    } finally {
+      submitting.current = false;
+    }
   };
 
   const copiar = async (url: string) => {

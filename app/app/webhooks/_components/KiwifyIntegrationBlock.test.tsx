@@ -21,9 +21,19 @@ import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import { KiwifyIntegrationBlock } from "./KiwifyIntegrationBlock";
 
+// Polyfills que o Radix Select exige e o jsdom não tem.
+window.HTMLElement.prototype.scrollIntoView = vi.fn();
+window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+window.HTMLElement.prototype.setPointerCapture = vi.fn();
+window.HTMLElement.prototype.releasePointerCapture = vi.fn();
+
 const PIPELINE = { id: "11111111-1111-4111-8111-111111111111", name: "Funil A" };
 const STAGE = { id: "22222222-2222-4222-8222-222222222222", name: "Etapa A" };
 const PRODUCT = { id: "33333333-3333-4333-8333-333333333333", nome: "Produto interno", ativo: true };
+const INTEGRATION = {
+  id: "integration", name: "Minha integração", store_id: "store-1",
+  path_token: "token-abc", pipeline_id: PIPELINE.id, stage_id: STAGE.id, is_active: true,
+};
 
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
 window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
@@ -103,6 +113,36 @@ describe("KiwifyIntegrationBlock", () => {
     expect(urlValue).toContain("/api/v1/webhooks/kiwify/token-abc");
     await user.click(screen.getByRole("button", { name: "Copiar URL do webhook" }));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("URL copiada."));
+    // O segredo não reaparece em lugar nenhum do DOM depois de salvar.
+    expect(document.body.textContent).not.toContain("secret-super-secreto");
+  });
+
+  it("clipboard.writeText recebe a URL exata", async () => {
+    const user = userEvent.setup({ delay: null });
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/integrations/kiwify") return { data: { integrations: [INTEGRATION], products: [] } };
+      return { data: [] };
+    });
+    mount();
+    await screen.findByText("Minha integração");
+    await user.click(screen.getByRole("button", { name: "Copiar URL do webhook" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(writeText.mock.calls[0]![0]).toBe(`${window.location.origin}/api/v1/webhooks/kiwify/token-abc`);
+  });
+
+  it("falha de cópia não mostra sucesso", async () => {
+    const user = userEvent.setup({ delay: null });
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/integrations/kiwify") return { data: { integrations: [INTEGRATION], products: [] } };
+      return { data: [] };
+    });
+    mount();
+    await screen.findByText("Minha integração");
+    await user.click(screen.getByRole("button", { name: "Copiar URL do webhook" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("não submete sem funil/etapa/produto — segredo fica fora do corpo", async () => {

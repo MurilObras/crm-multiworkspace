@@ -54,6 +54,10 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
   const [templateLanguage, setTemplateLanguage] = React.useState("");
   const [templateValues, setTemplateValues] = React.useState<Record<string, string>>({});
   const [sending, setSending] = React.useState(false);
+  // Trava síncrona contra duplo clique: `sending` só vira true no próximo
+  // render; um segundo clique no MESMO tick passaria pela guarda e abriria a
+  // conversa / enviaria de novo. O ref fecha essa janela.
+  const submitting = React.useRef(false);
 
   React.useEffect(() => {
     if (!open) return;
@@ -72,7 +76,8 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
   const canConfirm = channelSessionId && (mode === "text" ? body.trim().length > 0 : Boolean(templateName && templateLanguage));
 
   const submit = async () => {
-    if (!row?.contact_id || !canConfirm || sending) return;
+    if (submitting.current || !row?.contact_id || !canConfirm) return;
+    submitting.current = true;
     setSending(true);
     try {
       const opened = await apiClient.post<{ data: { conversation_id: string; contact_id: string } }>(
@@ -100,6 +105,7 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
     } catch (err) {
       showApiError(err);
     } finally {
+      submitting.current = false;
       setSending(false);
     }
   };
@@ -124,7 +130,7 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
           <div className="space-y-1">
             <Label>{t("Número de WhatsApp")}</Label>
             <Select value={channelSessionId} onValueChange={setChannelSessionId}>
-              <SelectTrigger><SelectValue placeholder={t("Escolha o número")} /></SelectTrigger>
+              <SelectTrigger aria-label={t("Número de WhatsApp")}><SelectValue placeholder={t("Escolha o número")} /></SelectTrigger>
               <SelectContent>
                 {eligible.map((s) => (
                   <SelectItem key={s.id} value={s.id}>{channelLabel(s)}</SelectItem>
@@ -139,7 +145,7 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
           <div className="space-y-1">
             <Label>{t("Mensagem")}</Label>
             <Select value={mode} onValueChange={(v) => setMode(v as "text" | "official")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label={t("Tipo de mensagem")}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="text">{t("Texto livre")}</SelectItem>
                 <SelectItem value="official">{t("Template aprovado")}</SelectItem>
@@ -149,7 +155,7 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
 
           {mode === "text" ? (
             <>
-              <Textarea rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("Oi {{nome}}, obrigado pela compra!")} />
+              <Textarea aria-label={t("Texto da mensagem")} rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("Oi {{nome}}, obrigado pela compra!")} />
               <p className="text-xs text-muted-foreground">
                 {t("Texto livre só sai dentro da janela de 24h; fora dela, use um template aprovado.")}
               </p>

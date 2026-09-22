@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -15,6 +15,12 @@ import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import { KiwifyAutomationBlock } from "./KiwifyAutomationBlock";
 import type { AutomationRuleRow } from "@/hooks/webhooks/useAutomationRules";
+
+// Polyfills que o Radix Select exige e o jsdom não tem.
+window.HTMLElement.prototype.scrollIntoView = vi.fn();
+window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+window.HTMLElement.prototype.setPointerCapture = vi.fn();
+window.HTMLElement.prototype.releasePointerCapture = vi.fn();
 
 const PRODUCT_ID = "33333333-3333-4333-8333-333333333333";
 const CHANNEL_ID = "44444444-4444-4444-8444-444444444444";
@@ -86,5 +92,52 @@ describe("KiwifyAutomationBlock", () => {
     expect(rota).toBe("/api/v1/automation-rules/rule-1");
     expect(corpo).toEqual({ is_active: true });
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Automação ligada."));
+  });
+
+  it("criação gera uma única regra pausada, mesmo com duplo clique", async () => {
+    const user = userEvent.setup({ delay: null });
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/automation-rules") return { data: [] };
+      if (path === "/api/v1/channel-sessions") return { data: [{ id: CHANNEL_ID, display_name: "Número 1", phone_number: null, status: "WORKING" }] };
+      if (path === "/api/v1/products") return { data: [{ id: PRODUCT_ID, nome: "Produto interno", ativo: true }] };
+      if (path.includes("/board")) return { data: { stages: [] } };
+      if (path === "/api/v1/pipelines") return { data: [] };
+      return { data: [] };
+    });
+    vi.mocked(apiClient.post).mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+      return { data: { id: "rule-new" } };
+    });
+    mount();
+
+    await user.click(await screen.findByRole("button", { name: "Criar automação de compra" }));
+    await user.type(screen.getByLabelText("Nome da automação"), "Aviso de compra");
+    await user.click(screen.getByRole("combobox", { name: "Produto" }));
+    await user.click(await screen.findByRole("option", { name: "Produto interno" }));
+    await user.click(screen.getByRole("combobox", { name: "Número de WhatsApp" }));
+    await user.click(await screen.findByRole("option", { name: "Número 1" }));
+    await user.type(screen.getByRole("textbox", { name: "Texto da mensagem" }), "Oi!");
+
+    const btn = screen.getByRole("button", { name: "Criar automação" });
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalled());
+    await waitFor(() => expect(vi.mocked(apiClient.post).mock.calls.filter((c) => c[0] === "/api/v1/automation-rules").length).toBe(1));
+    const [rota, corpo] = vi.mocked(apiClient.post).mock.calls[0]!;
+    expect(rota).toBe("/api/v1/automation-rules");
+    // Regra nasce pausada: is_active nunca vai no create (schema não aceita).
+    expect(corpo).not.toHaveProperty("is_active");
+    expect(corpo).toMatchObject({
+      trigger_event: "lead.created",
+      conditions: [
+        { field: "event.kiwify_event_type", op: "eq", value: "order_approved" },
+        { field: "event.product_id", op: "eq", value: PRODUCT_ID },
+      ],
+    });
+    expect((corpo as { actions: Array<{ type: string }> }).actions).toHaveLength(1);
+    expect((corpo as { actions: Array<{ type: string }> }).actions[0]!.type).toBe("send_whatsapp_message");
+    // Drena o fluxo assíncrono do submit para não vazar toast para o teste seguinte.
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Automação criada — ligue quando estiver pronta."));
   });
 });

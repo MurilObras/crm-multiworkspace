@@ -165,20 +165,29 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
     productId &&
     channelSessionId &&
     (mode === "text" ? body.trim().length > 0 : Boolean(templateName && templateLanguage));
+  // Trava síncrona contra duplo clique: sem ela, um segundo clique no MESMO
+  // tick (antes do re-render que aplica `create.isPending`) criaria DUAS regras
+  // idênticas — a rota de automação não tem unicidade que impeça.
+  const submitting = React.useRef(false);
 
   const submit = async () => {
-    if (!canSave) return;
-    const payload = buildKiwifyPurchaseAutomation({
-      name: name.trim(),
-      productId,
-      channelSessionId,
-      ...(mode === "text"
-        ? { template: body.trim() }
-        : { templateName, templateLanguage, templateValues }),
-    });
-    await create.mutateAsync(payload);
-    toast.success(t("Automação criada — ligue quando estiver pronta."));
-    onOpenChange(false);
+    if (submitting.current || !canSave) return;
+    submitting.current = true;
+    try {
+      const payload = buildKiwifyPurchaseAutomation({
+        name: name.trim(),
+        productId,
+        channelSessionId,
+        ...(mode === "text"
+          ? { template: body.trim() }
+          : { templateName, templateLanguage, templateValues }),
+      });
+      await create.mutateAsync(payload);
+      toast.success(t("Automação criada — ligue quando estiver pronta."));
+      onOpenChange(false);
+    } finally {
+      submitting.current = false;
+    }
   };
 
   return (
@@ -206,7 +215,7 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
           <div className="space-y-1">
             <Label>{t("Produto")}</Label>
             <Select value={productId} onValueChange={setProductId}>
-              <SelectTrigger><SelectValue placeholder={t("Escolha o produto")} /></SelectTrigger>
+              <SelectTrigger aria-label={t("Produto")}><SelectValue placeholder={t("Escolha o produto")} /></SelectTrigger>
               <SelectContent>
                 {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
               </SelectContent>
@@ -216,7 +225,7 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
           <div className="space-y-1">
             <Label>{t("Número de WhatsApp")}</Label>
             <Select value={channelSessionId} onValueChange={setChannelSessionId}>
-              <SelectTrigger><SelectValue placeholder={t("Escolha o número")} /></SelectTrigger>
+              <SelectTrigger aria-label={t("Número de WhatsApp")}><SelectValue placeholder={t("Escolha o número")} /></SelectTrigger>
               <SelectContent>
                 {eligible.map((s) => (
                   <SelectItem key={s.id} value={s.id} disabled={s.status !== "WORKING"}>
@@ -230,7 +239,7 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
           <div className="space-y-1">
             <Label>{t("Mensagem")}</Label>
             <Select value={mode} onValueChange={(v) => setMode(v as "text" | "official")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label={t("Tipo de mensagem")}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="text">{t("Texto livre")}</SelectItem>
                 <SelectItem value="official">{t("Template aprovado")}</SelectItem>
@@ -239,7 +248,7 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
           </div>
 
           {mode === "text" ? (
-            <Textarea rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("Oi {{nome}}, obrigado pela compra!")} />
+            <Textarea aria-label={t("Texto da mensagem")} rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("Oi {{nome}}, obrigado pela compra!")} />
           ) : (
             <AutomationTemplateFields
               config={{ channel_session_id: channelSessionId, template_name: templateName, template_language: templateLanguage, template_values: templateValues }}
