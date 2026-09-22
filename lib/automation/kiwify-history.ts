@@ -23,10 +23,29 @@ export interface KiwifyHistoryRow {
   receipt_id: string; run_id: string | null; order_id: string; intake_status: string;
   lead_id: string | null; lead_title: string | null; contact_id: string | null;
   contact_name: string | null; current_phone: string | null; destination_phone: string | null;
-  product_name: string | null; rule_name: string | null; action_type: string | null;
+  product_id: string | null; product_name: string | null; rule_name: string | null;
+  action_type: string | null;
   action_index: number | null; channel: string | null; conversation_id: string | null;
   message_id: string | null; provider_id: string | null; attempted_at: string | null;
+  contact_blocked: boolean | null;
   created_at: string; updated_at: string; status: keyof typeof HISTORY_STATES; reason: string | null;
+}
+
+/**
+ * A compra tem destinatário elegível para envio MANUAL? Só quando a entrada foi
+ * aceita (compra válida, com telefone) e o contato existe, tem telefone e não
+ * está bloqueado. Contato anonimizado já chega com `current_phone` nulo e
+ * `contact_id` nulo — nunca elegível. Não há atalho por nome/telefone.
+ */
+export function canSendManually(
+  row: Pick<KiwifyHistoryRow, "intake_status" | "contact_id" | "current_phone" | "contact_blocked">,
+): boolean {
+  return (
+    row.intake_status === "accepted" &&
+    Boolean(row.contact_id) &&
+    Boolean(row.current_phone) &&
+    row.contact_blocked !== true
+  );
 }
 
 /** Chamado com papel authenticated/JWT da sessão: RLS continua sendo a autoridade
@@ -40,7 +59,8 @@ export async function queryKiwifyHistory(db: Queryable, org: string, q: HistoryQ
       c.id as contact_id,case when not c.is_anonymized then coalesce(c.display_name,c.name) end as contact_name,
       case when not c.is_anonymized then c.phone_number end as current_phone,
       case when not c.is_anonymized then m.metadata->>'automation_destination_phone' end as destination_phone,
-      p.nome as product_name,a.name as rule_name,r.actions_result->0->>'type' as action_type,r.action_index,
+      case when not c.is_anonymized then c.is_blocked end as contact_blocked,
+      p.id as product_id,p.nome as product_name,a.name as rule_name,r.actions_result->0->>'type' as action_type,r.action_index,
       s.provider as channel,v.id as conversation_id,m.id as message_id,
       case when not c.is_anonymized then m.external_id end as provider_id,
       case when m.metadata->'outbound_attempt'->>'phase' in ('started','uncertain','rejected') then m.sent_at end as attempted_at,

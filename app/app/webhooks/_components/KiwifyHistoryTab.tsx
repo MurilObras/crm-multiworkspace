@@ -6,16 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
-import { HISTORY_STATES, historyExplanation, type KiwifyHistoryRow } from "@/lib/automation/kiwify-history";
+import { canSendManually, HISTORY_STATES, historyExplanation, type KiwifyHistoryRow } from "@/lib/automation/kiwify-history";
 import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { ACTION_LABELS, type ActionType } from "./labels";
+import { KiwifySendDialog } from "./KiwifySendDialog";
 
 export function KiwifyHistoryTab({organizationId}:{organizationId:string}) {
   const t = useT();
   const idioma = useTagDeIdioma();
   const [filters,setFilters] = useState({ search: "", status: "", from: "", to: "" });
   const [page,setPage] = useState(1);
+  const [sendRow,setSendRow] = useState<KiwifyHistoryRow | null>(null);
   const query = useQuery({ queryKey: ["kiwify-history",organizationId,filters,page], gcTime:0, queryFn: async () => {
     const params = new URLSearchParams({ page: String(page) });
     for (const [key,value] of Object.entries(filters)) if (value) params.set(key,value);
@@ -55,11 +57,17 @@ export function KiwifyHistoryTab({organizationId}:{organizationId:string}) {
           {row.conversation_id && <Link className="underline" href={`/app/inbox/${row.conversation_id}`}>{t("Abrir conversa")}</Link>}
           {!row.conversation_id && <span className="text-muted-foreground no-underline">{t("Sem conversa disponível para este registro.")}</span>}
         </nav>
+        {canSendManually(row) ? (
+          <div className="flex justify-end">
+            <Button type="button" onClick={() => setSendRow(row)}>{t("Enviar mensagem")}</Button>
+          </div>
+        ) : null}
       </CardContent></Card>)}
     <div className="flex items-center justify-between gap-3">
       <Button variant="secondary" disabled={page===1 || query.isFetching} onClick={() => setPage(p=>p-1)}>{t("Anterior")}</Button>
       <span>{t("Página")} {page}</span>
       <Button variant="secondary" disabled={!query.data?.has_more || query.isFetching} onClick={() => setPage(p=>p+1)}>{t("Próxima")}</Button>
     </div>
+    <KiwifySendDialog open={!!sendRow} onOpenChange={(open) => !open && setSendRow(null)} row={sendRow} />
   </section>;
 }

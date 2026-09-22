@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SourcesTab } from "./SourcesTab";
 import { RulesTab } from "./RulesTab";
 import { ActivityTab } from "./ActivityTab";
-import { KiwifyHistoryTab } from "./KiwifyHistoryTab";
+import { KiwifyTab } from "./KiwifyTab";
 import { CapturasTab } from "./CapturasTab";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -43,7 +43,7 @@ export function WebhooksClient({organizationId}:{organizationId:string}) {
       <TabsContent value="capturas"><CapturasTab /></TabsContent>
       <TabsContent value="rules"><RulesTab /></TabsContent>
       <TabsContent value="activity"><ActivityTab /></TabsContent>
-      <TabsContent value="kiwify"><KiwifyHistoryTab organizationId={organizationId} /></TabsContent>
+      <TabsContent value="kiwify"><KiwifyTab organizationId={organizationId} /></TabsContent>
     </Tabs>
   );
 }

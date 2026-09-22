@@ -1,0 +1,268 @@
+"use client";
+import * as React from "react";
+import { toast } from "sonner";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Plus, PencilSimple } from "@/lib/ui/icons";
+import { apiClient } from "@/lib/api/client";
+import type { Produto } from "@/lib/schemas/produtos";
+import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
+import {
+  useAutomationRules,
+  useCreateAutomationRule,
+  useUpdateAutomationRule,
+  type AutomationRuleRow,
+} from "@/hooks/webhooks/useAutomationRules";
+import { AutomationTemplateFields } from "./AutomationTemplateFields";
+import { RuleEditor } from "./RuleEditor";
+import {
+  buildKiwifyPurchaseAutomation,
+  isKiwifyPurchaseRule,
+} from "@/lib/automation/kiwify-automation";
+import { useT } from "@/hooks/i18n/useT";
+
+const RULES_QUERY_KEY = ["automation-rules"];
+
+export function KiwifyAutomationBlock() {
+  const t = useT();
+  const { data, isLoading } = useAutomationRules();
+  const update = useUpdateAutomationRule();
+  const qc = useQueryClient();
+
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [editing, setEditing] = React.useState<AutomationRuleRow | null>(null);
+
+  const rules = data?.data ?? [];
+  const purchaseRules = rules.filter((r) => isKiwifyPurchaseRule(r));
+
+  const toggleActive = (rule: AutomationRuleRow, checked: boolean) => {
+    qc.setQueryData<{ data: AutomationRuleRow[] }>(RULES_QUERY_KEY, (old) =>
+      old ? { data: old.data.map((r) => (r.id === rule.id ? { ...r, is_active: checked } : r)) } : old,
+    );
+    update.mutate(
+      { id: rule.id, is_active: checked },
+      {
+        onSuccess: () => toast.success(checked ? t("Automação ligada.") : t("Automação pausada.")),
+        onError: () => qc.invalidateQueries({ queryKey: RULES_QUERY_KEY }),
+      },
+    );
+  };
+
+  return (
+    <section className="space-y-4" aria-label={t("Automação de compra Kiwify")}>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-lg font-semibold text-text">{t("Automação")}</h3>
+        {purchaseRules.length === 0 ? (
+          <Button type="button" onClick={() => setCreateOpen(true)}>
+            <Plus /> {t("Criar automação de compra")}
+          </Button>
+        ) : null}
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" aria-label={t("Carregando automação")} />
+      ) : purchaseRules.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {t("Ao aprovar uma compra (order_approved), envie uma mensagem automática pelo número escolhido.")}
+        </p>
+      ) : (
+        purchaseRules.map((rule) => (
+          <Card key={rule.id}>
+            <CardHeader className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="truncate">{rule.name}</CardTitle>
+                <Badge variant={rule.is_active ? "success" : "neutral"}>
+                  {rule.is_active ? t("Ativa") : t("Pausada")}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t("Quando entrar um contato novo (webhook)")}
+              </p>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between gap-2">
+              <Switch
+                checked={rule.is_active}
+                disabled={update.isPending}
+                onCheckedChange={(checked) => toggleActive(rule, checked)}
+                aria-label={`${rule.is_active ? t("Pausar") : t("Ligar")} ${rule.name}`}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditing(rule)}
+              >
+                <PencilSimple /> {t("Gerenciar automação")}
+              </Button>
+            </CardContent>
+          </Card>
+        ))
+      )}
+
+      <KiwifyPurchaseForm open={createOpen} onOpenChange={setCreateOpen} />
+      <RuleEditor open={!!editing} onOpenChange={(o) => !o && setEditing(null)} rule={editing} />
+    </section>
+  );
+}
+
+function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const t = useT();
+  const create = useCreateAutomationRule();
+  const { data: sessions } = useChannelSessions();
+  const productsQuery = useQuery({
+    queryKey: ["catalog-products"],
+    queryFn: async () => apiClient.get<{ data: Produto[] }>("/api/v1/products"),
+    staleTime: 60_000,
+  });
+  const products = (productsQuery.data?.data ?? []).filter((p) => p.ativo);
+
+  const [name, setName] = React.useState("");
+  const [productId, setProductId] = React.useState("");
+  const [channelSessionId, setChannelSessionId] = React.useState("");
+  const [mode, setMode] = React.useState<"text" | "official">("text");
+  const [body, setBody] = React.useState("");
+  const [templateName, setTemplateName] = React.useState("");
+  const [templateLanguage, setTemplateLanguage] = React.useState("");
+  const [templateValues, setTemplateValues] = React.useState<Record<string, string>>({});
+
+  React.useEffect(() => {
+    if (!open) return;
+    setName("");
+    setProductId("");
+    setChannelSessionId("");
+    setMode("text");
+    setBody("");
+    setTemplateName("");
+    setTemplateLanguage("");
+    setTemplateValues({});
+  }, [open]);
+
+  const eligible = (sessions ?? []).filter((s) => s.status === "WORKING");
+  const canSave =
+    name.trim() &&
+    productId &&
+    channelSessionId &&
+    (mode === "text" ? body.trim().length > 0 : Boolean(templateName && templateLanguage));
+
+  const submit = async () => {
+    if (!canSave) return;
+    const payload = buildKiwifyPurchaseAutomation({
+      name: name.trim(),
+      productId,
+      channelSessionId,
+      ...(mode === "text"
+        ? { template: body.trim() }
+        : { templateName, templateLanguage, templateValues }),
+    });
+    await create.mutateAsync(payload);
+    toast.success(t("Automação criada — ligue quando estiver pronta."));
+    onOpenChange(false);
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
+        <SheetHeader>
+          <SheetTitle>{t("Automação de compra Kiwify")}</SheetTitle>
+          <SheetDescription>
+            {t("Quando uma compra for aprovada (order_approved) para este produto, enviar mensagem pelo número escolhido.")}
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="mt-6 space-y-4">
+          <div className="space-y-1">
+            <Label htmlFor="kiwify-automation-name">{t("Nome da automação")}</Label>
+            <Input
+              id="kiwify-automation-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("Aviso de compra aprovada")}
+              maxLength={120}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label>{t("Produto")}</Label>
+            <Select value={productId} onValueChange={setProductId}>
+              <SelectTrigger><SelectValue placeholder={t("Escolha o produto")} /></SelectTrigger>
+              <SelectContent>
+                {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label>{t("Número de WhatsApp")}</Label>
+            <Select value={channelSessionId} onValueChange={setChannelSessionId}>
+              <SelectTrigger><SelectValue placeholder={t("Escolha o número")} /></SelectTrigger>
+              <SelectContent>
+                {eligible.map((s) => (
+                  <SelectItem key={s.id} value={s.id} disabled={s.status !== "WORKING"}>
+                    {channelLabel(s) + (s.status !== "WORKING" ? " — desconectado" : "")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label>{t("Mensagem")}</Label>
+            <Select value={mode} onValueChange={(v) => setMode(v as "text" | "official")}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="text">{t("Texto livre")}</SelectItem>
+                <SelectItem value="official">{t("Template aprovado")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {mode === "text" ? (
+            <Textarea rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("Oi {{nome}}, obrigado pela compra!")} />
+          ) : (
+            <AutomationTemplateFields
+              config={{ channel_session_id: channelSessionId, template_name: templateName, template_language: templateLanguage, template_values: templateValues }}
+              onChange={(c) => {
+                setTemplateName(c.template_name ?? "");
+                setTemplateLanguage(c.template_language ?? "");
+                setTemplateValues(c.template_values ?? {});
+              }}
+            />
+          )}
+
+          <p className="rounded-sm border border-border bg-muted p-3 text-sm text-muted-foreground">
+            {t("A automação nasce pausada. Revise e ligue quando estiver pronta.")}
+          </p>
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t("Cancelar")}</Button>
+            <Button type="button" onClick={submit} disabled={!canSave || create.isPending}>
+              {create.isPending ? t("Salvando…") : t("Criar automação")}
+            </Button>
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
