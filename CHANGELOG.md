@@ -8,6 +8,42 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [2.1.0] — 2026-09-21
+
+### Adicionado
+
+- **Acompanhamento de mensagens de compras Kiwify nas automações** Compras aceitas usam as regras existentes com aquisição durável por ação. O histórico
+  em Webhooks › Kiwify distingue bloqueio, falha, aceite, entrega, leitura e resultado
+  incerto, com identificação do cadastro e links para conversas existentes. O editor de
+  automações permite escolher templates aprovados do canal e preencher seus parâmetros.
+  Exige as migrations 0222–0225. O plano de cada evento permanece estável após edição
+  ou remoção da regra. Não oferece reenvio ou replay. Resultados incertos
+  não autorizam nova tentativa automática. Homologação externa não está concluída.
+
+  Anonimização remove todo o conteúdo executável do plano e conserva sua identidade
+  com marcador irreversível. Planos antigos comprovadamente sem titular recuperável
+  também são neutralizados; excluir somente a regra não afeta um plano válido.
+  O conteúdo removido não poderá ser replanejado ou executado novamente.
+  Na atualização por baseline ou por migrations em ordem cronológica, vínculos
+  conflitantes preservam o lote por rollback mesmo quando o executor SQL continua
+  após erro. A própria 0224 instala a proteção antes do backfill, sem ordem manual.
+
+- **Entrada dedicada Kiwify com autenticação obrigatória e registro transacional** Cadastro por API de loja e produtos explicitamente permitidos, assinatura Kiwify
+  obrigatória e identidade durável de pedidos. Somente compra aprovada e paga pode
+  gerar lead; sem telefone válido não é emitido evento de automação. A implantação
+  depende da migration 0220 e da validação dos invariantes PostgreSQL. Esta entrega
+  não homologa o envio WhatsApp nem oferece replay de mensagens. A forward-fix 0221
+  também suprime automação diante de recusa explícita, mantém título impessoal sem
+  contato e registra quem configurou a integração na auditoria.
+
+### Corrigido
+
+- **Instalador usa as imagens deste repositório e backup identifica o volume real do WhatsApp** O instalador e a consulta de versões usam o repositório deste fork, e as três
+  imagens do CRM apontam para o seu publicador. O backup de sessões WhatsApp lê o
+  mount do contêiner existente, inclusive com nomes de projeto contendo hífens ou
+  volumes personalizados. Um mount ausente, vazio ou um arquivo inválido faz o backup
+  falhar explicitamente, em vez de confirmar um snapshot vazio.
+
 ## [2.0.0] — 2026-09-16
 
 ### ⚠️ Requer atenção
@@ -3112,7 +3148,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v2.0.0...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.15.1...v2.0.0
 [1.15.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.15.0...v1.15.1
 [1.15.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.14.0...v1.15.0
