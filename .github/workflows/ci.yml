@@ -107,6 +107,17 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql postgresql-contrib >/dev/null
           PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
+          # O prelude (extraído de scripts/test-db.sh pelos scripts kiwify-*) cria
+          # `create extension vector` — o baseline usa o tipo public.vector. O
+          # postgresql-contrib NÃO traz pgvector, então instalamos o pacote da
+          # distro casando a major do Postgres; se a distro não o tiver, compilamos
+          # do fonte (tag fixa, deterministic).
+          PGMAJOR=$(basename "$(dirname "$PGBIN")")
+          if ! sudo apt-get install -y -qq "postgresql-${PGMAJOR}-pgvector" >/dev/null 2>&1; then
+            sudo apt-get install -y -qq "postgresql-server-dev-${PGMAJOR}" build-essential git >/dev/null
+            git clone --branch v0.8.0 --depth 1 https://github.com/pgvector/pgvector.git /tmp/pgvector
+            (cd /tmp/pgvector && make -s && sudo make -s install)
+          fi
           sudo -u postgres "$PGBIN/initdb" -D /tmp/pgdata --auth=trust >/dev/null
           sudo -u postgres "$PGBIN/pg_ctl" -D /tmp/pgdata -o "-p 55432 -k /tmp" -l /tmp/pg.log start
           sleep 2
