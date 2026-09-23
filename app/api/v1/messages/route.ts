@@ -9,10 +9,21 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { sendMessageSchema, validateRequest, type SendMessageInput } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  buscarIdempotencia,
+  byteaParaHex,
+  chaveDeIdempotencia,
+  gravarIdempotencia,
+  hashCanonico,
+  idRecurso,
+} from "@/lib/api/idempotency";
 
 import { sendMessageHandler } from "./_handler";
 
 export const dynamic = "force-dynamic";
+
+const ENDPOINT = "/api/v1/messages";
 
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -37,7 +48,50 @@ export async function POST(req: NextRequest): Promise<Response> {
     throw err;
   }
 
+  const idempotencyKey = req.headers.get("Idempotency-Key") ?? req.headers.get("idempotency-key");
+
   try {
+    if (idempotencyKey) {
+      const admin = createAdminClient();
+      const chave = chaveDeIdempotencia(user.id, idempotencyKey);
+      const hash = hashCanonico(input);
+      const recursoId = idRecurso(activeOrg.orgId, user.id, ENDPOINT, idempotencyKey);
+
+      const existente = await buscarIdempotencia(admin, activeOrg.orgId, ENDPOINT, chave);
+      if (existente && byteaParaHex(existente.request_hash) !== hash) {
+        return fail("idempotency_conflict", "Requisicão repetida com conteúdo divergente.", 409, {
+          requestId,
+        });
+      }
+
+      const message = await sendMessageHandler(
+        supabase,
+        {
+          organization_id: activeOrg.orgId,
+          actor: { type: "user", id: user.id },
+          requestId,
+        },
+        {
+          ...(input as SendMessageInput),
+          metadata: { ...(input.metadata ?? {}), idempotency_key: chave },
+        } as SendMessageInput,
+        {
+          messageId: recursoId,
+          returnExistingOnConflict: true,
+        },
+      );
+
+      await gravarIdempotencia(admin, {
+        organizationId: activeOrg.orgId,
+        endpoint: ENDPOINT,
+        chave,
+        hash,
+        recursoId,
+        statusCode: 201,
+      });
+      return ok(message, { status: 201, requestId });
+    }
+
     const message = await sendMessageHandler(
       supabase,
       {
