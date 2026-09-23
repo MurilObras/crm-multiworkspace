@@ -281,6 +281,12 @@ export async function sendMessageHandler(
     returnExistingOnConflict?: boolean;
   },
 ): Promise<Message> {
+  // Um ID deterministico manual nao vincula a mensagem a um plano de automacao.
+  // As RPCs do plano sao exclusivas de service_role; o envio manual conserva
+  // o client autenticado, as guardas do sink e sua atualizacao normal de previa.
+  // Os demais consumidores conservam o fence do plano, inclusive se passarem
+  // returnExistingOnConflict com um ator nao humano.
+  const manualIdempotency = ctx.actor.type === "user" && options?.returnExistingOnConflict === true;
   // `archived_at` entra pelo helper tolerante porque este é O caminho de saída do
   // sistema inteiro (UI, automação, MCP e o agente passam por aqui): num clone que
   // subiu o código sem a migration 0106, pedir a coluna direto derrubaria TODO
@@ -658,7 +664,7 @@ export async function sendMessageHandler(
           throw new ApiError(403,"forbidden",undefined,ctx.requestId,"messaging_window_closed");
         }
       }
-      if (options?.messageId) {
+      if (options?.messageId && !manualIdempotency) {
         const { data, error } = await supabase.rpc("fn_automation_message_live", {
           p_org:ctx.organization_id,p_message:message.id,p_contact:c.contact_id,
         });
@@ -895,7 +901,7 @@ export async function sendMessageHandler(
   // Uma resposta tardia não pode restaurar o texto do input após o redact.
   // A RPC usa a mensagem persistida sob o mesmo fence do contato.
   let protectedPreview = false;
-  if (options?.messageId) {
+  if (options?.messageId && !manualIdempotency) {
     const { data, error } = await supabase.rpc("fn_automation_message_preview", {
       p_org:ctx.organization_id,p_message:message.id,
     });

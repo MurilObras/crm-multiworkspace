@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFileSync, mkdirSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import pg from "pg";
 
 /**
@@ -36,6 +36,16 @@ test.describe("Kiwify: interface operacional", () => {
       throw new Error("Credenciais sintéticas do rig local obrigatórias");
     }
     db = new pg.Pool({ connectionString: dbUrl });
+    // A cifra e executada pelo Postgres, nao pelo processo Next. O banco fresco
+    // nao tem chave: semeia a fonte privada da migration 0041 somente no rig
+    // local ja validado acima. Nunca rotaciona uma chave que outra spec usou.
+    await db.query(`insert into private.app_secrets(name, value)
+      values ('nuvemshop_oauth_key', $1) on conflict (name) do nothing`,
+    [randomBytes(32).toString("hex")]);
+    const cipherProbe = await db.query(`select
+      public.fn_decrypt_oauth(public.fn_encrypt_oauth($1)) = $1 as ok`,
+    ["kiwify-e2e-cipher-probe"]);
+    expect(cipherProbe.rows[0]?.ok).toBe(true);
     const org = creds.org_id;
     pipeline = (await db.query("insert into crm_pipelines(organization_id,name,slug,position) values($1,$2,$3,2000) returning id", [org, prefix, prefix.toLowerCase()])).rows[0].id;
     stage = (await db.query("insert into crm_stages(organization_id,pipeline_id,name,slug,position) values($1,$2,'Synthetic','synthetic-op',2000) returning id", [org, pipeline])).rows[0].id;
@@ -87,7 +97,11 @@ test.describe("Kiwify: interface operacional", () => {
     await integracao.getByRole("combobox", { name: "Produto interno" }).click();
     await page.getByRole("option", { name: "Produto OP" }).click();
 
+    const saved = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/v1/integrations/kiwify" &&
+      response.request().method() === "POST");
     await integracao.getByRole("button", { name: "Salvar integração" }).click();
+    expect((await saved).status(), "O cadastro precisa persistir antes de mostrar a URL").toBe(201);
 
     const urlInput = integracao.getByLabel("URL do webhook");
     await expect(urlInput).toBeVisible({ timeout: 15_000 });
