@@ -11,12 +11,11 @@ import { sendMessageSchema, validateRequest, type SendMessageInput } from "@/lib
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  buscarIdempotencia,
-  byteaParaHex,
   chaveDeIdempotencia,
-  gravarIdempotencia,
+  concluirIdempotencia,
   hashCanonico,
   idRecurso,
+  reservarOuReplay,
 } from "@/lib/api/idempotency";
 
 import { sendMessageHandler } from "./_handler";
@@ -57,8 +56,16 @@ export async function POST(req: NextRequest): Promise<Response> {
       const hash = hashCanonico(input);
       const recursoId = idRecurso(activeOrg.orgId, user.id, ENDPOINT, idempotencyKey);
 
-      const existente = await buscarIdempotencia(admin, activeOrg.orgId, ENDPOINT, chave);
-      if (existente && byteaParaHex(existente.request_hash) !== hash) {
+      // Reserva a identidade + hash ANTES de criar/enviar: "mesma chave +
+      // payload diferente" é 409 mesmo sob concorrência ou crash.
+      const reserva = await reservarOuReplay(admin, {
+        organizationId: activeOrg.orgId,
+        endpoint: ENDPOINT,
+        chave,
+        hash,
+        recursoId,
+      });
+      if (reserva.tipo === "conflito") {
         return fail("idempotency_conflict", "Requisicão repetida com conteúdo divergente.", 409, {
           requestId,
         });
@@ -81,11 +88,10 @@ export async function POST(req: NextRequest): Promise<Response> {
         },
       );
 
-      await gravarIdempotencia(admin, {
+      await concluirIdempotencia(admin, {
         organizationId: activeOrg.orgId,
         endpoint: ENDPOINT,
         chave,
-        hash,
         recursoId,
         statusCode: 201,
       });

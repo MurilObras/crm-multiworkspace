@@ -4,8 +4,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   role: vi.fn(),
   handler: vi.fn(),
-  buscar: vi.fn(),
-  gravar: vi.fn(),
+  reservar: vi.fn(),
+  concluir: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: mocks.role }));
@@ -20,13 +20,12 @@ vi.mock("@/lib/api/idempotency", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api/idempotency")>();
   return {
     ...original,
-    buscarIdempotencia: mocks.buscar,
-    gravarIdempotencia: mocks.gravar,
+    reservarOuReplay: mocks.reservar,
+    concluirIdempotencia: mocks.concluir,
   };
 });
 
 import { POST } from "./route";
-import { hashCanonico } from "@/lib/api/idempotency";
 import type { NextRequest } from "next/server";
 
 const input = { conversation_id: "c", type: "text", body: "oi" };
@@ -42,8 +41,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.role.mockResolvedValue({ ok: true, user: { id: "actor" }, org: { orgId: "org" } });
   mocks.handler.mockResolvedValue(message);
-  mocks.buscar.mockResolvedValue(null);
-  mocks.gravar.mockResolvedValue(undefined);
+  mocks.reservar.mockResolvedValue({ tipo: "reservado", recursoId: "deterministic-id" });
+  mocks.concluir.mockResolvedValue(undefined);
 });
 
 it("sem Idempotency-Key mantém o caminho antigo (sem options idempotentes)", async () => {
@@ -53,34 +52,40 @@ it("sem Idempotency-Key mantém o caminho antigo (sem options idempotentes)", as
   const [, , argsInput, options] = mocks.handler.mock.calls[0]!;
   expect(argsInput).toEqual(input);
   expect(options).toBeUndefined();
-  expect(mocks.gravar).not.toHaveBeenCalled();
+  expect(mocks.reservar).not.toHaveBeenCalled();
 });
 
-it("com chave nova envia com messageId determinístico, idempotency_key e returnExistingOnConflict", async () => {
+it("reserva a identidade ANTES de enviar, com messageId determinístico e returnExistingOnConflict", async () => {
   const r = await call({ "Idempotency-Key": "chave-1" });
   expect(r.status).toBe(201);
+  // Reserva vem antes do envio (ordem dos mocks no fluxo).
+  expect(mocks.reservar).toHaveBeenCalledTimes(1);
+  expect(mocks.reservar.mock.invocationCallOrder[0]!).toBeLessThan(mocks.handler.mock.invocationCallOrder[0]!);
+
   const [, , argsInput, options] = mocks.handler.mock.calls[0]!;
   expect(argsInput).toMatchObject({ conversation_id: "c", body: "oi" });
   expect((argsInput as { metadata: Record<string, unknown> }).metadata.idempotency_key).toBe("actor:chave-1");
   expect(options).toMatchObject({ returnExistingOnConflict: true });
-  expect(typeof (options as { messageId: string }).messageId).toBe("string");
-  expect(mocks.gravar).toHaveBeenCalledTimes(1);
+  expect((options as { messageId: string }).messageId).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+  );
+  expect(mocks.concluir).toHaveBeenCalledTimes(1);
 });
 
-it("mesma chave com payload diferente devolve 409 e não envia", async () => {
-  mocks.buscar.mockResolvedValue({ request_hash: Buffer.from("0000", "hex"), response_body: {} });
+it("reserva devolve conflito → 409 e não envia", async () => {
+  mocks.reservar.mockResolvedValue({ tipo: "conflito" });
   const r = await call({ "Idempotency-Key": "chave-1" });
   expect(r.status).toBe(409);
   expect(mocks.handler).not.toHaveBeenCalled();
-  expect(mocks.gravar).not.toHaveBeenCalled();
+  expect(mocks.concluir).not.toHaveBeenCalled();
 });
 
-it("mesma chave com o mesmo payload reusa (handler cuida do replay pela PK)", async () => {
-  const hash = hashCanonico(input);
-  mocks.buscar.mockResolvedValue({ request_hash: Buffer.from(hash, "hex"), response_body: { resource_id: "m" } });
+it("reserva devolve replay → reutiliza o recurso (handler cuida do dedup pela PK)", async () => {
+  mocks.reservar.mockResolvedValue({ tipo: "replay", recursoId: "irrelevante" });
   const r = await call({ "Idempotency-Key": "chave-1" });
   expect(r.status).toBe(201);
   expect(mocks.handler).toHaveBeenCalledTimes(1);
   const [, , , options] = mocks.handler.mock.calls[0]!;
   expect(options).toMatchObject({ returnExistingOnConflict: true });
+  expect((options as { messageId: string }).messageId).toMatch(/^[0-9a-f-]{36}$/);
 });

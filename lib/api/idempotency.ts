@@ -2,23 +2,29 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Idempotência de escrita reutilizando `idempotency_keys` (migration já
- * existente, UNIQUE (organization_id, endpoint, key)).
+ * Idempotência de escrita reutilizando `idempotency_keys` (UNIQUE
+ * organization_id+endpoint+key).
  *
- * A DUPLICAÇÃO em si é impedida pelo ID DETERMINÍSTICO do recurso, não por
- * UNIQUE de texto/nome: a chave do cliente vira um `uuid` estável (sha256),
- * então dois pedidos com a MESMA chave derivam o MESMO id — e o `primary key`
- * do recurso (messages.id / automation_rules.id) é o árbitro atômico da
- * concorrência e da recuperação pós-crash. A tabela de idempotência guarda o
- * `request_hash` para detectar "mesma chave, payload diferente" (conflito).
+ * Protocolo reserva → executa → conclui:
+ *
+ *  1. RESERVA atômica: o INSERT grava `request_hash` (o vínculo imutável com o
+ *     payload) na MESMA linha e no MESMO passo que a reserva — ANTES de o
+ *     recurso existir. Assim, "mesma chave + payload diferente" é detectado
+ *     mesmo se o processo cair entre a reserva e a criação do recurso, e sob
+ *     concorrência (quem perde o INSERT lê o hash do vencedor → 409).
+ *  2. A duplicação do recurso em si é impedida pelo ID DETERMINÍSTICO
+ *     (sha256 de org+ator+operação+chave): o PRIMARY KEY do recurso é o
+ *     árbitro atômico da concorrência E da recuperação pós-crash. Não há
+ *     UNIQUE por texto/produto/nome.
+ *  3. CONCLUI marca a reserva como concluída (melhor esforço).
+ *
+ * Recuperação de cada estado intermediário:
+ *  - reservado, recurso ainda não criado (crash): retry vê `replay`/`pendente`
+ *    e cria com o MESMO id determinístico (PK dedup) — sem duplicar;
+ *  - recurso criado, resposta perdida: retry colide no PK e devolve o existente;
+ *  - expiração/limpeza do registro não re-transporta: o id determinístico do
+ *    recurso (messages.id) é o que impede repetir a mesma tentativa.
  */
-
-export class ConflitoDeIdempotencia extends Error {
-  constructor() {
-    super("Requisicão repetida com conteúdo divergente.");
-    this.name = "ConflitoDeIdempotencia";
-  }
-}
 
 /** Serialização canônica (ordem de chave estável) para o hash de conflito. */
 function canonicalizar(value: unknown): string {
@@ -74,34 +80,24 @@ export function byteaParaHex(value: unknown): string {
   return String(value);
 }
 
-export interface LinhaDeIdempotencia {
-  request_hash: unknown;
-  response_body: Record<string, unknown>;
-}
-
-export async function buscarIdempotencia(
-  admin: SupabaseClient,
-  organizationId: string,
-  endpoint: string,
-  chave: string,
-): Promise<LinhaDeIdempotencia | null> {
-  const { data, error } = await admin
-    .from("idempotency_keys")
-    .select("request_hash, response_body")
-    .eq("organization_id", organizationId)
-    .eq("endpoint", endpoint)
-    .eq("key", chave)
-    .maybeSingle();
-  if (error) throw error;
-  return data as LinhaDeIdempotencia | null;
-}
+export type ResultadoDeReserva =
+  /** Este pedido é o dono: crie o recurso com `recursoId`. */
+  | { tipo: "reservado"; recursoId: string }
+  /** Chave já reservada com o MESMO payload: reutilize o recurso existente. */
+  | { tipo: "replay"; recursoId: string }
+  /** Chave já reservada com payload DIFERENTE: 409, sem novo efeito. */
+  | { tipo: "conflito" };
 
 /**
- * Grava o resultado do pedido idempotente. Colisão de chave (23505, outro
- * processo venceu a corrida) é esperada e ignorada: o recurso determinístico
- * já garante que só houve UM efeito.
+ * Reserva a identidade da operação ATOMICAMENTE com o hash do payload.
+ *
+ * - INSERT bem-sucedido → este pedido é o dono (`reservado`).
+ * - 23505 (outra requisição já reservou) → lê o hash do vencedor: igual →
+ *   `replay`; diferente → `conflito`.
+ * - Qualquer OUTRO erro de escrita PROPAGA (não libera execução como se a
+ *   chave não existisse).
  */
-export async function gravarIdempotencia(
+export async function reservarOuReplay(
   admin: SupabaseClient,
   args: {
     organizationId: string;
@@ -109,9 +105,8 @@ export async function gravarIdempotencia(
     chave: string;
     hash: string;
     recursoId: string;
-    statusCode: number;
   },
-): Promise<void> {
+): Promise<ResultadoDeReserva> {
   const { error } = await admin
     .from("idempotency_keys")
     .insert({
@@ -119,12 +114,54 @@ export async function gravarIdempotencia(
       key: args.chave,
       endpoint: args.endpoint,
       request_hash: Buffer.from(args.hash, "hex"),
-      response_body: { resource_id: args.recursoId },
-      status_code: args.statusCode,
+      response_body: { state: "pending", resource_id: args.recursoId },
+      status_code: 202,
     })
     .select("id")
     .single();
-  // 23505 = outro processo venceu a corrida; o recurso determinístico já
-  // garante que só houve UM efeito, então a colisão é esperada e ignorada.
-  if (error && error.code !== "23505") throw error;
+
+  if (!error) return { tipo: "reservado", recursoId: args.recursoId };
+
+  if (error.code === "23505") {
+    const { data, error: lookupErr } = await admin
+      .from("idempotency_keys")
+      .select("request_hash, response_body")
+      .eq("organization_id", args.organizationId)
+      .eq("endpoint", args.endpoint)
+      .eq("key", args.chave)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
+    if (!data) throw error; // sumiu entre o 23505 e o select — tratar como erro
+    if (byteaParaHex((data as { request_hash: unknown }).request_hash) !== args.hash) {
+      return { tipo: "conflito" };
+    }
+    return { tipo: "replay", recursoId: args.recursoId };
+  }
+
+  throw error;
+}
+
+/**
+ * Marca a reserva como concluída (melhor esforço). Erro aqui NÃO libera
+ * re-execução: o id determinístico do recurso já garante que o efeito é único.
+ */
+export async function concluirIdempotencia(
+  admin: SupabaseClient,
+  args: {
+    organizationId: string;
+    endpoint: string;
+    chave: string;
+    recursoId: string;
+    statusCode: number;
+  },
+): Promise<void> {
+  await admin
+    .from("idempotency_keys")
+    .update({
+      response_body: { state: "done", resource_id: args.recursoId },
+      status_code: args.statusCode,
+    })
+    .eq("organization_id", args.organizationId)
+    .eq("endpoint", args.endpoint)
+    .eq("key", args.chave);
 }

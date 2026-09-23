@@ -1,10 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   byteaParaHex,
   chaveDeIdempotencia,
   hashCanonico,
   idRecurso,
+  reservarOuReplay,
 } from "./idempotency";
 
 describe("hashCanonico", () => {
@@ -51,5 +53,59 @@ describe("byteaParaHex", () => {
     expect(byteaParaHex("\\xab")).toBe("ab");
     expect(byteaParaHex("ab")).toBe("ab");
     expect(byteaParaHex(null)).toBe("");
+  });
+});
+
+describe("reservarOuReplay", () => {
+  function fakeAdmin(insertError: { code?: string } | null, lookupHashHex?: string): SupabaseClient {
+    const builder = {
+      insert: () => ({
+        select: () => ({
+          single: async () => ({ data: insertError ? null : { id: "row" }, error: insertError }),
+        }),
+      }),
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: lookupHashHex !== undefined
+                  ? { request_hash: Buffer.from(lookupHashHex, "hex"), response_body: {} }
+                  : null,
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      }),
+    };
+    return { from: () => builder } as unknown as SupabaseClient;
+  }
+
+  const args = {
+    organizationId: "org",
+    endpoint: "/api/v1/messages",
+    chave: "ator:k",
+    hash: hashCanonico({ body: "oi" }),
+    recursoId: "00000000-0000-4000-8000-000000000001",
+  };
+
+  it("INSERT sem colisão → reservado", async () => {
+    const r = await reservarOuReplay(fakeAdmin(null), args);
+    expect(r).toEqual({ tipo: "reservado", recursoId: args.recursoId });
+  });
+
+  it("colisão com hash DIFERENTE → conflito (sem novo efeito)", async () => {
+    const r = await reservarOuReplay(fakeAdmin({ code: "23505" }, hashCanonico({ body: "outro" })), args);
+    expect(r).toEqual({ tipo: "conflito" });
+  });
+
+  it("colisão com hash IGUAL → replay", async () => {
+    const r = await reservarOuReplay(fakeAdmin({ code: "23505" }, args.hash), args);
+    expect(r).toEqual({ tipo: "replay", recursoId: args.recursoId });
+  });
+
+  it("erro de escrita que NÃO é colisão propaga (não libera execução)", async () => {
+    await expect(reservarOuReplay(fakeAdmin({ code: "42P01" }), args)).rejects.toMatchObject({ code: "42P01" });
   });
 });

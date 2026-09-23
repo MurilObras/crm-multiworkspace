@@ -14,12 +14,11 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
 import {
-  buscarIdempotencia,
-  byteaParaHex,
   chaveDeIdempotencia,
-  gravarIdempotencia,
+  concluirIdempotencia,
   hashCanonico,
   idRecurso,
+  reservarOuReplay,
 } from "@/lib/api/idempotency";
 
 export const dynamic = "force-dynamic";
@@ -92,8 +91,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     const hash = hashCanonico(parsed.data);
     const recursoId = idRecurso(activeOrg.orgId, user.id, ENDPOINT, idempotencyKey);
 
-    const existente = await buscarIdempotencia(admin, activeOrg.orgId, ENDPOINT, chave);
-    if (existente && byteaParaHex(existente.request_hash) !== hash) {
+    // Reserva a identidade + hash ANTES de criar a regra.
+    const reserva = await reservarOuReplay(admin, {
+      organizationId: activeOrg.orgId,
+      endpoint: ENDPOINT,
+      chave,
+      hash,
+      recursoId,
+    });
+    if (reserva.tipo === "conflito") {
       return fail("idempotency_conflict", "Requisicão repetida com conteúdo divergente.", 409, {
         requestId,
       });
@@ -123,11 +129,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       created = nova;
     }
 
-    await gravarIdempotencia(admin, {
+    await concluirIdempotencia(admin, {
       organizationId: activeOrg.orgId,
       endpoint: ENDPOINT,
       chave,
-      hash,
       recursoId,
       statusCode: 201,
     });
