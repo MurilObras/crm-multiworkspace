@@ -560,6 +560,16 @@ jobs:
         with:
           version: latest
 
+      # Os runners hospedados compartilham IPs e o GHCR aplica rate limit a
+      # pulls anônimos. Autenticar antes do `supabase start` usa a cota da
+      # conta e evita o `toomanyrequests` que vinha impedindo a suíte de
+      # sequer subir. O token é somente read:packages e fica em Actions Secrets.
+      - name: Autenticar pulls no GHCR
+        run: |
+          echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io \
+            -u "${{ github.repository_owner }}" \
+            --password-stdin
+
       # Sobe Postgres + Auth (GoTrue) + PostgREST + Storage. Auth de verdade é
       # requisito: os specs de login exercitam o GoTrue, não um mock.
       #
