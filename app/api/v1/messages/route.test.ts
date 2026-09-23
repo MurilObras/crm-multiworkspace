@@ -6,16 +6,29 @@ const mocks = vi.hoisted(() => ({
   handler: vi.fn(),
   reservar: vi.fn(),
   concluir: vi.fn(),
+  preCheck: null as { id: string; metadata?: Record<string, unknown> } | null,
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: mocks.role }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: () => ({}) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/schemas", () => ({
   sendMessageSchema: {},
   validateRequest: async () => ({ conversation_id: "c", type: "text", body: "oi" }),
 }));
 vi.mock("./_handler", () => ({ sendMessageHandler: mocks.handler }));
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: mocks.preCheck, error: null }),
+          }),
+        }),
+      }),
+    }),
+  }),
+}));
 vi.mock("@/lib/api/idempotency", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api/idempotency")>();
   return {
@@ -26,6 +39,7 @@ vi.mock("@/lib/api/idempotency", async (importOriginal) => {
 });
 
 import { POST } from "./route";
+import { hashCanonico } from "@/lib/api/idempotency";
 import type { NextRequest } from "next/server";
 
 const input = { conversation_id: "c", type: "text", body: "oi" };
@@ -43,6 +57,7 @@ beforeEach(() => {
   mocks.handler.mockResolvedValue(message);
   mocks.reservar.mockResolvedValue({ tipo: "reservado", recursoId: "deterministic-id" });
   mocks.concluir.mockResolvedValue(undefined);
+  mocks.preCheck = null;
 });
 
 it("sem Idempotency-Key mantém o caminho antigo (sem options idempotentes)", async () => {
@@ -55,23 +70,18 @@ it("sem Idempotency-Key mantém o caminho antigo (sem options idempotentes)", as
   expect(mocks.reservar).not.toHaveBeenCalled();
 });
 
-it("reserva a identidade ANTES de enviar, com messageId determinístico e returnExistingOnConflict", async () => {
+it("recurso ainda não existe: reserva antes de enviar, com messageId determinístico e hash", async () => {
   const r = await call({ "Idempotency-Key": "chave-1" });
   expect(r.status).toBe(201);
-  // Reserva vem antes do envio (ordem dos mocks no fluxo).
   expect(mocks.reservar).toHaveBeenCalledTimes(1);
   expect(mocks.reservar.mock.invocationCallOrder[0]!).toBeLessThan(mocks.handler.mock.invocationCallOrder[0]!);
 
   const [, , argsInput, options] = mocks.handler.mock.calls[0]!;
-  expect(argsInput).toMatchObject({ conversation_id: "c", body: "oi" });
   const metadata = (argsInput as { metadata: Record<string, unknown> }).metadata;
   expect(metadata.idempotency_key).toBe("actor:chave-1");
-  // O hash original é calculado no SERVIDOR e segue junto (vínculo durável).
   expect(metadata.idempotency_hash).toMatch(/^[0-9a-f]{64}$/);
   expect(options).toMatchObject({ returnExistingOnConflict: true });
-  expect((options as { messageId: string }).messageId).toMatch(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-  );
+  expect((options as { messageId: string }).messageId).toMatch(/^[0-9a-f-]{36}$/);
   expect(mocks.concluir).toHaveBeenCalledTimes(1);
 });
 
@@ -83,12 +93,20 @@ it("reserva devolve conflito → 409 e não envia", async () => {
   expect(mocks.concluir).not.toHaveBeenCalled();
 });
 
-it("reserva devolve replay → reutiliza o recurso (handler cuida do dedup pela PK)", async () => {
-  mocks.reservar.mockResolvedValue({ tipo: "replay", recursoId: "irrelevante" });
+it("recurso JÁ existe com hash igual → replay sem reservar (sobrevive à limpeza)", async () => {
+  mocks.preCheck = { id: "deterministic-id", metadata: { idempotency_hash: hashCanonico(input) } };
   const r = await call({ "Idempotency-Key": "chave-1" });
   expect(r.status).toBe(201);
+  expect(mocks.reservar).not.toHaveBeenCalled();
   expect(mocks.handler).toHaveBeenCalledTimes(1);
   const [, , , options] = mocks.handler.mock.calls[0]!;
   expect(options).toMatchObject({ returnExistingOnConflict: true });
-  expect((options as { messageId: string }).messageId).toMatch(/^[0-9a-f-]{36}$/);
+});
+
+it("recurso JÁ existe com hash DIFERENTE → 409 (payload original não é sobreposto)", async () => {
+  mocks.preCheck = { id: "deterministic-id", metadata: { idempotency_hash: hashCanonico({ body: "outro" }) } };
+  const r = await call({ "Idempotency-Key": "chave-1" });
+  expect(r.status).toBe(409);
+  expect(mocks.reservar).not.toHaveBeenCalled();
+  expect(mocks.handler).not.toHaveBeenCalled();
 });

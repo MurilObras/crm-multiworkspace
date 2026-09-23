@@ -91,56 +91,73 @@ export async function POST(req: NextRequest): Promise<Response> {
     const hash = hashCanonico(parsed.data);
     const recursoId = idRecurso(activeOrg.orgId, user.id, ENDPOINT, idempotencyKey);
 
-    // Reserva a identidade + hash ANTES de criar a regra.
-    const reserva = await reservarOuReplay(admin, {
-      organizationId: activeOrg.orgId,
-      endpoint: ENDPOINT,
-      chave,
-      hash,
-      recursoId,
-    });
-    if (reserva.tipo === "conflito") {
-      return fail("idempotency_conflict", "Requisicão repetida com conteúdo divergente.", 409, {
-        requestId,
-      });
-    }
-
-    // ID determinístico: retry/replay/concorrência colide no PRIMARY KEY e
-    // devolve a MESMA regra (que continua nascendo pausada) — nunca uma segunda.
-    const { data: nova, error: insErr } = await supabase
+    // O RECURSO é a fonte durável do vínculo chave→payload (sobrevive à limpeza
+    // do idempotency_keys). Checar ANTES de reservar evita que um payload
+    // diferente, após a limpeza, "envenene" a reserva e bloqueie o original.
+    const { data: jaExiste } = await supabase
       .from("automation_rules")
-      .insert({ ...insertPayload, id: recursoId, metadata: { idempotency_key: chave, idempotency_hash: hash } })
-      .select("*")
-      .single();
-    if (insErr?.code === "23505") {
-      const { data: existenteRegra } = await supabase
-        .from("automation_rules")
-        .select("*")
-        .eq("id", recursoId)
-        .eq("organization_id", activeOrg.orgId)
-        .single();
-      if (!existenteRegra) {
-        return fail("internal_error", "Regra esperada não encontrada no replay.", 500, { requestId });
-      }
-      // O hash original fica na PRÓPRIA regra: hash diferente é 409, nunca replay.
-      const existingHash = (existenteRegra as { metadata?: Record<string, unknown> }).metadata?.idempotency_hash;
+      .select("id, metadata")
+      .eq("id", recursoId)
+      .eq("organization_id", activeOrg.orgId)
+      .maybeSingle();
+    const replay = jaExiste !== null;
+    if (replay) {
+      const existingHash = (jaExiste as { metadata?: Record<string, unknown> }).metadata?.idempotency_hash;
       if (existingHash !== hash) {
         return fail("idempotency_conflict", "Requisicão repetida com conteúdo divergente.", 409, { requestId });
       }
-      created = existenteRegra;
-    } else if (insErr || !nova) {
-      return fail("internal_error", insErr?.message ?? "automation_rule_insert_failed", 500, { requestId });
+      created = jaExiste;
     } else {
-      created = nova;
-    }
+      // Reserva a identidade + hash ANTES de criar a regra.
+      const reserva = await reservarOuReplay(admin, {
+        organizationId: activeOrg.orgId,
+        endpoint: ENDPOINT,
+        chave,
+        hash,
+        recursoId,
+      });
+      if (reserva.tipo === "conflito") {
+        return fail("idempotency_conflict", "Requisicão repetida com conteúdo divergente.", 409, {
+          requestId,
+        });
+      }
 
-    await concluirIdempotencia(admin, {
-      organizationId: activeOrg.orgId,
-      endpoint: ENDPOINT,
-      chave,
-      recursoId,
-      statusCode: 201,
-    });
+      // ID determinístico: retry/replay/concorrência colide no PRIMARY KEY e
+      // devolve a MESMA regra (que continua nascendo pausada) — nunca uma segunda.
+      const { data: nova, error: insErr } = await supabase
+        .from("automation_rules")
+        .insert({ ...insertPayload, id: recursoId, metadata: { idempotency_key: chave, idempotency_hash: hash } })
+        .select("*")
+        .single();
+      if (insErr?.code === "23505") {
+        const { data: existenteRegra } = await supabase
+          .from("automation_rules")
+          .select("*")
+          .eq("id", recursoId)
+          .eq("organization_id", activeOrg.orgId)
+          .single();
+        if (!existenteRegra) {
+          return fail("internal_error", "Regra esperada não encontrada no replay.", 500, { requestId });
+        }
+        const existingHash = (existenteRegra as { metadata?: Record<string, unknown> }).metadata?.idempotency_hash;
+        if (existingHash !== hash) {
+          return fail("idempotency_conflict", "Requisicão repetida com conteúdo divergente.", 409, { requestId });
+        }
+        created = existenteRegra;
+      } else if (insErr || !nova) {
+        return fail("internal_error", insErr?.message ?? "automation_rule_insert_failed", 500, { requestId });
+      } else {
+        created = nova;
+      }
+
+      await concluirIdempotencia(admin, {
+        organizationId: activeOrg.orgId,
+        endpoint: ENDPOINT,
+        chave,
+        recursoId,
+        statusCode: 201,
+      });
+    }
   } else {
     const { data: nova, error: insErr } = await supabase
       .from("automation_rules")

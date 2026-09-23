@@ -56,19 +56,39 @@ export async function POST(req: NextRequest): Promise<Response> {
       const hash = hashCanonico(input);
       const recursoId = idRecurso(activeOrg.orgId, user.id, ENDPOINT, idempotencyKey);
 
-      // Reserva a identidade + hash ANTES de criar/enviar: "mesma chave +
-      // payload diferente" é 409 mesmo sob concorrência ou crash.
-      const reserva = await reservarOuReplay(admin, {
-        organizationId: activeOrg.orgId,
-        endpoint: ENDPOINT,
-        chave,
-        hash,
-        recursoId,
-      });
-      if (reserva.tipo === "conflito") {
-        return fail("idempotency_conflict", "Requisicão repetida com conteúdo divergente.", 409, {
-          requestId,
+      // O RECURSO é a fonte durável do vínculo chave→payload (sobrevive à
+      // limpeza do idempotency_keys). Checar ANTES de reservar: um payload
+      // diferente após a limpeza devolve 409 SEM envenenar a reserva — e o
+      // payload original continua recuperando a MESMA operação.
+      const { data: jaExiste } = await supabase
+        .from("messages")
+        .select("id, metadata")
+        .eq("id", recursoId)
+        .eq("organization_id", activeOrg.orgId)
+        .maybeSingle();
+      const replay = jaExiste !== null;
+      if (replay) {
+        const existingHash = (jaExiste as { metadata?: Record<string, unknown> }).metadata?.idempotency_hash;
+        if (existingHash !== hash) {
+          return fail("idempotency_conflict", "Requisicão repetida com conteúdo divergente.", 409, {
+            requestId,
+          });
+        }
+      } else {
+        // Reserva a identidade + hash ANTES de criar/enviar: "mesma chave +
+        // payload diferente" é 409 mesmo sob concorrência ou crash.
+        const reserva = await reservarOuReplay(admin, {
+          organizationId: activeOrg.orgId,
+          endpoint: ENDPOINT,
+          chave,
+          hash,
+          recursoId,
         });
+        if (reserva.tipo === "conflito") {
+          return fail("idempotency_conflict", "Requisicão repetida com conteúdo divergente.", 409, {
+            requestId,
+          });
+        }
       }
 
       const message = await sendMessageHandler(
@@ -88,13 +108,15 @@ export async function POST(req: NextRequest): Promise<Response> {
         },
       );
 
-      await concluirIdempotencia(admin, {
-        organizationId: activeOrg.orgId,
-        endpoint: ENDPOINT,
-        chave,
-        recursoId,
-        statusCode: 201,
-      });
+      if (!replay) {
+        await concluirIdempotencia(admin, {
+          organizationId: activeOrg.orgId,
+          endpoint: ENDPOINT,
+          chave,
+          recursoId,
+          statusCode: 201,
+        });
+      }
       return ok(message, { status: 201, requestId });
     }
 

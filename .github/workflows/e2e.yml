@@ -382,6 +382,7 @@ jobs:
         followup-publicado-abre-no-construtor.spec.ts
         automacao-diz-a-verdade.spec.ts
         kiwify-history.spec.ts
+        kiwify-idempotencia.spec.ts
         kiwify-operator-ui.spec.ts
         inbox-quem-manda.spec.ts
         acervo-de-conhecimento.spec.ts
