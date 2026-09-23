@@ -83,3 +83,47 @@ jobs:
 
       - name: RLS isolation + governance invariants
         run: pnpm test:db
+
+  # Harness nativo (Postgres + PostgREST reais) para as provas de idempotência de
+  # escrita com transporte sintético: as rotas/handlers são reais, só o transporte
+  # externo é substituído. Roda vitest.kiwify.config.ts (tests/invariants/kiwify*).
+  kiwify-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/preparar-node
+        timeout-minutes: 5
+
+      - name: Subir Postgres descartável (trust) + aplicar baseline
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql postgresql-contrib >/dev/null
+          PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
+          sudo -u postgres "$PGBIN/initdb" -D /tmp/pgdata --auth=trust >/dev/null
+          sudo -u postgres "$PGBIN/pg_ctl" -D /tmp/pgdata -o "-p 55432 -k /tmp" -l /tmp/pg.log start
+          sleep 2
+          echo "KIWIFY_TEST_PG_BIN=$PGBIN" >> "$GITHUB_ENV"
+          echo "KIWIFY_TEST_PG_PORT=55432" >> "$GITHUB_ENV"
+          echo "TEST_DB_PORT=55432" >> "$GITHUB_ENV"
+
+      - name: Preparar kiwify_fresh/kiwify_test (baseline + migrations)
+        run: |
+          set -euo pipefail
+          node scripts/kiwify-validate-local.mjs
+          node scripts/kiwify-stage-two-db.mjs
+
+      - name: Instalar PostgREST
+        run: |
+          set -euo pipefail
+          PGRST=12.2.3
+          curl -fsSL "https://github.com/PostgREST/postgrest/releases/download/v${PGRST}/postgrest-v${PGRST}-linux-static-x64.tar.xz" -o /tmp/postgrest.tar.xz
+          tar -xJf /tmp/postgrest.tar.xz -C /tmp
+          echo "KIWIFY_TEST_POSTGREST=/tmp/postgrest" >> "$GITHUB_ENV"
+
+      - name: Provas de idempotência (PostgREST real + transporte sintético)
+        run: pnpm exec vitest run --config vitest.kiwify.config.ts
+        env:
+          KIWIFY_TEST_NATIVE: "1"

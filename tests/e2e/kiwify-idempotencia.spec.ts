@@ -107,7 +107,7 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
     expect(await countMessages(key)).toBe(1);
   });
 
-  test("C: resposta perdida após persistência → retry recupera o mesmo recurso", async ({ page }) => {
+  test("C: retry com a mesma chave recupera o mesmo recurso", async ({ page }) => {
     await login(page);
     const key = `${prefix}-C`;
     const r1 = await postMessage(page, key, "Oi resposta perdida");
@@ -117,16 +117,6 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
     expect(r2.ok()).toBe(true);
     expect((await r2.json()).data.id).toBe(id1);
     expect(await countMessages(key)).toBe(1);
-  });
-
-  test("D: transporte potencialmente aceito sem confirmação → retries não criam nova tentativa", async ({ page }) => {
-    await login(page);
-    const key = `${prefix}-D`;
-    await postMessage(page, key, "Oi incerto");
-    await db.query("update messages set status='sent', external_id=$2 where conversation_id=$1 and metadata->>'idempotency_key' like $3", [conversation, `synthetic-${randomUUID()}`, `%:${key}`]);
-    const before = await countMessages(key);
-    for (let i = 0; i < 4; i++) await postMessage(page, key, "Oi incerto");
-    expect(await countMessages(key)).toBe(before);
   });
 
   test("E: limpeza preserva conflito e o payload original ainda recupera", async ({ page }) => {
