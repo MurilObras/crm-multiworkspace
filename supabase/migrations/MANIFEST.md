@@ -257,6 +257,7 @@ aplica.
 | `20260921120000` | `0224_automation_plan_redaction` | Vínculo durável, tombstone e fences de anonimização. Instala a própria guarda antes do backfill atômico: erro preserva o lote mesmo com continuação do psql. Revisão autorizada enquanto exclusiva do PR #10 não distribuído; aplicada somente em banco descartável. |
 
 | `20260921150000` | `0225_automation_plan_recovery_guard` | Reafirma idempotentemente a guarda já instalada pela 0224, na ordem cronológica normal. Não exige execução antecipada; NULL não comprova ausência de titular. |
+| `20260923120000` | `0226_automation_rule_metadata` | Vínculo durável da idempotência de escrita em `automation_rules`: coluna aditiva `metadata jsonb not null default '{}'`. Guarda o `request_hash` original (chave→payload) na própria regra, para a colisão de PK devolver 409 com hash diferente mesmo depois da limpeza de `idempotency_keys`. Aditiva e idempotente (`ADD COLUMN IF NOT EXISTS`); sem backfill (o default cobre linha existente). |
 
 ## Reproducibility
 

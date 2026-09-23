@@ -109,7 +109,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     // devolve a MESMA regra (que continua nascendo pausada) — nunca uma segunda.
     const { data: nova, error: insErr } = await supabase
       .from("automation_rules")
-      .insert({ ...insertPayload, id: recursoId })
+      .insert({ ...insertPayload, id: recursoId, metadata: { idempotency_key: chave, idempotency_hash: hash } })
       .select("*")
       .single();
     if (insErr?.code === "23505") {
@@ -121,6 +121,11 @@ export async function POST(req: NextRequest): Promise<Response> {
         .single();
       if (!existenteRegra) {
         return fail("internal_error", "Regra esperada não encontrada no replay.", 500, { requestId });
+      }
+      // O hash original fica na PRÓPRIA regra: hash diferente é 409, nunca replay.
+      const existingHash = (existenteRegra as { metadata?: Record<string, unknown> }).metadata?.idempotency_hash;
+      if (existingHash !== hash) {
+        return fail("idempotency_conflict", "Requisicão repetida com conteúdo divergente.", 409, { requestId });
       }
       created = existenteRegra;
     } else if (insErr || !nova) {

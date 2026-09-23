@@ -152,8 +152,9 @@ describe("KiwifySendDialog", () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Janela de atendimento encerrada."));
     expect(toast.success).not.toHaveBeenCalled();
-    // Mantém aberto: o botão de confirmar segue presente.
-    expect(screen.getByRole("button", { name: "Confirmar envio" })).toBeVisible();
+    // Mantém a identidade e oferece os dois caminhos.
+    expect(screen.getByRole("button", { name: "Reconciliar" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Nova mensagem" })).toBeVisible();
   });
 
   it("falha ao abrir a conversa não mostra sucesso nem envia mensagem", async () => {
@@ -174,7 +175,7 @@ describe("KiwifySendDialog", () => {
     expect(vi.mocked(apiClient.post).mock.calls.some((c) => c[0] === "/api/v1/messages")).toBe(false);
   });
 
-  it("reconciliar a MESMA operação reusa a chave; mudar o texto gera chave nova", async () => {
+  it("reconciliar reusa a MESMA chave; Nova mensagem inicia outra operação", async () => {
     const user = userEvent.setup({ delay: null });
     vi.mocked(apiClient.post).mockImplementation(async (path: string) => {
       if (path === "/api/v1/conversations/open-with-contact") {
@@ -191,21 +192,37 @@ describe("KiwifySendDialog", () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
 
     // Recupera a mesma operação (mesmo payload) → mesma chave.
-    await user.click(screen.getByRole("button", { name: "Confirmar envio" }));
+    await user.click(screen.getByRole("button", { name: "Reconciliar" }));
     await waitFor(() => expect(vi.mocked(apiClient.post).mock.calls.filter((c) => c[0] === "/api/v1/messages").length).toBe(2));
     const chaves = vi.mocked(apiClient.post).mock.calls
       .filter((c) => c[0] === "/api/v1/messages")
       .map((c) => (c[2] as { idempotencyKey?: string } | undefined)?.idempotencyKey);
     expect(chaves[0]).toBeTruthy();
     expect(chaves[0]).toBe(chaves[1]);
+  });
 
-    // Muda o texto → operação nova → chave nova.
-    await user.type(screen.getByRole("textbox", { name: "Texto da mensagem" }), " (editado)");
+  it("operação INCERTA editada não gera outra chave automaticamente", async () => {
+    const user = userEvent.setup({ delay: null });
+    vi.mocked(apiClient.post).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/conversations/open-with-contact") {
+        return { data: { conversation_id: "conversation", contact_id: "contact" } };
+      }
+      return { data: msg("queued", null) };
+    });
+    mount();
+
+    await user.click(await screen.findByRole("combobox", { name: "Número de WhatsApp" }));
+    await user.click(await screen.findByRole("option", { name: "Número 1" }));
+    await user.type(screen.getByRole("textbox", { name: "Texto da mensagem" }), "Oi");
     await user.click(screen.getByRole("button", { name: "Confirmar envio" }));
-    await waitFor(() => expect(vi.mocked(apiClient.post).mock.calls.filter((c) => c[0] === "/api/v1/messages").length).toBe(3));
-    const chavesDepois = vi.mocked(apiClient.post).mock.calls
-      .filter((c) => c[0] === "/api/v1/messages")
-      .map((c) => (c[2] as { idempotencyKey?: string } | undefined)?.idempotencyKey);
-    expect(chavesDepois[2]).not.toBe(chaves[0]);
+    await waitFor(() => expect(toast.warning).toHaveBeenCalled());
+
+    // Edita o texto e tenta reconciliar → bloqueado, sem nova chamada de envio.
+    await user.type(screen.getByRole("textbox", { name: "Texto da mensagem" }), " (editado)");
+    await user.click(screen.getByRole("button", { name: "Reconciliar" }));
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(
+      "Há uma mensagem pendente que pode já ter sido enviada. Use Nova mensagem para começar outra.",
+    ));
+    expect(vi.mocked(apiClient.post).mock.calls.filter((c) => c[0] === "/api/v1/messages").length).toBe(1);
   });
 });

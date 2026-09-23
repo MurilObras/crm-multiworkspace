@@ -61,11 +61,21 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
   // render; um segundo clique no MESMO tick passaria pela guarda e abriria a
   // conversa / enviaria de novo. O ref fecha essa janela.
   const submitting = React.useRef(false);
-  // Identidade da operação pendente: a MESMA chave/payload são reutilizados ao
-  // recuperar um envio incerto (resposta perdida, timeout, novo clique para
-  // reconciliar). Mudou o payload (canal/texto/template) → operação nova, chave
-  // nova. Sucesso/fila fecha a operação e zera a identidade.
-  const pendingOp = React.useRef<{ key: string; fingerprint: string } | null>(null);
+  // Identidade da operação de envio. A MESMA chave + payload (fingerprint) são
+  // reutilizados ao reconciliar uma operação incerta (resposta perdida,
+  // timeout, novo clique sem alteração). `state` distingue a operação da
+  // variante visual do toast: incerto (queued/sending/sent sem confirmação) NÃO
+  // apaga a identidade; só `confirmed` encerra. O componente fica montado (o
+  // Sheet só alterna visibilidade), então a identidade sobrevive a fechar/abrir.
+  const pendingOp = React.useRef<{
+    key: string;
+    fingerprint: string;
+    messageId?: string;
+    conversationId?: string;
+    state?: "confirmed" | "uncertain" | "failed" | "unknown";
+  } | null>(null);
+  // Rastreia o estado pendente para o render (botão "nova mensagem").
+  const [pendingState, setPendingState] = React.useState<"uncertain" | "failed" | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
@@ -83,18 +93,41 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
 
   const canConfirm = channelSessionId && (mode === "text" ? body.trim().length > 0 : Boolean(templateName && templateLanguage));
 
+  // Nova operação deliberada: descarta a identidade anterior (a anterior pode
+  // já ter sido enviada) e libera uma nova chave.
+  const startNewOperation = () => {
+    pendingOp.current = null;
+    setPendingState(null);
+    setChannelSessionId("");
+    setMode("text");
+    setBody("");
+    setTemplateName("");
+    setTemplateLanguage("");
+    setTemplateValues({});
+  };
+
   const submit = async () => {
     if (submitting.current || !row?.contact_id || !canConfirm) return;
+
+    const fingerprint = JSON.stringify([
+      channelSessionId,
+      mode,
+      mode === "text" ? body.trim() : [templateName, templateLanguage, templateValues],
+    ]);
+
+    // Editar uma operação INCERTA não gera outra chave automaticamente: a
+    // tentativa anterior pode ter sido enviada. Exige decisão explícita.
+    if (pendingOp.current?.state === "uncertain" && pendingOp.current.fingerprint !== fingerprint) {
+      toast.warning(t("Há uma mensagem pendente que pode já ter sido enviada. Use Nova mensagem para começar outra."));
+      return;
+    }
+
     submitting.current = true;
     setSending(true);
     try {
-      const fingerprint = JSON.stringify([
-        channelSessionId,
-        mode,
-        mode === "text" ? body.trim() : [templateName, templateLanguage, templateValues],
-      ]);
       const key = pendingOp.current?.fingerprint === fingerprint ? pendingOp.current.key : randomId();
-      pendingOp.current = { key, fingerprint };
+      pendingOp.current = { key, fingerprint, state: pendingOp.current?.state };
+      setPendingState(null);
 
       const opened = await apiClient.post<{ data: { conversation_id: string; contact_id: string } }>(
         "/api/v1/conversations/open-with-contact",
@@ -132,17 +165,19 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
         ).data;
       }
       const desfecho = desfechoDoEnvio(mensagem);
-      if (desfecho.variant === "success") {
+      pendingOp.current = { key, fingerprint, messageId: mensagem.id, conversationId, state: desfecho.state };
+      if (desfecho.state === "confirmed") {
         toast.success(t(desfecho.text));
         pendingOp.current = null;
+        setPendingState(null);
         onOpenChange(false);
-      } else if (desfecho.variant === "warning") {
+      } else if (desfecho.state === "uncertain") {
         toast.warning(t(desfecho.text));
-        pendingOp.current = null;
-        onOpenChange(false);
+        setPendingState("uncertain");
+        // Mantém a identidade e o diálogo abertos para reconciliar.
       } else {
         toast.error(t(desfecho.text));
-        // Mantém o diálogo aberto e a identidade: reconciliar reusa a MESMA chave.
+        setPendingState("failed");
       }
     } catch (err) {
       showApiError(err);
@@ -214,12 +249,25 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
           )}
         </div>
 
+        {pendingState ? (
+          <p role="status" className="rounded-sm border border-warning/40 bg-warning-bg p-3 text-sm">
+            {pendingState === "uncertain"
+              ? t("Há uma operação pendente sem confirmação. Reconciliar reutiliza a mesma mensagem; Nova mensagem inicia outra.")
+              : t("O envio anterior falhou. Reconciliar reutiliza a mesma operação; Nova mensagem inicia outra.")}
+          </p>
+        ) : null}
+
         <DialogFooter>
+          {pendingState ? (
+            <Button type="button" variant="secondary" onClick={startNewOperation} disabled={sending}>
+              {t("Nova mensagem")}
+            </Button>
+          ) : null}
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={sending}>
             {t("Cancelar")}
           </Button>
           <Button type="button" onClick={submit} disabled={!canConfirm || sending}>
-            {sending ? t("Enviando…") : t("Confirmar envio")}
+            {sending ? t("Enviando…") : pendingState ? t("Reconciliar") : t("Confirmar envio")}
           </Button>
         </DialogFooter>
       </DialogContent>

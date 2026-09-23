@@ -126,6 +126,8 @@ describe("KiwifyAutomationBlock", () => {
     await waitFor(() => expect(vi.mocked(apiClient.post).mock.calls.filter((c) => c[0] === "/api/v1/automation-rules").length).toBe(1));
     const [rota, corpo] = vi.mocked(apiClient.post).mock.calls[0]!;
     expect(rota).toBe("/api/v1/automation-rules");
+    // Chave de idempotência enviada para reconciliar resposta perdida.
+    expect((vi.mocked(apiClient.post).mock.calls[0]![2] as { idempotencyKey?: string } | undefined)?.idempotencyKey).toBeTruthy();
     // Regra nasce pausada: is_active nunca vai no create (schema não aceita).
     expect(corpo).not.toHaveProperty("is_active");
     expect(corpo).toMatchObject({

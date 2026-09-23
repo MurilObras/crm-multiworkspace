@@ -64,7 +64,10 @@ it("reserva a identidade ANTES de enviar, com messageId determinístico e return
 
   const [, , argsInput, options] = mocks.handler.mock.calls[0]!;
   expect(argsInput).toMatchObject({ conversation_id: "c", body: "oi" });
-  expect((argsInput as { metadata: Record<string, unknown> }).metadata.idempotency_key).toBe("actor:chave-1");
+  const metadata = (argsInput as { metadata: Record<string, unknown> }).metadata;
+  expect(metadata.idempotency_key).toBe("actor:chave-1");
+  // O hash original é calculado no SERVIDOR e segue junto (vínculo durável).
+  expect(metadata.idempotency_hash).toMatch(/^[0-9a-f]{64}$/);
   expect(options).toMatchObject({ returnExistingOnConflict: true });
   expect((options as { messageId: string }).messageId).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,

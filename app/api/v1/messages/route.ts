@@ -80,7 +80,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         },
         {
           ...(input as SendMessageInput),
-          metadata: { ...(input.metadata ?? {}), idempotency_key: chave },
+          metadata: { ...(input.metadata ?? {}), idempotency_key: chave, idempotency_hash: hash },
         } as SendMessageInput,
         {
           messageId: recursoId,

@@ -80,4 +80,26 @@ describe("idempotência de escrita (determinístico + UNIQUE)", () => {
     );
     expect(sql(`select count(*) from idempotency_keys where key='${chave}'`)).toBe("2");
   });
+
+  it("o hash original sobrevive à limpeza do idempotency_keys (fica na própria regra)", () => {
+    const id = idRecurso(GOV_ORG, GOV_MANAGER, "/api/v1/automation-rules", "k-hash");
+    const hash = hashCanonico({ name: "regra" });
+    sql(
+      `insert into automation_rules(id, organization_id, name, trigger_event, conditions, actions, metadata)
+       values('${id}','${GOV_ORG}','idem','lead.created','[]','[]','{"idempotency_hash":"${hash}"}'::jsonb)`,
+    );
+    const chave = chaveDeIdempotencia(GOV_MANAGER, "k-hash");
+    // Reserva existe, depois é LIMPA (expiração/limpeza pertinente).
+    sql(
+      `insert into idempotency_keys(organization_id, endpoint, key, request_hash, status_code, response_body)
+       values('${GOV_ORG}','/api/v1/automation-rules','${chave}','\\x${hash}'::bytea,202,'{"state":"done"}')`,
+    );
+    sql(`delete from idempotency_keys where key='${chave}'`);
+    // A fonte durável do vínculo é a PRÓPRIA regra, não o registro limpo.
+    expect(
+      sql(`select metadata->>'idempotency_hash' from automation_rules where id='${id}' and organization_id='${GOV_ORG}'`),
+    ).toBe(hash);
+    // E o registro limpo de fato sumiu — a colisão de PK seguirá checando a regra.
+    expect(sql(`select count(*) from idempotency_keys where key='${chave}'`)).toBe("0");
+  });
 });

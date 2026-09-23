@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, PencilSimple } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
+import { randomId } from "@/lib/random-id";
 import type { Produto } from "@/lib/schemas/produtos";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import {
@@ -169,6 +170,10 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
   // tick (antes do re-render que aplica `create.isPending`) criaria DUAS regras
   // idênticas — a rota de automação não tem unicidade que impeça.
   const submitting = React.useRef(false);
+  // Identidade da operação pendente de criação: a MESMA chave + snapshot do
+  // payload são reutilizados ao recuperar uma criação com resposta perdida.
+  // Mudou o payload (edição deliberada) → nova operação, nova chave.
+  const pendingOp = React.useRef<{ key: string; fingerprint: string } | null>(null);
 
   const submit = async () => {
     if (submitting.current || !canSave) return;
@@ -182,8 +187,12 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
           ? { template: body.trim() }
           : { templateName, templateLanguage, templateValues }),
       });
-      await create.mutateAsync(payload);
+      const fingerprint = JSON.stringify(payload);
+      const key = pendingOp.current?.fingerprint === fingerprint ? pendingOp.current.key : randomId();
+      pendingOp.current = { key, fingerprint };
+      await create.mutateAsync({ ...payload, idempotencyKey: key });
       toast.success(t("Automação criada — ligue quando estiver pronta."));
+      pendingOp.current = null;
       onOpenChange(false);
     } finally {
       submitting.current = false;

@@ -503,7 +503,16 @@ export async function sendMessageHandler(
       .eq('conversation_id', c.id).eq('contact_id', c.contact_id)
       .eq('metadata->>idempotency_key', input.metadata?.idempotency_key).maybeSingle();
     if (existing.error || !existing.data) throw new OutboundLeaseLostError();
-    if (options?.returnExistingOnConflict) return existing.data as unknown as Message;
+    if (options?.returnExistingOnConflict) {
+      // O hash original fica gravado na PRÓPRIA mensagem, então a colisão de PK
+      // verifica o vínculo chave→payload mesmo depois da limpeza do
+      // idempotency_keys: hash diferente é 409, nunca replay silencioso.
+      const existingHash = (existing.data as { metadata?: Record<string, unknown> }).metadata?.idempotency_hash;
+      if (existingHash !== input.metadata?.idempotency_hash) {
+        throw new ApiError(409, "idempotency_conflict", undefined, ctx.requestId, "Requisicão repetida com conteúdo divergente.");
+      }
+      return existing.data as unknown as Message;
+    }
     created = existing.data;
     insErr = null;
   }

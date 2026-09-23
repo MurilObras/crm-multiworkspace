@@ -86,4 +86,9 @@ export const KIWIFY_OPERATOR_TRANSLATIONS = {
   "A mensagem sai pelo sink padrão do CRM, respeitando bloqueio, opt-out, janela de 24h e templates.": { es: "El mensaje sale por el sink estándar del CRM, respetando bloqueo, opt-out, ventana de 24h y plantillas." },
   "Nenhum número conectado disponível para envio.": { es: "No hay ningún número conectado disponible para envío." },
   "Texto livre só sai dentro da janela de 24h; fora dela, use um template aprovado.": { es: "El texto libre solo sale dentro de la ventana de 24h; fuera de ella, usa una plantilla aprobada." },
+  "Nova mensagem": { es: "Nuevo mensaje" },
+  "Reconciliar": { es: "Reconciliar" },
+  "Há uma mensagem pendente que pode já ter sido enviada. Use Nova mensagem para começar outra.": { es: "Hay un mensaje pendiente que quizá ya se envió. Usa Nuevo mensaje para comenzar otro." },
+  "Há uma operação pendente sem confirmação. Reconciliar reutiliza a mesma mensagem; Nova mensagem inicia outra.": { es: "Hay una operación pendiente sin confirmación. Reconciliar reutiliza el mismo mensaje; Nuevo mensaje inicia otro." },
+  "O envio anterior falhou. Reconciliar reutiliza a mesma operação; Nova mensagem inicia outra.": { es: "El envío anterior falló. Reconciliar reutiliza la misma operación; Nuevo mensaje inicia otro." },
 };
