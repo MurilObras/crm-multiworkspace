@@ -2,17 +2,20 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
+import { criarTransporteSintetico, type TransporteSintetico } from "./helpers/transporte-sintetico";
 
 /**
  * Prova de idempotência de escrita sobre o ambiente REAL do E2E (Supabase:
- * PostgREST + GoTrue + Postgres), sem simulador de PostgREST. Usa as rotas
- * reais (`POST /api/v1/messages`, `POST /api/v1/automation-rules`), autenticação
- * real (login) e conta registros diretamente no banco via `pg`. O transporte
- * externo (WhatsApp/WAHA) não existe no rig — o que se prova é a GARANTIA DO
- * CRM: uma chave → um recurso, sem nova tentativa.
+ * PostgREST + GoTrue + Postgres), atravessando a ROTA real
+ * (`POST /api/v1/messages`, `POST /api/v1/automation-rules`), a AUTENTICAÇÃO
+ * real (login) e o HANDLER real. Só o transporte externo (WhatsApp/WAHA) é
+ * substituído: um servidor sintético conta as chamadas de envio e pode perder a
+ * confirmação. O que se prova é a GARANTIA DO CRM: uma chave → um recurso → um
+ * transporte, mesmo sob concorrência, conflito de payload, retry e limpeza.
  */
 const dbUrl = process.env.SUPABASE_DB_URL;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const wahaBase = process.env.WAHA_API_BASE_URL;
 function local(value: string | undefined) {
   if (!value) return false;
   return ["localhost", "127.0.0.1", "[::1]"].includes(new URL(value).hostname);
@@ -23,12 +26,14 @@ let db: pg.Pool;
 let creds: { org_id: string; org_slug: string; supabase_url: string; password: string; users: Record<string, { email: string }> };
 let session: string, conversation: string;
 let managerId: string;
+let transporte: TransporteSintetico;
 
 test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
   test.setTimeout(180000);
 
   test.beforeAll(async () => {
     if (!local(dbUrl) || !local(supabaseUrl)) throw new Error("Prepare PostgreSQL e Supabase Auth locais para o E2E");
+    if (!wahaBase || !local(wahaBase)) throw new Error("WAHA_API_BASE_URL local é o transporte sintético da prova");
     creds = JSON.parse(readFileSync(".e2e-creds.json", "utf8"));
     if (creds.org_slug !== "e2e-test-org" || !local(creds.supabase_url)) throw new Error("Credenciais sintéticas do rig local obrigatórias");
     db = new pg.Pool({ connectionString: dbUrl });
@@ -37,9 +42,13 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
     session = (await db.query("insert into channel_sessions(organization_id,waha_session_name,status,webhook_secret_encrypted,daily_message_limit) values($1,$2,'WORKING',$3,300) returning id", [org, prefix, Buffer.from("synthetic-unused")])).rows[0].id;
     const contact = (await db.query("insert into contacts(organization_id,name,phone_number) values($1,'Idem sintético','+12025550199') returning id", [org])).rows[0].id;
     conversation = (await db.query("insert into conversations(organization_id,contact_id,channel_session_id,status,last_inbound_at) values($1,$2,$3,'open',now()) returning id", [org, contact, session])).rows[0].id;
+
+    transporte = criarTransporteSintetico(wahaBase);
+    await transporte.start();
   });
 
   test.afterAll(async () => {
+    if (transporte) await transporte.stop();
     if (!db) return;
     try {
       await db.query("delete from idempotency_keys where key like $1", [`%:${prefix}%`]);
@@ -82,12 +91,17 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
     (await db.query("select count(*)::int n from messages where conversation_id=$1 and metadata->>'idempotency_key' like $2", [conversation, `%:${key}`])).rows[0].n;
   const countRules = async (name: string) => (await db.query("select count(*)::int n from automation_rules where name=$1", [name])).rows[0].n;
 
-  test("A: requisições simultâneas mesma chave/payload → uma mensagem e uma regra", async ({ page }) => {
+  test("A: requisições simultâneas mesma chave/payload → uma mensagem, um transporte", async ({ page }) => {
     await login(page);
+    transporte.reset();
+    transporte.setMode("ok");
     const mkey = `${prefix}-A-m`;
     const responses = await Promise.all(Array.from({ length: 8 }, () => postMessage(page, mkey, "Oi concorrencia")));
     expect(responses.every((r) => r.ok())).toBe(true);
     expect(await countMessages(mkey)).toBe(1);
+    // Um único recurso E um único despacho ao transporte.
+    expect(transporte.received.length).toBe(1);
+    expect(transporte.received[0]!.text).toBe("Oi concorrencia");
 
     const rkey = `${prefix}-A-r`;
     const ruleName = `${prefix} A`;
@@ -97,18 +111,23 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
     expect((await db.query("select is_active from automation_rules where name=$1", [ruleName])).rows[0].is_active).toBe(false);
   });
 
-  test("B: mesma chave com payload diferente → 409 sem novo efeito", async ({ page }) => {
+  test("B: mesma chave com payload diferente → 409, sem novo efeito nem transporte", async ({ page }) => {
     await login(page);
+    transporte.reset();
+    transporte.setMode("ok");
     const key = `${prefix}-B`;
     const r1 = await postMessage(page, key, "payload um");
     expect(r1.status()).toBe(201);
     const r2 = await postMessage(page, key, "payload dois");
     expect(r2.status()).toBe(409);
     expect(await countMessages(key)).toBe(1);
+    expect(transporte.received.length).toBe(1);
   });
 
-  test("C: retry com a mesma chave recupera o mesmo recurso", async ({ page }) => {
+  test("C: retry com a mesma chave recupera o mesmo recurso, sem re-transportar", async ({ page }) => {
     await login(page);
+    transporte.reset();
+    transporte.setMode("ok");
     const key = `${prefix}-C`;
     const r1 = await postMessage(page, key, "Oi resposta perdida");
     const id1 = (await r1.json()).data.id;
@@ -117,10 +136,34 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
     expect(r2.ok()).toBe(true);
     expect((await r2.json()).data.id).toBe(id1);
     expect(await countMessages(key)).toBe(1);
+    expect(transporte.received.length).toBe(1);
+  });
+
+  test("D: transporte aceito sem confirmação → retries não re-transportam", async ({ page }) => {
+    await login(page);
+    transporte.reset();
+    transporte.setMode("timeout");
+    const key = `${prefix}-D`;
+    const r1 = await postMessage(page, key, "Oi incerto");
+    expect(r1.status()).toBe(201);
+    const id1 = (await r1.json()).data.id;
+    expect(id1).toBeTruthy();
+    // O transporte RECEBEU a chamada (e perdeu a confirmação).
+    expect(transporte.received.length).toBe(1);
+    // A reconciliação volta ao modo ok, mas NÃO re-transporta.
+    transporte.setMode("ok");
+    for (let i = 0; i < 5; i++) {
+      const r = await postMessage(page, key, "Oi incerto");
+      expect((await r.json()).data.id).toBe(id1);
+    }
+    expect(transporte.received.length).toBe(1);
+    expect(await countMessages(key)).toBe(1);
   });
 
   test("E: limpeza preserva conflito e o payload original ainda recupera", async ({ page }) => {
     await login(page);
+    transporte.reset();
+    transporte.setMode("ok");
     const key = `${prefix}-E`;
     const chave = `${managerId}:${key}`;
     const endpoint = "/api/v1/messages";
@@ -128,28 +171,30 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
     const original = await r1.json();
     const id1 = original.data.id;
     expect(r1.status()).toBe(201);
-    // a reserva correta existe (uma, com org+endpoint+key)
     expect((await db.query("select count(*)::int n from idempotency_keys where organization_id=$1 and endpoint=$2 and key=$3", [creds.org_id, endpoint, chave])).rows[0].n).toBe(1);
-    // limpeza com os MESMOS filtros
     await db.query("delete from idempotency_keys where organization_id=$1 and endpoint=$2 and key=$3", [creds.org_id, endpoint, chave]);
     expect((await db.query("select count(*)::int n from idempotency_keys where organization_id=$1 and endpoint=$2 and key=$3", [creds.org_id, endpoint, chave])).rows[0].n).toBe(0);
     // payload DIFERENTE → 409 (hash durável no recurso), sem novo recurso
     const r2 = await postMessage(page, key, "payload diferente");
     expect(r2.status()).toBe(409);
     expect(await countMessages(key)).toBe(1);
-    // payload ORIGINAL → recupera a MESMA mensagem, com resposta completa
+    // payload ORIGINAL → recupera a MESMA mensagem, sem re-transportar
     const r3 = await postMessage(page, key, "payload original");
     const replay = await r3.json();
     expect(replay.data.id).toBe(id1);
     expect(replay.data.status).toBeTruthy();
     expect(await countMessages(key)).toBe(1);
+    expect(transporte.received.length).toBe(1);
   });
 
-  test("F: nova operação deliberada com outra chave → segundo recurso", async ({ page }) => {
+  test("F: nova operação deliberada com outra chave → segundo recurso e segundo transporte", async ({ page }) => {
     await login(page);
+    transporte.reset();
+    transporte.setMode("ok");
     const a = await postMessage(page, `${prefix}-F-a`, "mesmo texto");
     const b = await postMessage(page, `${prefix}-F-b`, "mesmo texto");
     expect((await a.json()).data.id).not.toBe((await b.json()).data.id);
+    expect(transporte.received.length).toBe(2);
   });
 
   test("G: reconciliação na criação de automação (resposta perdida)", async ({ page }) => {
@@ -162,7 +207,6 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
     const r2 = await postRule(page, key, ruleName);
     const replay = await r2.json();
     expect(replay.data.id).toBe(id1);
-    // resposta completa: contrato normal da API preservado
     expect(replay.data.name).toBe(ruleName);
     expect(Array.isArray(replay.data.actions)).toBe(true);
     expect(replay.data.actions).toHaveLength(1);
