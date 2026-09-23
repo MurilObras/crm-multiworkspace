@@ -27,6 +27,7 @@ import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSes
 import { AutomationTemplateFields } from "./AutomationTemplateFields";
 import { useT } from "@/hooks/i18n/useT";
 import { desfechoDoEnvio } from "@/lib/messaging/desfecho-do-envio";
+import { randomId } from "@/lib/random-id";
 import type { Message } from "@/lib/types/messaging";
 import type { KiwifyHistoryRow } from "@/lib/automation/kiwify-history";
 
@@ -60,6 +61,11 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
   // render; um segundo clique no MESMO tick passaria pela guarda e abriria a
   // conversa / enviaria de novo. O ref fecha essa janela.
   const submitting = React.useRef(false);
+  // Identidade da operação pendente: a MESMA chave/payload são reutilizados ao
+  // recuperar um envio incerto (resposta perdida, timeout, novo clique para
+  // reconciliar). Mudou o payload (canal/texto/template) → operação nova, chave
+  // nova. Sucesso/fila fecha a operação e zera a identidade.
+  const pendingOp = React.useRef<{ key: string; fingerprint: string } | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
@@ -82,6 +88,14 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
     submitting.current = true;
     setSending(true);
     try {
+      const fingerprint = JSON.stringify([
+        channelSessionId,
+        mode,
+        mode === "text" ? body.trim() : [templateName, templateLanguage, templateValues],
+      ]);
+      const key = pendingOp.current?.fingerprint === fingerprint ? pendingOp.current.key : randomId();
+      pendingOp.current = { key, fingerprint };
+
       const opened = await apiClient.post<{ data: { conversation_id: string; contact_id: string } }>(
         "/api/v1/conversations/open-with-contact",
         { contact_id: row.contact_id, channel_session_id: channelSessionId },
@@ -92,33 +106,43 @@ export function KiwifySendDialog({ open, onOpenChange, row }: Props) {
       let mensagem: Message;
       if (mode === "text") {
         mensagem = (
-          await apiClient.post<{ data: Message }>("/api/v1/messages", {
-            conversation_id: conversationId,
-            type: "text",
-            body: body.trim(),
-          })
+          await apiClient.post<{ data: Message }>(
+            "/api/v1/messages",
+            {
+              conversation_id: conversationId,
+              type: "text",
+              body: body.trim(),
+            },
+            { idempotencyKey: key },
+          )
         ).data;
       } else {
         mensagem = (
-          await apiClient.post<{ data: Message }>("/api/v1/messages", {
-            conversation_id: conversationId,
-            type: "template",
-            template_name: templateName,
-            template_language: templateLanguage,
-            template_values: templateValues,
-          })
+          await apiClient.post<{ data: Message }>(
+            "/api/v1/messages",
+            {
+              conversation_id: conversationId,
+              type: "template",
+              template_name: templateName,
+              template_language: templateLanguage,
+              template_values: templateValues,
+            },
+            { idempotencyKey: key },
+          )
         ).data;
       }
       const desfecho = desfechoDoEnvio(mensagem);
       if (desfecho.variant === "success") {
         toast.success(t(desfecho.text));
+        pendingOp.current = null;
         onOpenChange(false);
       } else if (desfecho.variant === "warning") {
         toast.warning(t(desfecho.text));
+        pendingOp.current = null;
         onOpenChange(false);
       } else {
         toast.error(t(desfecho.text));
-        // Mantém o diálogo aberto: o operador precisa corrigir (ex.: trocar por template).
+        // Mantém o diálogo aberto e a identidade: reconciliar reusa a MESMA chave.
       }
     } catch (err) {
       showApiError(err);

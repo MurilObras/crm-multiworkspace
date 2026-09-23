@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/select";
 import { Copy, Plus, Trash } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
+import { copyToClipboard } from "@/lib/clipboard";
+import { randomId } from "@/lib/random-id";
 import type { Produto } from "@/lib/schemas/produtos";
 import { usePipelines, usePipelineStages } from "@/hooks/webhooks/useWebhookSources";
 import {
@@ -33,7 +35,7 @@ interface MappingRow extends KiwifyProductMappingInput {
 }
 
 function novaLinha(): MappingRow {
-  return { key: crypto.randomUUID(), external_product_id: "", product_id: "" };
+  return { key: randomId(), external_product_id: "", product_id: "" };
 }
 
 /** Origem visível ao navegador — a que a Kiwify precisa chamar de fora. */
@@ -126,12 +128,9 @@ export function KiwifyIntegrationBlock() {
   };
 
   const copiar = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.success(t("URL copiada."));
-    } catch {
-      toast.error(t("Não foi possível copiar. Copie manualmente."));
-    }
+    const ok = await copyToClipboard(url);
+    if (ok) toast.success(t("URL copiada."));
+    else toast.error(t("Não foi possível copiar. Copie manualmente."));
   };
 
   return (

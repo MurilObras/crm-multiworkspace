@@ -173,4 +173,39 @@ describe("KiwifySendDialog", () => {
     expect(toast.success).not.toHaveBeenCalled();
     expect(vi.mocked(apiClient.post).mock.calls.some((c) => c[0] === "/api/v1/messages")).toBe(false);
   });
+
+  it("reconciliar a MESMA operação reusa a chave; mudar o texto gera chave nova", async () => {
+    const user = userEvent.setup({ delay: null });
+    vi.mocked(apiClient.post).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/conversations/open-with-contact") {
+        return { data: { conversation_id: "conversation", contact_id: "contact" } };
+      }
+      return { data: { ...msg("failed", null), error_code: "messaging_window_closed", error_message: "Janela encerrada." } };
+    });
+    mount();
+
+    await user.click(await screen.findByRole("combobox", { name: "Número de WhatsApp" }));
+    await user.click(await screen.findByRole("option", { name: "Número 1" }));
+    await user.type(screen.getByRole("textbox", { name: "Texto da mensagem" }), "Oi");
+    await user.click(screen.getByRole("button", { name: "Confirmar envio" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+
+    // Recupera a mesma operação (mesmo payload) → mesma chave.
+    await user.click(screen.getByRole("button", { name: "Confirmar envio" }));
+    await waitFor(() => expect(vi.mocked(apiClient.post).mock.calls.filter((c) => c[0] === "/api/v1/messages").length).toBe(2));
+    const chaves = vi.mocked(apiClient.post).mock.calls
+      .filter((c) => c[0] === "/api/v1/messages")
+      .map((c) => (c[2] as { idempotencyKey?: string } | undefined)?.idempotencyKey);
+    expect(chaves[0]).toBeTruthy();
+    expect(chaves[0]).toBe(chaves[1]);
+
+    // Muda o texto → operação nova → chave nova.
+    await user.type(screen.getByRole("textbox", { name: "Texto da mensagem" }), " (editado)");
+    await user.click(screen.getByRole("button", { name: "Confirmar envio" }));
+    await waitFor(() => expect(vi.mocked(apiClient.post).mock.calls.filter((c) => c[0] === "/api/v1/messages").length).toBe(3));
+    const chavesDepois = vi.mocked(apiClient.post).mock.calls
+      .filter((c) => c[0] === "/api/v1/messages")
+      .map((c) => (c[2] as { idempotencyKey?: string } | undefined)?.idempotencyKey);
+    expect(chavesDepois[2]).not.toBe(chaves[0]);
+  });
 });
