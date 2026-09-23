@@ -103,11 +103,14 @@ test.describe("Kiwify: interface operacional", () => {
     await integracao.getByRole("button", { name: "Salvar integração" }).click();
     expect((await saved).status(), "O cadastro precisa persistir antes de mostrar a URL").toBe(201);
 
-    const urlInput = integracao.getByLabel("URL do webhook");
+    // Depois de salvar, a URL aparece no banner "Integração criada" E no item
+    // recém-criado da lista — ambos refletem a mesma integração. O banner é o
+    // feedback imediato do cadastro: mira nele para não depender da ambiguidade.
+    const urlInput = integracao.getByLabel("URL do webhook").first();
     await expect(urlInput).toBeVisible({ timeout: 15_000 });
     await expect(urlInput).toHaveValue(/\/api\/v1\/webhooks\/kiwify\/[a-f0-9]{64}/);
 
-    await integracao.getByRole("button", { name: "Copiar URL do webhook" }).click();
+    await integracao.getByRole("button", { name: "Copiar URL do webhook" }).first().click();
     await expect(page.getByText("URL copiada.")).toBeVisible({ timeout: 15_000 });
 
     // Segredo nunca reaparece na tela (nem em estado, nem em lista).
