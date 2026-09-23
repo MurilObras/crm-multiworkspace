@@ -19358,6 +19358,7 @@ grant execute on function public.fn_automation_message_preview(uuid,uuid) to ser
 
 -- Completa também a limpeza dos efeitos nos planos identificados pelo backfill.
 update public.automation_event_plans set redacted_at=redacted_at where redacted_at is not null;
+notify pgrst, 'reload schema';
 
 -- ---- Vínculo durável da idempotência em automation_rules (migration 0226) ----
 -- O hash original do payload (vínculo chave→payload) sobrevive à limpeza do
@@ -19365,8 +19366,6 @@ update public.automation_event_plans set redacted_at=redacted_at where redacted_
 -- diferente vira 409; o hash original nunca é substituído por uma repetição.
 alter table public.automation_rules
   add column if not exists metadata jsonb not null default '{}'::jsonb;
-
-notify pgrst, 'reload schema';
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

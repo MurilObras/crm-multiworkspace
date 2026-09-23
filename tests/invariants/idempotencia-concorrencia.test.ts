@@ -138,7 +138,7 @@ class Q {
   }
 }
 
-const pool = new pg.Pool({ host: "127.0.0.1", port: Number(process.env.TEST_DB_PORT ?? 54329), user: "postgres", database: "postgres", max: 12 });
+const pool = new pg.Pool({ host: "127.0.0.1", port: Number(process.env.TEST_DB_PORT ?? 54329), user: "postgres", password: "postgres", database: "postgres", max: 12 });
 const admin = {
   from: (t: string) => new Q(t),
   rpc: async (name: string) => {
