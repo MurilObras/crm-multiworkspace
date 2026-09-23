@@ -91,7 +91,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # fetch-depth 0: o kiwify-validate-local.mjs/kiwify-stage-two-db.mjs fazem
+      # `git show <commit histórico>:supabase/baseline.sql` (comparação install vs
+      # upgrade); o clone raso não tem esse commit.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: ./.github/actions/preparar-node
         timeout-minutes: 5
