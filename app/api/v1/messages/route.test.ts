@@ -121,3 +121,18 @@ it("erro de LEITURA no pre-check → 500, sem reservar/criar/transportar", async
   expect(mocks.handler).not.toHaveBeenCalled();
   expect(mocks.concluir).not.toHaveBeenCalled();
 });
+
+it("permissão revogada antes do replay → 403, e o recurso criado NÃO é devolvido", async () => {
+  // Primeira chamada cria o recurso (role ok).
+  await call({ "Idempotency-Key": "chave-1" });
+  expect(mocks.handler).toHaveBeenCalledTimes(1);
+  expect(mocks.reservar).toHaveBeenCalledTimes(1);
+  // A permissão é revogada ANTES do retry.
+  mocks.role.mockResolvedValue({ ok: false, response: new Response(null, { status: 403 }) });
+  // Retry com a MESMA chave: o guard de autorização nega antes de qualquer replay.
+  const r = await call({ "Idempotency-Key": "chave-1" });
+  expect(r.status).toBe(403);
+  expect(mocks.handler).toHaveBeenCalledTimes(1);
+  expect(mocks.reservar).toHaveBeenCalledTimes(1);
+  expect(mocks.concluir).toHaveBeenCalledTimes(1);
+});
