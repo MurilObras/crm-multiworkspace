@@ -57,13 +57,20 @@ describe("byteaParaHex", () => {
 });
 
 describe("reservarOuReplay", () => {
-  function fakeAdmin(insertError: { code?: string } | null, lookupHashHex?: string): SupabaseClient {
+  function fakeAdmin(insertError: { code?: string } | null, lookupHashHex?: string): {
+    admin: SupabaseClient;
+    capturou: () => Record<string, unknown>;
+  } {
+    let inserido: Record<string, unknown> = {};
     const builder = {
-      insert: () => ({
-        select: () => ({
-          single: async () => ({ data: insertError ? null : { id: "row" }, error: insertError }),
-        }),
-      }),
+      insert: (row: Record<string, unknown>) => {
+        inserido = row;
+        return {
+          select: () => ({
+            single: async () => ({ data: insertError ? null : { id: "row" }, error: insertError }),
+          }),
+        };
+      },
       select: () => ({
         eq: () => ({
           eq: () => ({
@@ -79,7 +86,10 @@ describe("reservarOuReplay", () => {
         }),
       }),
     };
-    return { from: () => builder } as unknown as SupabaseClient;
+    return {
+      admin: { from: () => builder } as unknown as SupabaseClient,
+      capturou: () => inserido,
+    };
   }
 
   const args = {
@@ -90,22 +100,27 @@ describe("reservarOuReplay", () => {
     recursoId: "00000000-0000-4000-8000-000000000001",
   };
 
-  it("INSERT sem colisão → reservado", async () => {
-    const r = await reservarOuReplay(fakeAdmin(null), args);
+  it("INSERT sem colisão → reservado (request_hash sai como string \\x<hex>, não Buffer)", async () => {
+    const { admin, capturou } = fakeAdmin(null);
+    const r = await reservarOuReplay(admin, args);
     expect(r).toEqual({ tipo: "reservado", recursoId: args.recursoId });
+    expect(capturou().request_hash).toBe(`\\x${args.hash}`);
   });
 
   it("colisão com hash DIFERENTE → conflito (sem novo efeito)", async () => {
-    const r = await reservarOuReplay(fakeAdmin({ code: "23505" }, hashCanonico({ body: "outro" })), args);
+    const { admin } = fakeAdmin({ code: "23505" }, hashCanonico({ body: "outro" }));
+    const r = await reservarOuReplay(admin, args);
     expect(r).toEqual({ tipo: "conflito" });
   });
 
   it("colisão com hash IGUAL → replay", async () => {
-    const r = await reservarOuReplay(fakeAdmin({ code: "23505" }, args.hash), args);
+    const { admin } = fakeAdmin({ code: "23505" }, args.hash);
+    const r = await reservarOuReplay(admin, args);
     expect(r).toEqual({ tipo: "replay", recursoId: args.recursoId });
   });
 
   it("erro de escrita que NÃO é colisão propaga (não libera execução)", async () => {
-    await expect(reservarOuReplay(fakeAdmin({ code: "42P01" }), args)).rejects.toMatchObject({ code: "42P01" });
+    const { admin } = fakeAdmin({ code: "42P01" });
+    await expect(reservarOuReplay(admin, args)).rejects.toMatchObject({ code: "42P01" });
   });
 });

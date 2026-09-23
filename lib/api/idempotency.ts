@@ -113,7 +113,11 @@ export async function reservarOuReplay(
       organization_id: args.organizationId,
       key: args.chave,
       endpoint: args.endpoint,
-      request_hash: Buffer.from(args.hash, "hex"),
+      // `request_hash` é bytea: o formato de entrada do PostgREST é a string
+      // `\x<hex>`. Um `Buffer` aqui vira `{"type":"Buffer","data":[...]}` no
+      // `JSON.stringify` do cliente e o hash gravado deixa de bater com o
+      // `byteaParaHex` na leitura — "mesma chave, mesmo payload" vira conflito.
+      request_hash: `\\x${args.hash}`,
       response_body: { state: "pending", resource_id: args.recursoId },
       status_code: 202,
     })
