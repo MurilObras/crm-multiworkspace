@@ -60,12 +60,16 @@ export async function POST(req: NextRequest): Promise<Response> {
       // limpeza do idempotency_keys). Checar ANTES de reservar: um payload
       // diferente após a limpeza devolve 409 SEM envenenar a reserva — e o
       // payload original continua recuperando a MESMA operação.
-      const { data: jaExiste } = await supabase
+      const { data: jaExiste, error: preCheckErr } = await supabase
         .from("messages")
         .select("id, metadata")
         .eq("id", recursoId)
         .eq("organization_id", activeOrg.orgId)
         .maybeSingle();
+      if (preCheckErr) {
+        // Falha de leitura NÃO é "não existe": interrompe sem reservar/criar/transportar.
+        return fail("internal_error", "Não foi possível verificar a operação existente.", 500, { requestId });
+      }
       const replay = jaExiste !== null;
       if (replay) {
         const existingHash = (jaExiste as { metadata?: Record<string, unknown> }).metadata?.idempotency_hash;

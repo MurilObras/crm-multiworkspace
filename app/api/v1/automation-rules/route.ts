@@ -94,18 +94,24 @@ export async function POST(req: NextRequest): Promise<Response> {
     // O RECURSO é a fonte durável do vínculo chave→payload (sobrevive à limpeza
     // do idempotency_keys). Checar ANTES de reservar evita que um payload
     // diferente, após a limpeza, "envenene" a reserva e bloqueie o original.
-    const { data: jaExiste } = await supabase
+    const { data: jaExiste, error: preCheckErr } = await supabase
       .from("automation_rules")
-      .select("id, metadata")
+      .select("*")
       .eq("id", recursoId)
       .eq("organization_id", activeOrg.orgId)
       .maybeSingle();
+    if (preCheckErr) {
+      // Falha de leitura NÃO é "não existe": interrompe sem reservar/criar.
+      return fail("internal_error", "Não foi possível verificar a operação existente.", 500, { requestId });
+    }
     const replay = jaExiste !== null;
     if (replay) {
       const existingHash = (jaExiste as { metadata?: Record<string, unknown> }).metadata?.idempotency_hash;
       if (existingHash !== hash) {
         return fail("idempotency_conflict", "Requisicão repetida com conteúdo divergente.", 409, { requestId });
       }
+      // Regra COMPLETA (select *): preserva name/actions/is_active e o estado atual,
+      // sem sobrescrever alterações legítimas posteriores.
       created = jaExiste;
     } else {
       // Reserva a identidade + hash ANTES de criar a regra.

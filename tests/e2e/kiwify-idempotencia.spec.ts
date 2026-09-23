@@ -22,6 +22,7 @@ const prefix = `E2E-IDEM-${randomUUID().slice(0, 8)}`;
 let db: pg.Pool;
 let creds: { org_id: string; org_slug: string; supabase_url: string; password: string; users: Record<string, { email: string }> };
 let session: string, conversation: string;
+let managerId: string;
 
 test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
   test.setTimeout(180000);
@@ -32,6 +33,7 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
     if (creds.org_slug !== "e2e-test-org" || !local(creds.supabase_url)) throw new Error("Credenciais sintéticas do rig local obrigatórias");
     db = new pg.Pool({ connectionString: dbUrl });
     const org = creds.org_id;
+    managerId = (await db.query("select id from auth.users where email=$1", [creds.users.manager!.email])).rows[0].id;
     session = (await db.query("insert into channel_sessions(organization_id,waha_session_name,status,webhook_secret_encrypted,daily_message_limit) values($1,$2,'WORKING',$3,300) returning id", [org, prefix, Buffer.from("synthetic-unused")])).rows[0].id;
     const contact = (await db.query("insert into contacts(organization_id,name,phone_number) values($1,'Idem sintético','+12025550199') returning id", [org])).rows[0].id;
     conversation = (await db.query("insert into conversations(organization_id,contact_id,channel_session_id,status,last_inbound_at) values($1,$2,$3,'open',now()) returning id", [org, contact, session])).rows[0].id;
@@ -130,16 +132,26 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
   test("E: limpeza preserva conflito e o payload original ainda recupera", async ({ page }) => {
     await login(page);
     const key = `${prefix}-E`;
+    const chave = `${managerId}:${key}`;
+    const endpoint = "/api/v1/messages";
     const r1 = await postMessage(page, key, "payload original");
-    const id1 = (await r1.json()).data.id;
-    // limpeza do idempotency_keys (expiração pertinente)
-    await db.query("delete from idempotency_keys where key=$1", [`${creds.org_id}:${key}`]);
-    // payload DIFERENTE → 409 (hash durável no recurso)
+    const original = await r1.json();
+    const id1 = original.data.id;
+    expect(r1.status()).toBe(201);
+    // a reserva correta existe (uma, com org+endpoint+key)
+    expect((await db.query("select count(*)::int n from idempotency_keys where organization_id=$1 and endpoint=$2 and key=$3", [creds.org_id, endpoint, chave])).rows[0].n).toBe(1);
+    // limpeza com os MESMOS filtros
+    await db.query("delete from idempotency_keys where organization_id=$1 and endpoint=$2 and key=$3", [creds.org_id, endpoint, chave]);
+    expect((await db.query("select count(*)::int n from idempotency_keys where organization_id=$1 and endpoint=$2 and key=$3", [creds.org_id, endpoint, chave])).rows[0].n).toBe(0);
+    // payload DIFERENTE → 409 (hash durável no recurso), sem novo recurso
     const r2 = await postMessage(page, key, "payload diferente");
     expect(r2.status()).toBe(409);
-    // payload ORIGINAL → recupera a mesma mensagem (sem envenenar a reserva)
+    expect(await countMessages(key)).toBe(1);
+    // payload ORIGINAL → recupera a MESMA mensagem, com resposta completa
     const r3 = await postMessage(page, key, "payload original");
-    expect((await r3.json()).data.id).toBe(id1);
+    const replay = await r3.json();
+    expect(replay.data.id).toBe(id1);
+    expect(replay.data.status).toBeTruthy();
     expect(await countMessages(key)).toBe(1);
   });
 
@@ -158,7 +170,13 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
     expect(r1.status()).toBe(201);
     const id1 = (await r1.json()).data.id;
     const r2 = await postRule(page, key, ruleName);
-    expect((await r2.json()).data.id).toBe(id1);
+    const replay = await r2.json();
+    expect(replay.data.id).toBe(id1);
+    // resposta completa: contrato normal da API preservado
+    expect(replay.data.name).toBe(ruleName);
+    expect(Array.isArray(replay.data.actions)).toBe(true);
+    expect(replay.data.actions).toHaveLength(1);
+    expect(replay.data.is_active).toBe(false);
     expect((await db.query("select is_active from automation_rules where id=$1", [id1])).rows[0].is_active).toBe(false);
     expect(await countRules(ruleName)).toBe(1);
   });

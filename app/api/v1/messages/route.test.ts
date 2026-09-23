@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   reservar: vi.fn(),
   concluir: vi.fn(),
   preCheck: null as { id: string; metadata?: Record<string, unknown> } | null,
+  preCheckError: null as { message: string } | null,
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: mocks.role }));
@@ -22,7 +23,7 @@ vi.mock("@/lib/supabase/server", () => ({
       select: () => ({
         eq: () => ({
           eq: () => ({
-            maybeSingle: async () => ({ data: mocks.preCheck, error: null }),
+            maybeSingle: async () => ({ data: mocks.preCheck, error: mocks.preCheckError }),
           }),
         }),
       }),
@@ -58,6 +59,7 @@ beforeEach(() => {
   mocks.reservar.mockResolvedValue({ tipo: "reservado", recursoId: "deterministic-id" });
   mocks.concluir.mockResolvedValue(undefined);
   mocks.preCheck = null;
+  mocks.preCheckError = null;
 });
 
 it("sem Idempotency-Key mantém o caminho antigo (sem options idempotentes)", async () => {
@@ -109,4 +111,13 @@ it("recurso JÁ existe com hash DIFERENTE → 409 (payload original não é sobr
   expect(r.status).toBe(409);
   expect(mocks.reservar).not.toHaveBeenCalled();
   expect(mocks.handler).not.toHaveBeenCalled();
+});
+
+it("erro de LEITURA no pre-check → 500, sem reservar/criar/transportar", async () => {
+  mocks.preCheckError = { message: "conexão indisponível" };
+  const r = await call({ "Idempotency-Key": "chave-1" });
+  expect(r.status).toBe(500);
+  expect(mocks.reservar).not.toHaveBeenCalled();
+  expect(mocks.handler).not.toHaveBeenCalled();
+  expect(mocks.concluir).not.toHaveBeenCalled();
 });
