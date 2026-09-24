@@ -91,6 +91,15 @@ it("backfill mantém regras antigas ativas; reaplicar não recria unlink", async
   await manage(id,"unlink",{rule_id:legacy}); await pool.query(migration);
   expect((await pool.query("select * from kiwify_automation_links where integration_id=$1 and rule_id=$2",[id,legacy])).rows).toHaveLength(0);
 });
+it("backfill vincula regra legada pausada sem reativá-la, inclusive na reaplicação", async () => {
+  const id=await create(), paused=await rule(true);
+  await pool.query("update automation_rules set is_active=false where id=$1",[paused]);
+  await pool.query(migration);
+  expect((await pool.query("select rule_id from kiwify_automation_links where organization_id=$1 and integration_id=$2 and rule_id=$3",[org,id,paused])).rows).toEqual([{rule_id:paused}]);
+  expect((await pool.query("select is_active from automation_rules where id=$1",[paused])).rows[0].is_active).toBe(false);
+  await pool.query(migration);
+  expect((await pool.query("select is_active from automation_rules where id=$1",[paused])).rows[0].is_active).toBe(false);
+});
 it("vínculos são privados sob JWT/RLS; serviço não consegue gravar FK cross-tenant", async () => {
   const id=await create(), own=await rule();await manage(id,"link",{rule_id:own});
   const foreign=(await pool.query("insert into automation_rules(organization_id,name,trigger_event,conditions,actions) values($1,'Foreign','lead.created','[]','[]') returning id",[alien])).rows[0].id;

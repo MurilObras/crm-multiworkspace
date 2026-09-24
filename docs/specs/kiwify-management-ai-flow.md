@@ -30,6 +30,22 @@ opcionalmente de `bind_ai_agent` e `start_message_flow`. As duas ações posteri
 aguardam o estado durável de sucesso das anteriores. Transporte incerto não autoriza
 seguir adiante nem refazer a primeira mensagem.
 
+### Espera da mensagem inicial
+
+`queued` com fase `prepared` permanece uma espera real: não é sucesso nem falha
+terminal. O consumidor existente de `event_log` reagenda sem consumir tentativas.
+O run só publica `pending` em `finishActionIntent`, depois que o executor saiu;
+o próximo worker usa CAS `pending → preparing` para continuar a mesma mensagem.
+O pedido já resolvido fica em metadata da mensagem (inclusive texto gerado pela IA
+e parâmetros de template), portanto a retomada não regenera nem renderiza de novo.
+As guardas de destinatário, consentimento, janela e transporte continuam no sink.
+
+`precedingActionsState` lê a confirmação da mensagem e o estado durável do run;
+`queued`/`sending` aguardam, e failed/rejected/blocked/uncertain não liberam efeitos
+dependentes. A retomada nunca adota uma tentativa `started`/`uncertain`. O watchdog
+legado continua excluindo mensagens de action intents, inclusive sem metadata.
+Não há fila, scheduler ou mecanismo de automação novo.
+
 `bind_ai_agent` não envia mensagem: grava `conversations.active_ai_agent_id`, o marcador
 `active_intent=automation:bound` e a restrição de agendamento em metadata. O mesmo
 `resolveTurnAgent` e o gate de capacidade do drain consomem esse vínculo, revalidando a
@@ -61,6 +77,13 @@ automaticamente. Uma nova regra/compra é uma nova operação, não uma reescrit
 - `tests/invariants/kiwify-automation.integration.ts`: motor real com PostgreSQL,
   PostgREST e transporte sintético; lojas isoladas, binding, próximo inbound,
   enrollment único e interrupção por resposta, além das regressões de transporte.
+  Inclui queued com oito workers, falhas terminais e o caminho inbound persistido
+  → drain → claim → inbound-turn → resposta persistida no sink real. Só o modelo
+  e o transporte externo são determinísticos; resolvedor e runtime não são mocks.
+- Regra genérica nova permanece visível em Gerenciar automações com explicação
+  da condição de compra aprovada exigida para vínculo explícito; não é vinculada
+  por produto nem por inferência. Regra legada pausada tem assert de backfill sem
+  alterar `is_active`, inclusive na reaplicação.
 - `tests/e2e/kiwify-operator-ui.spec.ts`: jornada de edição/vínculo/arquivo pela tela.
 - `lib/automation/ai-binding-policy.test.ts`: opções usam ações canônicas e nunca
   concedem tools ausentes. Não é prova de julgamento comercial de um modelo real.

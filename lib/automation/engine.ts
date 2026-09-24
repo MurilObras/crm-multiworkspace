@@ -21,7 +21,8 @@ import type { ActionResultDetail } from "@/lib/automation/types";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { acquireActionIntent, finishActionIntent, readEventPlan, freezeEventPlan, actionPlanLive, precedingActionsState } from "./action-intent";
+import { acquireActionIntent, finishActionIntent, readEventPlan, freezeEventPlan, actionPlanLive, precedingActionsState, actionStillWaiting } from "./action-intent";
+import { resumeQueuedAutomationMessage } from "./send-message";
 import { checarGuardasDeContato } from "./guarda-do-contato";
 import { actionSchema } from "@/lib/schemas/webhooks";
 
@@ -233,7 +234,14 @@ export async function runAutomationForEvent(
       const actionCtx = { admin, organizationId: row.organization_id, ruleId: rule.id,
         ruleName: rule.name, event: row, context: kiwify ? await buildContext(admin, row) : context, requestId: row.id };
       const intentId = kiwify ? await acquireActionIntent(getRequestPool(), actionCtx, index, action.type,true) : null;
-      if (kiwify && !intentId) continue;
+      if (kiwify && !intentId) {
+        const resumed = await resumeQueuedAutomationMessage(actionCtx, index, action.type);
+        if (resumed) await finishActionIntent(getRequestPool(), row.organization_id, resumed.id, resumed.result);
+        if (await actionStillWaiting(getRequestPool(), row.organization_id, row.id, rule.id, index)) {
+          return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: new Date(Date.now() + 5000).toISOString() };
+        }
+        continue;
+      }
       let result: ActionResultDetail;
       try {
         result = kiwify && !await actionPlanLive(getRequestPool(),row.organization_id,row.id)
@@ -252,6 +260,9 @@ export async function runAutomationForEvent(
       results.push(result);
       if (intentId) await finishActionIntent(getRequestPool(), row.organization_id, intentId, result);
       if (intentId && index === 0) await recordRuleExecution(admin,row.organization_id,rule.id);
+      if (intentId && result.status === "postponed") {
+        return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: new Date(Date.now() + 5000).toISOString() };
+      }
     }
 
     // Cada ação Kiwify já é um run durável, correlacionado à mensagem.

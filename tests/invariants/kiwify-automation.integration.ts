@@ -146,11 +146,11 @@ it("regra legada continua enviando após backfill, inclusive com produto já com
   expect((await pool.query("select is_active from automation_rules where id=$1",[f.rule])).rows[0].is_active).toBe(true);
 });
 
-async function postPurchaseFixture(published=true, scheduling=false) {
+async function postPurchaseFixture(published=true, scheduling=false, agentSession=session) {
   const f=await fixture();
   const agent=(await pool.query("insert into ai_agents(organization_id,name,system_prompt) values($1,$2,'Qualifique sem inventar disponibilidade.') returning id",[org,`Agente pós-compra ${randomUUID()}`])).rows[0].id;
   const pipeline=(await pool.query("select pipeline_id from crm_leads where id=$1",[f.receipt.lead_id])).rows[0].pipeline_id;
-  const version=(await pool.query("insert into ai_agent_versions(organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,operator_enabled,operator_tool_ids,pipeline_ids) values($1,$2,1,'Qualifique com conhecimento publicado.','anthropic','claude-sonnet-4-6',$3,$4,$5,$6,$7) returning id",[org,agent,session,published?"published":"draft",scheduling,scheduling?[...APPOINTMENT_TOOLS]:[],[pipeline]])).rows[0].id;
+  const version=(await pool.query("insert into ai_agent_versions(organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,operator_enabled,operator_tool_ids,pipeline_ids) values($1,$2,1,$8,'anthropic','claude-sonnet-4-6',$3,$4,$5,$6,$7) returning id",[org,agent,agentSession,published?"published":"draft",scheduling,scheduling?[...APPOINTMENT_TOOLS]:[],[pipeline],`AGENTE_KIWIFY_${agent}: qualifique com conhecimento publicado.`])).rows[0].id;
   if(published) await pool.query("update ai_agents set published_version_id=$2 where id=$1",[agent,version]);
   const graph={nodes:[{id:"start",type:"trigger",label:"Início",position:{x:0,y:0},config:{}},{id:"end",type:"end",label:"Fim",position:{x:1,y:0},config:{outcome:"converted"}}],edges:[{id:"edge",source:"start",target:"end",priority:0,condition:{type:"always"}}]};
   const fv=(await pool.query("insert into followup_flow_versions(organization_id,graph) values($1,$2) returning id",[org,graph])).rows[0].id;
@@ -190,11 +190,124 @@ it("mensagem → binding publicado → follow-up: concorrência/retry não dupli
   await runAutomationForEvent(admin,f.event);
   expect((await pool.query("select count(*)::int n from followup_enrollments where contact_id=$1",[f.contact])).rows[0].n).toBe(1);
 });
+it("queued real → espera → transporte tardio → bind/enrollment únicos com oito workers", async () => {
+  const {drainEventLog}=await import("@/lib/event-log/drain");
+  const {registerHandler}=await import("@/lib/event-log/dispatcher");
+  const f=await postPurchaseFixture();runtime.configured=false;
+  await pool.query("update event_log set status='done' where organization_id=$1 and id<>$2",[org,f.event.id]);
+  registerHandler({key:"automation-rules",events:["lead.created"],handle:row=>runAutomationForEvent(admin,row)});
+  expect((await drainEventLog(admin)).retried).toBe(1);
+  expect((await pool.query("select status,attempts,consumed_by from event_log where id=$1",[f.event.id])).rows[0])
+    .toEqual({status:"pending",attempts:0,consumed_by:[]});
+  const first=(await pool.query("select r.id,r.execution_state,r.status,m.id as message_id,m.status as message_status,m.metadata from automation_rule_runs r join messages m on m.id=r.message_id where r.event_id=$1",[f.event.id])).rows[0];
+  expect(first).toMatchObject({status:"adiado",execution_state:"pending",message_status:"queued"});
+  expect(first.metadata.outbound_attempt.phase).toBe("prepared");
+  expect(runtime.send).not.toHaveBeenCalled();
+  await Promise.all(Array.from({length:8},()=>runAutomationForEvent(admin,f.event)));
+  expect((await pool.query("select * from followup_enrollments where contact_id=$1",[f.contact])).rows).toHaveLength(0);
+  expect((await pool.query("select active_ai_agent_id from conversations where contact_id=$1",[f.contact])).rows[0].active_ai_agent_id).toBeNull();
+  // O texto resolvido é o da PRIMEIRA tentativa, não o de uma regra editada.
+  await pool.query("update automation_rules set actions='[]' where id=$1",[f.rule]);
+  runtime.configured=true;
+  let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+  runtime.onReceive=async()=>{await gate;};
+  await pool.query("update event_log set next_attempt_at=now()-interval '1 second' where id=$1",[f.event.id]);
+  const resuming=drainEventLog(admin);
+  try {
+    await vi.waitFor(()=>expect(runtime.received).toHaveLength(1));
+    await Promise.all(Array.from({length:8},()=>runAutomationForEvent(admin,f.event)));
+    expect((await pool.query("select count(*)::int n from automation_rule_runs where event_id=$1 and action_index>0",[f.event.id])).rows[0].n).toBe(0);
+  } finally {release();await resuming;runtime.onReceive=null;}
+  await Promise.all(Array.from({length:8},()=>runAutomationForEvent(admin,f.event)));
+  expect(runtime.send).toHaveBeenCalledOnce();expect(runtime.received).toEqual([expect.objectContaining({body:"Bem-vindo"})]);
+  expect((await pool.query("select id from messages where contact_id=$1 and direction='outbound'",[f.contact])).rows).toEqual([{id:first.message_id}]);
+  expect((await pool.query("select action_index,status from automation_rule_runs where event_id=$1 order by action_index",[f.event.id])).rows).toEqual([0,1,2].map(action_index=>({action_index,status:"success"})));
+  const conv=(await pool.query("select id,active_ai_agent_id from conversations where contact_id=$1",[f.contact])).rows[0];
+  expect(conv.active_ai_agent_id).toBe(f.agent);
+  expect((await pool.query("select count(*)::int n from api_audit_log where resource_id=$1 and action='automation.ai_agent_bound'",[conv.id])).rows[0].n).toBe(1);
+  expect((await pool.query("select count(*)::int n from followup_enrollments where contact_id=$1",[f.contact])).rows[0].n).toBe(1);
+  expect((await pool.query("select status,attempts,consumed_by from event_log where id=$1",[f.event.id])).rows[0])
+    .toEqual({status:"done",attempts:0,consumed_by:["automation-rules"]});
+});
+it.each(["rejection","timeout","preflight","blocked","queued_after_start"])("queued → %s terminal não libera bind/follow-up nem repete transporte",async(mode)=>{
+  const f=await postPurchaseFixture();runtime.configured=false;
+  await runAutomationForEvent(admin,f.event);
+  runtime.configured=true;runtime.mode=mode;
+  if(mode==="preflight")runtime.send.mockRejectedValueOnce(new DeliveryRejectedError("meta_session_credentials_missing",false,true));
+  if(mode==="blocked")await pool.query("update contacts set is_blocked=true where id=$1",[f.contact]);
+  if(mode==="queued_after_start")runtime.send.mockImplementationOnce(async envelope=>{
+    await fetch(runtime.endpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(envelope)});
+    throw new Error("waha_not_configured: synthetic ambiguous provider result");
+  });
+  await runAutomationForEvent(admin,f.event);
+  await Promise.all(Array.from({length:8},()=>runAutomationForEvent(admin,f.event)));
+  expect(runtime.send).toHaveBeenCalledTimes(mode==="blocked"?0:1);expect(runtime.received).toHaveLength(["blocked","preflight"].includes(mode)?0:1);
+  expect((await pool.query("select execution_state from automation_rule_runs where event_id=$1 and action_index=0",[f.event.id])).rows[0].execution_state)
+    .toBe(mode==="rejection"?"rejected":["timeout","queued_after_start"].includes(mode)?"uncertain":mode==="blocked"?"blocked":"failed_before_send");
+  expect((await pool.query("select * from automation_rule_runs where event_id=$1 and action_index>0",[f.event.id])).rows).toHaveLength(0);
+  expect((await pool.query("select * from followup_enrollments where contact_id=$1",[f.contact])).rows).toHaveLength(0);
+});
 it("agente não publicado é recusado e não inicia follow-up", async () => {
   const f=await postPurchaseFixture(false);await runAutomationForEvent(admin,f.event);
   expect((await pool.query("select active_ai_agent_id from conversations where contact_id=$1",[f.contact])).rows[0].active_ai_agent_id).toBeNull();
   expect((await pool.query("select * from followup_enrollments where contact_id=$1",[f.contact])).rows).toHaveLength(0);
   expect((await pool.query("select actions_result from automation_rule_runs where event_id=$1 and action_index=1",[f.event.id])).rows[0].actions_result[0].detail.reason).toBe("sem_agente_publicado");
+});
+it("compra → bind → inbound persistido → drain → claim → inbound-turn atende com o agente vinculado",async()=>{
+  const {drainTick}=await import("@/lib/agent-engine/edge/crm/drain");
+  const {createInboundTurnHandler}=await import("@/lib/agent-engine/agent/inbound-turn");
+  const {createFakeRegistry}=await import("@/lib/agent-engine/edge/llm/providers");
+  const {createLogger}=await import("@/lib/agent-engine/obs/logger");
+  const {claimJobs,completeJob}=await import("@/lib/agent-engine/queue/queue");
+  await pool.query(`with v as (
+    insert into playbook_versions(organization_id,layer,content)
+    select null,'platform',E'## Identidade\nAtenda o cliente com o agente publicado.'
+    where not exists(select 1 from playbook_pointers where organization_id is null and layer='platform') returning id)
+    insert into playbook_pointers(organization_id,layer,version_id) select null,'platform',id from v`);
+  const otherSession=(await pool.query("insert into channel_sessions(organization_id,waha_session_name,status,webhook_secret_encrypted) values($1,$2,'WORKING',$3) returning id",[org,randomUUID(),secret])).rows[0].id;
+  const f=await postPurchaseFixture(true,false,otherSession);
+  // Controle negativo de fallback: NENHUM agente é publicado para a sessão de
+  // entrada. Só o binding torna o turno elegível e escolhe o prompt correto.
+  await pool.query("update ai_agents set published_version_id=null where organization_id=$1 and id<>$2",[org,f.agent]);
+  await runAutomationForEvent(admin,f.event);
+  const conv=(await pool.query("select id,active_ai_agent_id from conversations where organization_id=$1 and contact_id=$2",[org,f.contact])).rows[0];
+  expect(conv.active_ai_agent_id).toBe(f.agent);
+  const inbound=(await pool.query("insert into messages(organization_id,conversation_id,channel_session_id,contact_id,direction,type,body,status,sent_via) values($1,$2,$3,$4,'inbound','text','Gostaria de conhecer o atendimento','delivered','external_device') returning id",[org,conv.id,session,f.contact])).rows[0].id;
+  const event=(await pool.query("select emit_event('ai_agent.dispatch_requested','message',$1,$2,'{}',$3) id",[inbound,{organization_id:org,conversation_id:conv.id,contact_id:f.contact,channel_session_id:session,inbound_message_id:inbound},org])).rows[0].id;
+  const log=createLogger();
+  await drainTick(pool,{batchSize:100,intervalMs:100,idleIntervalMs:100,debounceMs:0,reapTimeoutMs:300000},log);
+  const jobs=(await pool.query("select * from job_queue where organization_id=$1 and source_event_id=$2",[org,event])).rows;
+  expect(jobs).toHaveLength(1);expect(jobs[0].kind).toBe("inbound_turn");
+  const worker=`bound-${randomUUID()}`;
+  const [claimed]=await claimJobs(pool,{workerId:worker,maxConcurrency:1,jobIds:[jobs[0].id]});
+  expect(claimed?.id).toBe(jobs[0].id);
+  await pool.query("insert into channel_session_health(organization_id,channel_session_id,status,health_hold_active) values($1,$2,'WORKING',false) on conflict(organization_id,channel_session_id) do update set status='WORKING',health_hold_active=false",[org,session]);
+  runtime.received=[];runtime.send.mockClear();
+  const prompts:string[]=[];let sent=false;
+  const body="Olá! Sou o atendente do seu pós-compra. Como posso ajudar?";
+  const registry=createFakeRegistry((async(options:{prompt:unknown})=>{
+    const prompt=JSON.stringify(options.prompt);prompts.push(prompt);
+    const respond=!sent && prompt.includes(`AGENTE_KIWIFY_${f.agent}`);
+    if(respond)sent=true;
+    return {content:respond?[{type:"tool-call",toolCallId:"bound-reply",toolName:"send_message",input:JSON.stringify({body})}]
+      :[{type:"text",text:JSON.stringify({commitments:[],objections:[],next_action:null,rolling_summary:"Atendimento pós-compra"})}],
+      finishReason:{unified:respond?"tool-calls":"stop",raw:undefined},
+      usage:{inputTokens:{total:1,noCache:1,cacheRead:0,cacheWrite:0},outputTokens:{total:1,text:1,reasoning:0}},warnings:[]};
+  }) as never);
+  const handler=createInboundTurnHandler({crmCfg:{supabase:admin},llmCfg:{anthropicApiKey:"fake-only-no-network"} as never,
+    knobs:{historyLimit:10,maxContextTokens:1000,notesIndexMaxTokens:500,maxSteps:6,queuedRetryDelayMs:1000,
+      breaker:{exactFailureWarn:2,exactFailureBlock:5,sameToolFailureWarn:3,sameToolFailureHalt:8,noProgressWarn:3,noProgressBlock:5}},
+    log,registry,
+    clock:()=>new Date("2026-09-24T15:00:00Z"),sleep:async()=>{}});
+  await handler(claimed!,pool,{workerId:worker});
+  await completeJob(pool,claimed!.id,worker);
+  expect(runtime.received).toEqual([expect.objectContaining({body})]);
+  expect((await pool.query("select body,status from messages where organization_id=$1 and conversation_id=$2 and body=$3 and direction='outbound'",[org,conv.id,body])).rows).toEqual([{body,status:"sent"}]);
+  expect(prompts.some(p=>p.includes(`AGENTE_KIWIFY_${f.agent}`))).toBe(true);
+  expect((await pool.query("select agent_id from llm_calls where organization_id=$1 and agent_id=$2",[org,f.agent])).rows.length).toBeGreaterThan(0);
+  expect((await pool.query("select status from send_ledger where organization_id=$1 and job_id=$2",[org,claimed!.id])).rows).toEqual([{status:"accepted"}]);
+  await drainTick(pool,{batchSize:100,intervalMs:100,idleIntervalMs:100,debounceMs:0,reapTimeoutMs:300000},log);
+  expect((await pool.query("select id from job_queue where source_event_id=$1",[event])).rows).toHaveLength(1);
 });
 it("resposta antes da inscrição impede follow-up ativo e não é desfeita pelo retry", async () => {
   const f=await postPurchaseFixture();
@@ -402,6 +515,7 @@ it.each(["missing_configuration","disconnected"])("canal %s informa o motivo sem
   expect(runtime.received).toHaveLength(0);expect(runtime.send).not.toHaveBeenCalled();
   const row=(await queryKiwifyHistory(pool,org,{page:1,limit:20,search:f.receipt.order_id})).rows[0]!;
   expect(historyExplanation(row)).toMatch(mode==="missing_configuration"?/não foi configurada/:/não está disponível/);
+  if(mode==="missing_configuration") expect(row.status).toBe("pending");
 });
 it.each(["edit","remove","reorder","delete_rule"])("plano conserva as ações após %s entre aquisição e retry",async(change)=>{
   const f=await fixture(2);

@@ -246,6 +246,13 @@ export function KiwifyIntegrationBlock() {
                     <Button type="button" variant="secondary" disabled={manage.isPending} onClick={() => manage.mutate({ id: int.id, operation: linked ? "unlink" : "link", ruleId: rule.id })}>{linked ? t("Desvincular") : t("Vincular")}</Button>
                   </div>;
                 })}
+                {rules.filter(rule => rule.trigger_event === "lead.created" && !isKiwifyPurchaseRule(rule)
+                  && !(data?.data.links ?? []).some(l => l.integration_id === int.id && l.rule_id === rule.id)).map(rule => (
+                  <div key={rule.id} className="space-y-1 text-sm">
+                    <p>{rule.name}</p>
+                    <p className="text-muted-foreground">{t("Regra genérica não vinculada: para receber compras Kiwify, edite a regra e adicione a condição event.kiwify_event_type = order_approved. Depois vincule-a aqui.")}</p>
+                  </div>
+                ))}
               </div> : null}
             </CardContent>
           </Card>

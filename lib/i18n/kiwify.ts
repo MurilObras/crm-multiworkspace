@@ -49,6 +49,7 @@ export const KIWIFY_HISTORY_TRANSLATIONS = {
 
 /** Rótulos da interface operacional Kiwify (Integração / Compras / Automação). */
 export const KIWIFY_OPERATOR_TRANSLATIONS = {
+  "Regra genérica não vinculada: para receber compras Kiwify, edite a regra e adicione a condição event.kiwify_event_type = order_approved. Depois vincule-a aqui.": { es: "Regla genérica no vinculada: para recibir compras Kiwify, edita la regla y añade la condición event.kiwify_event_type = order_approved. Después vincúlala aquí." },
   "Vincular": { es: "Vincular" },
   "Desvincular": { es: "Desvincular" },
   "Integração atualizada.": { es: "Integración actualizada." },
