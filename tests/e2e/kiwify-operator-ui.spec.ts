@@ -189,6 +189,11 @@ test.describe("Kiwify: interface operacional", () => {
     // também exibe "Ativa" — o seletor global resolveria para dois elementos.
     await page.getByRole("switch", { name: `Ligar Compra Kiwify ${prefix}` }).click();
     await expect(automacao.getByText("Ativa")).toBeVisible({ timeout: 15_000 });
+    await expect.poll(async () => (await db.query("select is_active from automation_rules where id=$1",[ruleId])).rows[0].is_active).toBe(true);
+    expect((await db.query("select conditions from automation_rules where id=$1",[ruleId])).rows[0].conditions).toEqual([
+      {field:"event.kiwify_event_type",op:"eq",value:"order_approved"},
+      {field:"event.product_id",op:"eq",value:product},
+    ]);
   });
   test("manager edita, desvincula e arquiva preservando URL, cifra e regra", async ({ page }) => {
     const before=(await db.query("select id,path_token,secret_encrypted from kiwify_integrations where organization_id=$1 and store_id=$2",[creds.org_id,prefix])).rows[0];
@@ -210,7 +215,8 @@ test.describe("Kiwify: interface operacional", () => {
     await expect(card.getByRole("button",{name:"Vincular",exact:true})).toBeVisible();
     await card.getByRole("button",{name:"Vincular",exact:true}).click();
     await expect(card.getByRole("button",{name:"Desvincular",exact:true})).toBeVisible();
-    await page.screenshot({path:".superpowers/evidence/kiwify-operator-ui/management.png",fullPage:true});
+    const screenshot=await page.screenshot({path:".superpowers/evidence/kiwify-operator-ui/management.png",fullPage:true});
+    await test.info().attach("gerenciamento-kiwify",{body:screenshot,contentType:"image/png"});
     await card.getByRole("button",{name:"Excluir integração"}).click();
     await expect(region.getByText(`${prefix} editada`,{exact:true})).toHaveCount(0);
     expect((await db.query("select archived_at,is_active from kiwify_integrations where id=$1",[before.id])).rows[0]).toMatchObject({is_active:false,archived_at:expect.any(Date)});

@@ -86,6 +86,9 @@ export const createAutomationRuleSchema = z.object({
   actions: z.array(actionSchema).min(1).max(10),
 });
 export const updateAutomationRuleSchema = createAutomationRuleSchema.partial().extend({
+  // Zod 4 aplica defaults também dentro de optional(): só ligar a regra não
+  // pode transformar conditions ausente em [] e apagar o filtro da compra.
+  conditions: z.array(conditionSchema).max(10).optional(),
   is_active: z.boolean().optional(),
 });
 
