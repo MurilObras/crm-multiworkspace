@@ -139,11 +139,13 @@ test.describe("Kiwify: interface operacional", () => {
     await page.getByRole("button", { name: "Criar automação" }).click();
 
     // Nasce pausada, e o estado é visível (não "Ativa").
-    await expect(page.getByText("Pausada")).toBeVisible({ timeout: 15_000 });
+    await expect(automacao.getByText("Pausada")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: "Gerenciar automação" })).toBeVisible();
 
-    // Ativação é explícita, e só então reflete "Ativa".
+    // Ativação é explícita, e só então reflete "Ativa". O texto é escopado à
+    // automação: a integração Kiwify nasce ativa (is_active default true) e
+    // também exibe "Ativa" — o seletor global resolveria para dois elementos.
     await page.getByRole("switch", { name: `Ligar Compra Kiwify ${prefix}` }).click();
-    await expect(page.getByText("Ativa")).toBeVisible({ timeout: 15_000 });
+    await expect(automacao.getByText("Ativa")).toBeVisible({ timeout: 15_000 });
   });
 });
