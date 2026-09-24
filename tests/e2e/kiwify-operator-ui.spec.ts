@@ -145,6 +145,7 @@ test.describe("Kiwify: interface operacional", () => {
         tentativas.push({ key: req.headers()["idempotency-key"] ?? null, body: req.postDataJSON() });
     });
     let ruleId = "";
+    let descartadas = 0;
     let recebeu!: () => void;
     let falhou!: (err: unknown) => void;
     const perdida = new Promise<void>((resolve, reject) => { recebeu = resolve; falhou = reject; });
@@ -152,24 +153,28 @@ test.describe("Kiwify: interface operacional", () => {
       try {
         const real = await route.fetch();
         expect(real.status()).toBe(201);
-        ruleId = (await real.json()).data.id as string;
+        const id = (await real.json()).data.id as string;
+        if (ruleId) expect(id).toBe(ruleId);
+        ruleId = id;
         expect((await db.query("select count(*)::int n from automation_rules where id=$1 and name=$2 and organization_id=$3 and is_active=false", [ruleId, `Compra Kiwify ${prefix}`, creds.org_id])).rows[0].n).toBe(1);
         await route.abort("failed"); // perde apenas a confirmação HTTP do CRM
-        recebeu();
+        descartadas++;
+        if (descartadas === 3) recebeu(); // três retries automáticos do apiClient
       } catch (err) { falhou(err); await route.abort("failed").catch(() => {}); }
     };
     await page.route("**/api/v1/automation-rules", perderResposta);
     await page.getByRole("button", { name: "Criar automação", exact: true }).click();
     await perdida;
     await page.unroute("**/api/v1/automation-rules", perderResposta);
+    await expect(page.getByRole("button", { name: "Criar automação", exact: true })).toBeEnabled();
     const replay = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/v1/automation-rules" && r.request().method() === "POST");
     await page.getByRole("button", { name: "Criar automação", exact: true }).click();
     const response = await replay;
     expect(response.status()).toBe(201);
     expect((await response.json()).data.id).toBe(ruleId);
-    expect(tentativas).toHaveLength(2);
+    expect(tentativas).toHaveLength(4);
     expect(tentativas[0]!.key).toBeTruthy();
-    expect(tentativas[1]).toEqual(tentativas[0]);
+    for (const tentativa of tentativas) expect(tentativa).toEqual(tentativas[0]);
     expect((await db.query("select count(*)::int n from automation_rules where id=$1 and name=$2 and organization_id=$3 and is_active=false", [ruleId, `Compra Kiwify ${prefix}`, creds.org_id])).rows[0].n).toBe(1);
 
     // Nasce pausada, e o estado é visível (não "Ativa").

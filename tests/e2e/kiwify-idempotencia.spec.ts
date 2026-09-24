@@ -378,6 +378,7 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
           tentativas.push({ key: req.headers()["idempotency-key"] ?? null, body: req.postDataJSON() });
       });
       let persistedId = "";
+      let descartadas = 0;
       let recebeu!: () => void;
       let falhou!: (err: unknown) => void;
       const perdida = new Promise<void>((resolve, reject) => { recebeu = resolve; falhou = reject; });
@@ -385,11 +386,16 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
         try {
           const real = await route.fetch();
           expect(real.status()).toBe(201);
-          persistedId = (await real.json()).data.id as string;
+          const id = (await real.json()).data.id as string;
+          if (persistedId) expect(id).toBe(persistedId);
+          persistedId = id;
           expect((await db.query("select count(*)::int n from messages where id=$1 and organization_id=$2 and body=$3", [persistedId, org, order])).rows[0].n).toBe(1);
           expect(transporte.received.filter((r) => r.text === order)).toHaveLength(1);
           await route.abort("failed"); // depois do 201 real; nunca entrega a resposta ao apiClient
-          recebeu();
+          descartadas++;
+          // apiClient reenvia com a mesma chave até três vezes por falha de rede.
+          // A reconciliação do FORMULÁRIO só começa após perder as três respostas.
+          if (descartadas === 3) recebeu();
         } catch (err) { falhou(err); await route.abort("failed").catch(() => {}); }
       };
       await page.route("**/api/v1/messages", perderResposta);
@@ -397,14 +403,15 @@ test.describe("Kiwify: idempotência de escrita (rotas reais)", () => {
       await perdida;
       await page.unroute("**/api/v1/messages", perderResposta);
       await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Confirmar envio" })).toBeEnabled();
       const replay = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/v1/messages" && r.request().method() === "POST");
       await dialog.getByRole("button", { name: /Confirmar envio|Reconciliar/ }).click();
       const response = await replay;
       expect(response.status()).toBe(201);
       expect((await response.json()).data.id).toBe(persistedId);
-      expect(tentativas).toHaveLength(2);
+      expect(tentativas).toHaveLength(4);
       expect(tentativas[0]!.key).toBeTruthy();
-      expect(tentativas[1]).toEqual(tentativas[0]);
+      for (const tentativa of tentativas) expect(tentativa).toEqual(tentativas[0]);
       expect((await db.query("select count(*)::int n from messages where id=$1 and organization_id=$2", [persistedId, org])).rows[0].n).toBe(1);
       expect(transporte.received.filter((r) => r.text === order)).toHaveLength(1);
     } finally {

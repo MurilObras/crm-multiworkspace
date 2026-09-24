@@ -824,6 +824,10 @@ jobs:
           # instalação/build com toda a parte 2 (inclui privacidade e refetch).
           if [ "${{ matrix.parte }}" = "2" ]; then
             pnpm exec playwright test tests/e2e/agenda-ocupacao-do-google-na-grade.spec.ts --workers=1 --reporter=list
+            # Mesmas rotas, GoTrue, banco e servidor da parte completa. Roda
+            # primeiro para diagnosticar a perda HTTP no formulário sem esperar
+            # os demais arquivos; a lista da parte 2 continua intacta abaixo.
+            pnpm exec playwright test tests/e2e/kiwify-idempotencia.spec.ts tests/e2e/kiwify-operator-ui.spec.ts --workers=1 --reporter=list
           fi
           pnpm exec playwright test --workers=1 $LISTA --reporter=list
         env:
