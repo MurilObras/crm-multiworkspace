@@ -20,6 +20,7 @@ if (process.env.KIWIFY_TEST_NATIVE !== "1" || !process.env.KIWIFY_TEST_POSTGREST
 const runtime = vi.hoisted(() => ({ db: null as unknown as pg.Pool, official:false,configured:true,
   endpoint:"", mode:"ok", waitUntil:null as string | null, received:[] as unknown[], openTransactions:[] as number[],
   idleAtSend:[] as Array<Array<{pid:number;application_name:string;query:string;backend_type:string}>>,
+  workerTransactions:[] as number[],
   onReceive:null as (()=>Promise<void>) | null,
   send: vi.fn(async (envelope: unknown) => {
     const response=await fetch(runtime.endpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(envelope)});
@@ -34,7 +35,10 @@ vi.mock("@/lib/channels", () => ({ CHANNEL_SESSION_REF_COLUMNS: "id, provider, w
   capabilitiesOf: () => ({ freeformOutsideWindow:!runtime.official,requiresTemplates:runtime.official }), resolveSessionRef: (s: unknown) => s,
   getAdapter: () => ({ isConfigured: () => runtime.configured, resolveRecipient: (c: { phoneNumber:string }) => c.phoneNumber,
     send: (envelope: unknown) => runtime.send(envelope), sendTemplate: (envelope: unknown) => runtime.send(envelope), codes: { sendFailed:"provider_send_failed",notConfigured:"waha_not_configured",unknownError:"provider_unknown" } }) }));
-const pool = new pg.Pool({ host:"127.0.0.1",port:Number(process.env.TEST_DB_PORT),user:"postgres",database:"kiwify_test",max:12 });
+// Identifica os backends deste executor sem atribuir a ele as transações de
+// outras requisições PostgREST que correm em paralelo no MESMO banco.
+const WORKER_APP = "kiwify-automation-worker";
+const pool = new pg.Pool({ host:"127.0.0.1",port:Number(process.env.TEST_DB_PORT),user:"postgres",database:"kiwify_test",max:12,application_name:WORKER_APP });
 let rest: ChildProcess, proxy: Server, admin: SupabaseClient;
 const org=randomUUID(),user=randomUUID();
 let integration:string,session:string;
@@ -66,6 +70,7 @@ beforeAll(async () => {
        )).rows;
        runtime.idleAtSend.push(idle);
        runtime.openTransactions.push(idle.length);
+       runtime.workerTransactions.push(idle.filter(row => row.application_name === WORKER_APP).length);
       if(runtime.mode==="timeout"){res.destroy();return;}
       res.writeHead(runtime.mode==="rejection"?400:200,{"content-type":"application/json"});
       const id=`synthetic-${randomUUID()}`;res.end(JSON.stringify({externalId:id,id}));return;
@@ -85,7 +90,7 @@ async function fixture(actions=1) {
   runtime.official=false;
   runtime.configured=true;
   await pool.query("update channel_sessions set status='WORKING' where id=$1",[session]);
-  runtime.mode="ok";runtime.waitUntil=null;runtime.received=[];runtime.openTransactions=[];runtime.idleAtSend=[];runtime.onReceive=null;
+  runtime.mode="ok";runtime.waitUntil=null;runtime.received=[];runtime.openTransactions=[];runtime.idleAtSend=[];runtime.workerTransactions=[];runtime.onReceive=null;
   await pool.query("update automation_rules set is_active=false where organization_id=$1",[org]);
   const rule=(await pool.query("insert into automation_rules(organization_id,name,trigger_event,conditions,actions,is_active) values($1,'Compra aprovada','lead.created','[]',$2,true) returning id",[org,JSON.stringify(Array.from({length:actions},()=>({type:"send_whatsapp_message",config:{channel_session_id:session,template:"Olá {{contact.name}}"}})))])).rows[0].id;
   const order=normalizeKiwify({order_id:randomUUID(),webhook_event_type:"order_approved",order_status:"paid",Product:{product_id:"test"},Customer:{full_name:"Cliente sintético",mobile:`+120255501${sequence++}`}});
@@ -102,10 +107,24 @@ it("compra → duas ações distintas; oito workers e retry não repetem transpo
   await runAutomationForEvent(admin,f.event);
   expect(runtime.send).toHaveBeenCalledTimes(2);
   expect(runtime.received).toHaveLength(2);
-  expect(runtime.openTransactions, JSON.stringify(runtime.idleAtSend)).toEqual([0,0]);
+  // pg_stat_activity global pode ver uma transação PostgREST de OUTRO worker
+  // durante um envio. O transporte deste worker não pode carregar transação.
+  expect(runtime.workerTransactions, JSON.stringify(runtime.idleAtSend)).toEqual([0,0]);
   const rows=(await pool.query("select * from automation_rule_runs where event_id=$1",[f.event.id])).rows;
   expect(rows).toHaveLength(2);expect(rows.map(r=>r.execution_state)).toEqual(["accepted","accepted"]);
   expect(new Set(rows.map(r=>r.message_id)).size).toBe(2);
+});
+it("a leitura global inclui outras sessões; o fence mede apenas o pool do executor",async()=>{
+  const other=new pg.Client({host:"127.0.0.1",port:Number(process.env.TEST_DB_PORT),user:"postgres",database:"kiwify_test",application_name:"kiwify-unrelated-session"});
+  await other.connect();
+  try {
+    await other.query("begin");
+    const {rows}=await pool.query<{app:string;n:number}>(`select application_name app,count(*)::int n from pg_stat_activity
+      where datname=current_database() and state='idle in transaction' group by application_name`);
+    expect(rows.find(row=>row.app==="kiwify-unrelated-session")?.n).toBe(1);
+    expect(rows.find(row=>row.app===WORKER_APP)?.n ?? 0).toBe(0);
+    expect(rows.reduce((n,row)=>n+row.n,0)).toBeGreaterThan(0);
+  } finally { await other.query("rollback"); await other.end(); }
 });
 it.each(["timeout","rejection","preflight"])("%s é durável e não reenvia",async(kind)=>{
   const f=await fixture();runtime.mode=kind;
