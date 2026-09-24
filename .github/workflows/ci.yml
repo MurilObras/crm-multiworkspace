@@ -81,6 +81,14 @@ jobs:
         # aceita `timeout-minutes`. Razão e medições: o cabeçalho da action.
         timeout-minutes: 5
 
+      - name: Três execuções isoladas da restauração Kiwify (zero erros não tratados)
+        run: |
+          set -euo pipefail
+          for tentativa in 1 2 3; do
+            echo "==> execução isolada ${tentativa}/3"
+            pnpm test:db -- tests/invariants/kiwify-update-continuation.test.ts
+          done
+
       - name: RLS isolation + governance invariants
         run: pnpm test:db
 

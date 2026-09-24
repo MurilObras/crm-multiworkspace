@@ -51,7 +51,30 @@ beforeEach(async()=>{
   // existir a tabela de planos onde semeamos o lote anterior ao backfill 0224.
   psql(identity,true);psql(plan,true);
 },120000);
-afterEach(async()=>{await db?.end();if(created)await control.query(`drop database ${name} with (force)`);created=false;});
+afterEach(async()=>{
+  if (db) {
+    // pg-pool pode resolver end() quando remove o client da lista, antes do
+    // callback de client.end() e do fechamento do socket. DROP ... WITH (force)
+    // nessa janela manda 57P01 para o pool (erro não tratado fora do teste).
+    // 'remove' é emitido somente após client.end() completar. Registre ANTES
+    // de end() para não perder nenhum fechamento rápido.
+    const total = db.totalCount;
+    let removidos = 0;
+    const fechados = new Promise<void>((resolve) => {
+      if (total === 0) { resolve(); return; }
+      db.on("remove", () => { if (++removidos === total) resolve(); });
+    });
+    await db.end();
+    await fechados;
+    expect(removidos).toBe(total);
+    const { rows } = await control.query<{ n: number }>(
+      "select count(*)::int n from pg_stat_activity where datname=$1 and pid<>pg_backend_pid()", [name],
+    );
+    expect(rows[0]?.n, "o banco ainda tem conexões antes do DROP real").toBe(0);
+  }
+  if(created)await control.query(`drop database ${name} with (force)`);
+  created=false;
+});
 afterAll(()=>control.end());
 
 it.each([
