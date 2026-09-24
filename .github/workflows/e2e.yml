@@ -820,6 +820,11 @@ jobs:
           # (`✓ 12 [chromium] › tests/e2e/x.spec.ts:9:5 › título (3.4s)`), e a
           # soma por arquivo sai de um `gh run view <id> --log`. Custo medido:
           # ~240 linhas a mais de log, zero segundo de execução.
+          # Regressão da virada do mês: primeiro isolada, depois na mesma
+          # instalação/build com toda a parte 2 (inclui privacidade e refetch).
+          if [ "${{ matrix.parte }}" = "2" ]; then
+            pnpm exec playwright test tests/e2e/agenda-ocupacao-do-google-na-grade.spec.ts --workers=1 --reporter=list
+          fi
           pnpm exec playwright test --workers=1 $LISTA --reporter=list
         env:
           # Só o que NÃO vem do `.env.e2e`: isto é ajuste de CI, não config do
