@@ -34,6 +34,9 @@ jobs:
         # aceita `timeout-minutes`. Razão e medições: o cabeçalho da action.
         timeout-minutes: 5
 
+      - name: Spec isolada de colagem (zero erros não tratados)
+        run: pnpm exec vitest run tests/unit/composer-colar-imagem.test.tsx
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -150,6 +153,8 @@ jobs:
           echo "KIWIFY_TEST_POSTGREST=/tmp/postgrest" >> "$GITHUB_ENV"
 
       - name: Provas de idempotência (PostgREST real + transporte sintético)
-        run: pnpm exec vitest run --config vitest.kiwify.config.ts
+        run: |
+          pnpm exec vitest run --config vitest.kiwify.config.ts tests/invariants/kiwify-automation.integration.ts
+          pnpm exec vitest run --config vitest.kiwify.config.ts
         env:
           KIWIFY_TEST_NATIVE: "1"
