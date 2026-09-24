@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Route } from "@playwright/test";
 import { readFileSync, mkdirSync } from "node:fs";
 import { randomBytes, randomUUID } from "node:crypto";
 import pg from "pg";
@@ -136,7 +136,41 @@ test.describe("Kiwify: interface operacional", () => {
     await page.getByRole("option").first().click();
     await page.getByRole("textbox", { name: "Texto da mensagem" }).fill("Obrigado pela compra!");
 
-    await page.getByRole("button", { name: "Criar automação" }).click();
+    // O formulário e o apiClient reais devem guardar a MESMA operação quando a
+    // resposta do CRM se perde DEPOIS de gravada. Só a resposta é descartada;
+    // route.fetch deixa o POST chegar ao handler, banco e audit reais.
+    const tentativas: Array<{ key: string | null; body: unknown }> = [];
+    page.on("request", (req) => {
+      if (new URL(req.url()).pathname === "/api/v1/automation-rules" && req.method() === "POST")
+        tentativas.push({ key: req.headers()["idempotency-key"] ?? null, body: req.postDataJSON() });
+    });
+    let ruleId = "";
+    let recebeu!: () => void;
+    let falhou!: (err: unknown) => void;
+    const perdida = new Promise<void>((resolve, reject) => { recebeu = resolve; falhou = reject; });
+    const perderResposta = async (route: Route) => {
+      try {
+        const real = await route.fetch();
+        expect(real.status()).toBe(201);
+        ruleId = (await real.json()).data.id as string;
+        expect((await db.query("select count(*)::int n from automation_rules where id=$1 and name=$2 and organization_id=$3 and is_active=false", [ruleId, `Compra Kiwify ${prefix}`, creds.org_id])).rows[0].n).toBe(1);
+        await route.abort("failed"); // perde apenas a confirmação HTTP do CRM
+        recebeu();
+      } catch (err) { falhou(err); await route.abort("failed").catch(() => {}); }
+    };
+    await page.route("**/api/v1/automation-rules", perderResposta);
+    await page.getByRole("button", { name: "Criar automação", exact: true }).click();
+    await perdida;
+    await page.unroute("**/api/v1/automation-rules", perderResposta);
+    const replay = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/v1/automation-rules" && r.request().method() === "POST");
+    await page.getByRole("button", { name: "Criar automação", exact: true }).click();
+    const response = await replay;
+    expect(response.status()).toBe(201);
+    expect((await response.json()).data.id).toBe(ruleId);
+    expect(tentativas).toHaveLength(2);
+    expect(tentativas[0]!.key).toBeTruthy();
+    expect(tentativas[1]).toEqual(tentativas[0]);
+    expect((await db.query("select count(*)::int n from automation_rules where id=$1 and name=$2 and organization_id=$3 and is_active=false", [ruleId, `Compra Kiwify ${prefix}`, creds.org_id])).rows[0].n).toBe(1);
 
     // Nasce pausada, e o estado é visível (não "Ativa").
     await expect(automacao.getByText("Pausada")).toBeVisible({ timeout: 15_000 });
