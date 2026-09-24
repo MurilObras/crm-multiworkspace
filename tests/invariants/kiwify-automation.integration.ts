@@ -18,6 +18,9 @@ import "@/lib/automation/actions/send-whatsapp";
 import "@/lib/automation/actions/bind-ai-agent";
 import "@/lib/automation/actions/start-message-flow";
 import { resolveTurnAgent } from "@/lib/agent-engine/agent/resolve-turn-agent";
+import { crmListEventTypes, crmFindFreeSlots, crmListAppointments, crmBookAppointment } from "@/lib/mcp/tools/agendamento";
+import type { McpContext } from "@/lib/mcp/types";
+import { APPOINTMENT_TOOLS } from "@/lib/automation/ai-binding-policy";
 
 if (process.env.KIWIFY_TEST_NATIVE !== "1" || !process.env.KIWIFY_TEST_POSTGREST) throw new Error("Requires isolated native PostgreSQL/PostgREST harness");
 const runtime = vi.hoisted(() => ({ db: null as unknown as pg.Pool, official:false,configured:true,
@@ -133,19 +136,29 @@ it("integrações com mesmo produto executam somente suas regras explícitas", a
   await runAutomationForEvent(admin,event);
   expect(runtime.received.map(row=>(row as {body:string}).body)).toEqual(["Olá Cliente sintético","Somente B"]);
 });
+it("regra legada continua enviando após backfill, inclusive com produto já compartilhado", async () => {
+  const f=await fixture();
+  await pool.query("delete from kiwify_automation_links where rule_id=$1",[f.rule]);
+  await pool.query("update automation_rules set kiwify_links_initialized=false where id=$1",[f.rule]);
+  await pool.query(readFileSync("supabase/migrations/20260924120000_0227_kiwify_management.sql","utf8"));
+  await runAutomationForEvent(admin,f.event);await runAutomationForEvent(admin,f.event);
+  expect(runtime.send).toHaveBeenCalledOnce();
+  expect((await pool.query("select is_active from automation_rules where id=$1",[f.rule])).rows[0].is_active).toBe(true);
+});
 
-async function postPurchaseFixture(published=true) {
+async function postPurchaseFixture(published=true, scheduling=false) {
   const f=await fixture();
   const agent=(await pool.query("insert into ai_agents(organization_id,name,system_prompt) values($1,$2,'Qualifique sem inventar disponibilidade.') returning id",[org,`Agente pós-compra ${randomUUID()}`])).rows[0].id;
-  const version=(await pool.query("insert into ai_agent_versions(organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status) values($1,$2,1,'Qualifique com conhecimento publicado.','anthropic','claude-sonnet-4-6',$3,$4) returning id",[org,agent,session,published?"published":"draft"])).rows[0].id;
+  const pipeline=(await pool.query("select pipeline_id from crm_leads where id=$1",[f.receipt.lead_id])).rows[0].pipeline_id;
+  const version=(await pool.query("insert into ai_agent_versions(organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,operator_enabled,operator_tool_ids,pipeline_ids) values($1,$2,1,'Qualifique com conhecimento publicado.','anthropic','claude-sonnet-4-6',$3,$4,$5,$6,$7) returning id",[org,agent,session,published?"published":"draft",scheduling,scheduling?[...APPOINTMENT_TOOLS]:[],[pipeline]])).rows[0].id;
   if(published) await pool.query("update ai_agents set published_version_id=$2 where id=$1",[agent,version]);
   const graph={nodes:[{id:"start",type:"trigger",label:"Início",position:{x:0,y:0},config:{}},{id:"end",type:"end",label:"Fim",position:{x:1,y:0},config:{outcome:"converted"}}],edges:[{id:"edge",source:"start",target:"end",priority:0,condition:{type:"always"}}]};
   const fv=(await pool.query("insert into followup_flow_versions(organization_id,graph) values($1,$2) returning id",[org,graph])).rows[0].id;
   const flow=(await pool.query("insert into followup_flow_pointers(organization_id,name,status,active_version_id,trigger_config) values($1,$2,'active',$3,$4) returning id",[org,randomUUID(),fv,{kind:"manual",params:{}}])).rows[0].id;
   await pool.query("update automation_rules set actions=$2 where id=$1",[f.rule,JSON.stringify([
     {type:"send_whatsapp_message",config:{channel_session_id:session,template:"Bem-vindo"}},
-    {type:"bind_ai_agent",config:{channel_session_id:session,agent_id:agent,allow_scheduling:false}},
-    {type:"start_message_flow",config:{flow_pointer_id:flow}},
+    {type:"bind_ai_agent",config:{channel_session_id:session,agent_id:agent,allow_scheduling:scheduling}},
+    {type:"start_message_flow",config:{flow_pointer_id:flow,channel_session_id:session}},
   ])]);
   return {...f,agent,flow};
 }
@@ -164,6 +177,7 @@ it("mensagem → binding publicado → follow-up: concorrência/retry não dupli
   expect(runtime.send).toHaveBeenCalledOnce();
   const conv=(await pool.query("select * from conversations where organization_id=$1 and contact_id=$2",[org,f.contact])).rows[0];
   expect(conv.active_ai_agent_id).toBe(f.agent);
+  expect((await pool.query("select conversation_id from followup_enrollments where contact_id=$1",[f.contact])).rows[0].conversation_id).toBe(conv.id);
   expect((await pool.query("select count(*)::int n from api_audit_log where resource_id=$1 and action='automation.ai_agent_bound'",[conv.id])).rows[0].n).toBe(1);
   expect((await pool.query("select count(*)::int n from followup_enrollments where contact_id=$1 and status='active'",[f.contact])).rows[0].n).toBe(1);
   const routed=await resolveTurnAgent(pool,{} as never,{tenantId:org,leadId:f.contact,jobId:randomUUID(),channelSessionId:session,conversationId:conv.id,signal:"Quero saber mais",stickyAgentId:conv.active_ai_agent_id,stickyIntent:conv.active_intent},{log:{warn:vi.fn()} as never});
@@ -181,6 +195,42 @@ it("agente não publicado é recusado e não inicia follow-up", async () => {
   expect((await pool.query("select active_ai_agent_id from conversations where contact_id=$1",[f.contact])).rows[0].active_ai_agent_id).toBeNull();
   expect((await pool.query("select * from followup_enrollments where contact_id=$1",[f.contact])).rows).toHaveLength(0);
   expect((await pool.query("select actions_result from automation_rule_runs where event_id=$1 and action_index=1",[f.event.id])).rows[0].actions_result[0].detail.reason).toBe("sem_agente_publicado");
+});
+it("resposta antes da inscrição impede follow-up ativo e não é desfeita pelo retry", async () => {
+  const f=await postPurchaseFixture();
+  runtime.send.mockImplementationOnce(async()=>{
+    const conv=(await pool.query("select id from conversations where organization_id=$1 and contact_id=$2",[org,f.contact])).rows[0].id;
+    await pool.query("insert into messages(organization_id,conversation_id,channel_session_id,contact_id,direction,type,body,status) values($1,$2,$3,$4,'inbound','text','Já estou aqui','received')",[org,conv,session,f.contact]);
+    return {externalId:randomUUID()};
+  });
+  await runAutomationForEvent(admin,f.event);await runAutomationForEvent(admin,f.event);
+  expect((await pool.query("select status,outcome from followup_enrollments where organization_id=$1 and contact_id=$2",[org,f.contact])).rows).toEqual([{status:"cancelled",outcome:"replied"}]);
+  expect(runtime.send).toHaveBeenCalledOnce();
+});
+it("agenda pós-compra usa tools reais: consulta não marca; após escolha há um compromisso mesmo com retry", async () => {
+  const f=await postPurchaseFixture(true,true);await runAutomationForEvent(admin,f.event);
+  await pool.query("insert into attendant_availability(organization_id,user_id,schedule) values($1,$2,$3) on conflict(organization_id,user_id) do update set schedule=excluded.schedule",[org,user,{timezone:"UTC",windows:[0,1,2,3,4,5,6].map(dow=>({dow,start:"09:00",end:"18:00"}))}]);
+  const slug=`synthetic-${randomUUID()}`;
+  await pool.query("insert into calendar_event_types(organization_id,slug,name,duration_minutes,default_owner_user_id,is_active,minimum_notice_minutes) values($1,$2,'Conversa pós-compra',30,$3,true,0)",[org,slug,user]);
+  const ctx:McpContext={organizationId:org,role:"ai_operator",actor:{type:"ai_agent",id:randomUUID(),agent_id:f.agent,role:"ai_operator"},apiTokenId:randomUUID(),requestId:randomUUID(),supabase:admin};
+  const types=await crmListEventTypes.handler({},ctx) as {tipos:Array<{slug:string}>};
+  expect(types.tipos.some(t=>t.slug===slug)).toBe(true);
+  expect(await crmListAppointments.handler({contact_id:f.contact},ctx)).toMatchObject({compromissos:[]});
+  const slots=await crmFindFreeSlots.handler({event_type_slug:slug,dias_a_frente:7,limite:3},ctx) as {horarios:Array<{inicio:string;fim:string}>};
+  expect(slots.horarios.length).toBeGreaterThan(0);
+  expect((await pool.query("select count(*)::int n from calendar_appointments where contact_id=$1",[f.contact])).rows[0].n).toBe(0);
+  const selected=slots.horarios[0]!;
+  // A escolha é uma mensagem real, posterior à consulta; não é classificação comercial.
+  const conv=(await pool.query("select id from conversations where organization_id=$1 and contact_id=$2",[org,f.contact])).rows[0].id;
+  await pool.query("insert into messages(organization_id,conversation_id,channel_session_id,contact_id,direction,type,body,status) values($1,$2,$3,$4,'inbound','text',$5,'received')",[org,conv,session,f.contact,`Confirmo o horário ${selected.inicio}`]);
+  const input={event_type_slug:slug,starts_at:selected.inicio,contact_id:f.contact};
+  const booked=await crmBookAppointment.handler(input,ctx) as {marcado:boolean;compromisso:{id:string}};
+  expect(booked.marcado).toBe(true);
+  await Promise.all(Array.from({length:4},()=>crmBookAppointment.handler(input,ctx)));
+  expect((await pool.query("select id from calendar_appointments where organization_id=$1 and contact_id=$2",[org,f.contact])).rows).toEqual([{id:booked.compromisso.id}]);
+  const after=await crmFindFreeSlots.handler({event_type_slug:slug,dias_a_frente:7,limite:3},ctx) as {horarios:Array<{inicio:string}>};
+  expect(after.horarios.some(s=>s.inicio===selected.inicio)).toBe(false);
+  expect(await crmListAppointments.handler({contact_id:f.contact},ctx)).toMatchObject({compromissos:[{id:booked.compromisso.id}]});
 });
 it("a leitura global inclui outras sessões; o fence mede apenas o pool do executor",async()=>{
   const other=new pg.Client({host:"127.0.0.1",port:Number(process.env.TEST_DB_PORT),user:"postgres",database:"kiwify_test",application_name:"kiwify-unrelated-session"});

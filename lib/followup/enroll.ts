@@ -25,6 +25,7 @@ export type EnrollFollowupInput = {
   actorUserId: string | null;
   requestId: string;
   automationRunId?: string;
+  conversationId?: string;
 };
 
 export type EnrollFollowupOk = { ok: true; enrollment: Record<string, unknown> };
@@ -70,6 +71,11 @@ export async function enrollFollowupFlow(
   if (!contact) return { ok: false, code: "not_found", message: "Contato não encontrado.", status: 404 };
   const blocked = automaticRecipientReason(contact);
   if (blocked) return { ok: false, code: "recipient_blocked", message: blocked, status: 403 };
+  if (input.conversationId) {
+    const { data: conversation, error } = await supabase.from("conversations").select("id")
+      .eq("organization_id", organizationId).eq("contact_id", contactId).eq("id", input.conversationId).maybeSingle();
+    if (error || !conversation) return { ok: false, code: "not_found", message: "Conversa não encontrada para este contato.", status: 404 };
+  }
 
   const { data: version, error: versionErr } = await supabase
     .from("followup_flow_versions")
@@ -124,6 +130,7 @@ export async function enrollFollowupFlow(
       // do processo fica 17–34 ms à frente e o claim `<= now()` pula o tick.
       agent_id: agentId,
       ...(input.automationRunId ? { automation_run_id: input.automationRunId } : {}),
+      ...(input.conversationId ? { conversation_id: input.conversationId } : {}),
     })
     .select(ENROLLMENT_LIST_COLUMNS)
     .single();

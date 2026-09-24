@@ -29,7 +29,7 @@ export async function validateAutomationReferences(admin: SupabaseClient, org: s
         if (reason) return reason;
       }
     }
-    if (["bind_ai_agent", "send_ai_message", "send_whatsapp_message"].includes(action.type)) {
+    if (["bind_ai_agent", "send_ai_message", "send_whatsapp_message"].includes(action.type) || (action.type === "start_message_flow" && c.channel_session_id !== undefined)) {
       const { data, error } = await admin.from("channel_sessions").select("id")
         .eq("organization_id", org).eq("id", String(c.channel_session_id)).maybeSingle();
       if (error) throw new Error("reference_lookup_failed");

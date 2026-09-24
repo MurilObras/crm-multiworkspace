@@ -188,7 +188,7 @@ export function KiwifyIntegrationBlock() {
         const url = webhookUrlKiwify(origem(), int.path_token);
         const intMappings = mappingsByIntegration.get(int.id) ?? [];
         return (
-          <Card key={int.id}>
+          <Card key={int.id} role="group" aria-label={int.name}>
             <CardHeader className="space-y-1">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <CardTitle className="truncate">{int.name}</CardTitle>

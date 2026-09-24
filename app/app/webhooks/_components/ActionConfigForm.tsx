@@ -40,7 +40,7 @@ export type ActionItem =
   | { type: "add_tag"; config: { tags: string[] } }
   | { type: "assign_owner"; config: { user_id: string } }
   | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string } }
-  | { type: "start_message_flow"; config: { flow_pointer_id: string } };
+  | { type: "start_message_flow"; config: { flow_pointer_id: string; channel_session_id?: string } };
 
 export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
   switch (type) {
@@ -515,7 +515,7 @@ export function ActionConfigForm({
       return (
         <StartMessageFlowForm
           config={action.config}
-          onChange={(config) => onChange({ type: action.type, config })}
+          onChange={(config) => onChange({ type: action.type, config: { ...action.config, ...config } })}
         />
       );
   }

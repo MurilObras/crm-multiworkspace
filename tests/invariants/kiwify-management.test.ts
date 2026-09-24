@@ -91,3 +91,23 @@ it("backfill mantém regras antigas ativas; reaplicar não recria unlink", async
   await manage(id,"unlink",{rule_id:legacy}); await pool.query(migration);
   expect((await pool.query("select * from kiwify_automation_links where integration_id=$1 and rule_id=$2",[id,legacy])).rows).toHaveLength(0);
 });
+it("vínculos são privados sob JWT/RLS; serviço não consegue gravar FK cross-tenant", async () => {
+  const id=await create(), own=await rule();await manage(id,"link",{rule_id:own});
+  const foreign=(await pool.query("insert into automation_rules(organization_id,name,trigger_event,conditions,actions) values($1,'Foreign','lead.created','[]','[]') returning id",[alien])).rows[0].id;
+  await expect(manage(id,"link",{rule_id:foreign})).rejects.toThrow("automation_not_found");
+  const db=await pool.connect();
+  try {
+    for(const role of ["anon","authenticated"]){
+      for(const statement of ["select * from kiwify_automation_links", "delete from kiwify_automation_links"]){
+        await db.query("begin");
+        await db.query("select set_config('request.jwt.claim.sub',$1,true)",[actor]);
+        await db.query(`set local role ${role}`);
+        await expect(db.query(statement)).rejects.toMatchObject({code:"42501"});
+        await db.query("rollback");
+      }
+    }
+    await db.query("begin");await db.query("set local role service_role");
+    expect((await db.query("select rule_id from kiwify_automation_links where organization_id=$1 and integration_id=$2",[org,id])).rows).toEqual([{rule_id:own}]);
+    await expect(db.query("insert into kiwify_automation_links values($1,$2,$3)",[org,id,foreign])).rejects.toMatchObject({code:"23503"});
+  } finally {await db.query("rollback");db.release();}
+});

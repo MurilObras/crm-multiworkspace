@@ -76,6 +76,10 @@ interface Excecao {
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
   {
+    tabela: "kiwify_automation_links",
+    razao: "tests/invariants/kiwify-management.test.ts — SET LOCAL ROLE com JWT nega leitura/escrita direta a anon/authenticated; a RPC e FKs compostas recusam regra de outro tenant, enquanto vínculo próprio funciona.",
+  },
+  {
     tabela: "automation_event_plans",
     razao: "tests/invariants/kiwify-action-identity.test.ts — plano privado: SET LOCAL ROLE/JWT nega SELECT a anon/authenticated, serviço lê mas não reescreve; FK composta recusa evento de outra organização.",
   },

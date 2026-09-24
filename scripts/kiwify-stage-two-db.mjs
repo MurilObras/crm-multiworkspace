@@ -1,5 +1,5 @@
 // Só o cluster descartável, já marcado pelo harness da etapa 1. Não lê .env.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
@@ -20,8 +20,9 @@ assert(prelude?.includes('create extension if not exists vector'));
 const baseline=readFileSync('supabase/baseline.sql','utf8');
 const base=execFileSync('git',['show','4d6d957d01766891a6eb9f4a88b4576a40b24440:supabase/baseline.sql'],{encoding:'utf8',maxBuffer:20*1024*1024});
 // Ordem cronológica normal: a própria 0224 protege seu primeiro DML.
-const migration=['20260921010000_0222_automation_action_identity','20260921030000_0223_automation_event_plan','20260921120000_0224_automation_plan_redaction','20260921150000_0225_automation_plan_recovery_guard']
-  .map(name=>readFileSync(`supabase/migrations/${name}.sql`,'utf8')).join('\n');
+const migration=readdirSync('supabase/migrations')
+  .filter(name=>/^\d{14}_\d{4}_.*\.sql$/.test(name) && name>='20260921010000_')
+  .sort().map(name=>readFileSync(`supabase/migrations/${name}`,'utf8')).join('\n');
 for (const name of ['kiwify_fresh','kiwify_upgrade']) {
   run('template1',`drop database if exists ${name} with (force);create database ${name};`);
   run(name,prelude);
@@ -42,4 +43,4 @@ const catalog=`select jsonb_build_object(
 async function inspect(database){const c=new pg.Client({host:'127.0.0.1',port,user:'postgres',database});await c.connect();try{return(await c.query(catalog)).rows[0].result;}finally{await c.end();}}
 assert.deepEqual(await inspect('kiwify_fresh'),await inspect('kiwify_upgrade'));
 run('template1',"comment on database kiwify_fresh is 'kiwify-disposable-validation';");
-console.info('PASS: baseline install/reapply, main + 0222/0223/0224/0225/reapply, colunas/constraints/funções/ACL/triggers equivalentes');
+console.info('PASS: baseline install/reapply, base + cadeia cronológica desde 0222/reapply, colunas/constraints/funções/ACL/triggers equivalentes');

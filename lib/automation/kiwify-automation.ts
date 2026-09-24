@@ -61,7 +61,7 @@ export function buildKiwifyPurchaseAutomation(input: KiwifyPurchaseAutomationInp
   if (input.continueAi && input.agentId) actions.push({ type: "bind_ai_agent", config: {
     agent_id: input.agentId, channel_session_id: input.channelSessionId, allow_scheduling: input.allowScheduling === true,
   } });
-  if (input.flowPointerId) actions.push({ type: "start_message_flow", config: { flow_pointer_id: input.flowPointerId } });
+  if (input.flowPointerId) actions.push({ type: "start_message_flow", config: { flow_pointer_id: input.flowPointerId, channel_session_id: input.channelSessionId } });
   return {
     name: input.name,
     trigger_event: "lead.created",

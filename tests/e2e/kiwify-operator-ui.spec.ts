@@ -196,7 +196,7 @@ test.describe("Kiwify: interface operacional", () => {
     await login(page);await page.goto(`${app}/app/webhooks`);
     await page.getByRole("tab",{name:"Kiwify",exact:true}).click();
     const region=page.getByRole("region",{name:"Integração Kiwify"});
-    let card=region.locator('[data-slot="card"]').filter({has:page.getByText(prefix,{exact:true})}).first();
+    let card=region.getByRole("group",{name:prefix,exact:true});
     await card.getByRole("button",{name:"Editar",exact:true}).click();
     await expect(region.getByLabel("Secret / token da Kiwify")).toHaveValue("");
     await region.getByLabel("Nome",{exact:true}).fill(`${prefix} editada`);
@@ -204,7 +204,7 @@ test.describe("Kiwify: interface operacional", () => {
     await region.getByRole("button",{name:"Salvar integração"}).click();
     expect((await saved).ok()).toBe(true);
     expect((await db.query("select path_token,secret_encrypted from kiwify_integrations where id=$1",[before.id])).rows[0]).toEqual({path_token:before.path_token,secret_encrypted:before.secret_encrypted});
-    card=region.locator('[data-slot="card"]').filter({has:page.getByText(`${prefix} editada`,{exact:true})}).first();
+    card=region.getByRole("group",{name:`${prefix} editada`,exact:true});
     await card.getByRole("button",{name:"Gerenciar automações"}).click();
     await card.getByRole("button",{name:"Desvincular",exact:true}).click();
     await expect(card.getByRole("button",{name:"Vincular",exact:true})).toBeVisible();

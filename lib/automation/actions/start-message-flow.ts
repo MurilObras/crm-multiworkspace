@@ -10,6 +10,7 @@ import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { enrollFollowupFlow } from "@/lib/followup/enroll";
 import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
+import { ensureConversation } from "@/lib/automation/start-conversation";
 
 const TYPE = "start_message_flow";
 
@@ -39,6 +40,8 @@ export async function executeStartMessageFlow(
     return { type: TYPE, status: "skipped", detail: { reason: "no_contact" } };
   }
 
+  const conversationId = typeof config.channel_session_id === "string"
+    ? await ensureConversation(ctx.admin, ctx.organizationId, contactId, config.channel_session_id) : undefined;
   const result = await enrollFollowupFlow(ctx.admin, {
     organizationId: ctx.organizationId,
     pointerId,
@@ -46,6 +49,7 @@ export async function executeStartMessageFlow(
     actorUserId: null,
     requestId: `rule:${ctx.ruleId}`,
     automationRunId: ctx.actionIntentId,
+    conversationId,
   });
 
   if (!result.ok) {

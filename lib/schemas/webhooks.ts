@@ -57,7 +57,7 @@ export const actionSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("start_message_flow"),
-    config: z.object({ flow_pointer_id: z.string().uuid() }),
+    config: z.object({ flow_pointer_id: z.string().uuid(), channel_session_id: z.uuid().optional() }),
   }),
 ]);
 
