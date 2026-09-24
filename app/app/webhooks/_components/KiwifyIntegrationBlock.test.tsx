@@ -74,7 +74,7 @@ describe("KiwifyIntegrationBlock", () => {
     await userEvent.setup().click(await screen.findByRole("button",{name:"Gerenciar automações"}));
     expect(await screen.findByText("Boas-vindas geral")).toBeVisible();
     expect(screen.getByText(/Regra genérica não vinculada/)).toHaveTextContent("event.kiwify_event_type = order_approved");
-    expect(screen.queryByRole("button",{name:"Vincular",exact:true})).toBeNull();
+    expect(screen.queryByRole("button",{name:/^Vincular$/})).toBeNull();
     expect(apiClient.put).not.toHaveBeenCalled();
   });
   it("lista vazia convida a configurar, sem expor segredo", async () => {
