@@ -86,7 +86,9 @@ jobs:
           set -euo pipefail
           for tentativa in 1 2 3; do
             echo "==> execução isolada ${tentativa}/3"
-            pnpm test:db -- tests/invariants/kiwify-update-continuation.test.ts
+            # pnpm já repassa argumentos à script. Com `--` o Vitest tratava o
+            # path como argumento pós-separador e rodava a suíte INTEIRA.
+            pnpm test:db tests/invariants/kiwify-update-continuation.test.ts
           done
 
       - name: RLS isolation + governance invariants
