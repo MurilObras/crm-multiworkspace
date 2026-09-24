@@ -216,6 +216,9 @@ test.describe("a ocupação do Google na grade da agenda", () => {
   });
 
   test("sobrevive à troca de semana e à visão Mês", async ({ page }) => {
+    // Reproduz a virada do trace: âncora em 01/10, quarta-feira em 30/09.
+    // Fixa só Date; timers, rede e autenticação continuam reais.
+    await page.clock.setFixedTime(new Date("2026-09-24T12:00:00Z"));
     const creds = lerCreds();
     const dono = creds.users.agent!;
     await entrar(page, creds);
@@ -266,7 +269,22 @@ test.describe("a ocupação do Google na grade da agenda", () => {
 
     // Visão MÊS: outro recorte, outra busca. Aqui nem a semente do servidor
     // chegava, porque `naJanelaDoServidor` vira falso.
+    const respostaMensal = page.waitForResponse((r) => {
+      const url = new URL(r.url());
+      if (url.pathname !== "/api/v1/agenda/agendamentos") return false;
+      const de = Date.parse(url.searchParams.get("de") ?? "");
+      const ate = Date.parse(url.searchParams.get("ate") ?? "");
+      return ate - de > 35 * 86400000;
+    });
     await page.getByTestId("visao-mes").click();
+    const resposta = await respostaMensal;
+    expect(resposta.status()).toBe(200);
+    const corpo = await resposta.json();
+    expect(corpo.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: eventoId, titulo: "Ocupado", origem: "google_sync" }),
+    ]));
+    expect(JSON.stringify(corpo)).not.toContain(TITULO_SIGILOSO);
+    await expect(page.getByTestId(`celula-mes-${alvo}`)).toBeVisible();
     await expect(
       page.getByTestId(`chip-mes-${eventoId}`),
       "a ocupação do Google não aparece na visão Mês",

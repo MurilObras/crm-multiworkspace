@@ -137,6 +137,12 @@ const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string
       "Este é o check obrigatório `invariants` (`pnpm test:db`) — o único que exercita o " +
       "`baseline.sql` que o self-hoster aplica, e o isolamento RLS entre organizações.",
   },
+  "ci.yml::kiwify-native": {
+    condicao: null,
+    efeito:
+      "Prova de idempotência de escrita sobre PostgREST real com transporte sintético " +
+      "(vitest.kiwify.config.ts) — a única execução com o harness nativo.",
+  },
   "e2e.yml::e2e-parte": {
     condicao: null,
     efeito: "São as partes da matriz Playwright; sem elas o `e2e` fica sem nada para ler.",

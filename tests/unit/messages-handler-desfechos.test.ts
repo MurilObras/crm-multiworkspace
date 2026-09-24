@@ -107,7 +107,7 @@ function makeSupabase(
   conversation: Row,
   templateRow: Row | null = null,
   /** `semColunaArquivada`: banco em que a migration 0106 ainda não rodou. */
-  opts: { semColunaArquivada?: boolean } = {},
+  opts: { semColunaArquivada?: boolean; negarRpcDeAutomacao?: boolean } = {},
 ) {
   const state: { message: Row | null } = { message: null };
 
@@ -132,7 +132,10 @@ function makeSupabase(
                   : { data: matches ? conversation : null, error: null },
             };
           },
-          update: () => ({ eq: async () => ({ error: null }) }),
+          update: (patch: Row) => {
+            Object.assign(conversation, patch);
+            return { eq: async () => ({ error: null }) };
+          },
         };
       }
       if (table === 'meta_templates') {
@@ -186,11 +189,20 @@ function makeSupabase(
           then: (resolve: (v: { error: null }) => unknown) =>
             Promise.resolve({ error: null }).then(resolve),
         };
-        return { update: () => cadeiaContacts };
+        let matchesContact = true;
+        const contact: Row = { ...(conversation.contacts as Row), id: conversation.contact_id,
+          organization_id: conversation.organization_id, is_anonymized: false };
+        const readContact = {
+          eq(k: string, v: unknown) { matchesContact &&= contact[k] === v; return this; },
+          maybeSingle: async () => ({ data: matchesContact ? contact : null, error: null }),
+        };
+        return { update: () => cadeiaContacts, select: () => readContact };
       }
       throw new Error(`fake_supabase: tabela inesperada '${table}'`);
     },
-    rpc: async (name: string) => name === 'fn_decrypt_oauth' ? credentialsDb().rpc()
+    rpc: async (name: string) => opts.negarRpcDeAutomacao && name.startsWith('fn_automation_message_')
+      ? { data: null, error: { code: '42501', message: 'permission denied for function' } }
+      : name === 'fn_decrypt_oauth' ? credentialsDb().rpc()
       : ({ data:name==='fn_automation_message_live'?true:name==='fn_automation_message_preview'?false:null,error:null }),
   };
 
@@ -212,6 +224,82 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   signedUrl.mockResolvedValue({ data: { signedUrl: 'https://signed.example/a.jpg' }, error: null });
+});
+
+describe('identidade manual nao concede privilegios de automacao', () => {
+  it('usuario autenticado envia com chave sem precisar de RPC exclusiva de service_role', async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({ key: { id: 'MANUAL-IDEMPOTENT' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const conversation = conversationRow();
+    const db = makeSupabase(conversation, null, { negarRpcDeAutomacao: true });
+    const rpc = vi.spyOn(db, 'rpc');
+    const message = await sendMessageHandler(db, ctx, textInput(), {
+      messageId: '66666666-6666-4666-8666-666666666666', returnExistingOnConflict: true,
+    });
+    expect(message.status).toBe('sent');
+    expect(message.external_id).toBe('MANUAL-IDEMPOTENT');
+    // Consultar o destinatario no canal nao e um segundo transporte.
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/sendText'))).toHaveLength(1);
+    expect(rpc.mock.calls.some(([name]) => name.startsWith('fn_automation_message_'))).toBe(false);
+    expect(conversation.last_message_preview).toBe('oi');
+    expect(conversation.unread_count_for_assignee).toBe(0);
+  });
+
+  it('a identidade manual continua respeitando o bloqueio do contato', async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const db = makeSupabase(conversationRow({ isBlocked: true }), null, { negarRpcDeAutomacao: true });
+    await expect(sendMessageHandler(db, ctx, textInput(), {
+      messageId: '66666666-6666-4666-8666-666666666666', returnExistingOnConflict: true,
+    })).rejects.toMatchObject({ status: 403 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('a identidade manual nao alcanca conversa de outra organizacao', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const db = makeSupabase({ ...conversationRow(), organization_id: 'foreign' });
+    await expect(sendMessageHandler(db, ctx, textInput(), {
+      messageId: '66666666-6666-4666-8666-666666666666', returnExistingOnConflict: true,
+    })).rejects.toMatchObject({ status: 404 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['ai_agent', 'webhook_source'] as const)(
+    'ator %s continua sob as RPCs do plano mesmo com returnExistingOnConflict', async (type) => {
+      wahaConfigured(true);
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const db = makeSupabase(conversationRow(), null, { negarRpcDeAutomacao: true });
+      const rpc = vi.spyOn(db, 'rpc');
+      const actor: HandlerCtx['actor'] = type === 'ai_agent'
+        ? { type, id: USER, role: 'manager' } : { type, id: USER };
+      await expect(sendMessageHandler(db, { ...ctx, actor }, textInput(), {
+        messageId: '66666666-6666-4666-8666-666666666666', returnExistingOnConflict: true,
+      })).rejects.toThrow('automation_preview_unavailable');
+      expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+        'fn_automation_message_live', 'fn_automation_message_preview',
+      ]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('o caminho existente de tentativa gerenciada conserva as duas RPCs e falha fechado', async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const db = makeSupabase(conversationRow(), null, { negarRpcDeAutomacao: true });
+    const rpc = vi.spyOn(db, 'rpc');
+    await expect(sendMessageHandler(db, ctx, textInput(), {
+      messageId: '66666666-6666-4666-8666-666666666666',
+    })).rejects.toThrow('automation_preview_unavailable');
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'fn_automation_message_live', 'fn_automation_message_preview',
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('sendMessageHandler — os 6 desfechos do envio', () => {

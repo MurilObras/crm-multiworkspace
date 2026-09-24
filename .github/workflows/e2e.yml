@@ -382,6 +382,8 @@ jobs:
         followup-publicado-abre-no-construtor.spec.ts
         automacao-diz-a-verdade.spec.ts
         kiwify-history.spec.ts
+        kiwify-idempotencia.spec.ts
+        kiwify-operator-ui.spec.ts
         inbox-quem-manda.spec.ts
         acervo-de-conhecimento.spec.ts
         agenda-kit-visual.spec.ts
@@ -557,6 +559,16 @@ jobs:
       - uses: supabase/setup-cli@v3
         with:
           version: latest
+
+      # Os runners hospedados compartilham IPs e o GHCR aplica rate limit a
+      # pulls anônimos. Autenticar antes do `supabase start` usa a cota da
+      # conta e evita o `toomanyrequests` que vinha impedindo a suíte de
+      # sequer subir. O token é somente read:packages e fica em Actions Secrets.
+      - name: Autenticar pulls no GHCR
+        run: |
+          echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io \
+            -u "${{ github.repository_owner }}" \
+            --password-stdin
 
       # Sobe Postgres + Auth (GoTrue) + PostgREST + Storage. Auth de verdade é
       # requisito: os specs de login exercitam o GoTrue, não um mock.
@@ -808,6 +820,15 @@ jobs:
           # (`✓ 12 [chromium] › tests/e2e/x.spec.ts:9:5 › título (3.4s)`), e a
           # soma por arquivo sai de um `gh run view <id> --log`. Custo medido:
           # ~240 linhas a mais de log, zero segundo de execução.
+          # Regressão da virada do mês: primeiro isolada, depois na mesma
+          # instalação/build com toda a parte 2 (inclui privacidade e refetch).
+          if [ "${{ matrix.parte }}" = "2" ]; then
+            pnpm exec playwright test tests/e2e/agenda-ocupacao-do-google-na-grade.spec.ts --workers=1 --reporter=list
+            # Mesmas rotas, GoTrue, banco e servidor da parte completa. Roda
+            # primeiro para diagnosticar a perda HTTP no formulário sem esperar
+            # os demais arquivos; a lista da parte 2 continua intacta abaixo.
+            pnpm exec playwright test tests/e2e/kiwify-idempotencia.spec.ts tests/e2e/kiwify-operator-ui.spec.ts --workers=1 --reporter=list
+          fi
           pnpm exec playwright test --workers=1 $LISTA --reporter=list
         env:
           # Só o que NÃO vem do `.env.e2e`: isto é ajuste de CI, não config do

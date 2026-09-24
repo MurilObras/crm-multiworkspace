@@ -95,4 +95,16 @@ describe("apiClient", () => {
     const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>;
     expect(headers["Idempotency-Key"]).toBe("custom-key-123");
   });
+
+  it("t8: retry de rede reusa a MESMA Idempotency-Key (retry = mesma operação)", async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(jsonResponse(200, { data: { ok: true } }));
+    await apiClient.post("/x", { a: 1 }, { idempotencyKey: "custom-key" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const k1 = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    const k2 = (fetchMock.mock.calls[1]![1] as RequestInit).headers as Record<string, string>;
+    expect(k1["Idempotency-Key"]).toBe("custom-key");
+    expect(k2["Idempotency-Key"]).toBe("custom-key");
+  });
 });

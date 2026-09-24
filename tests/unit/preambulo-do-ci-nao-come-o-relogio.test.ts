@@ -56,6 +56,10 @@ const TETOS: Record<string, { minutos: number; razao: string }> = {
     minutos: 20,
     razao: "sobe Postgres e aplica o baseline; trabalho real p90 325s",
   },
+  "ci.yml::kiwify-native": {
+    minutos: 20,
+    razao: "instala Postgres + PostgREST e aplica o baseline; mesma classe do invariants",
+  },
 };
 
 interface Linha {

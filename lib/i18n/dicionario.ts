@@ -32,13 +32,14 @@
  * do que estava.
  */
 import type { Idioma } from "./idiomas";
-import { KIWIFY_HISTORY_TRANSLATIONS } from "./kiwify";
+import { KIWIFY_HISTORY_TRANSLATIONS, KIWIFY_OPERATOR_TRANSLATIONS } from "./kiwify";
 
 /** `pt-BR` não aparece: é a chave. Só o que DIFERE precisa de linha. */
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
   ...KIWIFY_HISTORY_TRANSLATIONS,
+  ...KIWIFY_OPERATOR_TRANSLATIONS,
   "Texto livre": { es:"Texto libre" },
   "Não disponível": { es:"No disponible" },
   "Acompanhamento Kiwify": { es:"Seguimiento Kiwify" },

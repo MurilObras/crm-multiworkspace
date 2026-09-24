@@ -19360,6 +19360,13 @@ grant execute on function public.fn_automation_message_preview(uuid,uuid) to ser
 update public.automation_event_plans set redacted_at=redacted_at where redacted_at is not null;
 notify pgrst, 'reload schema';
 
+-- ---- Vínculo durável da idempotência em automation_rules (migration 0226) ----
+-- O hash original do payload (vínculo chave→payload) sobrevive à limpeza do
+-- idempotency_keys ficando gravado na própria regra. Colisão de PK com hash
+-- diferente vira 409; o hash original nunca é substituído por uma repetição.
+alter table public.automation_rules
+  add column if not exists metadata jsonb not null default '{}'::jsonb;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES

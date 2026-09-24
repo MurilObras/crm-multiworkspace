@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Colar imagem no composer (Ctrl/Cmd+V), padrão WhatsApp.
@@ -105,6 +105,14 @@ describe("imagemDoClipboard", () => {
 });
 
 describe("Composer — colar imagem", () => {
+  afterEach(async () => {
+    // Radix FocusScope agenda o CustomEvent de auto-focus ao DESMONTAR o
+    // preview. Aguardar o callback ainda no realm jsdom: após o teardown do
+    // arquivo, CustomEvent volta ao global de Node, que dispatchEvent rejeita.
+    cleanup();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  });
+
   beforeEach(() => {
     uploadMock.mockClear();
     sendMock.mockClear();

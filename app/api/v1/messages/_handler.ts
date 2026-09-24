@@ -268,11 +268,25 @@ export async function sendMessageHandler(
   input: SendMessageInput,
   options?: {
     messageId?: string;
-    beforeSend: (message: Message) => Promise<void>;
+    beforeSend?: (message: Message) => Promise<void>;
     beforeTransport?: (message: Message) => Promise<void>;
     writeAttemptState?: (message: Message, change: OutboundAttemptWrite) => Promise<Message>;
+    /**
+     * Idempotência de escrita MANUAL: quando o INSERT colide (23505) porque já
+     * existe uma linha com o MESMO `messageId` e a MESMA `idempotency_key`,
+     * devolve a linha existente SEM re-transportar — o "resultado iniciado/
+     * incerto" daquela tentativa não autoriza outro transporte. O caminho de
+     * automação NÃO passa este flag (ele segue reagendando `queued`).
+     */
+    returnExistingOnConflict?: boolean;
   },
 ): Promise<Message> {
+  // Um ID deterministico manual nao vincula a mensagem a um plano de automacao.
+  // As RPCs do plano sao exclusivas de service_role; o envio manual conserva
+  // o client autenticado, as guardas do sink e sua atualizacao normal de previa.
+  // Os demais consumidores conservam o fence do plano, inclusive se passarem
+  // returnExistingOnConflict com um ator nao humano.
+  const manualIdempotency = ctx.actor.type === "user" && options?.returnExistingOnConflict === true;
   // `archived_at` entra pelo helper tolerante porque este é O caminho de saída do
   // sistema inteiro (UI, automação, MCP e o agente passam por aqui): num clone que
   // subiu o código sem a migration 0106, pedir a coluna direto derrubaria TODO
@@ -495,6 +509,16 @@ export async function sendMessageHandler(
       .eq('conversation_id', c.id).eq('contact_id', c.contact_id)
       .eq('metadata->>idempotency_key', input.metadata?.idempotency_key).maybeSingle();
     if (existing.error || !existing.data) throw new OutboundLeaseLostError();
+    if (options?.returnExistingOnConflict) {
+      // O hash original fica gravado na PRÓPRIA mensagem, então a colisão de PK
+      // verifica o vínculo chave→payload mesmo depois da limpeza do
+      // idempotency_keys: hash diferente é 409, nunca replay silencioso.
+      const existingHash = (existing.data as { metadata?: Record<string, unknown> }).metadata?.idempotency_hash;
+      if (existingHash !== input.metadata?.idempotency_hash) {
+        throw new ApiError(409, "idempotency_conflict", undefined, ctx.requestId, "Requisicão repetida com conteúdo divergente.");
+      }
+      return existing.data as unknown as Message;
+    }
     created = existing.data;
     insErr = null;
   }
@@ -532,7 +556,7 @@ export async function sendMessageHandler(
   // Campanha vincula a linha e repete opt-out antes de qualquer transporte.
   if (options) {
     try {
-      await options.beforeSend(message);
+      await options.beforeSend?.(message);
     } catch (error) {
       if (error instanceof OutboundLeaseLostError) throw error;
       const rejected = {
@@ -640,7 +664,7 @@ export async function sendMessageHandler(
           throw new ApiError(403,"forbidden",undefined,ctx.requestId,"messaging_window_closed");
         }
       }
-      if (options?.messageId) {
+      if (options?.messageId && !manualIdempotency) {
         const { data, error } = await supabase.rpc("fn_automation_message_live", {
           p_org:ctx.organization_id,p_message:message.id,p_contact:c.contact_id,
         });
@@ -877,7 +901,7 @@ export async function sendMessageHandler(
   // Uma resposta tardia não pode restaurar o texto do input após o redact.
   // A RPC usa a mensagem persistida sob o mesmo fence do contato.
   let protectedPreview = false;
-  if (options?.messageId) {
+  if (options?.messageId && !manualIdempotency) {
     const { data, error } = await supabase.rpc("fn_automation_message_preview", {
       p_org:ctx.organization_id,p_message:message.id,
     });

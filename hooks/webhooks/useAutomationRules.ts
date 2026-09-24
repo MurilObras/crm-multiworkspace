@@ -37,8 +37,17 @@ export function useAutomationRules() {
 export function useCreateAutomationRule() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: CreateAutomationRuleInput) =>
-      apiClient.post<{ data: AutomationRuleRow }>("/api/v1/automation-rules", input),
+    // `idempotencyKey` é opcional e NÃO vai no corpo: reconcilia a MESMA
+    // operação (resposta perdida/retry) sem criar segunda regra. Consumidores
+    // existentes (RuleEditor) continuam chamando `mutateAsync(input)`.
+    mutationFn: async (variables: CreateAutomationRuleInput & { idempotencyKey?: string }) => {
+      const { idempotencyKey, ...input } = variables;
+      return apiClient.post<{ data: AutomationRuleRow }>(
+        "/api/v1/automation-rules",
+        input,
+        idempotencyKey ? { idempotencyKey } : undefined,
+      );
+    },
     onError: showApiError,
     onSuccess: () => qc.invalidateQueries({ queryKey: RULES_KEY }),
   });
