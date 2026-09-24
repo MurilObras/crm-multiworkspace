@@ -13,6 +13,7 @@ import { updateAutomationRuleSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
+import { validateAutomationReferences } from "@/lib/automation/validate-references";
 
 export const dynamic = "force-dynamic";
 
@@ -44,12 +45,17 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const supabase = await createClient();
   const { data: existing, error: fetchErr } = await supabase
     .from("automation_rules")
-    .select("id")
+    .select("id,actions")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", "Regra não encontrada.", 404, { requestId });
+  if (parsed.data.actions || parsed.data.is_active === true) {
+    const referenceError = await validateAutomationReferences(createAdminClient(), activeOrg.orgId,
+      parsed.data.actions ?? existing.actions as Array<{ type: string; config?: Record<string, unknown> }>);
+    if (referenceError) return fail("invalid_request", referenceError, 422, { requestId });
+  }
 
   // Secrets de call_webhook nunca ficam em claro no jsonb (migration 0041);
   // secret_enc existente (round-trip do editor) passa intacto.
@@ -78,6 +84,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .from("automation_rules")
     .update(patch)
     .eq("id", id)
+    .eq("organization_id", activeOrg.orgId)
     .select("*")
     .single();
   if (updErr) return fail("internal_error", updErr.message, 500, { requestId });

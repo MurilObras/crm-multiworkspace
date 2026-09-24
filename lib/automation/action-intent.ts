@@ -25,6 +25,17 @@ export async function actionPlanLive(db: Queryable, org: string, event: string):
   return rows[0]?.live === true;
 }
 
+/** Passos que assumem a conversa só avançam após os anteriores concluírem. */
+export async function precedingActionsState(db: Queryable, org: string, event: string, rule: string, index: number): Promise<"ready" | "waiting" | "failed"> {
+  if (index === 0) return "ready";
+  const { rows } = await db.query<{ status: string; execution_state: string }>(
+    "select status,execution_state from automation_rule_runs where organization_id=$1 and event_id=$2 and rule_identity=$3 and action_index < $4",
+    [org, event, rule, index],
+  );
+  if (rows.some(r => r.status === "failed" || ["uncertain", "rejected", "blocked", "failed_before_send"].includes(r.execution_state))) return "failed";
+  return rows.length === index && rows.every(r => r.status === "success") ? "ready" : "waiting";
+}
+
 /** A intenção usa o histórico existente. INSERT/UNIQUE é a aquisição; nenhuma
  * transação permanece aberta durante a execução da ação ou chamada externa.
  * Uma intenção adquirida nunca volta a ser adquirível por retry do evento.

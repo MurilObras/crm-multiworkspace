@@ -10,6 +10,14 @@
 
 ## Convenções
 
+Kiwify gerenciamento `[P1]`: `tests/e2e/kiwify-operator-ui.spec.ts` cobre edição com
+segredo vazio/URL preservada, link/unlink e arquivamento sem apagar regra.
+`tests/invariants/kiwify-management.test.ts` e `kiwify-automation.integration.ts`
+exercitam PostgreSQL/PostgREST: isolamento entre integrações, backfill, binding do
+agente e cancelamento de follow-up por resposta. E2E autenticado local depende de
+Supabase Auth; não confundir a prova nativa do motor com a prova pela tela.
+Contrato em [gerenciamento e IA](../specs/kiwify-management-ai-flow.md).
+
 Campanhas `[P1]`: cobertura incremental de paste/CSV/XLSX, sequencias, fuso e
 agendamento em `tests/campaigns/` e detalhes em
 [`campaigns-audience-scheduling.md`](campaigns-audience-scheduling.md).

@@ -5,7 +5,7 @@ import path from "node:path";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["tests/invariants/kiwify*.test.ts", "tests/invariants/kiwify*.integration.ts", "tests/invariants/automation*.test.ts", "tests/invariants/webhooks-rls.test.ts", "tests/invariants/lgpd-cascata-alcanca-quem-guarda-pessoa.test.ts"],
+    include: ["tests/invariants/kiwify*.test.ts", "tests/invariants/kiwify*.integration.ts", "tests/invariants/automation*.test.ts", "tests/invariants/agenda-sem-duplicata.test.ts", "tests/invariants/webhooks-rls.test.ts", "tests/invariants/lgpd-cascata-alcanca-quem-guarda-pessoa.test.ts"],
     fileParallelism: false,
     testTimeout: 30_000,
     hookTimeout: 60_000,

@@ -32,6 +32,11 @@ export interface KiwifyPurchaseAutomationInput {
   templateName?: string;
   templateLanguage?: string;
   templateValues?: Record<string, string>;
+  agentId?: string;
+  aiInstruction?: string;
+  continueAi?: boolean;
+  flowPointerId?: string;
+  allowScheduling?: boolean;
 }
 
 /**
@@ -50,6 +55,13 @@ export function buildKiwifyPurchaseAutomation(input: KiwifyPurchaseAutomationInp
           ...(input.templateValues ? { template_values: input.templateValues } : {}),
         };
 
+  const actions: CreateAutomationRuleInput["actions"] = input.aiInstruction && input.agentId
+    ? [{ type: "send_ai_message", config: { agent_id: input.agentId, channel_session_id: input.channelSessionId, instruction: input.aiInstruction } }]
+    : [{ type: "send_whatsapp_message", config }];
+  if (input.continueAi && input.agentId) actions.push({ type: "bind_ai_agent", config: {
+    agent_id: input.agentId, channel_session_id: input.channelSessionId, allow_scheduling: input.allowScheduling === true,
+  } });
+  if (input.flowPointerId) actions.push({ type: "start_message_flow", config: { flow_pointer_id: input.flowPointerId } });
   return {
     name: input.name,
     trigger_event: "lead.created",
@@ -57,6 +69,6 @@ export function buildKiwifyPurchaseAutomation(input: KiwifyPurchaseAutomationInp
       { field: "event.kiwify_event_type", op: "eq", value: KIWIFY_PURCHASE_EVENT_TYPE },
       { field: "event.product_id", op: "eq", value: input.productId },
     ],
-    actions: [{ type: "send_whatsapp_message", config }],
+    actions,
   };
 }

@@ -14,7 +14,10 @@
     { "id": "plan", "lane": "db", "col": 4, "type": "database", "label": "automation_event_plans", "sublabel": "titular durável; conteúdo estável até anonimização; tombstone irreversível" },
     { "id": "intent", "lane": "db", "col": 3, "type": "database", "label": "automation_rule_runs", "sublabel": "UNIQUE evento/regra/posição no plano; fase durável" },
     { "id": "message", "lane": "api", "col": 4, "type": "service", "label": "sendMessageHandler + adapters", "sublabel": "guardas atuais, templates e callbacks existentes" },
-    { "id": "tracking", "lane": "ops", "col": 3, "type": "frontend", "label": "Webhooks › Kiwify", "sublabel": "consulta sob RLS; cadastro e conversa; sem reenvio" }
+    { "id": "tracking", "lane": "ops", "col": 3, "type": "frontend", "label": "Webhooks › Kiwify", "sublabel": "edição, arquivo, vínculos e acompanhamento" },
+    { "id": "links", "lane": "db", "col": 5, "type": "database", "label": "kiwify_automation_links", "sublabel": "vínculo por organização; backfill único" },
+    { "id": "sticky", "lane": "api", "col": 5, "type": "service", "label": "bind_ai_agent → resolveTurnAgent", "sublabel": "sticky canônico, publicação e tools revalidadas" },
+    { "id": "followup", "lane": "api", "col": 6, "type": "service", "label": "start_message_flow", "sublabel": "enrollment existente; resposta interrompe" }
   ],
   "edges": [
     { "id": "k1", "from": "source", "to": "entry", "label": "organização/loja pela configuração" },
@@ -30,6 +33,12 @@
     { "id": "k11", "from": "intent", "to": "consumer", "label": "retry não readquire ação" },
     { "id": "k12", "from": "consumer", "to": "plan", "label": "primeiro planejamento vence" },
     { "id": "k13", "from": "plan", "to": "intent", "label": "ações originais inclusive após edição; redact bloqueia aquisição" },
-    { "id": "k14", "from": "plan", "to": "message", "label": "fence LGPD antes do transporte e da atualização de preview" }
+    { "id": "k14", "from": "plan", "to": "message", "label": "fence LGPD antes do transporte e da atualização de preview" },
+    { "id": "k15", "from": "tracking", "to": "links", "label": "link/unlink sem apagar regra" },
+    { "id": "k16", "from": "links", "to": "consumer", "label": "somente regras da integração autenticada" },
+    { "id": "k17", "from": "intent", "to": "sticky", "label": "após mensagem inicial concluída" },
+    { "id": "k18", "from": "sticky", "to": "tracking", "label": "agente e política visíveis" },
+    { "id": "k19", "from": "intent", "to": "followup", "label": "início opcional idempotente" },
+    { "id": "k20", "from": "followup", "to": "tracking", "label": "estado canônico do enrollment" }
   ]
 }

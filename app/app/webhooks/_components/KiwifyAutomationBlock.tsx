@@ -43,6 +43,7 @@ import {
   isKiwifyPurchaseRule,
 } from "@/lib/automation/kiwify-automation";
 import { useT } from "@/hooks/i18n/useT";
+import { useKiwifyIntegration, useKiwifyOptions, useManageKiwifyIntegration } from "@/hooks/webhooks/useKiwifyIntegration";
 
 const RULES_QUERY_KEY = ["automation-rules"];
 
@@ -75,11 +76,11 @@ export function KiwifyAutomationBlock() {
     <section className="space-y-4" aria-label={t("Automação de compra Kiwify")}>
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-lg font-semibold text-text">{t("Automação")}</h3>
-        {purchaseRules.length === 0 ? (
+        {(
           <Button type="button" onClick={() => setCreateOpen(true)}>
             <Plus /> {t("Criar automação de compra")}
           </Button>
-        ) : null}
+        )}
       </div>
 
       {isLoading ? (
@@ -131,6 +132,16 @@ export function KiwifyAutomationBlock() {
 function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const t = useT();
   const create = useCreateAutomationRule();
+  const manage = useManageKiwifyIntegration();
+  const { data: integrationData } = useKiwifyIntegration();
+  const { data: optionsData } = useKiwifyOptions();
+  const integrations = integrationData?.data.integrations ?? [];
+  const options = optionsData?.data;
+  const [integrationId, setIntegrationId] = React.useState("");
+  const [agentId, setAgentId] = React.useState("");
+  const [continueAi, setContinueAi] = React.useState(false);
+  const [flowId, setFlowId] = React.useState("");
+  const [allowScheduling, setAllowScheduling] = React.useState(false);
   const { data: sessions } = useChannelSessions();
   const productsQuery = useQuery({
     queryKey: ["catalog-products"],
@@ -142,7 +153,7 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
   const [name, setName] = React.useState("");
   const [productId, setProductId] = React.useState("");
   const [channelSessionId, setChannelSessionId] = React.useState("");
-  const [mode, setMode] = React.useState<"text" | "official">("text");
+  const [mode, setMode] = React.useState<"text" | "official" | "ai">("text");
   const [body, setBody] = React.useState("");
   const [templateName, setTemplateName] = React.useState("");
   const [templateLanguage, setTemplateLanguage] = React.useState("");
@@ -158,14 +169,23 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
     setTemplateName("");
     setTemplateLanguage("");
     setTemplateValues({});
+    setIntegrationId(""); setAgentId(""); setContinueAi(false); setFlowId(""); setAllowScheduling(false);
   }, [open]);
 
   const eligible = (sessions ?? []).filter((s) => s.status === "WORKING");
+  const selectedIntegrationId = integrationId || (integrations.length === 1 ? integrations[0]?.id : "");
+  const integration = integrations.find(i => i.id === selectedIntegrationId);
+  const selectedAgent = options?.agents.find(a => a.id === agentId);
+  const schedulingReason = !selectedAgent ? t("Selecione um agente publicado.")
+    : selectedAgent.scheduling_reason ?? (!integration || !selectedAgent.pipeline_ids.includes(integration.pipeline_id) ? t("O agente não tem permissão de escrita no funil da integração.") : null);
+  const mappedIds = new Set((integrationData?.data.products ?? []).filter(m => m.integration_id === selectedIntegrationId).map(m => m.product_id));
   const canSave =
     name.trim() &&
-    productId &&
+    selectedIntegrationId && productId && mappedIds.has(productId) &&
     channelSessionId &&
-    (mode === "text" ? body.trim().length > 0 : Boolean(templateName && templateLanguage));
+    (!(mode === "ai" || continueAi) || selectedAgent) &&
+    (!allowScheduling || (continueAi && !schedulingReason)) &&
+    (mode !== "official" ? body.trim().length > 0 : Boolean(templateName && templateLanguage));
   // Trava síncrona contra duplo clique: sem ela, um segundo clique no MESMO
   // tick (antes do re-render que aplica `create.isPending`) criaria DUAS regras
   // idênticas — a rota de automação não tem unicidade que impeça.
@@ -183,14 +203,16 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
         name: name.trim(),
         productId,
         channelSessionId,
-        ...(mode === "text"
+        agentId, continueAi, flowPointerId: flowId || undefined, allowScheduling,
+        ...(mode === "ai" ? { aiInstruction: body.trim() } : mode === "text"
           ? { template: body.trim() }
           : { templateName, templateLanguage, templateValues }),
       });
-      const fingerprint = JSON.stringify(payload);
+      const fingerprint = JSON.stringify({ payload, integrationId: selectedIntegrationId });
       const key = pendingOp.current?.fingerprint === fingerprint ? pendingOp.current.key : randomId();
       pendingOp.current = { key, fingerprint };
-      await create.mutateAsync({ ...payload, idempotencyKey: key });
+      const created = await create.mutateAsync({ ...payload, idempotencyKey: key });
+      await manage.mutateAsync({ id: selectedIntegrationId!, operation: "link", ruleId: created.data.id });
       toast.success(t("Automação criada — ligue quando estiver pronta."));
       pendingOp.current = null;
       onOpenChange(false);
@@ -222,11 +244,18 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
           </div>
 
           <div className="space-y-1">
+            <Label>{t("Integração")}</Label>
+            <Select value={selectedIntegrationId} onValueChange={(id) => { setIntegrationId(id); setProductId(""); setAllowScheduling(false); }}>
+              <SelectTrigger aria-label={t("Integração da automação")}><SelectValue placeholder={t("Escolha a integração")} /></SelectTrigger>
+              <SelectContent>{integrations.map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
             <Label>{t("Produto")}</Label>
             <Select value={productId} onValueChange={setProductId}>
               <SelectTrigger aria-label={t("Produto")}><SelectValue placeholder={t("Escolha o produto")} /></SelectTrigger>
               <SelectContent>
-                {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+                {products.filter(p => mappedIds.has(p.id)).map((p) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -247,16 +276,17 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
 
           <div className="space-y-1">
             <Label>{t("Mensagem")}</Label>
-            <Select value={mode} onValueChange={(v) => setMode(v as "text" | "official")}>
+            <Select value={mode} onValueChange={(v) => setMode(v as "text" | "official" | "ai")}>
               <SelectTrigger aria-label={t("Tipo de mensagem")}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="text">{t("Texto livre")}</SelectItem>
                 <SelectItem value="official">{t("Template aprovado")}</SelectItem>
+                <SelectItem value="ai">{t("Mensagem escrita pela IA")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          {mode === "text" ? (
+          {mode === "ai" ? <Textarea aria-label={t("Instrução da mensagem inicial")} rows={4} maxLength={1000} value={body} onChange={e => setBody(e.target.value)} placeholder={t("Oriente o agente sobre a mensagem inicial.")} /> : mode === "text" ? (
             <Textarea aria-label={t("Texto da mensagem")} rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("Oi {{nome}}, obrigado pela compra!")} />
           ) : (
             <AutomationTemplateFields
@@ -268,6 +298,24 @@ function KiwifyPurchaseForm({ open, onOpenChange }: { open: boolean; onOpenChang
               }}
             />
           )}
+
+          <label className="flex items-center gap-2"><Switch checked={continueAi} onCheckedChange={value => { setContinueAi(value); if (!value) setAllowScheduling(false); }} />{t("IA continua atendendo o lead")}</label>
+          {mode === "ai" || continueAi ? <div className="space-y-1">
+            <Label>{t("Agente publicado")}</Label>
+            <Select value={agentId} onValueChange={id => { setAgentId(id); setAllowScheduling(false); }}>
+              <SelectTrigger aria-label={t("Agente publicado")}><SelectValue placeholder={t("Escolha o agente")} /></SelectTrigger>
+              <SelectContent>{options?.agents.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div> : null}
+          <div className="space-y-1"><Label>{t("Follow-up existente (opcional)")}</Label>
+            <Select value={flowId || "none"} onValueChange={id => setFlowId(id === "none" ? "" : id)}>
+              <SelectTrigger aria-label={t("Follow-up existente")}><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="none">{t("Sem follow-up")}</SelectItem>{options?.followups.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1"><label className="flex items-center gap-2"><Switch checked={allowScheduling} onCheckedChange={setAllowScheduling} disabled={!continueAi || !!schedulingReason} />{t("Permitir tentativa de agendamento")}</label>
+            <p className="text-xs text-muted-foreground">{!continueAi ? t("Habilite a continuidade da IA para tentar agendar.") : t(schedulingReason ?? "A IA consulta horários reais e só agenda após a escolha do cliente. Nenhuma permissão é concedida por esta opção.")}</p>
+          </div>
 
           <p className="rounded-sm border border-border bg-muted p-3 text-sm text-muted-foreground">
             {t("A automação nasce pausada. Revise e ligue quando estiver pronta.")}

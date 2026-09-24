@@ -15,6 +15,9 @@ import { DeliveryRejectedError } from "@/lib/channels/delivery-error";
 import { applyMetaMessageStatus } from "@/lib/channels/meta/message-status";
 import { redriveQueued } from "@/lib/agent-engine/edge/crm/session-reconciler";
 import "@/lib/automation/actions/send-whatsapp";
+import "@/lib/automation/actions/bind-ai-agent";
+import "@/lib/automation/actions/start-message-flow";
+import { resolveTurnAgent } from "@/lib/agent-engine/agent/resolve-turn-agent";
 
 if (process.env.KIWIFY_TEST_NATIVE !== "1" || !process.env.KIWIFY_TEST_POSTGREST) throw new Error("Requires isolated native PostgreSQL/PostgREST harness");
 const runtime = vi.hoisted(() => ({ db: null as unknown as pg.Pool, official:false,configured:true,
@@ -93,6 +96,7 @@ async function fixture(actions=1) {
   runtime.mode="ok";runtime.waitUntil=null;runtime.received=[];runtime.openTransactions=[];runtime.idleAtSend=[];runtime.workerTransactions=[];runtime.onReceive=null;
   await pool.query("update automation_rules set is_active=false where organization_id=$1",[org]);
   const rule=(await pool.query("insert into automation_rules(organization_id,name,trigger_event,conditions,actions,is_active) values($1,'Compra aprovada','lead.created','[]',$2,true) returning id",[org,JSON.stringify(Array.from({length:actions},()=>({type:"send_whatsapp_message",config:{channel_session_id:session,template:"Olá {{contact.name}}"}})))])).rows[0].id;
+  await pool.query("insert into kiwify_automation_links values($1,$2,$3)",[org,integration,rule]);
   const order=normalizeKiwify({order_id:randomUUID(),webhook_event_type:"order_approved",order_status:"paid",Product:{product_id:"test"},Customer:{full_name:"Cliente sintético",mobile:`+120255501${sequence++}`}});
   const result=(await pool.query("select fn_ingest_kiwify($1,$2,$3,$4,$5,$6) result",[org,integration,order,kiwifyFingerprint(order),randomUUID(),secret])).rows[0].result;
   const receipt=(await pool.query("select * from kiwify_receipts where id=$1",[result.receipt_id])).rows[0];
@@ -113,6 +117,70 @@ it("compra → duas ações distintas; oito workers e retry não repetem transpo
   const rows=(await pool.query("select * from automation_rule_runs where event_id=$1",[f.event.id])).rows;
   expect(rows).toHaveLength(2);expect(rows.map(r=>r.execution_state)).toEqual(["accepted","accepted"]);
   expect(new Set(rows.map(r=>r.message_id)).size).toBe(2);
+});
+it("integrações com mesmo produto executam somente suas regras explícitas", async () => {
+  const f=await fixture();
+  const source=(await pool.query("select * from kiwify_integrations where id=$1",[integration])).rows[0];
+  const mapping=(await pool.query("select * from kiwify_product_mappings where integration_id=$1",[integration])).rows[0];
+  const second=(await pool.query("select fn_configure_kiwify($1,$2,$3,$4,$5,$6) id",[org,{name:"Loja B",store_id:"second-store",pipeline_id:source.pipeline_id,stage_id:source.stage_id,products:[{external_product_id:"test",product_id:mapping.product_id}]},"d".repeat(64),secret,randomUUID(),user])).rows[0].id;
+  const r=(await pool.query("insert into automation_rules(organization_id,name,trigger_event,conditions,actions,is_active) values($1,'Regra B','lead.created','[]',$2,true) returning id",[org,JSON.stringify([{type:"send_whatsapp_message",config:{channel_session_id:session,template:"Somente B"}}])])).rows[0].id;
+  await pool.query("insert into kiwify_automation_links values($1,$2,$3)",[org,second,r]);
+  await runAutomationForEvent(admin,f.event);
+  expect(runtime.received.map(row=>(row as {body:string}).body)).toEqual(["Olá Cliente sintético"]);
+  const order=normalizeKiwify({order_id:randomUUID(),webhook_event_type:"order_approved",order_status:"paid",Product:{product_id:"test"},Customer:{mobile:"+12025550198"}});
+  const result=(await pool.query("select fn_ingest_kiwify($1,$2,$3,$4,$5,$6) result",[org,second,order,kiwifyFingerprint(order),randomUUID(),secret])).rows[0].result;
+  const event=(await pool.query("select e.* from event_log e join kiwify_receipts k on k.event_id=e.id where k.id=$1",[result.receipt_id])).rows[0];
+  await runAutomationForEvent(admin,event);
+  expect(runtime.received.map(row=>(row as {body:string}).body)).toEqual(["Olá Cliente sintético","Somente B"]);
+});
+
+async function postPurchaseFixture(published=true) {
+  const f=await fixture();
+  const agent=(await pool.query("insert into ai_agents(organization_id,name,system_prompt) values($1,$2,'Qualifique sem inventar disponibilidade.') returning id",[org,`Agente pós-compra ${randomUUID()}`])).rows[0].id;
+  const version=(await pool.query("insert into ai_agent_versions(organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status) values($1,$2,1,'Qualifique com conhecimento publicado.','anthropic','claude-sonnet-4-6',$3,$4) returning id",[org,agent,session,published?"published":"draft"])).rows[0].id;
+  if(published) await pool.query("update ai_agents set published_version_id=$2 where id=$1",[agent,version]);
+  const graph={nodes:[{id:"start",type:"trigger",label:"Início",position:{x:0,y:0},config:{}},{id:"end",type:"end",label:"Fim",position:{x:1,y:0},config:{outcome:"converted"}}],edges:[{id:"edge",source:"start",target:"end",priority:0,condition:{type:"always"}}]};
+  const fv=(await pool.query("insert into followup_flow_versions(organization_id,graph) values($1,$2) returning id",[org,graph])).rows[0].id;
+  const flow=(await pool.query("insert into followup_flow_pointers(organization_id,name,status,active_version_id,trigger_config) values($1,$2,'active',$3,$4) returning id",[org,randomUUID(),fv,{kind:"manual",params:{}}])).rows[0].id;
+  await pool.query("update automation_rules set actions=$2 where id=$1",[f.rule,JSON.stringify([
+    {type:"send_whatsapp_message",config:{channel_session_id:session,template:"Bem-vindo"}},
+    {type:"bind_ai_agent",config:{channel_session_id:session,agent_id:agent,allow_scheduling:false}},
+    {type:"start_message_flow",config:{flow_pointer_id:flow}},
+  ])]);
+  return {...f,agent,flow};
+}
+it("mensagem → binding publicado → follow-up: concorrência/retry não duplicam, próximo inbound resolve o agente", async () => {
+  const f=await postPurchaseFixture();
+  let release!:()=>void;
+  const gate=new Promise<void>(r=>{release=r;});
+  runtime.send.mockImplementationOnce(async()=>{await gate;return {externalId:"synthetic-delayed"};});
+  const first=runAutomationForEvent(admin,f.event);
+  try {
+    await vi.waitFor(()=>expect(runtime.send).toHaveBeenCalledOnce());
+    await Promise.all(Array.from({length:4},()=>runAutomationForEvent(admin,f.event)));
+    expect((await pool.query("select count(*)::int n from followup_enrollments where contact_id=$1",[f.contact])).rows[0].n).toBe(0);
+  } finally { release();await first; }
+  await runAutomationForEvent(admin,f.event);
+  expect(runtime.send).toHaveBeenCalledOnce();
+  const conv=(await pool.query("select * from conversations where organization_id=$1 and contact_id=$2",[org,f.contact])).rows[0];
+  expect(conv.active_ai_agent_id).toBe(f.agent);
+  expect((await pool.query("select count(*)::int n from api_audit_log where resource_id=$1 and action='automation.ai_agent_bound'",[conv.id])).rows[0].n).toBe(1);
+  expect((await pool.query("select count(*)::int n from followup_enrollments where contact_id=$1 and status='active'",[f.contact])).rows[0].n).toBe(1);
+  const routed=await resolveTurnAgent(pool,{} as never,{tenantId:org,leadId:f.contact,jobId:randomUUID(),channelSessionId:session,conversationId:conv.id,signal:"Quero saber mais",stickyAgentId:conv.active_ai_agent_id,stickyIntent:conv.active_intent},{log:{warn:vi.fn()} as never});
+  expect(routed.config?.agentId).toBe(f.agent);expect(routed.outcome).toBe("sticky");
+  await pool.query("insert into messages(organization_id,conversation_id,channel_session_id,contact_id,direction,type,body,status) values($1,$2,$3,$4,'inbound','text','Quero saber mais','received')",[org,conv.id,session,f.contact]);
+  expect((await pool.query("select status,outcome from followup_enrollments where contact_id=$1",[f.contact])).rows).toEqual([{status:"cancelled",outcome:"replied"}]);
+  // Snapshot de worker anterior à resposta não pode ressuscitar o enrollment.
+  await pool.query("update followup_enrollments set status='active',next_eval_at=now() where contact_id=$1",[f.contact]);
+  expect((await pool.query("select status,next_eval_at from followup_enrollments where contact_id=$1",[f.contact])).rows).toEqual([{status:"cancelled",next_eval_at:null}]);
+  await runAutomationForEvent(admin,f.event);
+  expect((await pool.query("select count(*)::int n from followup_enrollments where contact_id=$1",[f.contact])).rows[0].n).toBe(1);
+});
+it("agente não publicado é recusado e não inicia follow-up", async () => {
+  const f=await postPurchaseFixture(false);await runAutomationForEvent(admin,f.event);
+  expect((await pool.query("select active_ai_agent_id from conversations where contact_id=$1",[f.contact])).rows[0].active_ai_agent_id).toBeNull();
+  expect((await pool.query("select * from followup_enrollments where contact_id=$1",[f.contact])).rows).toHaveLength(0);
+  expect((await pool.query("select actions_result from automation_rule_runs where event_id=$1 and action_index=1",[f.event.id])).rows[0].actions_result[0].detail.reason).toBe("sem_agente_publicado");
 });
 it("a leitura global inclui outras sessões; o fence mede apenas o pool do executor",async()=>{
   const other=new pg.Client({host:"127.0.0.1",port:Number(process.env.TEST_DB_PORT),user:"postgres",database:"kiwify_test",application_name:"kiwify-unrelated-session"});

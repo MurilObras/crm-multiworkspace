@@ -20,7 +20,7 @@ export async function encryptWebhookSecret(
   const { data, error } = await admin.rpc("fn_encrypt_oauth", { plaintext });
   if (error || !data) {
     logger.warn("[webhooks.secrets] encrypt falhou (GUC app.nuvemshop_oauth_key ausente?)", {
-      error: error?.message ?? "empty",
+      code: error?.code ?? "empty",
     });
     return null;
   }

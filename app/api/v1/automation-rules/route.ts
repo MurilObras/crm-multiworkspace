@@ -13,6 +13,7 @@ import { createAutomationRuleSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
+import { validateAutomationReferences } from "@/lib/automation/validate-references";
 import {
   chaveDeIdempotencia,
   concluirIdempotencia,
@@ -60,6 +61,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       details: parsed.error.flatten(),
     });
   }
+
+  const referenceError = await validateAutomationReferences(createAdminClient(), activeOrg.orgId, parsed.data.actions);
+  if (referenceError) return fail("invalid_request", referenceError, 422, { requestId });
 
   // Secrets de call_webhook nunca ficam em claro no jsonb (migration 0041).
   const safeActions = await encryptRuleActionSecrets(createAdminClient(), parsed.data.actions);

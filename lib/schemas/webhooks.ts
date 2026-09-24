@@ -20,6 +20,7 @@ export const conditionSchema = z.object({
 });
 
 export const actionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("bind_ai_agent"), config: z.object({ agent_id: z.uuid(), channel_session_id: z.uuid(), allow_scheduling: z.boolean().default(false) }) }),
   z.object({ type: z.literal("create_or_move_lead"), config: z.object({ pipeline_id: z.string().uuid(), stage_id: z.string().uuid() }) }),
   z.object({ type: z.literal("send_whatsapp_message"), config: z.object({
     channel_session_id: z.string().uuid(),

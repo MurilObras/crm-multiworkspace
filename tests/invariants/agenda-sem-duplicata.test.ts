@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { sql as nativeSql } from "./gov-helpers";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -30,14 +31,15 @@ import { beforeAll, describe, expect, it } from "vitest";
  */
 
 const container = process.env.TEST_DB_CONTAINER;
-if (!container) {
+if (!container && process.env.KIWIFY_TEST_NATIVE !== "1") {
   throw new Error(
     "TEST_DB_CONTAINER not set — rode esta suíte via `pnpm test:db` (scripts/test-db.sh)",
   );
 }
-const containerName: string = container;
+const containerName = container ?? "";
 
 function sql(script: string): string {
+  if (process.env.KIWIFY_TEST_NATIVE === "1") return nativeSql(script);
   return execFileSync(
     "docker",
     ["exec", "-i", containerName, "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-tA", "-f", "-"],

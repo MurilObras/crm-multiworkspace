@@ -46,6 +46,8 @@ const purchaseRule: AutomationRuleRow = {
 
 function mockGet(rules: AutomationRuleRow[] = []) {
   vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+    if (path === "/api/v1/integrations/kiwify") return { data: { integrations: [], products: [], links: [] } };
+    if (path === "/api/v1/integrations/kiwify/options") return { data: { agents: [], followups: [] } };
     if (path === "/api/v1/automation-rules") return { data: rules };
     if (path === "/api/v1/channel-sessions") return { data: [] };
     if (path === "/api/v1/products") return { data: [] };
@@ -84,7 +86,7 @@ describe("KiwifyAutomationBlock", () => {
     expect(await screen.findByText("Aviso de compra")).toBeVisible();
     expect(screen.getByText("Pausada")).toBeVisible();
     expect(screen.getByRole("button", { name: "Gerenciar automação" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Criar automação de compra" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Criar automação de compra" })).toBeVisible();
 
     await user.click(screen.getByRole("switch", { name: "Ligar Aviso de compra" }));
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
@@ -97,6 +99,8 @@ describe("KiwifyAutomationBlock", () => {
   it("criação gera uma única regra pausada, mesmo com duplo clique", async () => {
     const user = userEvent.setup({ delay: null });
     vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/integrations/kiwify") return { data: { integrations: [{ id: "integration-1", name: "Loja", pipeline_id: "pipeline-1" }], products: [{ integration_id: "integration-1", product_id: PRODUCT_ID }] } };
+      if (path === "/api/v1/integrations/kiwify/options") return { data: { agents: [], followups: [] } };
       if (path === "/api/v1/automation-rules") return { data: [] };
       if (path === "/api/v1/channel-sessions") return { data: [{ id: CHANNEL_ID, display_name: "Número 1", phone_number: null, status: "WORKING" }] };
       if (path === "/api/v1/products") return { data: [{ id: PRODUCT_ID, nome: "Produto interno", ativo: true }] };
@@ -139,6 +143,7 @@ describe("KiwifyAutomationBlock", () => {
     });
     expect((corpo as { actions: Array<{ type: string }> }).actions).toHaveLength(1);
     expect((corpo as { actions: Array<{ type: string }> }).actions[0]!.type).toBe("send_whatsapp_message");
+    await waitFor(() => expect(apiClient.put).toHaveBeenCalledWith("/api/v1/integrations/kiwify/integration-1/automations", { rule_id: "rule-new" }));
     // Drena o fluxo assíncrono do submit para não vazar toast para o teste seguinte.
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Automação criada — ligue quando estiver pronta."));
   });

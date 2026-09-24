@@ -67,6 +67,7 @@ import {
   type PublishedAgentConfig,
 } from './agent-config';
 import { classifyIntent } from './intent-classifier';
+import { AUTOMATION_AGENT_INTENT, withBindingPolicy } from '@/lib/automation/ai-binding-policy';
 
 export interface TurnAgentResolution {
   config: PublishedAgentConfig | null; // null ⇒ turno segue no genérico (comportamento atual)
@@ -105,6 +106,18 @@ export async function resolveTurnAgent(
   const _classifyIntent = deps.classifyIntent ?? classifyIntent;
 
   try {
+    // Binding explícito de automação usa o MESMO sticky da conversa, inclusive
+    // sem router na sessão. A versão publicada é revalidada a cada inbound.
+    if (input.stickyAgentId && input.stickyIntent === AUTOMATION_AGENT_INTENT) {
+      const config = await _loadAgentById(db, input.tenantId, input.stickyAgentId);
+      if (config) {
+        const { rows } = await db.query<{ allow_scheduling: boolean }>(
+          "select metadata->'automation_binding'->'allow_scheduling' = 'true'::jsonb as allow_scheduling from conversations where organization_id=$1 and id=$2 and active_ai_agent_id=$3 and active_intent=$4",
+          [input.tenantId, input.conversationId, input.stickyAgentId, AUTOMATION_AGENT_INTENT],
+        );
+        if (rows.length) return { config: withBindingPolicy(config, rows[0]?.allow_scheduling === true), routerId: null, intentName: AUTOMATION_AGENT_INTENT, confidence: null, outcome: 'sticky' };
+      }
+    }
     const router = await _loadActiveRouter(db, input.tenantId, input.channelSessionId);
     if (router === null) {
       return {

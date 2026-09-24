@@ -67,13 +67,13 @@ export async function enviarTextoFixoPendente(
     try {
       const { data: enr, error: enrollmentError } = await admin
         .from("followup_enrollments")
-        .select("current_node_id, conversation_id")
+        .select("current_node_id, conversation_id, status")
         .eq("id", enrollmentId)
         .eq("organization_id", job.organization_id as string)
         .eq("contact_id", contactId)
         .maybeSingle();
       if (enrollmentError) throw new Error('followup_enrollment_lookup_failed');
-      if (!enr || enr.current_node_id !== nodeId) {
+      if (!enr || enr.current_node_id !== nodeId || ["cancelled", "completed", "paused_handoff"].includes(enr.status)) {
         await completeJob(pool, job.id, workerId);
         continue;
       }
