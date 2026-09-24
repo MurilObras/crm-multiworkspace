@@ -8,6 +8,18 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [2.1.1] — 2026-09-24
+
+### Corrigido
+
+- **Agenda consulta todos os dias desenhados na visão mensal** Compromissos e ocupações dos meses vizinhos deixam de desaparecer nas células
+  da visão mensal. A consulta cobre as seis semanas desenhadas e mantém os
+  eventos privados do Google identificados apenas como Ocupado.
+
+- **Mensagens manuais com chave não exigem privilégios de automação** O envio manual com chave de idempotência conserva o acesso do usuário e a
+  atualização da prévia da conversa, sem invocar as funções reservadas aos planos
+  de automação. As verificações dos envios automáticos permanecem ativas.
+
 ## [2.1.0] — 2026-09-21
 
 ### Adicionado
@@ -3148,7 +3160,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.1.0...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.15.1...v2.0.0
 [1.15.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.15.0...v1.15.1
