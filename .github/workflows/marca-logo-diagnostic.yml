@@ -1,0 +1,103 @@
+name: marca-logo-diagnostic
+
+# Diagnóstico temporário autorizado. O produto e a spec vêm SEM ALTERAÇÕES do
+# SHA da release; este workflow não deve ser integrado à main.
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/marca-logo-diagnostic.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  original-isolado:
+    if: startsWith(github.head_ref, 'diagnose/marca-logo-b289')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        tentativa: [1, 2, 3]
+    env:
+      AUTH_RATE_LIMIT_LOGIN_IP: "1000"
+      SENTRY_DSN: "off"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: b289d012491f8399b61157f173fd0c3177be0294
+          fetch-depth: 0
+      - name: Confirmar fonte imutável
+        run: |
+          test "$(git rev-parse HEAD)" = b289d012491f8399b61157f173fd0c3177be0294
+          git diff --exit-code -- app lib components tests/e2e
+          sha256sum tests/e2e/marca-logo.spec.ts lib/branding/instalacao.ts
+      - uses: ./.github/actions/preparar-node
+        timeout-minutes: 5
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+      - name: Autenticar pulls no GHCR
+        run: |
+          echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+      - name: Subir stack real descartável
+        run: |
+          mv supabase/migrations /tmp/migrations-off
+          mkdir -p supabase/migrations
+          supabase start
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -q <<'SQL'
+          create schema if not exists extensions;
+          create extension if not exists "uuid-ossp" with schema extensions;
+          create extension if not exists pgcrypto with schema extensions;
+          create extension if not exists vector with schema public;
+          create extension if not exists citext with schema public;
+          create extension if not exists pg_trgm with schema public;
+          SQL
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -q -f supabase/baseline.sql
+          IDS=$(docker ps -q --filter name=supabase_realtime)
+          test -n "$IDS"
+          docker restart $IDS
+          for i in $(seq 1 30); do
+            estado=$(docker inspect -f '{{.State.Health.Status}}' $IDS)
+            [ "$estado" = healthy ] && break
+            sleep 2
+          done
+      - name: Ambiente sintético oficial
+        run: |
+          supabase status -o env > /tmp/sb.env
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$(grep '^API_URL=' /tmp/sb.env | cut -d'"' -f2)"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(grep '^ANON_KEY=' /tmp/sb.env | cut -d'"' -f2)"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$(grep '^SERVICE_ROLE_KEY=' /tmp/sb.env | cut -d'"' -f2)"
+          } >> "$GITHUB_ENV"
+      - run: pnpm e2e:env
+      - run: grep -vE '^[[:space:]]*(#|$)' .env.e2e >> "$GITHUB_ENV"
+      - run: pnpm e2e:build
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Fixtures oficiais
+        run: |
+          cp .env.e2e .env.local
+          pnpm exec tsx scripts/seed-e2e-credentials.ts
+          pnpm exec tsx scripts/seed-e2e-escalacao.ts
+          pnpm exec tsx --env-file=.env.local scripts/seed-e2e-capacidades-ausentes.ts
+          pnpm exec tsx scripts/seed-e2e-followup-agent.ts
+          pnpm exec tsx scripts/seed-e2e-catalogo-openrouter.ts
+      - name: Spec original isolada (sem retry ou mudança de timeout)
+        run: |
+          git diff --exit-code -- app lib components tests/e2e
+          pnpm exec playwright test tests/e2e/marca-logo.spec.ts --workers=1 --reporter=list --trace=on
+      - name: Estado final de leitura da marca (sem credenciais)
+        if: always()
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -Atc \
+            "select json_build_object('has_logo_path',logo_path is not null,'has_logo_url',logo_url is not null,'seeded_from_env',seeded_from_env,'updated_at',updated_at) from public.platform_branding where id=1" > marca-final.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: marca-logo-b289-isolado-${{ matrix.tentativa }}
+          path: |
+            test-results/
+            evidence/marca-logo/
+            marca-final.json
+          retention-days: 7
