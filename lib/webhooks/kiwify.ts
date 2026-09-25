@@ -79,10 +79,16 @@ export async function readKiwifyBody(req: Request): Promise<unknown> {
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)));
 }
 
-export const kiwifyConfigSchema = z.object({
+const kiwifyConfigFields = z.object({
   name: z.string().trim().min(1).max(100),
   store_id: identifier,
   secret: z.string().min(1).max(512),
   pipeline_id: z.uuid(), stage_id: z.uuid(),
   products: z.array(z.object({ external_product_id: identifier, product_id: z.uuid() })).min(1).max(100),
-}).strict().refine(p => new Set(p.products.map(m => m.external_product_id)).size === p.products.length);
+}).strict();
+const uniqueMappings = (p: { products: Array<{ external_product_id: string }> }) =>
+  new Set(p.products.map(m => m.external_product_id)).size === p.products.length;
+export const kiwifyConfigSchema = kiwifyConfigFields.refine(uniqueMappings);
+export const kiwifyUpdateSchema = kiwifyConfigFields.extend({
+  secret: z.string().max(512).optional(),
+}).refine(uniqueMappings);

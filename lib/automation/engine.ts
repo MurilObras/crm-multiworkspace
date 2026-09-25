@@ -21,7 +21,8 @@ import type { ActionResultDetail } from "@/lib/automation/types";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { acquireActionIntent, finishActionIntent, readEventPlan, freezeEventPlan, actionPlanLive } from "./action-intent";
+import { acquireActionIntent, finishActionIntent, readEventPlan, freezeEventPlan, actionPlanLive, precedingActionsState, actionStillWaiting } from "./action-intent";
+import { resumeQueuedAutomationMessage } from "./send-message";
 import { checarGuardasDeContato } from "./guarda-do-contato";
 import { actionSchema } from "@/lib/schemas/webhooks";
 
@@ -171,14 +172,21 @@ export async function runAutomationForEvent(
   }
 
   const context = await buildContext(admin, row);
+  let linkedRuleIds: Set<string> | null = null;
   // A origem é comprovada no ledger, não pelo nome ou telefone do comprador.
   if (kiwify) {
     const { data: receipt, error: receiptError } = await admin.from("kiwify_receipts")
-      .select("id").eq("organization_id", row.organization_id).eq("event_id", row.id)
+      .select("id,integration_id").eq("organization_id", row.organization_id).eq("event_id", row.id)
       .eq("status", "accepted").maybeSingle();
     if (receiptError || !receipt) return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: "kiwify_receipt_unavailable" };
+    if (plan === null) {
+      const { data: links, error: linkError } = await admin.from("kiwify_automation_links")
+        .select("rule_id").eq("organization_id", row.organization_id).eq("integration_id", receipt.integration_id);
+      if (linkError) return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: "kiwify_links_unavailable" };
+      linkedRuleIds = new Set((links ?? []).map(link => link.rule_id as string));
+    }
   }
-  const candidates = matched.filter((r) => evaluateConditions(r.conditions ?? [], context));
+  const candidates = matched.filter((r) => (linkedRuleIds === null || linkedRuleIds.has(r.id)) && evaluateConditions(r.conditions ?? [], context));
   const applicable = plan ?? (kiwify ? await freezeEventPlan(getRequestPool(),row.organization_id,row.id,candidates) : candidates);
   if (!applicable.length) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_match" };
@@ -213,6 +221,11 @@ export async function runAutomationForEvent(
   for (const rule of applicable) {
     const results: ActionResultDetail[] = [];
     for (const [index, action] of (rule.actions ?? []).entries()) {
+      if (kiwify && ["bind_ai_agent", "start_message_flow"].includes(action.type)) {
+        const state = await precedingActionsState(getRequestPool(), row.organization_id, row.id, rule.id, index);
+        if (state === "waiting") return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: new Date(Date.now() + 5000).toISOString() };
+        if (state === "failed") break;
+      }
       const executor = getAction(action.type);
       if (!executor) {
         results.push({ type: action.type, status: "failed", error: "unknown_action" });
@@ -221,7 +234,14 @@ export async function runAutomationForEvent(
       const actionCtx = { admin, organizationId: row.organization_id, ruleId: rule.id,
         ruleName: rule.name, event: row, context: kiwify ? await buildContext(admin, row) : context, requestId: row.id };
       const intentId = kiwify ? await acquireActionIntent(getRequestPool(), actionCtx, index, action.type,true) : null;
-      if (kiwify && !intentId) continue;
+      if (kiwify && !intentId) {
+        const resumed = await resumeQueuedAutomationMessage(actionCtx, index, action.type);
+        if (resumed) await finishActionIntent(getRequestPool(), row.organization_id, resumed.id, resumed.result);
+        if (await actionStillWaiting(getRequestPool(), row.organization_id, row.id, rule.id, index)) {
+          return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: new Date(Date.now() + 5000).toISOString() };
+        }
+        continue;
+      }
       let result: ActionResultDetail;
       try {
         result = kiwify && !await actionPlanLive(getRequestPool(),row.organization_id,row.id)
@@ -240,6 +260,9 @@ export async function runAutomationForEvent(
       results.push(result);
       if (intentId) await finishActionIntent(getRequestPool(), row.organization_id, intentId, result);
       if (intentId && index === 0) await recordRuleExecution(admin,row.organization_id,rule.id);
+      if (intentId && result.status === "postponed") {
+        return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: new Date(Date.now() + 5000).toISOString() };
+      }
     }
 
     // Cada ação Kiwify já é um run durável, correlacionado à mensagem.

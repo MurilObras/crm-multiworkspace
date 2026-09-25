@@ -25,6 +25,27 @@ export async function actionPlanLive(db: Queryable, org: string, event: string):
   return rows[0]?.live === true;
 }
 
+/** Passos que assumem a conversa só avançam após os anteriores concluírem. */
+export async function precedingActionsState(db: Queryable, org: string, event: string, rule: string, index: number): Promise<"ready" | "waiting" | "failed"> {
+  if (index === 0) return "ready";
+  const { rows } = await db.query<{ status: string; execution_state: string; message_id: string | null; message_status: string | null; external_id: string | null }>(
+    `select r.status,r.execution_state,r.message_id,m.status as message_status,m.external_id
+     from automation_rule_runs r left join messages m on m.organization_id=r.organization_id and m.id=r.message_id
+     where r.organization_id=$1 and r.event_id=$2 and r.rule_identity=$3 and r.action_index < $4`,
+    [org, event, rule, index],
+  );
+  if (rows.some(r => r.status === "failed" || r.message_status === "failed" || ["uncertain", "rejected", "blocked", "failed_before_send"].includes(r.execution_state))) return "failed";
+  return rows.length === index && rows.every(r => r.message_id
+    ? r.execution_state === "accepted" && !!r.external_id && ["sent", "delivered", "read"].includes(r.message_status ?? "")
+    : r.status === "success") ? "ready" : "waiting";
+}
+
+export async function actionStillWaiting(db: Queryable, org: string, event: string, rule: string, index: number): Promise<boolean> {
+  const { rows } = await db.query<{ waiting: boolean }>(`select execution_state in ('preparing','pending','sending') as waiting
+    from automation_rule_runs where organization_id=$1 and event_id=$2 and rule_identity=$3 and action_index=$4`, [org,event,rule,index]);
+  return rows[0]?.waiting === true;
+}
+
 /** A intenção usa o histórico existente. INSERT/UNIQUE é a aquisição; nenhuma
  * transação permanece aberta durante a execução da ação ou chamada externa.
  * Uma intenção adquirida nunca volta a ser adquirível por retry do evento.

@@ -259,6 +259,10 @@ aplica.
 | `20260921150000` | `0225_automation_plan_recovery_guard` | Reafirma idempotentemente a guarda já instalada pela 0224, na ordem cronológica normal. Não exige execução antecipada; NULL não comprova ausência de titular. |
 | `20260923120000` | `0226_automation_rule_metadata` | Vínculo durável da idempotência de escrita em `automation_rules`: coluna aditiva `metadata jsonb not null default '{}'`. Guarda o `request_hash` original (chave→payload) na própria regra, para a colisão de PK devolver 409 com hash diferente mesmo depois da limpeza de `idempotency_keys`. Aditiva e idempotente (`ADD COLUMN IF NOT EXISTS`); sem backfill (o default cobre linha existente). |
 
+| `20260924120000` | `0227_kiwify_management` | Arquivamento sem exclusão do histórico, Store ID reutilizável, edição atômica e vínculos tenant-aware com automações. Backfill único preserva o universo legado e não recria vínculos removidos ao reaplicar. |
+
+| `20260924130000` | `0228_kiwify_followup_reply` | Resposta cancela enrollment pós-compra usando a proveniência canônica `automation_run_id`. Cobre resposta anterior à inscrição e durante qualquer nó, preservando o fluxo publicado. |
+
 ## Reproducibility
 
 ### Ordem de proteção do backfill 0224

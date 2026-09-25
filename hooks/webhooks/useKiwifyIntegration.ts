@@ -22,6 +22,7 @@ export interface KiwifyProductMapping {
 export interface KiwifyIntegrationState {
   integrations: KiwifyIntegrationRow[];
   products: KiwifyProductMapping[];
+  links?: Array<{ integration_id: string; rule_id: string }>;
 }
 
 export interface KiwifyProductMappingInput {
@@ -39,6 +40,13 @@ export interface CreateKiwifyIntegrationInput {
 }
 
 const KIWIFY_KEY = ["kiwify-integration"];
+export type KiwifyOptions = {
+  agents: Array<{ id: string; name: string; pipeline_ids: string[]; scheduling_reason: string | null }>;
+  followups: Array<{ id: string; name: string }>;
+};
+export function useKiwifyOptions() {
+  return useQuery({ queryKey: ["kiwify-options"], queryFn: () => apiClient.get<{ data: KiwifyOptions }>("/api/v1/integrations/kiwify/options"), staleTime: 15_000 });
+}
 
 export function useKiwifyIntegration() {
   return useQuery({
@@ -56,6 +64,21 @@ export function useCreateKiwifyIntegration() {
         "/api/v1/integrations/kiwify",
         input,
       ),
+    onError: showApiError,
+    onSuccess: () => qc.invalidateQueries({ queryKey: KIWIFY_KEY }),
+  });
+}
+
+export function useManageKiwifyIntegration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string; operation: "edit" | "archive" | "link" | "unlink"; config?: Omit<CreateKiwifyIntegrationInput, "secret"> & { secret?: string }; ruleId?: string }) => {
+      const path = `/api/v1/integrations/kiwify/${input.id}`;
+      if (input.operation === "edit") return apiClient.patch(path, input.config);
+      if (input.operation === "archive") return apiClient.delete(path);
+      const body = { rule_id: input.ruleId };
+      return input.operation === "link" ? apiClient.put(`${path}/automations`, body) : apiClient.delete(`${path}/automations`, body);
+    },
     onError: showApiError,
     onSuccess: () => qc.invalidateQueries({ queryKey: KIWIFY_KEY }),
   });

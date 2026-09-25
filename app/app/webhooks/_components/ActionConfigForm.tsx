@@ -22,12 +22,15 @@ import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { apiClient } from "@/lib/api/client";
 import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 import { AutomationTemplateFields } from "./AutomationTemplateFields";
+import { useKiwifyOptions } from "@/hooks/webhooks/useKiwifyIntegration";
+import { Switch } from "@/components/ui/switch";
 
 type WhatsappActionConfig = {
   channel_session_id: string; template?: string;
   template_name?: string; template_language?: string; template_values?: Record<string,string>;
 };
 export type ActionItem =
+  | { type: "bind_ai_agent"; config: { agent_id: string; channel_session_id: string; allow_scheduling: boolean } }
   | { type: "create_or_move_lead"; config: { pipeline_id: string; stage_id: string } }
   | { type: "send_whatsapp_message"; config: WhatsappActionConfig }
   | {
@@ -37,10 +40,11 @@ export type ActionItem =
   | { type: "add_tag"; config: { tags: string[] } }
   | { type: "assign_owner"; config: { user_id: string } }
   | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string } }
-  | { type: "start_message_flow"; config: { flow_pointer_id: string } };
+  | { type: "start_message_flow"; config: { flow_pointer_id: string; channel_session_id?: string } };
 
 export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
   switch (type) {
+    case "bind_ai_agent": return { type, config: { agent_id: "", channel_session_id: "", allow_scheduling: false } };
     case "create_or_move_lead":
       return { type, config: { pipeline_id: "", stage_id: "" } };
     case "send_whatsapp_message":
@@ -435,6 +439,27 @@ function StartMessageFlowForm({ config, onChange }: FormProps<{ flow_pointer_id:
   );
 }
 
+function BindAiAgentForm({ config, onChange }: FormProps<{ agent_id: string; channel_session_id: string; allow_scheduling: boolean }>) {
+  const t = useT();
+  const { data } = useKiwifyOptions();
+  const { data: sessions } = useChannelSessions();
+  const agent = data?.data.agents.find(a => a.id === config.agent_id);
+  return <div className="space-y-2">
+    <Label>{t("Agente publicado")}</Label>
+    <Select value={config.agent_id} onValueChange={id => onChange({ ...config, agent_id: id, allow_scheduling: false })}>
+      <SelectTrigger aria-label={t("Agente publicado")}><SelectValue placeholder={t("Escolha o agente")} /></SelectTrigger>
+      <SelectContent>{data?.data.agents.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
+    </Select>
+    <Label>{t("Número de WhatsApp")}</Label>
+    <Select value={config.channel_session_id} onValueChange={id => onChange({ ...config, channel_session_id: id })}>
+      <SelectTrigger aria-label={t("Número de WhatsApp")}><SelectValue placeholder={t("Escolha o número")} /></SelectTrigger>
+      <SelectContent>{sessions?.map(s => <SelectItem key={s.id} value={s.id}>{channelLabel(s)}</SelectItem>)}</SelectContent>
+    </Select>
+    <label className="flex gap-2"><Switch checked={config.allow_scheduling} disabled={!agent || !!agent.scheduling_reason} onCheckedChange={allow => onChange({ ...config, allow_scheduling: allow })} />{t("Permitir tentativa de agendamento")}</label>
+    <p className="text-xs text-muted-foreground">{t(agent?.scheduling_reason ?? "Consulta horários reais e aguarda a escolha do cliente. O funil é validado ao vincular e executar.")}</p>
+  </div>;
+}
+
 export function ActionConfigForm({
   action,
   onChange,
@@ -443,6 +468,7 @@ export function ActionConfigForm({
   onChange: (next: ActionItem) => void;
 }) {
   switch (action.type) {
+    case "bind_ai_agent": return <BindAiAgentForm config={action.config} onChange={config => onChange({ type: action.type, config })} />;
     case "create_or_move_lead":
       return (
         <CreateOrMoveLeadForm
@@ -489,7 +515,7 @@ export function ActionConfigForm({
       return (
         <StartMessageFlowForm
           config={action.config}
-          onChange={(config) => onChange({ type: action.type, config })}
+          onChange={(config) => onChange({ type: action.type, config: { ...action.config, ...config } })}
         />
       );
   }

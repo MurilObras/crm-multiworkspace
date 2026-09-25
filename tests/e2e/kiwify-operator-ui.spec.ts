@@ -58,6 +58,7 @@ test.describe("Kiwify: interface operacional", () => {
   test.afterAll(async () => {
     if (!db) return;
     try {
+      await db.query("delete from kiwify_automation_links where integration_id in (select id from kiwify_integrations where store_id=$1)", [prefix]);
       await db.query("delete from kiwify_product_mappings where integration_id in (select id from kiwify_integrations where store_id=$1)", [prefix]);
       await db.query("delete from kiwify_integrations where store_id=$1", [prefix]);
       await db.query("delete from automation_rules where name=$1", [`Compra Kiwify ${prefix}`]);
@@ -130,6 +131,8 @@ test.describe("Kiwify: interface operacional", () => {
 
     await automacao.getByRole("button", { name: "Criar automação de compra" }).click();
     await page.getByLabel("Nome da automação").fill(`Compra Kiwify ${prefix}`);
+    await page.getByRole("combobox", { name: "Integração da automação" }).click();
+    await page.getByRole("option", { name: prefix, exact: true }).click();
     await page.getByRole("combobox", { name: "Produto" }).click();
     await page.getByRole("option", { name: "Produto OP" }).click();
     await page.getByRole("combobox", { name: "Número de WhatsApp" }).click();
@@ -186,5 +189,37 @@ test.describe("Kiwify: interface operacional", () => {
     // também exibe "Ativa" — o seletor global resolveria para dois elementos.
     await page.getByRole("switch", { name: `Ligar Compra Kiwify ${prefix}` }).click();
     await expect(automacao.getByText("Ativa")).toBeVisible({ timeout: 15_000 });
+    await expect.poll(async () => (await db.query("select is_active from automation_rules where id=$1",[ruleId])).rows[0].is_active).toBe(true);
+    expect((await db.query("select conditions from automation_rules where id=$1",[ruleId])).rows[0].conditions).toEqual([
+      {field:"event.kiwify_event_type",op:"eq",value:"order_approved"},
+      {field:"event.product_id",op:"eq",value:product},
+    ]);
+  });
+  test("manager edita, desvincula e arquiva preservando URL, cifra e regra", async ({ page }) => {
+    const before=(await db.query("select id,path_token,secret_encrypted from kiwify_integrations where organization_id=$1 and store_id=$2",[creds.org_id,prefix])).rows[0];
+    expect(before).toBeTruthy();
+    await login(page);await page.goto(`${app}/app/webhooks`);
+    await page.getByRole("tab",{name:"Kiwify",exact:true}).click();
+    const region=page.getByRole("region",{name:"Integração Kiwify"});
+    let card=region.getByRole("group",{name:prefix,exact:true});
+    await card.getByRole("button",{name:"Editar",exact:true}).click();
+    await expect(region.getByLabel("Secret / token da Kiwify")).toHaveValue("");
+    await region.getByLabel("Nome",{exact:true}).fill(`${prefix} editada`);
+    const saved=page.waitForResponse(r=>r.url().endsWith(`/integrations/kiwify/${before.id}`)&&r.request().method()==="PATCH");
+    await region.getByRole("button",{name:"Salvar integração"}).click();
+    expect((await saved).ok()).toBe(true);
+    expect((await db.query("select path_token,secret_encrypted from kiwify_integrations where id=$1",[before.id])).rows[0]).toEqual({path_token:before.path_token,secret_encrypted:before.secret_encrypted});
+    card=region.getByRole("group",{name:`${prefix} editada`,exact:true});
+    await card.getByRole("button",{name:"Gerenciar automações"}).click();
+    await card.getByRole("button",{name:"Desvincular",exact:true}).click();
+    await expect(card.getByRole("button",{name:"Vincular",exact:true})).toBeVisible();
+    await card.getByRole("button",{name:"Vincular",exact:true}).click();
+    await expect(card.getByRole("button",{name:"Desvincular",exact:true})).toBeVisible();
+    const screenshot=await page.screenshot({path:".superpowers/evidence/kiwify-operator-ui/management.png",fullPage:true});
+    await test.info().attach("gerenciamento-kiwify",{body:screenshot,contentType:"image/png"});
+    await card.getByRole("button",{name:"Excluir integração"}).click();
+    await expect(region.getByText(`${prefix} editada`,{exact:true})).toHaveCount(0);
+    expect((await db.query("select archived_at,is_active from kiwify_integrations where id=$1",[before.id])).rows[0]).toMatchObject({is_active:false,archived_at:expect.any(Date)});
+    expect((await db.query("select count(*)::int n from automation_rules where organization_id=$1 and name=$2",[creds.org_id,`Compra Kiwify ${prefix}`])).rows[0].n).toBe(1);
   });
 });

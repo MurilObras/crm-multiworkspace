@@ -42,6 +42,7 @@ import type { InboundTurnDeps } from './inbound-turn';
 import { checkpointDoJob } from './inbound-turn';
 import { declaracaoDoTurnoSchema, promessasEmAberto, type DeclaracaoDoTurno } from './declaracao';
 import { loadPublishedAgentConfigById } from './agent-config';
+import { AUTOMATION_AGENT_INTENT, withBindingPolicy } from '@/lib/automation/ai-binding-policy';
 import { isLeadInHandoff } from './human-handoff';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
@@ -326,8 +327,15 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
     const { declaracao, houveCheckpoint } = await lerDeclaracaoDoTurno(pool, tenantId, leadId, payload.origin_job_id);
     const promessas = promessasEmAberto(declaracao);
 
-    const agentConfig =
+    let agentConfig =
       payload.agent_id === null ? null : await loadPublishedAgentConfigById(pool, tenantId, payload.agent_id);
+    if (agentConfig !== null) {
+      const { rows: binding } = await pool.query<{ allow_scheduling: boolean }>(
+        "select metadata->'automation_binding'->'allow_scheduling' = 'true'::jsonb as allow_scheduling from conversations where organization_id=$1 and id=$2 and active_ai_agent_id=$3 and active_intent=$4",
+        [tenantId, payload.conversation_id, agentConfig.agentId, AUTOMATION_AGENT_INTENT],
+      );
+      if (binding.length) agentConfig = withBindingPolicy(agentConfig, binding[0]?.allow_scheduling === true);
+    }
     if (agentConfig === null) {
       // Sem agente publicado não há config de papel para ler. Não é erro: é o
       // turno que rodou no genérico. Mas a promessa continua tendo de ter dono.
@@ -680,4 +688,3 @@ async function registrarDesfecho(
     });
   }
 }
-

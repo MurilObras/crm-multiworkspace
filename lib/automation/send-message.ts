@@ -7,10 +7,14 @@ import type { ActionCtx } from "./types";
 import { adiarAteAJanelaAbrir } from "./janela-do-canal";
 import { checkDailyLimit } from "./throttle";
 import { ApiError } from "@/lib/api/types";
+import { sendMessageSchema } from "@/lib/schemas/messaging";
+import { reportarEnvio } from "./desfecho-do-envio";
+import type { ActionResultDetail } from "./types";
 
 /** Reusa o sink e seu protocolo prepared → started → rejected/uncertain.
  * A aquisição pertence ao run, em vez do job_queue do agente. Não existe
- * retomada de uma ação já adquirida: callbacks ainda podem confirmar o resultado.
+ * retomada de transporte iniciado. Uma espera PREPARED pode continuar pelo
+ * mesmo intent/mensagem; nunca pelo redrive legado do watchdog.
  */
 export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageInput) {
   const handlerCtx = { organization_id: ctx.organizationId,
@@ -21,6 +25,8 @@ export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageIn
   const org = ctx.organizationId;
   return sendMessageHandler(ctx.admin, handlerCtx, {
     ...input, metadata: { ...input.metadata, idempotency_key: id,
+      automation_send_input: { ...input, metadata: undefined },
+      automation_prepared_phone: (ctx.context.contact as { phone_number?: string } | undefined)?.phone_number,
       outbound_attempt: { phase: "prepared" } },
   }, {
     messageId: id,
@@ -61,11 +67,15 @@ export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageIn
     writeAttemptState: async (message, change) => {
       const patch = change.patch;
       const blocked = patch.error_code === "automatic_send_blocked";
+      // Só PREPARED comprova que nenhum transporte começou. Um adaptador que
+      // pede queued depois de STARTED não ganha autorização para repetir.
+      const waiting = patch.status === "queued" && change.expectedPhase === "prepared";
       const unconfirmed = patch.status === "sent" && !patch.external_id;
-      const state = unconfirmed ? "uncertain" : patch.status === "sent" ? "accepted"
+      const uncertain = unconfirmed || (patch.status === "queued" && !waiting);
+      const state = uncertain ? "uncertain" : waiting ? "preparing" : patch.status === "sent" ? "accepted"
         : change.phase === "uncertain" ? "uncertain"
         : change.phase === "rejected" ? "rejected"
-        : patch.status === "queued" || blocked ? "blocked" : "failed_before_send";
+        : blocked ? "blocked" : "failed_before_send";
       const { rows } = await db.query<Message>(`with acquired as (
         update automation_rule_runs set execution_state=$4,execution_updated_at=now()
         where id=$1 and organization_id=$2 and (execution_state=$5
@@ -74,12 +84,13 @@ export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageIn
         status=case when m.status in ('delivered','read') then m.status else $6 end,
         external_id=coalesce($7,m.external_id),error_code=$8,error_message=null,
         ack=case when $10::integer is null then m.ack else greatest(m.ack,$10::integer) end,
-        metadata=jsonb_set(m.metadata,'{outbound_attempt,phase}',to_jsonb($9::text))
+         metadata=jsonb_set(m.metadata,'{outbound_attempt,phase}',to_jsonb($9::text))
+           || case when $11::text is null then '{}'::jsonb else jsonb_build_object('queued_reason',$11::text) end
         where m.id=$3 and m.organization_id=$2 and exists(select 1 from acquired) returning m.*`,
       [id,org,message.id,state,change.expectedPhase === "started" ? "sending" : "preparing",
-        unconfirmed || patch.status === "queued" ? "failed" : patch.status,patch.external_id ?? null,
-        unconfirmed ? "outbound_delivery_uncertain" : blocked ? patch.error_message : change.queuedReason ?? patch.error_code ?? null,
-        unconfirmed ? "uncertain" : change.phase,patch.ack ?? null]);
+        uncertain ? "failed" : patch.status,patch.external_id ?? null,
+        uncertain ? "outbound_delivery_uncertain" : blocked ? patch.error_message : change.queuedReason ?? patch.error_code ?? null,
+        uncertain ? "uncertain" : change.phase,patch.ack ?? null,waiting ? change.queuedReason ?? "awaiting_processing" : null]);
       if (!rows[0]) throw new OutboundLeaseLostError();
       return rows[0];
     },
@@ -89,4 +100,34 @@ export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageIn
     }
     throw error;
   });
+}
+
+/** Continuação de uma espera, não uma nova execução da ação (nem nova geração
+ * de IA/template). Pending só é publicado por finishActionIntent, depois que
+ * o executor anterior terminou. CAS e fase PREPARED elegem um único worker. */
+export async function resumeQueuedAutomationMessage(ctx: ActionCtx, index: number, type: string): Promise<{ id: string; result: ActionResultDetail } | null> {
+  if (!["send_whatsapp_message", "send_ai_message"].includes(type)) return null;
+  const db = getRequestPool();
+  const { rows } = await db.query<{ id: string; input: unknown; phone: string | null }>(`
+    update automation_rule_runs r set execution_state='preparing',execution_updated_at=now()
+    from messages m where r.organization_id=$1 and r.event_id=$2 and r.rule_identity=$3 and r.action_index=$4
+      and r.execution_state='pending' and r.status='adiado'
+      and m.organization_id=r.organization_id and m.id=r.message_id
+      and m.status='queued' and m.external_id is null
+      and m.metadata->'outbound_attempt'->>'phase'='prepared'
+      and public.fn_automation_run_live($1,r.id,m.contact_id)
+    returning r.id,m.metadata->'automation_send_input' as input,m.metadata->>'automation_prepared_phone' as phone`,
+  [ctx.organizationId, ctx.event.id, ctx.ruleId, index]);
+  const claimed = rows[0];
+  if (!claimed) return null;
+  const input = sendMessageSchema.safeParse(claimed.input);
+  if (!input.success || !claimed.phone) return { id: claimed.id, result: { type, status: "failed", error: "invalid_config" } };
+  try {
+    const message = await sendAutomationMessage({ ...ctx, actionIntentId: claimed.id,
+      context: { ...ctx.context, contact: { ...(ctx.context.contact as object), phone_number: claimed.phone } },
+    }, input.data);
+    return { id: claimed.id, result: await reportarEnvio(ctx, type, message, input.data.conversation_id) };
+  } catch {
+    return { id: claimed.id, result: { type, status: "failed", error: "action_failed" } };
+  }
 }

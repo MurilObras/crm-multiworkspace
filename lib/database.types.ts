@@ -1830,9 +1830,11 @@ export type Database = {
           created_by_user_id: string | null
           id: string
           is_active: boolean
+          kiwify_links_initialized: boolean
           last_change_actor_kind: string | null
           last_change_at: string | null
           last_run_at: string | null
+          metadata: Json
           name: string
           organization_id: string
           run_count: number
@@ -1846,9 +1848,11 @@ export type Database = {
           created_by_user_id?: string | null
           id?: string
           is_active?: boolean
+          kiwify_links_initialized?: boolean
           last_change_actor_kind?: string | null
           last_change_at?: string | null
           last_run_at?: string | null
+          metadata?: Json
           name: string
           organization_id: string
           run_count?: number
@@ -1862,9 +1866,11 @@ export type Database = {
           created_by_user_id?: string | null
           id?: string
           is_active?: boolean
+          kiwify_links_initialized?: boolean
           last_change_actor_kind?: string | null
           last_change_at?: string | null
           last_run_at?: string | null
+          metadata?: Json
           name?: string
           organization_id?: string
           run_count?: number
@@ -4676,8 +4682,49 @@ export type Database = {
           },
         ]
       }
+      kiwify_automation_links: {
+        Row: {
+          integration_id: string
+          organization_id: string
+          rule_id: string
+        }
+        Insert: {
+          integration_id: string
+          organization_id: string
+          rule_id: string
+        }
+        Update: {
+          integration_id?: string
+          organization_id?: string
+          rule_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kiwify_automation_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiwify_automation_links_organization_id_integration_id_fkey"
+            columns: ["organization_id", "integration_id"]
+            isOneToOne: false
+            referencedRelation: "kiwify_integrations"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "kiwify_automation_links_organization_id_rule_id_fkey"
+            columns: ["organization_id", "rule_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rules"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
       kiwify_integrations: {
         Row: {
+          archived_at: string | null
           id: string
           is_active: boolean
           name: string
@@ -4689,6 +4736,7 @@ export type Database = {
           store_id: string
         }
         Insert: {
+          archived_at?: string | null
           id?: string
           is_active?: boolean
           name: string
@@ -4700,6 +4748,7 @@ export type Database = {
           store_id: string
         }
         Update: {
+          archived_at?: string | null
           id?: string
           is_active?: boolean
           name?: string
@@ -7309,6 +7358,18 @@ export type Database = {
       }
     }
     Functions: {
+      fn_manage_kiwify: {
+        Args: {
+          p_actor_user_id: string
+          p_config: Json
+          p_integration_id: string
+          p_operation: string
+          p_organization_id: string
+          p_request_id: string
+          p_secret_encrypted: string
+        }
+        Returns: string
+      }
       fn_automation_message_preview: {
         Args: { p_message: string; p_org: string }
         Returns: boolean

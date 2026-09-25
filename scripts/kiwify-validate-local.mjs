@@ -1,5 +1,5 @@
 // Validação PostgreSQL nativo descartável. Não lê .env nem aceita URL remota.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
@@ -16,8 +16,11 @@ const prelude = official.split("psql_install <<'SQL'")[1]?.split('\nSQL')[0];
 assert(prelude?.includes('create extension if not exists vector'), 'prelude oficial não encontrado');
 const baseline = readFileSync(resolve(root,'supabase/baseline.sql'),'utf8');
 const previous = execFileSync('git',['show','24a9a3b07d59048dfa254f6df340317334a88b95:supabase/baseline.sql'],{encoding:'utf8',maxBuffer:20*1024*1024});
-const migration = readFileSync(resolve(root,'supabase/migrations/20260920120000_0220_kiwify_ingestion.sql'),'utf8');
-const correction = readFileSync(resolve(root,'supabase/migrations/20260920220000_0221_kiwify_consent_privacy_actor.sql'),'utf8');
+// O outro lado da comparação é o baseline ATUAL: a atualização também precisa
+// chegar até hoje, não parar em 0221 e reprovar toda migration Kiwify posterior.
+const migrations = readdirSync(resolve(root,'supabase/migrations'))
+  .filter(name => /^\d{14}_\d{4}_.*\.sql$/.test(name) && name >= '20260920120000_')
+  .sort().map(name => readFileSync(resolve(root,'supabase/migrations',name),'utf8'));
 
 const catalog = `select jsonb_build_object(
   'tables',(select jsonb_agg(to_jsonb(x) order by table_name,ordinal_position) from (select table_name,column_name,ordinal_position,data_type,is_nullable,column_default from information_schema.columns where table_schema='public' and table_name like 'kiwify_%') x),
@@ -25,7 +28,7 @@ const catalog = `select jsonb_build_object(
   'indexes',(select jsonb_agg(to_jsonb(x) order by indexname) from (select tablename,indexname,indexdef from pg_indexes where schemaname='public' and (tablename like 'kiwify_%' or indexname='catalog_products_org_id_key')) x),
   'policies',(select jsonb_agg(to_jsonb(x) order by tablename,policyname) from (select * from pg_policies where schemaname='public' and tablename like 'kiwify_%') x),
   'grants',(select jsonb_agg(to_jsonb(x) order by table_name,grantee,privilege_type) from (select table_name,grantee,privilege_type from information_schema.table_privileges where table_schema='public' and table_name like 'kiwify_%') x),
-  'functions',(select jsonb_agg(to_jsonb(x) order by proname) from (select proname,prosecdef,proconfig,proacl::text,pg_get_functiondef(oid) definition from pg_proc where pronamespace='public'::regnamespace and proname in ('fn_ingest_kiwify','fn_configure_kiwify')) x)
+  'functions',(select jsonb_agg(to_jsonb(x) order by proname) from (select proname,prosecdef,proconfig,proacl::text,pg_get_functiondef(oid) definition from pg_proc where pronamespace='public'::regnamespace and proname in ('fn_ingest_kiwify','fn_configure_kiwify','fn_manage_kiwify','fn_kiwify_followup_reply')) x)
 ) result`;
 async function inspect(db) {
   const c = new pg.Client({host:'127.0.0.1',port,user:'postgres',database:db});
@@ -43,13 +46,11 @@ try {
   assert.deepEqual(await inspect('kiwify_fresh'),fresh);
   console.info('PASS baseline REAPPLY + catálogo invariável');
   run('kiwify_upgrade',previous);
-  run('kiwify_upgrade',migration);
-  run('kiwify_upgrade',correction);
+  for (const migration of migrations) run('kiwify_upgrade',migration);
   assert.deepEqual(await inspect('kiwify_upgrade'),fresh);
-  run('kiwify_upgrade',migration);
-  run('kiwify_upgrade',correction);
+  for (const migration of migrations) run('kiwify_upgrade',migration);
   assert.deepEqual(await inspect('kiwify_upgrade'),fresh);
-  console.info('PASS base 24a9a3b0 + migrations 0220/0221 + REAPPLY: tabelas/constraints/índices/funções/grants/policies iguais');
+  console.info('PASS base 24a9a3b0 + cadeia cronológica desde 0220 + REAPPLY: tabelas/constraints/índices/funções/grants/policies iguais');
   run('template1',"comment on database kiwify_fresh is 'kiwify-disposable-validation';");
   run('template1','drop database if exists kiwify_test with (force); create database kiwify_test template kiwify_fresh;');
   console.info('PASS kiwify_test preparado; sem consumidores de eventos');

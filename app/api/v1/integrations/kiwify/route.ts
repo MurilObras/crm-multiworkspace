@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { kiwifyConfigSchema, readKiwifyBody } from "@/lib/webhooks/kiwify";
+import { kiwifyManagementError } from "@/lib/webhooks/kiwify-management";
 
 /** Configuração operacional e últimos recebimentos, sem ciphertext/segredo. */
 export async function GET(): Promise<Response> {
@@ -13,13 +14,14 @@ export async function GET(): Promise<Response> {
   try {
     const admin = createAdminClient();
     const org = auth.org.orgId;
-    const [sources, products, receipts] = await Promise.all([
-      admin.from("kiwify_integrations").select("id,name,store_id,path_token,pipeline_id,stage_id,is_active").eq("organization_id", org),
+    const [sources, products, receipts, links] = await Promise.all([
+      admin.from("kiwify_integrations").select("id,name,store_id,path_token,pipeline_id,stage_id,is_active").eq("organization_id", org).is("archived_at", null),
       admin.from("kiwify_product_mappings").select("integration_id,external_product_id,product_id").eq("organization_id", org),
       admin.from("kiwify_receipts").select("id,integration_id,order_id,event_type,status,reason,lead_id,event_id,conflict_count,created_at").eq("organization_id", org).order("created_at", { ascending: false }).limit(20),
+      admin.from("kiwify_automation_links").select("integration_id,rule_id").eq("organization_id", org),
     ]);
-    if (sources.error || products.error || receipts.error) return fail("internal_error", "Consulta indisponível.", 503, { requestId });
-    return ok({ integrations: sources.data, products: products.data, receipts: receipts.data }, { requestId });
+    if (sources.error || products.error || receipts.error || links.error) return fail("internal_error", "Consulta indisponível.", 503, { requestId });
+    return ok({ integrations: sources.data, products: products.data, receipts: receipts.data, links: links.data }, { requestId });
   } catch { return fail("internal_error", "Consulta indisponível.", 503, { requestId }); }
 }
 
@@ -40,7 +42,7 @@ export async function POST(req: Request): Promise<Response> {
       p_secret_encrypted: encrypted, p_request_id: requestId,
       p_actor_user_id: auth.user.id,
     });
-    if (error) return fail("invalid_request", "Verifique loja, funil, etapa e produtos da organização.", 422, { requestId });
+    if (error) return kiwifyManagementError(error, requestId);
     return ok({ integration_id: data, endpoint: `/api/v1/webhooks/kiwify/${token}` }, { status: 201, requestId });
   } catch { return fail("invalid_request", "Não foi possível configurar a integração.", 400, { requestId }); }
 }

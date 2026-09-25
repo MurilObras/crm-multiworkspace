@@ -20,6 +20,7 @@ export const conditionSchema = z.object({
 });
 
 export const actionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("bind_ai_agent"), config: z.object({ agent_id: z.uuid(), channel_session_id: z.uuid(), allow_scheduling: z.boolean().default(false) }) }),
   z.object({ type: z.literal("create_or_move_lead"), config: z.object({ pipeline_id: z.string().uuid(), stage_id: z.string().uuid() }) }),
   z.object({ type: z.literal("send_whatsapp_message"), config: z.object({
     channel_session_id: z.string().uuid(),
@@ -56,7 +57,7 @@ export const actionSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("start_message_flow"),
-    config: z.object({ flow_pointer_id: z.string().uuid() }),
+    config: z.object({ flow_pointer_id: z.string().uuid(), channel_session_id: z.uuid().optional() }),
   }),
 ]);
 
@@ -85,6 +86,9 @@ export const createAutomationRuleSchema = z.object({
   actions: z.array(actionSchema).min(1).max(10),
 });
 export const updateAutomationRuleSchema = createAutomationRuleSchema.partial().extend({
+  // Zod 4 aplica defaults também dentro de optional(): só ligar a regra não
+  // pode transformar conditions ausente em [] e apagar o filtro da compra.
+  conditions: z.array(conditionSchema).max(10).optional(),
   is_active: z.boolean().optional(),
 });
 

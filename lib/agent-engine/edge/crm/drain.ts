@@ -218,7 +218,10 @@ async function processEvent(
          select 1 from ai_agents a
          join ai_agent_versions v on v.id = a.published_version_id
          where a.organization_id = $1 and a.archived_at is null
-           and v.status = 'published' and v.channel_session_id = $2
+            and v.status = 'published' and (v.channel_session_id = $2 or exists (
+              select 1 from conversations c where c.organization_id=$1 and c.id=$3
+                and c.channel_session_id=$2 and c.active_ai_agent_id=a.id and c.active_intent='automation:bound'
+            ))
        ) as tem_agente,
        exists(
          select 1 from ai_routers r
@@ -250,7 +253,7 @@ async function processEvent(
              )
            )
        ) as tem_roteador`,
-    [event.organization_id, p.channel_session_id],
+    [event.organization_id, p.channel_session_id, p.conversation_id],
   );
   const cap = capacidade[0];
   if (cap !== undefined && !cap.tem_agente && !cap.tem_roteador) {

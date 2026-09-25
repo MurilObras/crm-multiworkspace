@@ -22,7 +22,7 @@ import { followupNeedsTemplate, loadOfficialFollowupTemplate, type OfficialFollo
 
 import { withFields } from '../obs/logger';
 import type { JobRow } from '../queue/queue';
-import { withJobLease } from '../queue/queue';
+import { withJobLease, cancelJob } from '../queue/queue';
 import { getLeadContext, type LeadContext } from '../edge/crm/get-lead-context';
 import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
@@ -247,7 +247,13 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
     }
     const payload = followupTurnPayloadSchema.parse(job.payload);
 
-    const target = await resolveSendTarget(pool, tenantId, leadId, payload.followup_enrollment_id);
+    let target;
+    try { target = await resolveSendTarget(pool, tenantId, leadId, payload.followup_enrollment_id); }
+    catch (error) {
+      if (!(error instanceof Error) || error.message !== 'followup_inactive') throw error;
+      await cancelJob(pool, job.id, ctx.workerId, 'followup_inactive');
+      return;
+    }
 
     const clock = deps.clock ?? ((): Date => new Date());
 
@@ -326,11 +332,12 @@ async function resolveSendTarget(
 ): Promise<ReentrySendTarget> {
   let conversationId: string | null = null;
   if (enrollmentId) {
-    const { rows: enrollments } = await pool.query<{ conversation_id: string | null }>(
-      'select conversation_id from followup_enrollments where organization_id = $1 and contact_id = $2 and id = $3',
+    const { rows: enrollments } = await pool.query<{ conversation_id: string | null; status: string }>(
+      'select conversation_id,status from followup_enrollments where organization_id = $1 and contact_id = $2 and id = $3',
       [tenantId, contactId, enrollmentId],
     );
     if (!enrollments[0]) throw new Error('followup_enrollment_not_found');
+    if (['cancelled', 'completed', 'paused_handoff'].includes(enrollments[0].status)) throw new Error('followup_inactive');
     conversationId = enrollments[0].conversation_id;
   }
   const { rows } = await pool.query<{

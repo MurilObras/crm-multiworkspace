@@ -25,10 +25,14 @@ import { usePipelines, usePipelineStages } from "@/hooks/webhooks/useWebhookSour
 import {
   useKiwifyIntegration,
   useCreateKiwifyIntegration,
+  useManageKiwifyIntegration,
+  useKiwifyOptions,
   type KiwifyProductMappingInput,
 } from "@/hooks/webhooks/useKiwifyIntegration";
 import { webhookUrlKiwify } from "@/lib/automation/kiwify-webhook-url";
 import { useT } from "@/hooks/i18n/useT";
+import { useAutomationRules } from "@/hooks/webhooks/useAutomationRules";
+import { isKiwifyPurchaseRule } from "@/lib/automation/kiwify-automation";
 
 interface MappingRow extends KiwifyProductMappingInput {
   key: string;
@@ -48,6 +52,12 @@ export function KiwifyIntegrationBlock() {
   const t = useT();
   const { data, isLoading } = useKiwifyIntegration();
   const create = useCreateKiwifyIntegration();
+  const manage = useManageKiwifyIntegration();
+  const { data: rulesData } = useAutomationRules();
+  const { data: options } = useKiwifyOptions();
+  const rules = rulesData?.data ?? [];
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [managingId, setManagingId] = React.useState<string | null>(null);
 
   const { data: pipelinesRes } = usePipelines();
   const pipelines = pipelinesRes?.data ?? [];
@@ -87,6 +97,7 @@ export function KiwifyIntegrationBlock() {
   const productName = (id: string) => products.find((p) => p.id === id)?.nome ?? id;
 
   const resetForm = () => {
+    setEditingId(null);
     setName("");
     setStoreId("");
     setSecret("");
@@ -100,7 +111,7 @@ export function KiwifyIntegrationBlock() {
     const produtos = mappings
       .filter((m) => m.external_product_id.trim() && m.product_id)
       .map((m) => ({ external_product_id: m.external_product_id.trim(), product_id: m.product_id }));
-    if (!name.trim() || !storeId.trim() || !secret || !pipelineId || !stageId || produtos.length === 0) {
+    if (!name.trim() || !storeId.trim() || (!editingId && !secret) || !pipelineId || !stageId || produtos.length === 0 || produtos.length !== mappings.length) {
       toast.error(t("Preencha nome, loja, segredo, funil, etapa e ao menos um produto."));
       return;
     }
@@ -109,17 +120,23 @@ export function KiwifyIntegrationBlock() {
     // integrações (ou esbarraria no UNIQUE com um erro confuso).
     submitting.current = true;
     try {
-      const result = await create.mutateAsync({
+      const config = {
         name: name.trim(),
         store_id: storeId.trim(),
         secret,
         pipeline_id: pipelineId,
         stage_id: stageId,
         products: produtos,
-      });
+      };
+      if (editingId) {
+        await manage.mutateAsync({ id: editingId, operation: "edit", config });
+        toast.success(t("Integração atualizada."));
+      } else {
+        const result = await create.mutateAsync(config);
+        setCreatedUrl(webhookUrlKiwify(origem(), result.data.endpoint));
+      }
       // O segredo nunca volta a viver fora do envio: some do formulário na hora.
       setSecret("");
-      setCreatedUrl(webhookUrlKiwify(origem(), result.data.endpoint));
       resetForm();
       setFormOpen(false);
     } finally {
@@ -154,7 +171,7 @@ export function KiwifyIntegrationBlock() {
 
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-lg font-semibold text-text">{t("Integração")}</h3>
-        <Button type="button" variant="secondary" onClick={() => setFormOpen((v) => !v)}>
+        <Button type="button" variant="secondary" onClick={() => { resetForm(); setFormOpen(true); }}>
           <Plus /> {t("Nova integração")}
         </Button>
       </div>
@@ -171,7 +188,7 @@ export function KiwifyIntegrationBlock() {
         const url = webhookUrlKiwify(origem(), int.path_token);
         const intMappings = mappingsByIntegration.get(int.id) ?? [];
         return (
-          <Card key={int.id}>
+          <Card key={int.id} role="group" aria-label={int.name}>
             <CardHeader className="space-y-1">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <CardTitle className="truncate">{int.name}</CardTitle>
@@ -196,6 +213,47 @@ export function KiwifyIntegrationBlock() {
                   </div>
                 ))}
               </dl>
+              <div className="space-y-2 text-sm">
+                <p className="font-medium">{t("Automações vinculadas")}</p>
+                {(data?.data.links ?? []).filter(link => link.integration_id === int.id).map(link => {
+                  const rule = rules.find(r => r.id === link.rule_id);
+                  const agentId = rule?.actions.find(a => a.type === "bind_ai_agent" || a.type === "send_ai_message")?.config?.agent_id;
+                  const flowId = rule?.actions.find(a => a.type === "start_message_flow")?.config?.flow_pointer_id;
+                  return <div key={link.rule_id}><p>{rule?.name ?? link.rule_id} — {rule?.is_active ? t("Ativa") : t("Pausada")}</p>
+                    {typeof agentId === "string" ? <p>{t("Agente publicado")}: {options?.data.agents?.find(a => a.id === agentId)?.name ?? agentId}</p> : null}
+                    {typeof flowId === "string" ? <p>{t("Follow-up existente")}: {options?.data.followups?.find(f => f.id === flowId)?.name ?? flowId}</p> : null}
+                  </div>;
+                })}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={() => {
+                  setEditingId(int.id); setName(int.name); setStoreId(int.store_id); setSecret("");
+                  setPipelineId(int.pipeline_id); setStageId(int.stage_id);
+                  setMappings(intMappings.map(m => ({ ...m, key: randomId() }))); setFormOpen(true);
+                }}>{t("Editar")}</Button>
+                <Button type="button" variant="secondary" onClick={() => setManagingId(managingId === int.id ? null : int.id)}>{t("Gerenciar automações")}</Button>
+                <Button type="button" variant="ghost" disabled={manage.isPending} onClick={async () => {
+                  await manage.mutateAsync({ id: int.id, operation: "archive" });
+                  if (editingId === int.id) { resetForm(); setFormOpen(false); }
+                  setCreatedUrl(null); toast.success(t("Integração arquivada. Histórico preservado."));
+                }}>{t("Excluir integração")}</Button>
+              </div>
+              {managingId === int.id ? <div className="space-y-2 rounded-sm border p-3">
+                <p className="text-sm text-muted-foreground">{t("Vincule regras de compra aprovada. Desvincular preserva a automação.")}</p>
+                {rules.filter(rule => isKiwifyPurchaseRule(rule) || (data?.data.links ?? []).some(l => l.integration_id === int.id && l.rule_id === rule.id)).map(rule => {
+                  const linked = (data?.data.links ?? []).some(l => l.integration_id === int.id && l.rule_id === rule.id);
+                  return <div key={rule.id} className="flex items-center justify-between gap-2"><span>{rule.name}</span>
+                    <Button type="button" variant="secondary" disabled={manage.isPending} onClick={() => manage.mutate({ id: int.id, operation: linked ? "unlink" : "link", ruleId: rule.id })}>{linked ? t("Desvincular") : t("Vincular")}</Button>
+                  </div>;
+                })}
+                {rules.filter(rule => rule.trigger_event === "lead.created" && !isKiwifyPurchaseRule(rule)
+                  && !(data?.data.links ?? []).some(l => l.integration_id === int.id && l.rule_id === rule.id)).map(rule => (
+                  <div key={rule.id} className="space-y-1 text-sm">
+                    <p>{rule.name}</p>
+                    <p className="text-muted-foreground">{t("Regra genérica não vinculada: para receber compras Kiwify, edite a regra e adicione a condição event.kiwify_event_type = order_approved. Depois vincule-a aqui.")}</p>
+                  </div>
+                ))}
+              </div> : null}
             </CardContent>
           </Card>
         );
@@ -217,6 +275,7 @@ export function KiwifyIntegrationBlock() {
                 <Label htmlFor="kiwify-secret">{t("Secret / token da Kiwify")}</Label>
                 <Input id="kiwify-secret" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} maxLength={512} autoComplete="new-password" />
                 <p className="text-xs text-muted-foreground">{t("Nunca é exibido depois de salvo nem gravado no navegador.")}</p>
+                {editingId ? <p className="text-xs text-muted-foreground">{t("Deixe vazio para preservar o segredo atual. A URL permanece a mesma.")}</p> : null}
               </div>
               <div className="space-y-1">
                 <Label>{t("Funil")}</Label>
@@ -277,8 +336,8 @@ export function KiwifyIntegrationBlock() {
 
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setFormOpen(false)}>{t("Cancelar")}</Button>
-              <Button type="button" onClick={submit} disabled={create.isPending}>
-                {create.isPending ? t("Salvando…") : t("Salvar integração")}
+              <Button type="button" onClick={submit} disabled={create.isPending || manage.isPending}>
+                {create.isPending || manage.isPending ? t("Salvando…") : t("Salvar integração")}
               </Button>
             </div>
           </CardContent>
