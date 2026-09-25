@@ -114,17 +114,19 @@ jobs:
             return response;
           };
           JS
-          echo 'NODE_OPTIONS=--require=/tmp/marca-observer.cjs' >> "$GITHUB_ENV"
       - name: Spec original isolada (sem retry ou mudança de timeout)
+        env:
+          NODE_OPTIONS: --require=/tmp/marca-observer.cjs
         run: |
           git diff --exit-code -- app lib components tests/e2e
-          pnpm exec playwright test tests/e2e/marca-logo.spec.ts --workers=1 --reporter=list --trace=on
+          pnpm exec playwright test tests/e2e/marca-logo.spec.ts --workers=1 --reporter=list --trace=on --repeat-each=10
       - name: Estado final de leitura da marca (sem credenciais)
         if: always()
         run: |
           psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -Atc \
             "select json_build_object('has_logo_path',logo_path is not null,'has_logo_url',logo_url is not null,'seeded_from_env',seeded_from_env,'updated_at',updated_at) from public.platform_branding where id=1" > marca-final.json
-          if [ -f /tmp/marca-observer.jsonl ]; then cp /tmp/marca-observer.jsonl marca-observer.jsonl; fi
+          test -s /tmp/marca-observer.jsonl
+          cp /tmp/marca-observer.jsonl marca-observer.jsonl
       - uses: actions/upload-artifact@v7
         if: always()
         with:
