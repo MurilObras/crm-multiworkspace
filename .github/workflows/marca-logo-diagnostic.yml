@@ -83,6 +83,38 @@ jobs:
           pnpm exec tsx --env-file=.env.local scripts/seed-e2e-capacidades-ausentes.ts
           pnpm exec tsx scripts/seed-e2e-followup-agent.ts
           pnpm exec tsx scripts/seed-e2e-catalogo-openrouter.ts
+      - name: Observar cache e I/O sem alterar produto ou assertions
+        run: |
+          cat > /tmp/marca-observer.cjs <<'JS'
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          function mark(event, fields) {
+            fs.appendFileSync('/tmp/marca-observer.jsonl', JSON.stringify({time:new Date().toISOString(),pid:process.pid,event,...fields})+'\n');
+          }
+          const logo = row => row ? {hasLogo:!!row.logo_path,logoHash:row.logo_path?crypto.createHash('sha256').update(row.logo_path).digest('hex').slice(0,12):null} : {hasLogo:false};
+          for (const key of ['__memoDaMarcaDaInstalacao','__geracaoDaMarcaDaInstalacao']) {
+            let value = globalThis[key];
+            Object.defineProperty(globalThis,key,{configurable:true,get:()=>value,set:next=>{
+              value=next;
+              mark(key,{generation:globalThis.__geracaoDaMarcaDaInstalacao??0,cleared:next==null,...(key.includes('memo')?logo(next?.linha):{})});
+            }});
+          }
+          const original = globalThis.fetch;
+          if (original) globalThis.fetch = async function(input, init) {
+            const url = new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);
+            const observed=url.pathname==='/rest/v1/platform_branding';
+            const method=init?.method??input?.method??'GET';
+            const id=crypto.randomUUID();
+            if(observed)mark('fetch-start',{id,method,columns:url.searchParams.get('select')});
+            const response=await original.call(this,input,init);
+            if(observed) {
+              const copy=response.clone();
+              void copy.json().then(data=>mark('fetch-end',{id,method,status:response.status,...logo(Array.isArray(data)?data[0]:data)}),()=>mark('fetch-end',{id,method,status:response.status}));
+            }
+            return response;
+          };
+          JS
+          echo 'NODE_OPTIONS=--require=/tmp/marca-observer.cjs' >> "$GITHUB_ENV"
       - name: Spec original isolada (sem retry ou mudança de timeout)
         run: |
           git diff --exit-code -- app lib components tests/e2e
@@ -92,6 +124,7 @@ jobs:
         run: |
           psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -Atc \
             "select json_build_object('has_logo_path',logo_path is not null,'has_logo_url',logo_url is not null,'seeded_from_env',seeded_from_env,'updated_at',updated_at) from public.platform_branding where id=1" > marca-final.json
+          if [ -f /tmp/marca-observer.jsonl ]; then cp /tmp/marca-observer.jsonl marca-observer.jsonl; fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -100,4 +133,5 @@ jobs:
             test-results/
             evidence/marca-logo/
             marca-final.json
+            marca-observer.jsonl
           retention-days: 7
