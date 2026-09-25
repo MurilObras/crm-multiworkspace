@@ -385,6 +385,10 @@ async function lerLinha(): Promise<LinhaDaMarca | null | "erro"> {
       .from("platform_branding")
       .select(COLUNAS)
       .eq("id", 1)
+      // O memo acima já evita consultas repetidas. O dedupe de fetch do Next
+      // vive na requisição RSC e não conhece a geração: após uma escrita ele
+      // pode devolver o GET anterior e fixar a linha velha por mais 30s.
+      .abortSignal(new AbortController().signal)
       .maybeSingle();
     if (error) {
       avisarUmaVez(

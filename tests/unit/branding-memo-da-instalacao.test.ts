@@ -55,25 +55,30 @@ const banco = vi.hoisted(() => ({
    * lost-update observável sem `sleep` e sem depender de timing.
    */
   portao: null as { liberar: () => void; esperar: Promise<void> } | null,
+  dedupeNaRequisicao: false,
+  respostaDeduplicada: null as Record<string, unknown> | null,
 }));
+
+async function lerDoBanco(signal: boolean) {
+  banco.leituras += 1;
+  const capturada = banco.linha;
+  if (banco.portao) await banco.portao.esperar;
+  if (banco.dedupeNaRequisicao && !signal) {
+    if (!banco.respostaDeduplicada) {
+      banco.respostaDeduplicada = capturada;
+    }
+    return { data: banco.respostaDeduplicada, error: null };
+  }
+  return { data: capturada, error: null };
+}
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: () => ({
       select: () => ({
         eq: () => ({
-          maybeSingle: async () => {
-            banco.leituras += 1;
-            // A linha é capturada AGORA, antes de esperar o portão — é o que um
-            // banco real faz: a consulta sai antes da escrita, e a resposta que
-            // volta é a de antes dela. Ler `banco.linha` depois do `await` faria
-            // a leitura "em voo" enxergar o valor NOVO e o caso não reproduziria
-            // corrida nenhuma (foi o primeiro jeito que escrevi, e a asserção de
-            // controle o pegou).
-            const capturada = banco.linha;
-            if (banco.portao) await banco.portao.esperar;
-            return { data: capturada, error: null };
-          },
+          abortSignal: () => ({ maybeSingle: () => lerDoBanco(true) }),
+          maybeSingle: () => lerDoBanco(false),
         }),
       }),
     }),
@@ -109,6 +114,8 @@ describe("o memo da marca da instalação atravessa instâncias do módulo", () 
   beforeEach(async () => {
     banco.linha = SEM_LOGO;
     banco.leituras = 0;
+    banco.dedupeNaRequisicao = false;
+    banco.respostaDeduplicada = null;
     // Zera pela PORTA DO PRODUTO, não apagando a chave do `globalThis` na mão:
     // um teste que conhece o nome interno do memo continuaria "limpando" nada no
     // dia em que ele fosse renomeado, e a suíte ficaria verde sem isolamento.
@@ -118,10 +125,9 @@ describe("o memo da marca da instalação atravessa instâncias do módulo", () 
   it("a invalidação feita pela instância da ROTA alcança a instância da TELA", async () => {
     const tela = await instancia();
     const rota = await instancia();
-    expect(
-      tela,
-      "controle: sem duas instâncias distintas este teste não reproduz nada",
-    ).not.toBe(rota);
+    expect(tela, "controle: sem duas instâncias distintas este teste não reproduz nada").not.toBe(
+      rota,
+    );
 
     // 1. A tela renderizou uma vez — o memo guardou a linha SEM logo.
     expect((await tela.marcaDaInstalacao())?.logo_path).toBeNull();
@@ -169,6 +175,30 @@ describe("o memo da marca da instalação atravessa instâncias do módulo", () 
   });
 });
 
+describe("leitura após escrita durante a mesma requisição RSC", () => {
+  beforeEach(async () => {
+    banco.linha = SEM_LOGO;
+    banco.leituras = 0;
+    banco.dedupeNaRequisicao = true;
+    banco.respostaDeduplicada = null;
+    (await instancia()).invalidarMarcaDaInstalacao();
+  });
+
+  it("não guarda por 30s a resposta GET deduplicada de antes da escrita", async () => {
+    const tela = await instancia();
+    const rota = await instancia();
+    expect((await tela.marcaDaInstalacao())?.logo_path).toBeNull();
+
+    banco.linha = COM_LOGO;
+    rota.invalidarMarcaDaInstalacao();
+    expect((await tela.marcaDaInstalacao())?.logo_path).toBe(CAMINHO_SUBIDO);
+
+    // Outro documento recebe o memo do processo; deve ver o mesmo logo.
+    banco.respostaDeduplicada = null;
+    expect((await tela.marcaDaInstalacao())?.logo_path).toBe(CAMINHO_SUBIDO);
+  });
+});
+
 /**
  * ═══ LOST-UPDATE: a leitura EM VOO reinstalava o valor pré-escrita ═══
  *
@@ -193,6 +223,8 @@ describe("uma escrita DURANTE a leitura não pode ser desfeita pela leitura", ()
     banco.linha = SEM_LOGO;
     banco.leituras = 0;
     banco.portao = null;
+    banco.dedupeNaRequisicao = false;
+    banco.respostaDeduplicada = null;
     (await instancia()).invalidarMarcaDaInstalacao();
   });
 
