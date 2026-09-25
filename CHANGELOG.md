@@ -8,6 +8,21 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [2.2.0] — 2026-09-25
+
+### Adicionado
+
+- **Gerenciamento Kiwify e continuidade do atendimento após a compra** Integrações Kiwify podem ser editadas e arquivadas preservando URL, histórico e
+  automações. Cada integração passa a ter vínculos explícitos com suas regras,
+  com migração das regras anteriores sem desligá-las. A compra pode iniciar uma
+  mensagem fixa ou escrita pela IA, continuidade com agente publicado e follow-up
+  existente, interrompido quando o cliente responde. A tentativa de agendamento
+  exige as ferramentas e permissões já publicadas no agente.
+
+  Se a mensagem inicial aguarda disponibilidade do canal antes de qualquer
+  transporte, o mesmo envio pode continuar e liberar IA/follow-up após confirmação,
+  sem duplicar mensagem, vínculo ou inscrição. Tentativas incertas não são retomadas.
+
 ## [2.1.1] — 2026-09-24
 
 ### Corrigido
@@ -3160,7 +3175,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.1.1...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.15.1...v2.0.0
