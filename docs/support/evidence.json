@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "repository": "MurilObras/crm-multiworkspace",
+  "articles": [
+    {
+      "id": "primeiros-passos",
+      "title": "Primeiros passos no CRM",
+      "sources": [
+        {
+          "path": "app/onboarding/welcome/_form.tsx",
+          "blob_sha": "e467429ea10d1bbbcb72a3d09cdf13b1cd5cb5ec"
+        },
+        {
+          "path": "app/onboarding/connect-whatsapp/_client.tsx",
+          "blob_sha": "0d5e207835a203e614e8e8a6a00bf6c12a340241"
+        },
+        {
+          "path": "app/onboarding/setup-ai/_form.tsx",
+          "blob_sha": "4f4af3bc8c0ea7fa4c126952c8b70d53dfd9509a"
+        },
+        {
+          "path": "app/onboarding/funil/_client.tsx",
+          "blob_sha": "6ccf718837c5457b9668ed3e467bc1e09d9e9051"
+        },
+        {
+          "path": "app/onboarding/testar/_client.tsx",
+          "blob_sha": "9be9f609dbc2b733aef82ef15beedf4a707e4383"
+        },
+        {
+          "path": "app/onboarding/invite-team/_form.tsx",
+          "blob_sha": "984ec70ffe27737cd29c84325ba2614ce27029af"
+        },
+        {
+          "path": "app/onboarding/done/_client.tsx",
+          "blob_sha": "dd608573b3f3dcf6cf505f7eec5caee62afb4b03"
+        },
+        {
+          "path": "lib/navigation/registry.ts",
+          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+        },
+        {
+          "path": "tests/e2e/wizard-do-funcionario.spec.ts",
+          "blob_sha": "cd6ff6a7b948e8dedaadffb3da54169ea996b9f9"
+        },
+        {
+          "path": "lib/onboarding/passos.test.ts",
+          "blob_sha": "9fe7b8249a59baef1ee373d665b06c3d4b626603"
+        },
+        {
+          "path": "lib/onboarding/passos.ts",
+          "blob_sha": "5ed6cf480e2b555a48aa29526a0355ff7b5d47c9"
+        }
+      ]
+    },
+    {
+      "id": "workspaces-e-acessos",
+      "title": "Workspaces, navegação e acessos",
+      "sources": [
+        {
+          "path": "docs/architecture/workspace-e-organization.md",
+          "blob_sha": "58f8b48a55fa049801651c623f8151218e763650"
+        },
+        {
+          "path": "components/shell/TenantSwitcher.tsx",
+          "blob_sha": "78c91aa893ef9a6a374d7d2a9e30836688ef0a00"
+        },
+        {
+          "path": "components/shell/UserMenu.tsx",
+          "blob_sha": "0175eed668f21611848e2d6b454fd13dc1c05ac2"
+        },
+        {
+          "path": "components/workspace/CreateWorkspaceDialog.tsx",
+          "blob_sha": "fa00522cebddfa5550c0c5dcce565bf0ca7ff35a"
+        },
+        {
+          "path": "lib/navigation/registry.ts",
+          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+        },
+        {
+          "path": "tests/e2e/workspace-criar-e-trocar.spec.ts",
+          "blob_sha": "cf0de2ae6bea674a3e01acefa4dcb8e163eebb43"
+        },
+        {
+          "path": "app/actions/workspace/createWorkspace.ts",
+          "blob_sha": "1459715a28bd78f8e48da9153577cb05f00761f2"
+        }
+      ]
+    },
+    {
+      "id": "whatsapp-conexao",
+      "title": "Conectar e verificar o WhatsApp",
+      "sources": [
+        {
+          "path": "components/connections/ConexoesShell.tsx",
+          "blob_sha": "b38b4e8d1939c6982aa2cb6e25144756b3bce3e6"
+        },
+        {
+          "path": "components/connections/ConnectionsClient.tsx",
+          "blob_sha": "b03e9a03cd01b97ce5b0578d743888e78e44201f"
+        },
+        {
+          "path": "lib/navigation/registry.ts",
+          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+        },
+        {
+          "path": "tests/unit/estado-do-canal-na-tela.test.ts",
+          "blob_sha": "0c323a338955dc20d039442c6449673a6618ac43"
+        },
+        {
+          "path": "lib/channels/estado.ts",
+          "blob_sha": "eea74f7f8070b1a58460ff85137a0abf421e7808"
+        }
+      ]
+    },
+    {
+      "id": "automacoes-diagnostico",
+      "title": "Criar e diagnosticar uma automação",
+      "sources": [
+        {
+          "path": "app/app/webhooks/_components/WebhooksClient.tsx",
+          "blob_sha": "df936a6d1862edfc4f4854dcdd49864a2d983f1c"
+        },
+        {
+          "path": "app/app/webhooks/_components/labels.ts",
+          "blob_sha": "536d13bc1fe6d81afdba3add38ee7253018be9e0"
+        },
+        {
+          "path": "app/app/webhooks/_components/RuleEditor.tsx",
+          "blob_sha": "fc648750f95fd9f39274e72e74389b703a27f297"
+        },
+        {
+          "path": "app/app/webhooks/_components/RulesTab.tsx",
+          "blob_sha": "fe80c5f8ff68ccb45034034669ee611db381a692"
+        },
+        {
+          "path": "app/app/webhooks/_components/ActivityTab.tsx",
+          "blob_sha": "fb747510c268cf059e83be72fad1279130e32a74"
+        },
+        {
+          "path": "lib/navigation/registry.ts",
+          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+        },
+        {
+          "path": "tests/e2e/automacao-diz-a-verdade.spec.ts",
+          "blob_sha": "774ce5b32460bdc6b318cc40261049c52e5f023a"
+        },
+        {
+          "path": "lib/automation/conditions.test.ts",
+          "blob_sha": "2e45162586a79571a9f9dc84f6e2f160c4ec35a8"
+        },
+        {
+          "path": "lib/automation/conditions.ts",
+          "blob_sha": "95c45057c94481fe0d3619f7dad80e41af2891cd"
+        },
+        {
+          "path": "app/app/webhooks/_components/CapturasTab.tsx",
+          "blob_sha": "e4d332ca7d52a50142efb850a8ffe85f8ca4816a"
+        },
+        {
+          "path": "app/app/webhooks/_components/SourcesTab.tsx",
+          "blob_sha": "b8ecb5067704f62288f2559b70168c7da22ddae4"
+        }
+      ]
+    },
+    {
+      "id": "privacidade-e-suporte",
+      "title": "Pedir suporte sem expor dados",
+      "sources": [
+        {
+          "path": "app/app/lgpd/requests/page.tsx",
+          "blob_sha": "cbbc69589ca023954762969062237ed8f0eb99ca"
+        },
+        {
+          "path": "app/app/lgpd/requests/[id]/ApproveButton.tsx",
+          "blob_sha": "b6d01e4752a9c1493991ecaafdceebbc252e299e"
+        },
+        {
+          "path": "lib/navigation/registry.ts",
+          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+        }
+      ]
+    }
+  ]
+}

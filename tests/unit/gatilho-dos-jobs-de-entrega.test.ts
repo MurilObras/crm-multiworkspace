@@ -157,6 +157,12 @@ const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string
     condicao: null,
     efeito: "Este é o check obrigatório `build-and-size` (`pnpm build` em Node 22).",
   },
+  "deskcomm-support.yml::support-knowledge": {
+    condicao: null,
+    efeito:
+      "Confere catálogo, evidências e limites de leitura do assistente de suporte. " +
+      "Sem ele, uma alteração de funcionalidade pode chegar sem revisão do guia afetado.",
+  },
 
   // --- e o que legitimamente tem interruptor -----------------------------------
   "acolhida.yml::acolher": {

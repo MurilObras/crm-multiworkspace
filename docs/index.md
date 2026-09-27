@@ -28,6 +28,8 @@ de menor precedência e registre.
 
 ## 1. Comece por aqui
 
+Para onboarding e dúvidas de uso, veja a [base do Assistente Deskcomm](support/README.md), com artigos verificados e política de leitura somente de suporte.
+
 | Doc | Para quê |
 |---|---|
 | [`README.md`](../README.md) | O que é, quickstart de 5 min, stack, roadmap. Também em [EN](../README.en.md) / [ES](../README.es.md) |
