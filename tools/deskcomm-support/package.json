@@ -1,0 +1,12 @@
+{
+  "name": "deskcomm-support-maintenance",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test *.check.mjs",
+    "build": "node catalog.mjs build",
+    "check": "node catalog.mjs check"
+  }
+}

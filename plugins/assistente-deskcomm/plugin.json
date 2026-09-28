@@ -1,0 +1,26 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "assistente-deskcomm",
+  "version": "0.1.0",
+  "description": "Onboarding e suporte do CRM com artigos verificados e consulta somente leitura.",
+  "author": {
+    "name": "MurilObras"
+  },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Assistente Deskcomm",
+        "shortDescription": "Ajuda segura para usar o seu CRM.",
+        "longDescription": "Orienta primeiros passos, conexões WhatsApp e automações usando apenas artigos de suporte verificados. Não acessa contas, conversas ou dados de clientes. Prévia local; a base passa a responder após aprovação e merge do catálogo na main.",
+        "developerName": "MurilObras",
+        "category": "Productivity",
+        "capabilities": [],
+        "defaultPrompt": [
+          "Me ajude com os primeiros passos no CRM.",
+          "Meu WhatsApp não conecta. Por onde começo?",
+          "Minha automação não disparou. Como verifico?"
+        ]
+      }
+    }
+  }
+}

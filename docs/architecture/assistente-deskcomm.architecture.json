@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Assistente Deskcomm — somente artigos revisados",
+    "subtitle": "Plugin externo ao CRM; sem acesso a dados de clientes ou código bruto nas respostas",
+    "output": "assistente-deskcomm.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "manutencao", "label": "Mantenedor" },
+    { "id": "repositorio", "label": "Base versionada" },
+    { "id": "atendimento", "label": "Atendimento somente leitura" }
+  ],
+  "mainPath": ["fontes", "revisao", "catalogo", "runtime", "assistente"],
+  "nodes": [
+    { "id": "fontes", "lane": "repositorio", "col": 0, "type": "service", "label": "Documentação, frontend/testes, regras", "sublabel": "Precedência de consulta do mantenedor; nunca corpo de código no MCP" },
+    { "id": "revisao", "lane": "manutencao", "col": 1, "type": "service", "label": "Revisão de artigos e evidências", "sublabel": "docs/support/articles e evidence.json; revisão explícita por artigo" },
+    { "id": "catalogo", "lane": "repositorio", "col": 2, "type": "service", "label": "Catálogo na main", "sublabel": "docs/support/catalog.json; merge depende do proprietário" },
+    { "id": "ci", "lane": "repositorio", "col": 3, "type": "service", "label": "support-knowledge", "sublabel": "Testes e consistência; contents:read, sem publicação" },
+    { "id": "runtime", "lane": "atendimento", "col": 4, "type": "service", "label": "MCP local do plugin", "sublabel": "Commit fixo, hashes de dependência, cache até 60s; falha segura" },
+    { "id": "assistente", "lane": "atendimento", "col": 5, "type": "frontend", "label": "Assistente Deskcomm", "sublabel": "search_support, read_support_article e support_status; instruções do skill" },
+    { "id": "relato", "lane": "manutencao", "col": 6, "type": "service", "label": "Relato sanitizado ao responsável", "sublabel": "Sem envio automático; orienta nova revisão quando falta cobertura" }
+  ],
+  "edges": [
+    { "id": "fonte-revisao", "from": "fontes", "to": "revisao", "label": "confirma rótulos e comportamento" },
+    { "id": "revisao-catalogo", "from": "revisao", "to": "catalogo", "label": "build e PR revisável" },
+    { "id": "catalogo-ci", "from": "catalogo", "to": "ci", "label": "validação no PR e push main" },
+    { "id": "ci-revisao", "from": "ci", "to": "revisao", "label": "inconsistência pede correção" },
+    { "id": "catalogo-runtime", "from": "catalogo", "to": "runtime", "label": "GET fixado no commit" },
+    { "id": "fontes-runtime", "from": "fontes", "to": "runtime", "label": "somente metadados de hashes; nunca corpo" },
+    { "id": "runtime-assistente", "from": "runtime", "to": "assistente", "label": "texto aprovado ou indisponibilidade" },
+    { "id": "assistente-relato", "from": "assistente", "to": "relato", "label": "dúvida sem cobertura ou divergência" },
+    { "id": "relato-revisao", "from": "relato", "to": "revisao", "label": "retorno vira revisão humana" }
+  ]
+}

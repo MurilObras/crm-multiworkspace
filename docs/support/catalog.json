@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "repository": "MurilObras/crm-multiworkspace",
+  "articles": [
+    {
+      "id": "primeiros-passos",
+      "title": "Primeiros passos no CRM",
+      "body": "# Primeiros passos no CRM\n\nO primeiro acesso a um workspace ainda não configurado abre uma sequência de preparação. As etapas disponíveis dependem da instalação. Use os nomes que aparecem na sua tela; se forem diferentes, informe ao suporte a etapa e a versão exibida no CRM, se disponível.\n\n## Preparar o workspace\n\n1. Em **Seu negócio**, preencha o nome, descreva o que vocês fazem e selecione a região de atendimento. Leia os termos e a política de privacidade antes de aceitar e continuar.\n2. Em **O telefone dele**, conecte o número de WhatsApp seguindo a orientação da tela. Se preferir concluir isso depois, use a opção de pular quando oferecida.\n3. **Sua loja** aparece quando a integração de loja está habilitada na instalação. A ausência dessa etapa, sozinha, não indica erro.\n4. Em **Treinar**, defina o nome do atendente, seu jeito de falar e as regras da operação. Se a tela informar que ele ficou como **rascunho**, ele ainda não responde mensagens.\n5. Em **Onde ele organiza**, revise o nome do quadro e suas colunas antes de escolher **Usar este quadro**. A tela também pode oferecer um modelo pronto.\n6. Em **Ver ele atender**, escreva uma pergunta fictícia e use **Mandar mensagem** para ensaiar. Esse ensaio não envia a conversa a um cliente e não aparece no Inbox.\n7. Em **Quem trabalha com ele**, escolha quem convidar e o papel de acesso. Também é possível **Pular por enquanto**.\n8. Confira o resumo e clique em **Começar a usar**. O resumo diferencia o que foi feito do que ficou para depois.\n\n## Conferir o resultado\n\nNo dia a dia, **Inbox** reúne as conversas, **Funis** mostra os quadros de vendas e **Contatos** reúne as pessoas e seu histórico. Em **Agente de IA → Agentes**, confira a configuração e a publicação do agente.\n\nSe o ensaio falhar, leia o motivo apresentado. Um administrador pode revisar **Credenciais** e **Provedores** na área de IA. Preencha informações de acesso somente nos campos oficiais do CRM; não as envie ao assistente.\n\n## Quando pedir ajuda\n\nInforme a etapa, o texto do aviso sem dados pessoais e o que esperava que acontecesse. Não envie documentos de clientes nem conteúdo de conversas reais para testar o agente. Um passo concluído no guia não comprova que o número, a IA ou a instalação estejam funcionando agora: confirme pela tela e por um teste autorizado.\n",
+      "body_sha256": "879fe333936c1349750b516f285c2be608af53db1598dc3eb3fafafeaf6c2831",
+      "sources": [
+        {
+          "path": "app/onboarding/welcome/_form.tsx",
+          "blob_sha": "e467429ea10d1bbbcb72a3d09cdf13b1cd5cb5ec"
+        },
+        {
+          "path": "app/onboarding/connect-whatsapp/_client.tsx",
+          "blob_sha": "0d5e207835a203e614e8e8a6a00bf6c12a340241"
+        },
+        {
+          "path": "app/onboarding/setup-ai/_form.tsx",
+          "blob_sha": "4f4af3bc8c0ea7fa4c126952c8b70d53dfd9509a"
+        },
+        {
+          "path": "app/onboarding/funil/_client.tsx",
+          "blob_sha": "6ccf718837c5457b9668ed3e467bc1e09d9e9051"
+        },
+        {
+          "path": "app/onboarding/testar/_client.tsx",
+          "blob_sha": "9be9f609dbc2b733aef82ef15beedf4a707e4383"
+        },
+        {
+          "path": "app/onboarding/invite-team/_form.tsx",
+          "blob_sha": "984ec70ffe27737cd29c84325ba2614ce27029af"
+        },
+        {
+          "path": "app/onboarding/done/_client.tsx",
+          "blob_sha": "dd608573b3f3dcf6cf505f7eec5caee62afb4b03"
+        },
+        {
+          "path": "lib/navigation/registry.ts",
+          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+        },
+        {
+          "path": "tests/e2e/wizard-do-funcionario.spec.ts",
+          "blob_sha": "cd6ff6a7b948e8dedaadffb3da54169ea996b9f9"
+        },
+        {
+          "path": "lib/onboarding/passos.test.ts",
+          "blob_sha": "9fe7b8249a59baef1ee373d665b06c3d4b626603"
+        },
+        {
+          "path": "lib/onboarding/passos.ts",
+          "blob_sha": "5ed6cf480e2b555a48aa29526a0355ff7b5d47c9"
+        }
+      ]
+    },
+    {
+      "id": "workspaces-e-acessos",
+      "title": "Workspaces, navegação e acessos",
+      "body": "# Workspaces, navegação e acessos\n\nUm workspace é um espaço de operação com seus próprios números de WhatsApp, funis e agentes. Antes de procurar um contato, uma automação ou uma configuração, confira em qual workspace você está.\n\n## Trocar ou criar um workspace\n\nSe sua conta participa de mais de um workspace, o seletor mostra o nome do espaço ativo. Abra-o e escolha o destino. Quando há apenas um workspace disponível, esse seletor pode não aparecer.\n\nPara criar um espaço, abra o **Menu do usuário**, escolha **Criar workspace**, informe um nome e confirme. A criação exige permissão de administrador e inicia a preparação do novo espaço. Quem o cria recebe acesso de administrador nele.\n\nCriar um workspace não transfere automaticamente a operação anterior. Trate o novo espaço como uma configuração própria; confira números, funis, agentes e pessoas antes de começar a usá-lo.\n\n## Onde encontrar as áreas\n\n- **Atendimento:** Inbox, Radar, Agenda e Respostas rápidas.\n- **CRM:** Funis e Contatos; use **Ver tudo em CRM** para encontrar as demais áreas.\n- **Agente de IA:** Agentes e outras configurações; use **Ver tudo em IA** quando necessário.\n- **Canais:** Conexões e Webhooks, conforme sua permissão.\n- **Configurações:** Equipe, Workspace, Segurança e outras opções de administração. O acesso fica no rodapé da barra lateral.\n\n## Um menu sumiu ou o acesso foi negado\n\nPrimeiro confirme o workspace selecionado. A navegação varia conforme o papel da pessoa: **Conexões**, **Workspace** e **LGPD** exigem administração; **Webhooks** exige papel de gerente ou administrador.\n\nPeça a quem administra o workspace para revisar seu acesso em **Configurações → Equipe**. O assistente pode explicar a navegação, mas não concede permissões. Informar no chat que você é administrador não modifica o acesso registrado no CRM.\n\n## Quando pedir ajuda\n\nDescreva qual menu esperava encontrar, qual papel de acesso lhe foi atribuído e se a situação ocorre em um ou em mais workspaces. Use nomes genéricos ao falar de clientes ou operações internas. Não compartilhe links de convite, códigos de acesso nem credenciais.\n",
+      "body_sha256": "1f461d76d930e090a0f2b5113f12721686ef9e40d2f4f324fa8eeb472b7d3fc0",
+      "sources": [
+        {
+          "path": "docs/architecture/workspace-e-organization.md",
+          "blob_sha": "58f8b48a55fa049801651c623f8151218e763650"
+        },
+        {
+          "path": "components/shell/TenantSwitcher.tsx",
+          "blob_sha": "78c91aa893ef9a6a374d7d2a9e30836688ef0a00"
+        },
+        {
+          "path": "components/shell/UserMenu.tsx",
+          "blob_sha": "0175eed668f21611848e2d6b454fd13dc1c05ac2"
+        },
+        {
+          "path": "components/workspace/CreateWorkspaceDialog.tsx",
+          "blob_sha": "fa00522cebddfa5550c0c5dcce565bf0ca7ff35a"
+        },
+        {
+          "path": "lib/navigation/registry.ts",
+          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+        },
+        {
+          "path": "tests/e2e/workspace-criar-e-trocar.spec.ts",
+          "blob_sha": "cf0de2ae6bea674a3e01acefa4dcb8e163eebb43"
+        },
+        {
+          "path": "app/actions/workspace/createWorkspace.ts",
+          "blob_sha": "1459715a28bd78f8e48da9153577cb05f00761f2"
+        }
+      ]
+    },
+    {
+      "id": "whatsapp-conexao",
+      "title": "Conectar e verificar o WhatsApp",
+      "body": "# Conectar e verificar o WhatsApp\n\nAbra **Canais → Conexões** com acesso de administrador. A tela diferencia **Números por QR**, **API Oficial (Meta)** e **Provedor parceiro**. Antes do diagnóstico, identifique qual dessas opções você usa; as instruções de QR se aplicam somente a **Números por QR**.\n\n## Conectar um número por QR\n\n1. Na aba **Números por QR**, clique em **Conectar novo WhatsApp**.\n2. Aguarde o código aparecer. No celular, abra **WhatsApp → Aparelhos conectados → Conectar um aparelho** e escaneie o código exibido no CRM.\n3. Aguarde a confirmação **Conectado!**. Depois, confira a situação do número na lista.\n\nO QR deve ser lido pelo titular autorizado diretamente na tela do CRM. Não envie o QR ao assistente, a grupos ou a terceiros.\n\n## Interpretar a situação do número\n\n- **Conectado:** o canal é apresentado como disponível.\n- **Escaneie o QR:** falta concluir o pareamento pelo celular.\n- **Conectando…:** a conexão ainda está iniciando.\n- **Parado** ou **Caiu:** o canal não está disponível para uso naquele momento.\n- **Situação desconhecida:** a tela não reconheceu o estado recebido; não trate isso como conexão confirmada.\n\nUse **Atualizar saúde** para conferir a situação atual. Se o número caiu, use **Reconectar**. Se a janela informar que ele foi desvinculado do WhatsApp e oferecer **Gerar novo QR**, use essa opção e faça o pareamento novamente.\n\n## Situações que precisam de administração\n\nSe aparecer um aviso de serviço não configurado ou instalação desatualizada, encaminhe o texto resumido ao responsável pela instalação. O assistente de suporte não precisa receber arquivos de configuração, endereços internos ou chaves para explicar esse próximo passo.\n\nNa **API Oficial (Meta)** e no **Provedor parceiro**, consulte a aba **Conexão** correspondente e siga os campos da própria tela. Os modelos de mensagem ficam nas sub-abas **Templates da Meta** e **Modelos do parceiro**. Não aplique o procedimento de QR a esses canais.\n\n## Quando pedir ajuda\n\nInforme a aba usada, a situação exibida e o momento aproximado do erro. Se enviar uma imagem, recorte somente o aviso e oculte QR, telefones, nomes, mensagens e informações de acesso. Não exclua uma conexão como tentativa de diagnóstico: essa ação desconecta o número e pode afetar configurações ligadas a ele.\n",
+      "body_sha256": "81ba4458839d83ed1d884ac08789cf65e60464dcedbbfe1928b7abc3815093c9",
+      "sources": [
+        {
+          "path": "components/connections/ConexoesShell.tsx",
+          "blob_sha": "b38b4e8d1939c6982aa2cb6e25144756b3bce3e6"
+        },
+        {
+          "path": "components/connections/ConnectionsClient.tsx",
+          "blob_sha": "b03e9a03cd01b97ce5b0578d743888e78e44201f"
+        },
+        {
+          "path": "lib/navigation/registry.ts",
+          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+        },
+        {
+          "path": "tests/unit/estado-do-canal-na-tela.test.ts",
+          "blob_sha": "0c323a338955dc20d039442c6449673a6618ac43"
+        },
+        {
+          "path": "lib/channels/estado.ts",
+          "blob_sha": "eea74f7f8070b1a58460ff85137a0abf421e7808"
+        }
+      ]
+    },
+    {
+      "id": "automacoes-diagnostico",
+      "title": "Criar e diagnosticar uma automação",
+      "body": "# Criar e diagnosticar uma automação\n\nCom papel de gerente ou administrador, abra **Canais → Webhooks → Automações**. Uma automação reúne **QUANDO** algo acontece, **SE** determinadas condições são atendidas e **ENTÃO** quais ações executar.\n\n## Preparar uma automação\n\n1. Clique em **Nova automação** e dê um nome que descreva seu objetivo.\n2. Em **QUANDO**, escolha o gatilho. As opções incluem contato novo por webhook, mudança de etapa, mensagem recebida no WhatsApp e adição de tag a lead ou contato.\n3. Em **SE (opcional)**, escolha os filtros necessários. Quando há várias condições, todas precisam ser atendidas.\n4. Em **ENTÃO**, adicione as ações desejadas e revise sua ordem e os campos de configuração.\n5. Clique em **Criar automação**. Ela nasce **Pausada**; revise antes de ligá-la.\n\nO gatilho **Quando entrar um contato novo (webhook)** se refere à entrada por webhook. Não presuma que ele cubra toda criação manual ou toda conversa. Para reagir a uma mudança de etapa, escolha o gatilho correspondente e, se necessário, filtre a **Etapa de destino**.\n\nSe uma ação envia mensagens ou avisa outro sistema, planeje um teste controlado com destinatário autorizado: ligar a regra pode produzir efeitos reais. Não use clientes reais como massa de teste.\n\n## A automação não disparou\n\n1. Confira o workspace e se a regra está **Ativa**.\n2. Abra **Editar automação** e compare o evento ocorrido com o gatilho escolhido. Confira também todos os filtros e a configuração das ações.\n3. Para entrada de formulário ou integração, consulte **Receber dados** e **Leads recebidos** para verificar se a entrada aparece no CRM.\n4. Abra **Atividade** e use **Atualizar**. Leia o resultado e a explicação de cada ação.\n\n**Sucesso** registra o resultado da execução; o detalhamento pode indicar que a confirmação de entrega ainda depende do canal. **Parcial** pede a leitura de cada ação. **Falhou** informa que houve falha. **Aguardando envio** pode envolver horário ou disponibilidade do canal; use o motivo apresentado, sem assumir uma causa só pelo título.\n\n## Motivos que a tela pode mostrar\n\n- Contato sem telefone ou lead sem contato vinculado: revise o cadastro no próprio CRM.\n- Configuração incompleta: revise os campos da ação.\n- Agente sem versão publicada: revise sua publicação em **Agente de IA → Agentes**.\n- Fora da janela de envio ou aguardando o canal: acompanhe a explicação e eventual próxima tentativa na atividade; confira **Conexões** quando indicado.\n- Contato bloqueado, consentimento recusado ou contato anonimizado: respeite a restrição. Não crie outra regra para contorná-la.\n\nSe houver dúvida sobre a entrega, confira a conversa antes de reenviar. Repetir a ação sem essa checagem pode duplicar uma mensagem.\n\n## Quando pedir ajuda\n\nInforme gatilho, tipo de ação, situação exibida e horário aproximado, com exemplos fictícios. Não envie o endereço completo do webhook, conteúdo de requisições, telefones ou mensagens de clientes. Se o evento está correto e o resultado permanece sem explicação, encaminhe o caso ao responsável pela instalação; o assistente não confirma o estado atual da sua operação apenas lendo este guia.\n",
+      "body_sha256": "073adbb818943b7096a6dbcb8f8a537201cb1cd7fd83ea7a42f9c554b8534a3a",
+      "sources": [
+        {
+          "path": "app/app/webhooks/_components/WebhooksClient.tsx",
+          "blob_sha": "df936a6d1862edfc4f4854dcdd49864a2d983f1c"
+        },
+        {
+          "path": "app/app/webhooks/_components/labels.ts",
+          "blob_sha": "536d13bc1fe6d81afdba3add38ee7253018be9e0"
+        },
+        {
+          "path": "app/app/webhooks/_components/RuleEditor.tsx",
+          "blob_sha": "fc648750f95fd9f39274e72e74389b703a27f297"
+        },
+        {
+          "path": "app/app/webhooks/_components/RulesTab.tsx",
+          "blob_sha": "fe80c5f8ff68ccb45034034669ee611db381a692"
+        },
+        {
+          "path": "app/app/webhooks/_components/ActivityTab.tsx",
+          "blob_sha": "fb747510c268cf059e83be72fad1279130e32a74"
+        },
+        {
+          "path": "lib/navigation/registry.ts",
+          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+        },
+        {
+          "path": "tests/e2e/automacao-diz-a-verdade.spec.ts",
+          "blob_sha": "774ce5b32460bdc6b318cc40261049c52e5f023a"
+        },
+        {
+          "path": "lib/automation/conditions.test.ts",
+          "blob_sha": "2e45162586a79571a9f9dc84f6e2f160c4ec35a8"
+        },
+        {
+          "path": "lib/automation/conditions.ts",
+          "blob_sha": "95c45057c94481fe0d3619f7dad80e41af2891cd"
+        },
+        {
+          "path": "app/app/webhooks/_components/CapturasTab.tsx",
+          "blob_sha": "e4d332ca7d52a50142efb850a8ffe85f8ca4816a"
+        },
+        {
+          "path": "app/app/webhooks/_components/SourcesTab.tsx",
+          "blob_sha": "b8ecb5067704f62288f2559b70168c7da22ddae4"
+        }
+      ]
+    },
+    {
+      "id": "privacidade-e-suporte",
+      "title": "Pedir suporte sem expor dados",
+      "body": "# Pedir suporte sem expor dados\n\nO Assistente Deskcomm orienta o uso do CRM com base em artigos de suporte revisados. Ele não precisa acessar sua base de clientes ou receber informações de acesso para explicar uma tela. Também não executa alterações na sua operação.\n\n## O que informar\n\nPara um diagnóstico inicial, descreva:\n\n- A tela ou etapa em que estava.\n- A ação que tentou realizar e o resultado esperado.\n- O texto do aviso, depois de retirar qualquer informação pessoal ou de acesso.\n- O momento aproximado e se o erro se repete.\n- A versão mostrada no CRM, quando disponível.\n\nUse exemplos fictícios. Uma descrição como “a automação está Ativa, mas a ação mostra Aguardando envio” costuma ser suficiente para começar.\n\n## O que manter fora do chat\n\nNão envie senhas, chaves, tokens, códigos de recuperação, QR de conexão, links de convite ou endereços completos de webhooks. Não envie arquivos de configuração, código-fonte, registros técnicos completos, cópias de banco, listas de clientes ou conversas reais.\n\nSe uma imagem for necessária, recorte somente a área relevante e oculte nomes, telefones, e-mails, avatares, mensagens, endereços e campos de acesso. Se o aviso mistura uma explicação com informações sensíveis, descreva a explicação com suas palavras.\n\n## Solicitações de privacidade no CRM\n\nAdministradores encontram **LGPD** em **Configurações**. Essa área reúne solicitações de dados e anonimizações. A tela de aprovação diferencia exportação e anonimização e pede justificativa.\n\nA anonimização é apresentada como irreversível. Não a execute como teste ou como tentativa de resolver outro problema. Encaminhe solicitações reais ao administrador ou responsável por privacidade da sua organização, que deve verificar o pedido e o titular pelo processo oficial. O assistente não aprova solicitações nem confirma a identidade de alguém pelo chat.\n\n## Quando encaminhar ao atendimento humano\n\nEncaminhe situações sem explicação após as verificações do artigo, falta de permissão, falhas da instalação e suspeitas de acesso indevido ao responsável pelo CRM. Para questões sobre dados pessoais, procure também o responsável por privacidade.\n\nUse o canal de suporte fornecido pela sua organização. Este guia não define um endereço de contato nem um prazo de atendimento. Compartilhe somente o resumo necessário e não reproduza no chat um segredo que tenha sido exposto.\n",
+      "body_sha256": "5f2675cd75cdfd01b33114182785be7d88a0dc5df5df30d9ea56ea2626679991",
+      "sources": [
+        {
+          "path": "app/app/lgpd/requests/page.tsx",
+          "blob_sha": "cbbc69589ca023954762969062237ed8f0eb99ca"
+        },
+        {
+          "path": "app/app/lgpd/requests/[id]/ApproveButton.tsx",
+          "blob_sha": "b6d01e4752a9c1493991ecaafdceebbc252e299e"
+        },
+        {
+          "path": "lib/navigation/registry.ts",
+          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+        }
+      ]
+    }
+  ]
+}
