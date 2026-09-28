@@ -10,6 +10,7 @@ Esta base orienta onboarding e dúvidas de quem usa o CRM. O runtime do plugin e
 - [Política de segurança](security.md): acesso, conteúdo proibido e limites reais da proteção.
 - [Manutenção e atualização](maintenance.md): atualização após mudanças na main.
 - [Configuração no ChatGPT](chatgpt-setup.md): instalação local e pendências para atendimento remoto.
+- [Projeto compartilhado no ChatGPT](chatgpt-project.md): atendimento da equipe com contas gratuitas e seus limites.
 - [Instruções do assistente](../../plugins/assistente-deskcomm/skills/deskcomm-suporte/SKILL.md): fonte de verdade do comportamento.
 
 ## Precedência para escrever ou revisar artigos

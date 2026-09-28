@@ -6,6 +6,8 @@ O plugin em `plugins/assistente-deskcomm` contém instruções e um servidor MCP
 
 O catálogo pessoal da máquina do mantenedor permite instalar e testar o plugin local. Instalação local não significa publicação no diretório nem disponibilidade para clientes no navegador. Inicie uma nova conversa após instalar para carregar ferramentas e instruções.
 
+Para uma equipe com contas gratuitas que não pode instalar o plugin privado pessoal, há um [projeto compartilhado](chatgpt-project.md). Ele usa instruções de suporte e pode consultar a documentação pública, mas não possui a fronteira técnica nem a atualização automática do MCP.
+
 Antes do merge, um teste na fonte main deve resultar em indisponibilidade. Isso é intencional: a branch de preparação não pode se apresentar como documentação já aprovada. Os testes com corpus sintético e o check local comprovam o caminho completo sem publicar esse conteúdo.
 
 ## ChatGPT / Plugin Creator
