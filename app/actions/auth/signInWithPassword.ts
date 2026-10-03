@@ -17,7 +17,7 @@ import {
 
 export type SignInResult = {
   ok: false;
-  error: "invalid_credentials" | "rate_limited" | "validation_error" | "mfa_required";
+  error: "invalid_credentials" | "email_not_confirmed" | "rate_limited" | "validation_error" | "mfa_required";
   details?: Record<string, unknown>;
   challengeId?: string;
 };
@@ -74,8 +74,12 @@ export async function signInWithPassword(
   });
 
   if (error || !data.user) {
-    // Só senha errada gasta o orçamento da conta.
-    await registrarFalhaDeLogin(parsed.data.email, AUTH_LIMITS.login);
+    // Com a senha correta mas e-mail pendente, mostre a ação de reenvio.
+    // Não consome o orçamento de senhas erradas da conta.
+    const emailNotConfirmed = error?.code === "email_not_confirmed";
+    if (!emailNotConfirmed) {
+      await registrarFalhaDeLogin(parsed.data.email, AUTH_LIMITS.login);
+    }
     await audit({
       action: "auth.login_failed",
       metadata: {
@@ -86,7 +90,7 @@ export async function signInWithPassword(
       ip,
       userAgent,
     });
-    return { ok: false, error: "invalid_credentials" };
+    return { ok: false, error: emailNotConfirmed ? "email_not_confirmed" : "invalid_credentials" };
   }
 
   // MFA gating — if the user has any verified TOTP factor enrolled, they must

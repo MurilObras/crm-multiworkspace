@@ -7,6 +7,7 @@
 
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
+import { authCookieOptions } from "@/lib/supabase/auth-cookie-options";
 import { cookies } from "next/headers";
 import { env } from "@/lib/env";
 
@@ -21,7 +22,7 @@ export async function createClient() {
       setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
         try {
           cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
+            cookieStore.set(name, value, authCookieOptions(name, options));
           });
         } catch {
           // setAll pode ser chamado de Server Component; nesse caso, ignoramos.
