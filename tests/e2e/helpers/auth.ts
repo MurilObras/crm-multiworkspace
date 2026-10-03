@@ -41,9 +41,7 @@ export async function waitForEmail(
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const res = await fetch(
-      `${MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:${to}`)}`,
-    );
+    const res = await fetch(`${MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:${to}`)}`);
     if (res.ok) {
       const data = (await res.json()) as MailpitSearchResult;
       const msg = data.messages?.find((m) => m.Subject.includes(subjectPart));
@@ -55,7 +53,9 @@ export async function waitForEmail(
     }
     await new Promise((r) => setTimeout(r, 500));
   }
-  throw new Error(`email para ${to} com assunto contendo "${subjectPart}" não chegou em ${timeoutMs}ms`);
+  throw new Error(
+    `email para ${to} com assunto contendo "${subjectPart}" não chegou em ${timeoutMs}ms`,
+  );
 }
 
 /**
@@ -76,4 +76,23 @@ export function extractAuthConfirmLink(html: string, baseUrl: string): string {
   url.host = base.host;
   url.pathname = "/auth/confirm";
   return url.toString();
+}
+
+/**
+ * Usa o token real recebido no Mailpit na entrada GET /verify do GoTrue,
+ * exatamente como o template padrão. Não troca o template da suíte inteira.
+ */
+export function extractDefaultAuthLink(html: string, baseUrl: string, supabaseUrl: string): string {
+  const callback = new URL(extractAuthConfirmLink(html, baseUrl));
+  const token = callback.searchParams.get("token_hash");
+  const type = callback.searchParams.get("type");
+  if (!token?.startsWith("pkce_") || !type || !callback.searchParams.get("sb_flow_id")) {
+    throw new Error("O e-mail de teste precisa ter token PKCE, tipo e identificador do fluxo");
+  }
+  callback.searchParams.delete("token_hash");
+  const verify = new URL(`${supabaseUrl.replace(/\/$/, "")}/auth/v1/verify`);
+  verify.searchParams.set("token", token);
+  verify.searchParams.set("type", type);
+  verify.searchParams.set("redirect_to", callback.toString());
+  return verify.toString();
 }

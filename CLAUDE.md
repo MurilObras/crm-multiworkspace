@@ -61,6 +61,7 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 - `X-Request-Id` em toda response (correlaciona com audit log)
 
 ### Auth & RBAC
+- A sessão continua SameSite=Strict, HttpOnly e Secure. Só os cookies de verificador PKCE usam Lax para voltar do webmail. `/auth/confirm` entrega um documento antes de navegar, porque um 302 cross-site não envia a nova sessão Strict ao destino. A seleção do verificador usa `sb_flow_id`; a allowlist de Auth precisa aceitar a query de `/auth/confirm` (por exemplo, `https://DOMINIO/auth/confirm**`). Provas: `app/auth/confirm/route.integration.test.ts` e o caso de retorno de e-mail em `tests/e2e/auth.spec.ts`.
 - Sempre `getUser()` (valida JWT no backend). NUNCA `getSession()` (confia no cookie local)
 - 4 roles dentro do tenant: `viewer` (1) < `agent` (2) < `manager` (3) < `admin` (4)
 - Super-admin de plataforma é uma role transversal — `is_platform_admin` (decisão final na Spec 01)

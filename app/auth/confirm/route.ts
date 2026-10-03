@@ -6,6 +6,7 @@ import { ensureTenantForUser } from "@/lib/auth/provision";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
+import { emailReturnResponse } from "@/lib/auth/email-return-response";
 
 /**
  * GET /auth/confirm — troca o token do e-mail por uma sessão.
@@ -43,12 +44,14 @@ import { env } from "@/lib/env";
  *
  * Fluxo canônico do @supabase/ssr: verifyOtp/exchangeCodeForSession grava os
  * cookies de sessão via cookies() do next/headers; o Next anexa os Set-Cookie
- * ao redirect retornado.
+ * à resposta HTML. O documento inicia uma navegação do próprio CRM, para que
+ * a sessão Strict esteja disponível na tela de destino.
  */
 export async function GET(request: NextRequest) {
   const url = request.nextUrl;
   const tokenHash = url.searchParams.get("token_hash");
   const code = url.searchParams.get("code");
+  const flowId = url.searchParams.get("sb_flow_id");
   const type = url.searchParams.get("type") as EmailOtpType | null;
   const requestId = request.headers.get("x-request-id");
 
@@ -56,6 +59,8 @@ export async function GET(request: NextRequest) {
   // pode entregar como o bind interno (ex.: 0.0.0.0:3000) em vez do domínio
   // público — o link de recovery quebra silenciosamente para o usuário final.
   const redirectTo = (path: string) => NextResponse.redirect(new URL(path, env.NEXT_PUBLIC_APP_URL));
+  const enterWithSession = (path: string) =>
+    emailReturnResponse(new URL(path, env.NEXT_PUBLIC_APP_URL));
 
   if (!(tokenHash && type) && !code) {
     return redirectTo("/login?error=link_invalido");
@@ -70,7 +75,7 @@ export async function GET(request: NextRequest) {
   const { data, error } =
     tokenHash && type
       ? await supabase.auth.verifyOtp({ type, token_hash: tokenHash })
-      : await supabase.auth.exchangeCodeForSession(code as string);
+      : await supabase.auth.exchangeCodeForSession(code as string, flowId !== null ? { flowId } : undefined);
 
   if (error || !data.user) {
     await audit({
@@ -87,7 +92,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (type === "recovery") {
-    return redirectTo("/login/reset");
+    return enterWithSession("/login/reset");
   }
 
   // Foi convidado? Então NÃO ganha organização própria. Sem esta bifurcação,
@@ -106,14 +111,14 @@ export async function GET(request: NextRequest) {
       metadata: { motivo: decisao.motivo },
       requestId,
     });
-    return redirectTo("/login?error=convite_invalido");
+    return enterWithSession("/login?error=convite_invalido");
   }
 
   if (decisao.tipo === "convite") {
     // A sessão já está firmada, então a tela de aceite reconhece o usuário e o
     // clique cai no `acceptInviteAction` que já existe — auditado e idempotente.
     // Nenhuma lógica de membership nova mora aqui.
-    return redirectTo(`/team/accept-invite/${decisao.token}`);
+    return enterWithSession(`/team/accept-invite/${decisao.token}`);
   }
 
   try {
@@ -128,7 +133,7 @@ export async function GET(request: NextRequest) {
     // A sessão JÁ está firmada (o `verifyOtp`/`exchangeCodeForSession` acima
     // passou). Mandar para `/login` deixava a pessoa logada e sem organização,
     // sem nenhum caminho de volta — ver `app/actions/auth/recoverOrganization.ts`.
-    return redirectTo("/get-started");
+    return enterWithSession("/get-started");
   }
 
   void audit({
@@ -138,5 +143,5 @@ export async function GET(request: NextRequest) {
     requestId,
   });
 
-  return redirectTo("/onboarding/welcome");
+  return enterWithSession("/onboarding/welcome");
 }

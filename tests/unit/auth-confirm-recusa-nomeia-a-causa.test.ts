@@ -8,12 +8,9 @@
  *
  *  - `token_hash` (nossos templates): o link realmente expirou ou já foi usado.
  *    Pedir outro resolve.
- *  - `code` (template PADRÃO do Supabase): o link chega por PKCE, o verificador
- *    vive num cookie `sameSite: "strict"` (`lib/supabase/server.ts:35`, aplicado
- *    a TODO cookie do cliente — `@supabase/ssr/cookies.js:227,232`), e clique
- *    vindo de webmail é navegação cross-site: o cookie não viaja. Pedir outro
- *    link NÃO resolve — cada novo link falha igual. O conserto é configurar os
- *    templates (`hostgator-setup-kit/marca-emails.sh`).
+ *  - `code` (PKCE): o verificador usa Lax para voltar do webmail, mas só
+ *    existe no navegador que pediu o link. A recusa orienta pedir outro
+ *    nesse navegador, em vez de mandar o operador editar templates.
  *
  * O sintoma enganoso mandava o operador caçar TTL e relógio do servidor. Este
  * teste prende a distinção nos DOIS sentidos: sem o segundo caso, alguém
@@ -70,7 +67,7 @@ describe("/auth/confirm nomeia a causa da recusa", () => {
     return expect(destino("?token_hash=abc&type=recovery")).resolves.toBe("?error=link_invalido");
   });
 
-  it("code que falhou vira `template_padrao` — pedir outro NÃO resolve", async () => {
+  it("code que falhou orienta a solicitar outro e abrir no mesmo navegador", async () => {
     supabaseQue(RECUSA);
     expect(await destino("?code=pkce_abc")).toBe("?error=template_padrao");
   });
@@ -113,6 +110,12 @@ describe("/auth/confirm nomeia a causa da recusa", () => {
       "utf8",
     );
     expect(fonte).toContain('error === "template_padrao"');
-    expect(fonte).toContain("marca-emails.sh");
+    expect(fonte).toContain("mesmo navegador");
+  });
+
+  it("encaminha o identificador do fluxo para não usar o verificador de outro link", async () => {
+    const { exchangeCodeForSession } = supabaseQue(RECUSA);
+    await chamar("?code=pkce_abc&type=recovery&sb_flow_id=abcdefgh1234");
+    expect(exchangeCodeForSession).toHaveBeenCalledWith("pkce_abc", { flowId: "abcdefgh1234" });
   });
 });

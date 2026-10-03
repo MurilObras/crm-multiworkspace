@@ -15,7 +15,7 @@ export async function resendSignupConfirmation(
   if (!parsed.success) return { ok: false, error: "validation_error" };
 
   const hdrs = await headers();
-  if (await authRateLimited("signup", parsed.data.email, AUTH_LIMITS.signup)) {
+  if (await authRateLimited("signup_confirmation", parsed.data.email, AUTH_LIMITS.reset)) {
     return { ok: false, error: "rate_limited" };
   }
 
