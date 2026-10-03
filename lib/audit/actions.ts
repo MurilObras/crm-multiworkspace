@@ -247,6 +247,8 @@ export const AUDIT_ACTIONS = [
   "template.deleted",
   "auth.signup_requested",
   "auth.signup_failed",
+  "auth.signup_confirmation_requested",
+  "auth.signup_confirmation_failed",
   "auth.signup_confirmed",
   "auth.signup_provision_failed",
   "auth.signup_provision_recovery_failed",

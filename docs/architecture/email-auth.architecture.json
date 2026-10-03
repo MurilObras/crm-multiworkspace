@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": { "title": "Confirmação de conta e recuperação por e-mail", "output": "email-auth.html", "quality_profile": "standard" },
+  "lanes": [{ "id": "browser", "label": "Navegador" }, { "id": "app", "label": "CRM" }, { "id": "provider", "label": "Supabase" }],
+  "mainPath": ["form", "actions", "gotrue", "email", "callback", "document", "destination"],
+  "nodes": [
+    { "id": "form", "lane": "browser", "col": 1, "type": "frontend", "label": "LoginForm / SignupForm / ForgotPasswordForm", "sublabel": "Confirmação pendente oferece reenvio" },
+    { "id": "actions", "lane": "app", "col": 1, "type": "api", "label": "signUp / resendSignupConfirmation / requestPasswordReset", "sublabel": "Zod, rate limit por IP/e-mail e redirect público" },
+    { "id": "gotrue", "lane": "provider", "col": 1, "type": "service", "label": "Supabase Auth", "sublabel": "Allowlist aceita a query; desafio PKCE por fluxo" },
+    { "id": "email", "lane": "browser", "col": 2, "type": "frontend", "label": "E-mail", "sublabel": "Padrão: GET /verify retorna code; customizado: token_hash" },
+    { "id": "callback", "lane": "app", "col": 2, "type": "api", "label": "/auth/confirm", "sublabel": "sb_flow_id seleciona o verificador Lax; sessão Strict/HttpOnly" },
+    { "id": "document", "lane": "browser", "col": 3, "type": "frontend", "label": "emailReturnResponse", "sublabel": "Documento sem cache inicia a navegação no CRM" },
+    { "id": "destination", "lane": "browser", "col": 4, "type": "frontend", "label": "Aceite do convite / nova senha / onboarding", "sublabel": "Convidado não ganha empresa própria" },
+    { "id": "audit", "lane": "provider", "col": 2, "type": "database", "label": "api_audit_log", "sublabel": "Reenvio solicitado/falhou; link rejeitado com formato e causa" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "form", "to": "actions", "label": "Pedido validado" },
+    { "id": "e2", "from": "actions", "to": "gotrue", "label": "Envio e verificador por fluxo" },
+    { "id": "e3", "from": "gotrue", "to": "email", "label": "Link de uso único" },
+    { "id": "e4", "from": "email", "to": "callback", "label": "Navegação cross-site" },
+    { "id": "e5", "from": "callback", "to": "gotrue", "label": "Troca por sessão validada" },
+    { "id": "e6", "from": "callback", "to": "document", "label": "Grava a sessão Strict" },
+    { "id": "e7", "from": "document", "to": "destination", "label": "Navegação same-site com sessão" },
+    { "id": "e8", "from": "callback", "to": "form", "label": "Recusa explica pedir outro no mesmo navegador" },
+    { "id": "e9", "from": "actions", "to": "audit", "label": "Resultado do reenvio sem e-mail em claro" },
+    { "id": "e10", "from": "callback", "to": "audit", "label": "Resultado da confirmação" }
+  ]
+}

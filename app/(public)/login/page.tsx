@@ -70,10 +70,8 @@ export default async function LoginPage({
           role="alert"
         >
           {t(
-            "Este link veio do modelo de e-mail padrão do Supabase, que não fecha o acesso nesta instalação — pedir outro link não resolve. Quem administra o sistema precisa configurar os e-mails de acesso (",
+            "O link não pôde ser confirmado neste navegador. Peça outro link e abra o e-mail no mesmo navegador em que iniciou o cadastro ou a recuperação. Se continuar, avise quem administra o sistema.",
           )}
-          <code>marca-emails.sh</code>
-          {t(", no kit de instalação).")}
         </div>
       )}
       {error === "provisionamento" && (

@@ -27,6 +27,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { signInviteToken } from "../../lib/auth/invite-token";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
+import { uniqueEmail, waitForEmail, extractDefaultAuthLink } from "./helpers/auth";
 
 // ---- creds do seed base (.e2e-creds.json) + do convite (.e2e-invite.json) ----
 interface BaseCreds {
@@ -392,6 +393,52 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await expect(page.getByRole("alert").first()).toContainText(/expirou|não é mais válido/i);
     // E cai no signup COMUM só depois do aviso — nunca em silêncio.
     await expect(page.getByLabel("Nome da empresa")).toBeVisible();
+  });
+
+  test("13. conta nova confirma por PKCE e aceita só o workspace convidado", async ({ browser, baseURL }) => {
+    const email = uniqueEmail("invite-signup");
+    const adminContext = await browser.newContext();
+    const invitedContext = await browser.newContext();
+    try {
+      const adminPage = await adminContext.newPage();
+      await loginAdminTotp(adminPage);
+      const { acceptUrl, failed } = await issueInvite(adminPage, email, "agent");
+      expect(failed).toEqual([]);
+
+      const page = await invitedContext.newPage();
+      await page.goto(tokenPath(acceptUrl));
+      await page.getByRole("link", { name: /ainda não tenho conta/i }).click();
+      await page.getByLabel("Senha", { exact: true }).fill(base.password);
+      await page.getByLabel("Confirmar senha").fill(base.password);
+      await page.getByRole("button", { name: "Criar conta" }).click();
+      await expect(page.getByText("Confirme seu e-mail")).toBeVisible();
+      const html = await waitForEmail(email, "Confirme seu e-mail");
+      const link = extractDefaultAuthLink(html, baseURL!, process.env.NEXT_PUBLIC_SUPABASE_URL!);
+      await page.goto(process.env.MAILPIT_URL ?? "http://127.0.0.1:54324");
+      await page.goto(link);
+      await expect(page.getByRole("button", { name: /Aceitar convite/i })).toBeVisible();
+      await test.info().attach("convite-confirmado-pkce", { body: await page.screenshot(), contentType: "image/png" });
+
+      const { data: users, error: userError } = await svc.auth.admin.listUsers({ perPage: 1000 });
+      expect(userError).toBeNull();
+      const userId = users.users.find((user) => user.email === email)?.id;
+      expect(userId).toBeTruthy();
+      const before = await svc.from("user_organizations").select("id").eq("user_id", userId!);
+      expect(before.error).toBeNull();
+      expect(before.data).toEqual([]);
+
+      await page.getByRole("button", { name: /Aceitar convite/i }).click();
+      await page.waitForURL(/\/app\/inbox/);
+      const after = await svc.from("user_organizations").select("organization_id, role").eq("user_id", userId!).is("revoked_at", null);
+      expect(after.error).toBeNull();
+      expect(after.data).toEqual([{ organization_id: inv.org_id, role: "agent" }]);
+      const ownOrgs = await svc.from("organizations").select("id").eq("created_by", userId!);
+      expect(ownOrgs.error).toBeNull();
+      expect(ownOrgs.data).toEqual([]);
+    } finally {
+      await invitedContext.close();
+      await adminContext.close();
+    }
   });
 });
 
