@@ -11,6 +11,8 @@ import { authCookieOptions } from "@/lib/supabase/auth-cookie-options";
 import { cookies } from "next/headers";
 import { env } from "@/lib/env";
 
+export const AUTH_COOKIE_NAME = "sb-deskcomm-auth";
+
 export async function createClient() {
   const cookieStore = await cookies();
 
@@ -25,7 +27,7 @@ export async function createClient() {
       setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
         try {
           cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, authCookieOptions(name, options));
+            cookieStore.set(name, value, authCookieOptions(name, options, AUTH_COOKIE_NAME));
           });
         } catch {
           // setAll pode ser chamado de Server Component; nesse caso, ignoramos.
@@ -35,7 +37,7 @@ export async function createClient() {
     },
     // D-01.01: cookie name canônico alinhado ao middleware.
     cookieOptions: {
-      name: "sb-deskcomm-auth",
+      name: AUTH_COOKIE_NAME,
       sameSite: "strict",
       httpOnly: true,
       secure: cookieSecure(),

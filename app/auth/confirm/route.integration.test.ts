@@ -29,7 +29,7 @@ vi.mock("@/lib/env", () => ({
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/auth/provision", () => ({ ensureTenantForUser: vi.fn(async () => undefined) }));
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient, AUTH_COOKIE_NAME } from "@/lib/supabase/server";
 import { ensureTenantForUser } from "@/lib/auth/provision";
 import { signInviteToken } from "@/lib/auth/invite-token";
 import { GET } from "./route";
@@ -139,7 +139,7 @@ describe("retorno do e-mail com cliente Supabase real", () => {
     expect(await response.text()).toContain(`/team/accept-invite/${invite}`);
     expect(ensureTenantForUser).not.toHaveBeenCalled();
     expect(exchanged).toEqual([firstFlow]);
-    expect(state.cookies.get("sb-deskcomm-auth")?.options).toMatchObject({
+    expect(state.cookies.get(AUTH_COOKIE_NAME)?.options).toMatchObject({
       sameSite: "strict",
       httpOnly: true,
       secure: true,
@@ -222,6 +222,6 @@ describe("retorno do e-mail com cliente Supabase real", () => {
     ));
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("/get-started");
-    expect(state.cookies.get("sb-deskcomm-auth")?.options.sameSite).toBe("strict");
+    expect(state.cookies.get(AUTH_COOKIE_NAME)?.options.sameSite).toBe("strict");
   });
 });
