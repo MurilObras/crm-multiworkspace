@@ -81,4 +81,20 @@ describe("signInWithPassword — teto de tentativas", () => {
     expect(resultados.filter((r) => r?.error === "rate_limited")).toHaveLength(0);
     expect(signIn).toHaveBeenCalledTimes(10);
   });
+
+  it("conta ainda não confirmada recebe orientação sem ser bloqueada por senha errada", async () => {
+    const { signInWithPassword } = await import("./signInWithPassword");
+    signIn.mockResolvedValue({
+      data: { user: null, session: null },
+      error: { code: "email_not_confirmed", message: "Email not confirmed", status: 400 },
+    } as never);
+
+    const results = [];
+    for (let i = 0; i < 7; i++) {
+      results.push(await signInWithPassword({ email: "pendente@example.com", password: "senha-certa-123" }));
+    }
+
+    expect(results.map((r) => r.error)).toEqual(Array(7).fill("email_not_confirmed"));
+    expect(signIn).toHaveBeenCalledTimes(7);
+  });
 });

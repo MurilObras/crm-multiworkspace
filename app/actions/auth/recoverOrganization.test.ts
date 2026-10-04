@@ -169,7 +169,7 @@ describe("o laço está cortado nos três pontos que o formavam", () => {
   const PONTOS: Array<[string, string]> = [
     ["app/onboarding/layout.tsx", 'if (!activeOrg) redirect("/get-started")'],
     ["app/onboarding/page.tsx", 'if (!activeOrg) redirect("/get-started")'],
-    ["app/auth/confirm/route.ts", 'return redirectTo("/get-started")'],
+    ["app/auth/confirm/route.ts", 'return enterWithSession("/get-started")'],
   ];
 
   it.each(PONTOS)("%s manda para a saída, não de volta para o login", async (arquivo, esperado) => {

@@ -114,6 +114,8 @@ verify, build-and-size, invariants, e2e, imagens-ok
 
 ## Padrões de código (observados no repo, não inventados)
 
+- Auth por e-mail: a sessão permanece Strict/HttpOnly/Secure; somente os verificadores PKCE usam Lax. O callback usa `sb_flow_id` e entrega um documento antes de navegar ao destino para que o navegador envie a sessão Strict. A allowlist de Auth precisa aceitar a query de `/auth/confirm` (ex.: `https://DOMINIO/auth/confirm**`).
+
 - **Route handler:** valida input com Zod → guard (`requireRole` / `requirePlatformAdmin` /
   secret) → query com `organization_id` explícito → `audit()` se mutação → `ok()` / `fail()`.
 - Erro: `fail(code, message, status)` com código de `lib/api/errors.ts`. Nunca `throw` cru na borda.

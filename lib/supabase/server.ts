@@ -7,13 +7,19 @@
 
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
+import { authCookieOptions } from "@/lib/supabase/auth-cookie-options";
 import { cookies } from "next/headers";
 import { env } from "@/lib/env";
+
+export const AUTH_COOKIE_NAME = "sb-deskcomm-auth";
 
 export async function createClient() {
   const cookieStore = await cookies();
 
   return createServerClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+    // Identifica o cookie de cada link pendente (cadastro/reenvio/recovery).
+    // A allowlist de Auth precisa aceitar a query de /auth/confirm.
+    auth: { experimental: { appendPkceFlowIdToRedirects: true } },
     cookies: {
       getAll() {
         return cookieStore.getAll();
@@ -21,7 +27,7 @@ export async function createClient() {
       setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
         try {
           cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
+            cookieStore.set(name, value, authCookieOptions(name, options, AUTH_COOKIE_NAME));
           });
         } catch {
           // setAll pode ser chamado de Server Component; nesse caso, ignoramos.
@@ -31,7 +37,7 @@ export async function createClient() {
     },
     // D-01.01: cookie name canônico alinhado ao middleware.
     cookieOptions: {
-      name: "sb-deskcomm-auth",
+      name: AUTH_COOKIE_NAME,
       sameSite: "strict",
       httpOnly: true,
       secure: cookieSecure(),

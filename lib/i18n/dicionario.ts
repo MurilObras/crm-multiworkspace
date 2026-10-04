@@ -5465,6 +5465,19 @@ export const DICIONARIO: Traducoes = {
   },
   "Já tem conta?": { es: "¿Ya tienes cuenta?" },
   "Email ou senha incorretos.": { es: "Correo o contraseña incorrectos." },
+  "Confirme seu e-mail antes de entrar. Se o link não abriu, peça outro abaixo.": {
+    es: "Confirma tu correo antes de entrar. Si el enlace no se abrió, solicita otro abajo.",
+  },
+  "Reenviar e-mail de confirmação": { es: "Reenviar correo de confirmación" },
+  "Não foi possível reenviar a confirmação. Tente novamente.": {
+    es: "No se pudo reenviar la confirmación. Inténtalo de nuevo.",
+  },
+  "Se a conta estiver pendente, enviamos um novo link de confirmação.": {
+    es: "Si la cuenta está pendiente, enviamos un nuevo enlace de confirmación.",
+  },
+  "O link não pôde ser confirmado neste navegador. Peça outro link e abra o e-mail no mesmo navegador em que iniciou o cadastro ou a recuperação. Se continuar, avise quem administra o sistema.": {
+    es: "No se pudo confirmar el enlace en este navegador. Solicita otro enlace y abre el correo en el mismo navegador donde iniciaste el registro o la recuperación. Si continúa, avisa a quien administra el sistema.",
+  },
   "Erro inesperado. Tente novamente.": { es: "Error inesperado. Intenta de nuevo." },
   "Entrando...": { es: "Entrando..." },
   "Configurando autenticação em duas etapas...": {
