@@ -2,7 +2,7 @@
 import { test, expect } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
-import { waitForEmail, extractAuthConfirmLink, uniqueEmail, loadEnvLocal } from "./helpers/auth";
+import { waitForEmail, extractAuthConfirmLink, uniqueEmail } from "./helpers/auth";
 
 const ownerEmail = uniqueEmail("recovery-owner");
 const targetEmail = uniqueEmail("recovery-target");
@@ -11,10 +11,11 @@ const targetPassword = "SenhaTarget!123";
 const targetNewPassword = "SenhaTargetNova!456";
 
 test.beforeAll(async () => {
-  const envLocal = loadEnvLocal();
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? envLocal.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? envLocal.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) throw new Error("SUPABASE_URL/SERVICE_ROLE_KEY ausentes (.env.local)");
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(url).hostname)) {
+    throw new Error("Supabase local e credenciais sintéticas do runner obrigatórios");
+  }
 
   const admin = createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },

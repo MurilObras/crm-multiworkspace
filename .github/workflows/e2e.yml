@@ -33,7 +33,7 @@ name: e2e
 # executado. Verde que não distingue "passou" de "nem rodou" é pior que vermelho.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, review/base-v2.2.0]
   push:
     branches: [main]
 
@@ -276,6 +276,7 @@ jobs:
         smoke.spec.ts auth.spec.ts error-pages.spec.ts
         icone-da-marca.spec.ts
         password-recovery.spec.ts signup-journey.spec.ts
+        password-recovery-account-isolation.spec.ts obra-no-bolso.spec.ts
         primeiro-acesso-sem-organizacao.spec.ts
         rbac-roles.spec.ts inbox-scope.spec.ts reset-password-mfa.spec.ts
         degradacao-silenciosa.spec.ts vps-webhook-outbound-ssrf.spec.ts
