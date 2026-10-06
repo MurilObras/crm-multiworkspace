@@ -44,28 +44,31 @@ interface RuleRow {
   actions: Array<{ type: string; config?: Record<string, unknown> }>;
 }
 
-/** Hidrata o contexto avaliado pelas condições/ações a partir do entity do evento. */
-export async function buildContext(admin: SupabaseClient, row: EventRow): Promise<Record<string, unknown>> {
+/** Hidrata o contexto. No acesso confirmado, falha de leitura é retomável,
+ * não prova de que a identidade mudou nem autorização para consumir o evento. */
+export async function buildContext(admin: SupabaseClient, row: EventRow, strict = false): Promise<Record<string, unknown>> {
   const context: Record<string, unknown> = { event: row.payload };
   // Admin client bypassa RLS — todo lookup filtra organization_id do evento
   // (doutrina multi-tenant; um FK cross-org corrompido nunca vaza pro contexto).
   const org = row.organization_id;
   if (row.entity_kind === "crm_lead" && row.entity_id) {
-    const { data: lead } = await admin
+    const { data: lead, error: leadError } = await admin
       .from("crm_leads")
       .select("*")
       .eq("id", row.entity_id)
       .eq("organization_id", org)
       .maybeSingle();
+    if (strict && leadError) throw new Error("automation_context_unavailable");
     if (lead) {
       context.lead = lead;
       if (lead.contact_id) {
-        const { data: contact } = await admin
+        const { data: contact, error: contactError } = await admin
           .from("contacts")
           .select("*")
           .eq("id", lead.contact_id)
           .eq("organization_id", org)
           .maybeSingle();
+        if (strict && contactError) throw new Error("automation_context_unavailable");
         if (contact) context.contact = contact;
       }
     }
@@ -162,10 +165,16 @@ export async function runAutomationForEvent(
     const { data: receipt, error: receiptError } = await admin.from("obra_access_receipts")
       .select("id,integration_id,modality,contact_id,lead_id,status,event_log_id")
       .eq("organization_id", row.organization_id).eq("event_log_id", row.id).maybeSingle();
-    const { data: source } = receipt ? await admin.from("obra_access_integrations")
+    if (receiptError) {
+      return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: "obra_receipt_lookup_unavailable" };
+    }
+    const { data: source, error: sourceError } = receipt ? await admin.from("obra_access_integrations")
       .select("is_active").eq("organization_id", row.organization_id)
-      .eq("id", receipt.integration_id).maybeSingle() : { data: null };
-    if (receiptError || !receipt || receipt.status !== "processed" ||
+      .eq("id", receipt.integration_id).maybeSingle() : { data: null, error: null };
+    if (sourceError) {
+      return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: "obra_integration_lookup_unavailable" };
+    }
+    if (!receipt || receipt.status !== "processed" ||
       receipt.lead_id !== row.entity_id || receipt.modality !== row.payload.modality || !source?.is_active) {
       return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "obra_receipt_not_confirmed" };
     }
@@ -181,14 +190,14 @@ export async function runAutomationForEvent(
     .eq("is_active", true)
     .order("created_at", { ascending: true });
   if (error) {
-    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: error.message };
+    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: obra ? "obra_rules_unavailable" : error.message };
   }
   const matched = (rules ?? []) as unknown as RuleRow[];
   if (!matched.length && !durableExternal) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_rules" };
   }
 
-  const context = await buildContext(admin, row);
+  const context = await buildContext(admin, row, obra);
   if (obra && (!obraContactId || (context.contact as { id?: string } | undefined)?.id !== obraContactId)) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "obra_recipient_changed" };
   }
@@ -253,7 +262,7 @@ export async function runAutomationForEvent(
         continue;
       }
       const actionCtx = { admin, organizationId: row.organization_id, ruleId: rule.id,
-        ruleName: rule.name, event: row, context: durableExternal ? await buildContext(admin, row) : context, requestId: row.id };
+        ruleName: rule.name, event: row, context: durableExternal ? await buildContext(admin, row, obra) : context, requestId: row.id };
       if (obra) {
         const { rows } = await getRequestPool().query<{ live: boolean }>(
           "select fn_obra_access_send_live($1,$2,$3,$4) live",

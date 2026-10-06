@@ -183,6 +183,11 @@ export async function encerraDemanda(
     updateQuery = updateQuery.eq("status", "open")
       .eq("contact_id", input.obraAccessAssociation.contactId)
       .eq("pipeline_id", input.obraAccessAssociation.pipelineId);
+    // O patch contém uma cópia dos metadados lidos acima. Não sobrescrever
+    // uma edição concorrente: o recebimento é liberado e o retry relê a linha.
+    updateQuery = lead.source_metadata == null
+      ? updateQuery.is("source_metadata", null)
+      : updateQuery.eq("source_metadata", JSON.stringify(lead.source_metadata));
   }
   const { data: updated, error: updErr } = await updateQuery.select("id");
 
@@ -190,7 +195,7 @@ export async function encerraDemanda(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
   }
   if (input.obraAccessReceiptId && !updated?.length) {
-    throw new ApiError(409, "conflict", undefined, ctx.requestId, "Oportunidade já encerrada.");
+    throw new ApiError(409, "conflict", undefined, ctx.requestId, "Oportunidade encerrada ou alterada durante a confirmação.");
   }
 
   const { data: fresh } = await supabase

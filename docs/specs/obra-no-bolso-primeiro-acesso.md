@@ -1,6 +1,6 @@
 # Obra no Bolso → CRM: primeiro acesso liberado
 
-Estado: implementação local para revisão. O Obra no Bolso ainda precisa emitir o evento;
+Estado: implementação em branch para revisão. O Obra no Bolso ainda precisa emitir o evento;
 esta especificação é o contrato para `guisantossa/obranobolso`. Stripe e Asaas são
 processados no produto, nunca no CRM.
 
@@ -80,6 +80,11 @@ bloqueio, passagem para humano, janela, limite e intenção durável antes do en
 O destinatário permanece vinculado ao contato conciliado. Uma mudança de contato,
 funil ou anonimização impede a confirmação/envio. Pausar a integração ou a regra
 também bloqueia mensagens preparadas que ainda não iniciaram o transporte.
+Uma edição simultânea dos metadados da oportunidade impede a gravação daquela
+tentativa; a retomada relê os dados e preserva a edição. Falhas temporárias de
+consulta ao recibo, integração ou contato não são tratadas como descarte: o
+evento continua sujeito à política de retry do barramento, sem autorizar envio
+até que a identidade e a conversão sejam conferidas novamente.
 
 Respostas possíveis: `processed`, `pending`, `duplicate`, `in_progress`;
 422 para evento inelegível, 401 para assinatura inválida, 409 para ID repetido
