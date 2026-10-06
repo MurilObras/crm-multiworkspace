@@ -1,11 +1,12 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { resetPasswordSchema, type ResetPasswordInput } from "@/lib/auth/schemas";
 import { audit } from "@/lib/audit";
+import { RECOVERY_CONTEXT_COOKIE, verifyRecoveryContext } from "@/lib/auth/recovery-context";
 
 export type UpdatePasswordResult = {
   ok: false;
@@ -41,6 +42,18 @@ export async function updatePassword(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "session_expired" };
+
+  const cookieStore = await cookies();
+  const recoveryUserId = verifyRecoveryContext(cookieStore.get(RECOVERY_CONTEXT_COOKIE)?.value);
+  if (!recoveryUserId) return { ok: false, error: "session_expired" };
+  if (recoveryUserId !== user.id) {
+    await audit({
+      action: "auth.password_reset_failed",
+      actorUserId: user.id,
+      metadata: { reason: "recovery_user_mismatch" },
+    });
+    return { ok: false, error: "session_expired" };
+  }
 
   const hdrs = await headers();
   const requestId = hdrs.get("x-request-id");
@@ -94,6 +107,7 @@ export async function updatePassword(
     userAgent,
   });
 
+  cookieStore.delete(RECOVERY_CONTEXT_COOKIE);
   await supabase.auth.signOut();
   redirect("/login?reset=success");
 }

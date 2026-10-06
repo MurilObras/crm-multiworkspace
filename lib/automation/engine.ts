@@ -34,6 +34,7 @@ const EXPECTED_ENTITY_KIND: Record<string, string> = {
   "lead.tag_added": "crm_lead",
   "contact.tag_added": "contact",
   "message.received": "message",
+  "obra_access.activated": "crm_lead",
 };
 
 interface RuleRow {
@@ -155,7 +156,21 @@ export async function runAutomationForEvent(
   }
 
   const kiwify = row.payload.kiwify_event_type === "order_approved";
-  const plan = kiwify ? await readEventPlan<RuleRow>(getRequestPool(),row.organization_id,row.id) : null;
+  const obra = row.event_type === "obra_access.activated";
+  if (obra) {
+    const { data: receipt, error: receiptError } = await admin.from("obra_access_receipts")
+      .select("id,integration_id,modality,lead_id,status,event_log_id")
+      .eq("organization_id", row.organization_id).eq("event_log_id", row.id).maybeSingle();
+    const { data: source } = receipt ? await admin.from("obra_access_integrations")
+      .select("is_active").eq("organization_id", row.organization_id)
+      .eq("id", receipt.integration_id).maybeSingle() : { data: null };
+    if (receiptError || !receipt || receipt.status !== "processed" ||
+      receipt.lead_id !== row.entity_id || receipt.modality !== row.payload.modality || !source?.is_active) {
+      return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "obra_receipt_not_confirmed" };
+    }
+  }
+  const durableExternal = kiwify || obra;
+  const plan = durableExternal ? await readEventPlan<RuleRow>(getRequestPool(),row.organization_id,row.id) : null;
   const { data: rules, error } = plan !== null ? {data:plan,error:null} : await admin
     .from("automation_rules")
     .select("id, name, conditions, actions")
@@ -167,7 +182,7 @@ export async function runAutomationForEvent(
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: error.message };
   }
   const matched = (rules ?? []) as unknown as RuleRow[];
-  if (!matched.length && !kiwify) {
+  if (!matched.length && !durableExternal) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_rules" };
   }
 
@@ -186,8 +201,9 @@ export async function runAutomationForEvent(
       linkedRuleIds = new Set((links ?? []).map(link => link.rule_id as string));
     }
   }
-  const candidates = matched.filter((r) => (linkedRuleIds === null || linkedRuleIds.has(r.id)) && evaluateConditions(r.conditions ?? [], context));
-  const applicable = plan ?? (kiwify ? await freezeEventPlan(getRequestPool(),row.organization_id,row.id,candidates) : candidates);
+  const candidates = matched.filter((r) => (linkedRuleIds === null || linkedRuleIds.has(r.id)) && evaluateConditions(r.conditions ?? [], context)
+    && (!obra || r.actions.every(action => action.type === "send_whatsapp_message")));
+  const applicable = plan ?? (durableExternal ? await freezeEventPlan(getRequestPool(),row.organization_id,row.id,candidates) : candidates);
   if (!applicable.length) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_match" };
   }
@@ -200,7 +216,7 @@ export async function runAutomationForEvent(
       if (!executor?.postponeUntil) continue;
       // Recusa/configuração inválida não devem ficar escondidas atrás de um
       // adiamento que promete envio futuro. O execute registrará o bloqueio.
-      if (kiwify && (!actionSchema.safeParse(action).success || !checarGuardasDeContato({
+      if (durableExternal && (!actionSchema.safeParse(action).success || !checarGuardasDeContato({
         admin,organizationId:row.organization_id,ruleId:rule.id,ruleName:rule.name,event:row,context,requestId:row.id,
       }).ok)) continue;
       const until = await executor.postponeUntil(
@@ -221,7 +237,7 @@ export async function runAutomationForEvent(
   for (const rule of applicable) {
     const results: ActionResultDetail[] = [];
     for (const [index, action] of (rule.actions ?? []).entries()) {
-      if (kiwify && ["bind_ai_agent", "start_message_flow"].includes(action.type)) {
+      if (durableExternal && ["bind_ai_agent", "start_message_flow"].includes(action.type)) {
         const state = await precedingActionsState(getRequestPool(), row.organization_id, row.id, rule.id, index);
         if (state === "waiting") return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: new Date(Date.now() + 5000).toISOString() };
         if (state === "failed") break;
@@ -232,9 +248,9 @@ export async function runAutomationForEvent(
         continue;
       }
       const actionCtx = { admin, organizationId: row.organization_id, ruleId: rule.id,
-        ruleName: rule.name, event: row, context: kiwify ? await buildContext(admin, row) : context, requestId: row.id };
-      const intentId = kiwify ? await acquireActionIntent(getRequestPool(), actionCtx, index, action.type,true) : null;
-      if (kiwify && !intentId) {
+        ruleName: rule.name, event: row, context: durableExternal ? await buildContext(admin, row) : context, requestId: row.id };
+      const intentId = durableExternal ? await acquireActionIntent(getRequestPool(), actionCtx, index, action.type,true) : null;
+      if (durableExternal && !intentId) {
         const resumed = await resumeQueuedAutomationMessage(actionCtx, index, action.type);
         if (resumed) await finishActionIntent(getRequestPool(), row.organization_id, resumed.id, resumed.result);
         if (await actionStillWaiting(getRequestPool(), row.organization_id, row.id, rule.id, index)) {
@@ -244,7 +260,7 @@ export async function runAutomationForEvent(
       }
       let result: ActionResultDetail;
       try {
-        result = kiwify && !await actionPlanLive(getRequestPool(),row.organization_id,row.id)
+        result = durableExternal && !await actionPlanLive(getRequestPool(),row.organization_id,row.id)
           ? { type:action.type,status:"skipped",detail:{reason:"contact_anonymized"} }
           : await executor.execute(
             { ...actionCtx, ...(intentId ? { actionIntentId: intentId } : {}) },
@@ -266,7 +282,7 @@ export async function runAutomationForEvent(
     }
 
     // Cada ação Kiwify já é um run durável, correlacionado à mensagem.
-    if (kiwify) continue;
+    if (durableExternal) continue;
 
     // ═══ O AGREGADOR TAMBÉM PRECISA DIZER A VERDADE ═══
     //

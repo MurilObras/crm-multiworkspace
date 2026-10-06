@@ -46,7 +46,9 @@ export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageIn
       const { rows } = await db.query(`with eligible as materialized (
         select m.id,c.phone_number from messages m join contacts c on c.id=m.contact_id
           and c.organization_id=m.organization_id where m.id=$3 and m.organization_id=$2
-          and not c.is_blocked and not c.is_anonymized and c.phone_number=$4
+          and not c.is_blocked and not c.is_anonymized and not c.force_human and c.phone_number=$4
+          and not exists(select 1 from conversations cv where cv.organization_id=m.organization_id
+            and cv.id=m.conversation_id and cv.bot_silenced_until>now())
           and public.fn_automation_run_live($2,$1,c.id)
           and coalesce(c.consent #> '{marketing,declined_at}','null'::jsonb) in ('null'::jsonb,'false'::jsonb,'0'::jsonb,'""'::jsonb)
           and m.metadata->'outbound_attempt'->>'phase'='prepared' for update of c
@@ -59,7 +61,7 @@ export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageIn
           || jsonb_build_object('automation_destination_phone',c.phone_number)
         from contacts c where m.id=$3 and m.organization_id=$2 and exists(select 1 from acquired)
           and c.id=m.contact_id and c.organization_id=m.organization_id
-          and not c.is_blocked and not c.is_anonymized
+          and not c.is_blocked and not c.is_anonymized and not c.force_human
           and m.metadata->'outbound_attempt'->>'phase'='prepared' returning m.id`,
         [id,org,message.id,(ctx.context.contact as { phone_number?: string } | undefined)?.phone_number]);
       if (!rows.length) throw new ApiError(403,"forbidden",undefined,ctx.requestId,"recipient_changed");

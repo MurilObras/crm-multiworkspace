@@ -1,6 +1,6 @@
 /**
  * Zod schemas for webhook-sources e automation-rules (feature Webhooks, Task 12).
- * TRIGGER_EVENTS deve espelhar exatamente os 5 eventos que o motor
+ * TRIGGER_EVENTS deve espelhar os eventos que o motor
  * (`lib/automation/engine.ts` → EXPECTED_ENTITY_KIND) reconhece.
  */
 import { z } from "zod";
@@ -11,6 +11,7 @@ export const TRIGGER_EVENTS = [
   "message.received",
   "lead.tag_added",
   "contact.tag_added",
+  "obra_access.activated",
 ] as const;
 
 export const conditionSchema = z.object({
@@ -79,13 +80,16 @@ export const updateWebhookSourceSchema = createWebhookSourceSchema.partial().ext
   is_active: z.boolean().optional(),
 });
 
-export const createAutomationRuleSchema = z.object({
+const automationRuleBaseSchema = z.object({
   name: z.string().min(1).max(120),
   trigger_event: z.enum(TRIGGER_EVENTS),
   conditions: z.array(conditionSchema).max(10).default([]),
   actions: z.array(actionSchema).min(1).max(10),
 });
-export const updateAutomationRuleSchema = createAutomationRuleSchema.partial().extend({
+export const createAutomationRuleSchema = automationRuleBaseSchema.refine(rule => rule.trigger_event !== "obra_access.activated" ||
+  rule.actions.every(action => action.type === "send_whatsapp_message"),
+  "A confirmação de acesso permite somente mensagem WhatsApp configurada pelo administrador.");
+export const updateAutomationRuleSchema = automationRuleBaseSchema.partial().extend({
   // Zod 4 aplica defaults também dentro de optional(): só ligar a regra não
   // pode transformar conditions ausente em [] e apagar o filtro da compra.
   conditions: z.array(conditionSchema).max(10).optional(),

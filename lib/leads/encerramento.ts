@@ -34,6 +34,8 @@ export interface EncerraDemandaInput {
   desfecho: DesfechoDaDemanda;
   /** OBRIGATÓRIO em `lost` (P-03): perder sem motivo não ensina nada a ninguém. */
   motivo?: string | null;
+  /** Identidade persistente da confirmação externa, gravada no mesmo UPDATE do estágio. */
+  obraAccessReceiptId?: string;
 }
 
 export interface DemandaEncerrada {
@@ -152,16 +154,29 @@ export async function encerraDemanda(
     position_in_stage: nextPosition,
     updated_at: new Date().toISOString(),
   };
+  if (input.obraAccessReceiptId) {
+    patch.source_metadata = {
+      ...((lead as { source_metadata?: Record<string, unknown> }).source_metadata ?? {}),
+      obra_access_receipt_id: input.obraAccessReceiptId,
+    };
+  }
   if (input.desfecho === "lost") patch.lost_reason = input.motivo;
 
-  const { error: updErr } = await supabase
+  let updateQuery = supabase
     .from("crm_leads")
     .update(patch)
     .eq("id", input.leadId)
     .eq("organization_id", ctx.organization_id);
+  // O evento externo só pode ganhar uma oportunidade ainda aberta. Um
+  // fechamento manual concorrente não pode ser sobrescrito por esta confirmação.
+  if (input.obraAccessReceiptId) updateQuery = updateQuery.eq("status", "open");
+  const { data: updated, error: updErr } = await updateQuery.select("id");
 
   if (updErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
+  }
+  if (input.obraAccessReceiptId && !updated?.length) {
+    throw new ApiError(409, "conflict", undefined, ctx.requestId, "Oportunidade já encerrada.");
   }
 
   const { data: fresh } = await supabase
