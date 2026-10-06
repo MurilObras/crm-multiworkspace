@@ -99,3 +99,30 @@ it("não aceita integração de outra organização e RLS não expõe segredos",
     await expect(authenticated.query("select * from obra_access_integrations")).rejects.toMatchObject({ code: "42501" });
   } finally { await authenticated.query("rollback"); authenticated.release(); }
 });
+
+for (const role of ["anon", "authenticated"] as const) {
+  for (const table of ["obra_access_integrations", "obra_access_receipts", "obra_access_links"] as const) {
+    it(`${role} com JWT não lê nem altera ${table} de nenhum workspace`, async () => {
+      // Controle positivo: o serviço tem dados reais da fixture para proteger.
+      expect((await service.query(`select count(*)::int n from ${table} where organization_id=$1`, [org])).rows[0].n).toBeGreaterThan(0);
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        await client.query(`set local role ${role}`);
+        await client.query("select set_config('request.jwt.claims',$1,true)", [JSON.stringify({ sub: actor, role })]);
+        for (const tenant of [org, otherOrg]) {
+          for (const sql of [
+            `select * from ${table} where organization_id=$1`,
+            `update ${table} set organization_id=organization_id where organization_id=$1`,
+            `delete from ${table} where organization_id=$1`,
+            `insert into ${table}(organization_id) values($1)`,
+          ]) {
+            await client.query("savepoint denied_operation");
+            await expect(client.query(sql, [tenant])).rejects.toMatchObject({ code: "42501" });
+            await client.query("rollback to savepoint denied_operation");
+          }
+        }
+      } finally { await client.query("rollback"); client.release(); }
+    });
+  }
+}

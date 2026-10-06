@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 
 type Receipt = {
   id: string; external_event_id: string; product_user_id: string; occurred_at: string;
@@ -46,8 +47,9 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function ObraNoBolsoTab() {
   const t = useT();
+  const idioma = useTagDeIdioma();
   const [state, setState] = React.useState<State | null>(null);
-  const [pipelines, setPipelines] = React.useState<Array<{ id: string; name: string }>>([]);
+  const [funis, setFunis] = React.useState<Array<{ id: string; name: string }>>([]);
   const [pipelineId, setPipelineId] = React.useState("");
   const [secretOnce, setSecretOnce] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -76,7 +78,7 @@ export function ObraNoBolsoTab() {
       if (next.integration) setPipelineId(next.integration.pipeline_id);
     }).catch((error: Error) => toast.error(error.message));
     void api<Array<{ id: string; name: string }>>("/api/v1/pipelines")
-      .then(setPipelines).catch(() => toast.error(t("Funis indisponíveis.")));
+      .then(setFunis).catch(() => toast.error(t("Funis indisponíveis.")));
     return () => { cancelled = true; };
   }, [t, historyUrl]);
 
@@ -168,7 +170,7 @@ export function ObraNoBolsoTab() {
             <Label>{t("Funil de assinaturas")}</Label>
             <Select value={pipelineId} onValueChange={setPipelineId}>
               <SelectTrigger><SelectValue placeholder={t("Selecione o funil")} /></SelectTrigger>
-              <SelectContent>{pipelines.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+              <SelectContent>{funis.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">{t("O funil precisa de uma única etapa ganha chamada “Acesso ativado”.")}</p>
             <Button onClick={create} disabled={!pipelineId || busy}>{t("Criar integração desligada")}</Button>
@@ -180,12 +182,12 @@ export function ObraNoBolsoTab() {
             <div className="flex gap-2">
               <Select value={pipelineId} onValueChange={setPipelineId} disabled={integration.is_active || busy}>
                 <SelectTrigger><SelectValue placeholder={t("Selecione o funil")} /></SelectTrigger>
-                <SelectContent>{pipelines.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                <SelectContent>{funis.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
               </Select>
               <Button variant="secondary" onClick={savePipeline} disabled={integration.is_active || busy || !pipelineId || pipelineId === integration.pipeline_id}>{t("Salvar funil")}</Button>
             </div>
             <p className="text-xs text-muted-foreground">{t("O funil só pode mudar enquanto a conexão estiver inativa e sem eventos recebidos.")}</p>
-            <p>{t("Último evento")}: {integration.last_received_at ? new Date(integration.last_received_at).toLocaleString("pt-BR") : t("Nenhum")}</p>
+            <p>{t("Último evento")}: {integration.last_received_at ? new Date(integration.last_received_at).toLocaleString(idioma) : t("Nenhum")}</p>
             <Label htmlFor="obra-endpoint">{t("Endpoint para o emissor")}</Label>
             <Input id="obra-endpoint" readOnly value={`${typeof window === "undefined" ? "" : window.location.origin}/api/v1/webhooks/obra-no-bolso/${integration.id}`} />
             <p>{t("Envie JSON v1 com headers")} <code>X-Obra-Timestamp</code> {t("e")} <code>X-Obra-Signature</code>. {t("A assinatura é HMAC-SHA256 dos bytes")} <code>timestamp.corpo</code>.</p>
@@ -222,7 +224,7 @@ export function ObraNoBolsoTab() {
         {state.rejections.length > 0 && <div className="rounded-md border border-border p-3 text-sm">
           <strong>{t("Rejeições técnicas recentes")}</strong>
           {state.rejections.map((item, index) => <p key={`${item.created_at}-${index}`}>
-            {new Date(item.created_at).toLocaleString("pt-BR")} · {item.reason}
+            {new Date(item.created_at).toLocaleString(idioma)} · {item.reason}
           </p>)}
         </div>}
         {state.receipts.length === 0 ? <p className="text-sm text-muted-foreground">{t("Nenhum evento identificado recebido.")}</p> :
@@ -233,7 +235,7 @@ export function ObraNoBolsoTab() {
                 <span>{receipt.status === "pending" ? t("Pendente de conferência") : receipt.status === "processed" ? t("Processado") : receipt.status === "rejected" ? t("Rejeitado") : receipt.status}</span>
               </div>
               <p>{receipt.email} · {receipt.phone ?? t("Telefone inválido")} · {receipt.plan}</p>
-              <p className="text-muted-foreground">{new Date(receipt.created_at).toLocaleString("pt-BR")}{receipt.reason ? ` · ${t(reasons[receipt.reason] ?? receipt.reason)}` : ""}</p>
+              <p className="text-muted-foreground">{new Date(receipt.created_at).toLocaleString(idioma)}{receipt.reason ? ` · ${t(reasons[receipt.reason] ?? receipt.reason)}` : ""}</p>
               {receipt.status === "pending" && <Button variant="secondary" onClick={() => {
                 setPending(receipt); setSearch(receipt.phone ?? receipt.email ?? ""); setContacts([]);
                 setContactId(""); setLeadId(""); setLeads([]);
