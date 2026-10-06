@@ -50,7 +50,7 @@ test.beforeAll(async () => {
   if (memberError) throw new Error(`seed membership: ${memberError.message}`);
 });
 
-test("recuperar conta B no navegador logado em A preserva a senha de A", async ({ page, baseURL }) => {
+test("recuperar conta B no navegador logado em A preserva a senha de A", async ({ page, baseURL }, testInfo) => {
   test.setTimeout(120_000);
 
   await page.goto("/login");
@@ -72,6 +72,8 @@ test("recuperar conta B no navegador logado em A preserva a senha de A", async (
   await page.getByLabel("Confirmar nova senha").fill(targetNewPassword);
   await page.getByRole("button", { name: "Definir nova senha" }).click();
   await expect(page).toHaveURL(/\/login\?reset=success/);
+  await expect(page.getByText("Senha redefinida com sucesso. Entre com a nova senha.")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("recuperacao-conta-correta.png"), fullPage: true });
 
   await page.getByLabel("Email").fill(ownerEmail);
   await page.getByLabel("Senha").fill(ownerPassword);

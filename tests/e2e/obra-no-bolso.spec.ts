@@ -58,7 +58,7 @@ test.afterAll(async () => {
   } finally { await db.end(); }
 });
 
-test("admin configura inativa, encontra pendência antiga e confirma uma única oportunidade sem enviar", async ({ page }) => {
+test("admin configura inativa, encontra pendência antiga e confirma uma única oportunidade sem enviar", async ({ page }, testInfo) => {
   test.setTimeout(180_000);
   await loginComoAdmin(page, creds);
   await page.goto("/app/webhooks");
@@ -123,4 +123,7 @@ test("admin configura inativa, encontra pendência antiga e confirma uma única 
   expect((await db.query("select count(*)::int n from event_log where organization_id=$1 and event_type='obra_access.activated' and entity_id=$2", [creds.org_id, lead])).rows[0].n).toBe(1);
   expect((await db.query("select count(*)::int n from messages where organization_id=$1 and contact_id=$2 and direction='outbound'", [creds.org_id, contact])).rows[0].n).toBe(0);
   expect((await db.query("select metadata from api_audit_log where action='obra_access.manual_link' and resource_id=$1", [pending.receipt_id])).rows).toHaveLength(1);
+  await expect(review).toHaveCount(0);
+  await expect(page.getByText(/^Processados:\s*1/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("obra-acesso-confirmado.png"), fullPage: true });
 });

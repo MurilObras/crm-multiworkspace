@@ -840,6 +840,17 @@ jobs:
           # ver o comentário do passo de build: vazio NÃO desliga.
           SENTRY_DSN: "off"
 
+      - name: Evidências visuais de recuperação e Obra no Bolso
+        if: always() && matrix.parte == 1
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidencia-recuperacao-obra-no-bolso
+          path: |
+            test-results/**/recuperacao-conta-correta.png
+            test-results/**/obra-acesso-confirmado.png
+          if-no-files-found: error
+          retention-days: 7
+
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
