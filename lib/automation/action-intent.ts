@@ -70,7 +70,7 @@ export async function acquireActionIntent(db: Queryable, ctx: Pick<ActionCtx,"or
 export async function finishActionIntent(db: Queryable, org: string, id: string, result: ActionResultDetail) {
   // Erros livres e texto gerado não são copiados para o histórico durável.
   const reason = result.detail?.reason ?? result.detail?.error_code ?? result.error;
-  const knownReasons = ["no_contact", "no_phone", "contact_blocked", "contact_anonymized", "consent_declined",
+  const knownReasons = ["no_contact", "no_phone", "contact_blocked", "contact_anonymized", "consent_declined", "human_handoff",
     "missing_config", "invalid_config", "flow_not_active", "live_enrollment_exists", "sem_agente_publicado", "ia_indisponivel",
     "recipient_changed", "awaiting_processing", "fora_da_janela_de_envio", "daily_limit", "outbound_delivery_uncertain",
     "template_not_found", "template_not_approved", "template_lookup_failed", "template_missing_values", "template_invalid_values", "outbound_session_unavailable"];

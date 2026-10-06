@@ -28,6 +28,15 @@ export function plannedMessageContent(rules: Json): Json[] {
 interface AutomationPlanExport { event_id:string; created_at:string; redacted_at:string|null; messages:Json[] }
 interface AutomationRunExport { id:string; event_id:string|null; rule_identity:string|null; status:string; execution_state:string|null; plan_redacted_at:string|null }
 
+export interface ObraAccessExport {
+  id: string; external_event_id: string; product_user_id: string;
+  name: string | null; email: string | null; phone: string | null;
+  plan: string; modality: "trial" | "paid"; provider: string | null;
+  user_status: string; is_new_user: boolean; status: string; reason: string | null;
+  occurred_at: string; user_created_at: string; trial_ends_at: string | null;
+  created_at: string; processed_at: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -219,6 +228,7 @@ export interface ExportPayload {
   audit_log_extract: AuditRow[];
   automation_plans?: AutomationPlanExport[];
   automation_runs?: AutomationRunExport[];
+  obra_access_receipts?: ObraAccessExport[];
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +602,22 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // 0229: dados do acesso ligados ao titular, sem cifra da integração ou assinatura.
+  const obra_access_receipts: ObraAccessExport[] = [];
+  if (contactId) {
+    // Paginação explícita: não truncar o direito de acesso no limite do PostgREST.
+    for (let offset = 0; ; offset += 500) {
+      const { data, error } = await admin.from("obra_access_receipts")
+        .select("id,external_event_id,product_user_id,name,email,phone,plan,modality,provider,user_status,is_new_user,status,reason,occurred_at,user_created_at,trial_ends_at,created_at,processed_at")
+        .eq("organization_id", organizationId).eq("contact_id", contactId)
+        .order("id", { ascending: true }).range(offset, offset + 499);
+      if (error) throw new Error("lgpd_obra_access_unavailable");
+      const rows = (data ?? []) as ObraAccessExport[];
+      obra_access_receipts.push(...rows);
+      if (rows.length < 500) break;
+    }
+  }
+
   // 0224: a mesma âncora durável usada para redigir, sem exportar a regra executável.
   let automation_plans: AutomationPlanExport[] = [];
   let automation_runs: AutomationRunExport[] = [];
@@ -661,6 +687,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     audit_log_extract,
     automation_plans,
     automation_runs,
+    obra_access_receipts,
   };
 }
 
@@ -688,6 +715,7 @@ function emptyPayload(
     appointments: [],
     tasks: [],
     webhook_captures: [],
+    obra_access_receipts: [],
     audit_log_extract: [],
   };
 }

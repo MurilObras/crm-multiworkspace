@@ -1,5 +1,8 @@
 import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
+import { cookies } from "next/headers";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { RECOVERY_CONTEXT_COOKIE, verifyRecoveryContext } from "@/lib/auth/recovery-context";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -14,6 +17,10 @@ export default async function ResetPasswordPage() {
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );
   const t = (texto: string) => traduzir(texto, idioma);
+  const recoveryUserId = verifyRecoveryContext(
+    (await cookies()).get(RECOVERY_CONTEXT_COOKIE)?.value,
+  );
+  const sessionMatchesLink = Boolean(user && recoveryUserId === user.id);
 
   return (
     <div className="space-y-6">
@@ -23,7 +30,16 @@ export default async function ResetPasswordPage() {
           {t("Escolha uma nova senha para sua conta")}
         </p>
       </div>
-      <ResetPasswordForm />
+      {sessionMatchesLink ? (
+        <ResetPasswordForm />
+      ) : (
+        <p className="text-center text-sm text-muted-foreground">
+          {t("Não foi possível vincular o link à sessão atual. Peça um novo link em Recuperar senha.")} {" "}
+          <Link href="/login/forgot" className="underline">
+            {t("Recuperar senha")}
+          </Link>
+        </p>
+      )}
     </div>
   );
 }

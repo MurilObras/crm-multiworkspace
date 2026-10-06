@@ -6,6 +6,11 @@ import { ensureTenantForUser } from "@/lib/auth/provision";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
+import {
+  RECOVERY_CONTEXT_COOKIE,
+  recoveryCookieOptions,
+  signRecoveryContext,
+} from "@/lib/auth/recovery-context";
 
 /**
  * GET /auth/confirm — troca o token do e-mail por uma sessão.
@@ -101,7 +106,27 @@ export async function GET(request: NextRequest) {
   }
 
   if (type === "recovery") {
-    return redirectTo("/login/reset");
+    // O formulário só pode alterar a conta confirmada por ESTE link. Uma
+    // sessão anterior do navegador pode pertencer a outra conta.
+    // Um 302 iniciado no webmail conserva a cadeia cross-site. A nova sessão
+    // Strict precisa de uma navegação iniciada no próprio CRM.
+    const response = new NextResponse(
+      '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="refresh" content="0;url=/login/reset"><title>Continuar</title></head><body><a href="/login/reset">Continuar</a></body></html>',
+      {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+          "Referrer-Policy": "no-referrer",
+          "X-Content-Type-Options": "nosniff",
+        },
+      },
+    );
+    response.cookies.set(
+      RECOVERY_CONTEXT_COOKIE,
+      signRecoveryContext(data.user.id),
+      recoveryCookieOptions(),
+    );
+    return response;
   }
 
   // Foi convidado? Então NÃO ganha organização própria. Sem esta bifurcação,

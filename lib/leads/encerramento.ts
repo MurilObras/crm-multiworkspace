@@ -34,6 +34,10 @@ export interface EncerraDemandaInput {
   desfecho: DesfechoDaDemanda;
   /** OBRIGATÓRIO em `lost` (P-03): perder sem motivo não ensina nada a ninguém. */
   motivo?: string | null;
+  /** Identidade persistente da confirmação externa, gravada no mesmo UPDATE do estágio. */
+  obraAccessReceiptId?: string;
+  /** Associação conciliada: a confirmação externa não acompanha mudanças de identidade. */
+  obraAccessAssociation?: { contactId: string; pipelineId: string };
 }
 
 export interface DemandaEncerrada {
@@ -63,6 +67,8 @@ function actorAuditPayload(actor: Actor): {
  * commit obrigaria a pessoa a repetir uma decisão que ela já tomou. O `status` e
  * o `closed_at` são do trigger `fn_crm_lead_close_on_stage` — não se escreve
  * status à mão aqui, senão passa a haver duas fontes para a mesma verdade.
+ * Confirmação Obra no Bolso exige associação imutável e status aberto no UPDATE;
+ * uma intenção externa não autoriza fechar outra pessoa depois de uma edição.
  *
  * ⚠️ FILTRA `organization_id` EXPLICITAMENTE. As rotas originais confiavam só na
  * RLS do client do usuário; a capacidade da IA usa client service-role, que
@@ -96,6 +102,12 @@ export async function encerraDemanda(
   }
   if (!lead) {
     throw new ApiError(404, "not_found", undefined, ctx.requestId, "Lead não encontrado.");
+  }
+
+  if (input.obraAccessReceiptId && (!input.obraAccessAssociation ||
+    lead.contact_id !== input.obraAccessAssociation.contactId ||
+    lead.pipeline_id !== input.obraAccessAssociation.pipelineId)) {
+    throw new ApiError(409, "conflict", undefined, ctx.requestId, "Associação da oportunidade mudou.");
   }
 
   if ((lead as { status: string }).status === input.desfecho) {
@@ -152,16 +164,38 @@ export async function encerraDemanda(
     position_in_stage: nextPosition,
     updated_at: new Date().toISOString(),
   };
+  if (input.obraAccessReceiptId) {
+    patch.source_metadata = {
+      ...((lead as { source_metadata?: Record<string, unknown> }).source_metadata ?? {}),
+      obra_access_receipt_id: input.obraAccessReceiptId,
+    };
+  }
   if (input.desfecho === "lost") patch.lost_reason = input.motivo;
 
-  const { error: updErr } = await supabase
+  let updateQuery = supabase
     .from("crm_leads")
     .update(patch)
     .eq("id", input.leadId)
     .eq("organization_id", ctx.organization_id);
+  // O evento externo só pode ganhar uma oportunidade ainda aberta. Um
+  // fechamento manual concorrente não pode ser sobrescrito por esta confirmação.
+  if (input.obraAccessReceiptId && input.obraAccessAssociation) {
+    updateQuery = updateQuery.eq("status", "open")
+      .eq("contact_id", input.obraAccessAssociation.contactId)
+      .eq("pipeline_id", input.obraAccessAssociation.pipelineId);
+    // O patch contém uma cópia dos metadados lidos acima. Não sobrescrever
+    // uma edição concorrente: o recebimento é liberado e o retry relê a linha.
+    updateQuery = lead.source_metadata == null
+      ? updateQuery.is("source_metadata", null)
+      : updateQuery.eq("source_metadata", JSON.stringify(lead.source_metadata));
+  }
+  const { data: updated, error: updErr } = await updateQuery.select("id");
 
   if (updErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
+  }
+  if (input.obraAccessReceiptId && !updated?.length) {
+    throw new ApiError(409, "conflict", undefined, ctx.requestId, "Oportunidade encerrada ou alterada durante a confirmação.");
   }
 
   const { data: fresh } = await supabase
