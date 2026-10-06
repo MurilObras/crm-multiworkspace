@@ -38,6 +38,12 @@ describe("checarGuardasDeContato", () => {
     expect(r).toEqual({ ok: false, reason: "no_phone" });
   });
 
+  it("passagem para humano bloqueia mesmo com consentimento", () => {
+    expect(checarGuardasDeContato(ctxComContato({ id: "c1", force_human: true,
+      phone_number: "+5511999999999", consent: { marketing: { granted_at: "2026-10-05" } } })))
+      .toEqual({ ok: false, reason: "human_handoff" });
+  });
+
   /**
    * ⚠️ OS TRÊS CASOS ABAIXO SÃO O CONTRÁRIO DO QUE A PRIMEIRA VERSÃO AFIRMAVA,
    * e a razão está medida no cabeçalho de `guarda-do-contato.ts`: o DEFAULT da

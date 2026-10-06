@@ -29,6 +29,10 @@ describe("contrato Obra no Bolso", () => {
     expect(validateAccessEvent(event({ modality: "paid", provider: "asaas", is_new_user: false,
       trial_active: false, trial_ends_at: null }), now)).toMatchObject({ ok: false, reason: "paid_user_not_eligible" });
   });
+  it("não aceita ativação Asaas rotulada como teste grátis", () => {
+    expect(validateAccessEvent(event({ provider: "Asaas", modality: "trial" }), now))
+      .toMatchObject({ ok: false, reason: "paid_user_not_eligible" });
+  });
   it("rejeita trial vencido ou inativo", () => {
     expect(validateAccessEvent(event({ trial_ends_at: "2026-10-05T17:00:00.000Z" }), now))
       .toMatchObject({ ok: false, reason: "trial_not_active" });

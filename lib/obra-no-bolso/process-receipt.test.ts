@@ -9,9 +9,12 @@ const org = "11111111-1111-4111-8111-111111111111";
 const integration = "22222222-2222-4222-8222-222222222222";
 const receipt = "33333333-3333-4333-8333-333333333333";
 const lead = "44444444-4444-4444-8444-444444444444";
+const contact = "55555555-5555-4555-8555-555555555555";
+const pipeline = "66666666-6666-4666-8666-666666666666";
 function admin(claimStatus = "claimed") {
   const rpc = vi.fn(async (name: string) => {
-    if (name === "fn_claim_obra_access") return { data: { status: claimStatus, lead_id: lead }, error: null };
+    if (name === "fn_claim_obra_access") return { data: { status: claimStatus, lead_id: lead,
+      contact_id: contact, pipeline_id: pipeline }, error: null };
     if (name === "fn_finish_obra_access") return { data: { status: "processed" }, error: null };
     return { data: null, error: null };
   });
@@ -26,7 +29,8 @@ describe("fechamento de recebimento", () => {
       .toEqual({ status: "processed", receipt_id: receipt });
     expect(mock.close).toHaveBeenCalledWith(a.client,
       expect.objectContaining({ organization_id: org, actor: { type: "webhook_source", id: integration } }),
-      { leadId: lead, desfecho: "won", obraAccessReceiptId: receipt });
+      { leadId: lead, desfecho: "won", obraAccessReceiptId: receipt,
+        obraAccessAssociation: { contactId: contact, pipelineId: pipeline } });
     expect(a.rpc.mock.calls.map(call => call[0])).toEqual(["fn_claim_obra_access", "fn_finish_obra_access"]);
   });
   it("não fecha de novo quando claim encontra evento processado", async () => {

@@ -19845,6 +19845,13 @@ begin
     return jsonb_build_object('status','integration_inactive');
   end if;
   select * into l from public.crm_leads where organization_id=p_organization_id and id=r.lead_id;
+  if found and (l.contact_id is distinct from r.contact_id or not exists(
+      select 1 from public.contacts c where c.organization_id=p_organization_id and c.id=r.contact_id
+        and c.is_merged_into is null and not c.is_anonymized)) then
+    update public.obra_access_receipts set status='pending',reason='contact_identity_changed',claimed_at=null
+      where id=r.id;
+    return jsonb_build_object('status','pending');
+  end if;
   if not found or l.pipeline_id is distinct from
       (select pipeline_id from public.obra_access_integrations where organization_id=p_organization_id and id=r.integration_id)
     or (l.status<>'open' and l.source_metadata->>'obra_access_receipt_id' is distinct from r.id::text) then
@@ -19861,7 +19868,8 @@ begin
     return jsonb_build_object('status','pending');
   end if;
   update public.obra_access_receipts set status='processing',claimed_at=now() where id=r.id;
-  return jsonb_build_object('status','claimed','lead_id',r.lead_id);
+  return jsonb_build_object('status','claimed','lead_id',r.lead_id,
+    'contact_id',r.contact_id,'pipeline_id',l.pipeline_id);
 end $$;
 revoke execute on function public.fn_claim_obra_access(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.fn_claim_obra_access(uuid,uuid) to service_role;
@@ -19876,7 +19884,11 @@ begin
   if r.status='processed' then return jsonb_build_object('status','duplicate'); end if;
   if r.status<>'processing' then return jsonb_build_object('status','not_claimed'); end if;
   select * into l from public.crm_leads where organization_id=p_organization_id and id=r.lead_id;
-  if not found or l.status<>'won' or l.source_metadata->>'obra_access_receipt_id' is distinct from r.id::text then
+  if not found or l.status<>'won' or l.source_metadata->>'obra_access_receipt_id' is distinct from r.id::text
+    or l.contact_id is distinct from r.contact_id or l.pipeline_id is distinct from
+      (select pipeline_id from public.obra_access_integrations where organization_id=p_organization_id and id=r.integration_id)
+    or not exists(select 1 from public.contacts c where c.organization_id=p_organization_id
+      and c.id=r.contact_id and c.is_merged_into is null and not c.is_anonymized) then
     return jsonb_build_object('status','closure_unconfirmed');
   end if;
   v_event := public.emit_event('obra_access.activated','crm_lead',r.lead_id,
@@ -19960,5 +19972,106 @@ begin
 end $$;
 revoke execute on function public.fn_manual_link_obra_access(uuid,uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
 grant execute on function public.fn_manual_link_obra_access(uuid,uuid,uuid,uuid,uuid,uuid) to service_role;
+
+-- Uma intenção congelada não autoriza envio para outra pessoa nem após pausa.
+-- Usada novamente imediatamente antes de adquirir o transporte do WhatsApp.
+create or replace function public.fn_obra_access_send_live(
+  p_organization_id uuid,p_event_id uuid,p_contact_id uuid,p_rule_id uuid
+) returns boolean language sql volatile security invoker set search_path=public,pg_temp as $$
+  select exists(select 1 from public.obra_access_receipts r
+    join public.obra_access_integrations i on i.organization_id=r.organization_id and i.id=r.integration_id
+    join public.crm_leads l on l.organization_id=r.organization_id and l.id=r.lead_id
+    join public.contacts c on c.organization_id=r.organization_id and c.id=r.contact_id
+    join public.automation_rules a on a.organization_id=r.organization_id and a.id=p_rule_id
+    where r.organization_id=p_organization_id and r.event_log_id=p_event_id and r.status='processed'
+      and r.contact_id=p_contact_id and l.contact_id=r.contact_id and l.pipeline_id=i.pipeline_id
+      and l.status='won' and l.source_metadata->>'obra_access_receipt_id'=r.id::text
+      and c.is_merged_into is null and not c.is_anonymized
+      and i.is_active and a.is_active and a.trigger_event='obra_access.activated');
+$$;
+revoke execute on function public.fn_obra_access_send_live(uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_obra_access_send_live(uuid,uuid,uuid,uuid) to service_role;
+
+-- Agregação no banco: o limite de linhas da API não pode truncar as métricas.
+create or replace function public.fn_obra_access_counts(p_organization_id uuid,p_integration_id uuid)
+returns jsonb language sql stable security invoker set search_path=public,pg_temp as $$
+  select jsonb_build_object(
+    'processed',count(*) filter(where status='processed'),
+    'trial',count(*) filter(where status='processed' and modality='trial'),
+    'paid',count(*) filter(where status='processed' and modality='paid'),
+    'pending',count(*) filter(where status='pending'),
+    'duplicates',coalesce(sum(duplicate_count),0),
+    'rejected',coalesce((select rejected_count from public.obra_access_integrations
+      where organization_id=p_organization_id and id=p_integration_id),0))
+  from public.obra_access_receipts where organization_id=p_organization_id and integration_id=p_integration_id;
+$$;
+revoke execute on function public.fn_obra_access_counts(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_obra_access_counts(uuid,uuid) to service_role;
+
+-- Fecha a janela entre claim e UPDATE: o próprio banco valida a associação,
+-- a disponibilidade do contato e a etapa antes de gravar a marca da conversão.
+create or replace function public.fn_guard_obra_access_closure()
+returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
+declare r public.obra_access_receipts; v_contact uuid;
+begin
+  if new.source_metadata->>'obra_access_receipt_id' is null or
+    new.source_metadata->>'obra_access_receipt_id' is not distinct from old.source_metadata->>'obra_access_receipt_id' then
+    return new;
+  end if;
+  select * into r from public.obra_access_receipts where organization_id=new.organization_id
+    and id::text=new.source_metadata->>'obra_access_receipt_id';
+  if not found or r.status<>'processing' or old.status<>'open' or r.lead_id<>new.id
+    or r.contact_id is distinct from new.contact_id or not exists(
+      select 1 from public.obra_access_integrations i where i.organization_id=new.organization_id
+        and i.id=r.integration_id and i.pipeline_id=new.pipeline_id and i.is_active)
+    or not exists(select 1 from public.crm_stages st where st.organization_id=new.organization_id
+      and st.id=new.stage_id and st.pipeline_id=new.pipeline_id and st.is_won
+      and not st.is_archived and st.name='Acesso ativado') then
+    raise exception 'obra_association_changed' using errcode='23514';
+  end if;
+  select id into v_contact from public.contacts where organization_id=new.organization_id
+    and id=r.contact_id and is_merged_into is null and not is_anonymized for share;
+  if not found then raise exception 'obra_contact_unavailable' using errcode='23514'; end if;
+  return new;
+end $$;
+revoke execute on function public.fn_guard_obra_access_closure() from public,anon,authenticated;
+grant execute on function public.fn_guard_obra_access_closure() to service_role;
+drop trigger if exists tr_guard_obra_access_closure on public.crm_leads;
+create trigger tr_guard_obra_access_closure before update of source_metadata,stage_id on public.crm_leads
+  for each row execute function public.fn_guard_obra_access_closure();
+
+-- O novo histórico acompanha a anonimização canônica do contato. Identidades
+-- técnicas do evento/vínculo ficam para deduplicação; dados de contato não.
+create or replace function public.fn_guard_obra_receipt_privacy()
+returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_anonymous boolean;
+begin
+  if new.contact_id is not null then
+    select is_anonymized into v_anonymous from public.contacts
+      where organization_id=new.organization_id and id=new.contact_id for share;
+    if coalesce(v_anonymous,true) then new.phone:=null; new.name:=null; new.email:=null; end if;
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_guard_obra_receipt_privacy() from public,anon,authenticated;
+grant execute on function public.fn_guard_obra_receipt_privacy() to service_role;
+drop trigger if exists tr_guard_obra_receipt_privacy on public.obra_access_receipts;
+create trigger tr_guard_obra_receipt_privacy before insert or update on public.obra_access_receipts
+  for each row execute function public.fn_guard_obra_receipt_privacy();
+
+create or replace function public.fn_redact_contact_obra_receipts()
+returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+  if new.is_anonymized and not old.is_anonymized then
+    update public.obra_access_receipts set phone=null,name=null,email=null
+      where organization_id=new.organization_id and contact_id=new.id;
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_redact_contact_obra_receipts() from public,anon,authenticated;
+grant execute on function public.fn_redact_contact_obra_receipts() to service_role;
+drop trigger if exists tr_redact_contact_obra_receipts on public.contacts;
+create trigger tr_redact_contact_obra_receipts after update of is_anonymized on public.contacts
+  for each row execute function public.fn_redact_contact_obra_receipts();
 
 notify pgrst,'reload schema';

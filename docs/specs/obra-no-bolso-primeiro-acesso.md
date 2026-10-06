@@ -61,6 +61,7 @@ deve estar no futuro no momento da recepção. Para `paid`, `user_status` deve
 ser `active`, `is_new_user` deve ser `true`, `trial_active` deve ser `false` e
 `trial_ends_at` deve ser `null`. O provedor é contexto, não autorização. Campos
 extras são rejeitados, inclusive qualquer detalhe de cartão ou pagamento.
+Para o provedor Asaas, o contrato aceita somente `paid`; `trial` é rejeitado.
 
 ## Efeitos e respostas
 
@@ -76,8 +77,15 @@ Uma associação segura fecha a oportunidade pela regra compartilhada
 As regras são criadas pausadas, podem filtrar `event.modality` (`trial`/`paid`)
 e aceitam somente ação de mensagem WhatsApp. O motor existente verifica recusa,
 bloqueio, passagem para humano, janela, limite e intenção durável antes do envio.
+O destinatário permanece vinculado ao contato conciliado. Uma mudança de contato,
+funil ou anonimização impede a confirmação/envio. Pausar a integração ou a regra
+também bloqueia mensagens preparadas que ainda não iniciaram o transporte.
 
 Respostas possíveis: `processed`, `pending`, `duplicate`, `in_progress`;
 422 para evento inelegível, 401 para assinatura inválida, 409 para ID repetido
 com conteúdo diferente e 503 para falha transitória. Em 503, reenvie o mesmo
 evento. Nenhum webhook Stripe ou Asaas pertence ao CRM.
+`in_progress` ainda não é confirmação final: reenvie o evento após dois minutos
+com o mesmo corpo e uma nova assinatura/timestamp, até `processed`, `pending` ou
+`duplicate` com estado original final. O administrador também pode retomar um
+recebimento interrompido no histórico; o lease impede disputa com processamento ativo.

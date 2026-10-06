@@ -10,7 +10,7 @@ import { useT } from "@/hooks/i18n/useT";
 
 type Receipt = {
   id: string; external_event_id: string; product_user_id: string; occurred_at: string;
-  name: string; email: string; phone: string | null; plan: string; modality: "trial" | "paid";
+  name: string | null; email: string | null; phone: string | null; plan: string; modality: "trial" | "paid";
   provider: string | null; status: string; reason: string | null;
   contact_id: string | null; lead_id: string | null; duplicate_count: number; created_at: string;
 };
@@ -19,6 +19,7 @@ type State = {
   receipts: Receipt[];
   rejections: Array<{ created_at: string; reason: string }>;
   counts: { processed: number; trial: number; paid: number; pending: number; rejected: number; duplicates: number };
+  pagination: { offset: number; has_more: boolean };
 };
 type Contact = { id: string; name: string | null; email: string | null; phone_number: string | null };
 type Lead = { id: string; title: string };
@@ -28,6 +29,7 @@ const reasons: Record<string, string> = {
   contact_not_found: "Contato não encontrado",
   multiple_contacts: "Mais de um contato possível",
   contact_identity_conflict: "Telefone e e-mail apontam para contatos diferentes",
+  contact_identity_changed: "Contato da oportunidade mudou ou ficou indisponível",
   open_lead_not_found: "Oportunidade aberta não encontrada no funil",
   multiple_open_leads: "Mais de uma oportunidade aberta",
   crm_identity_already_linked: "Contato ou oportunidade já vinculados",
@@ -55,22 +57,28 @@ export function ObraNoBolsoTab() {
   const [contactId, setContactId] = React.useState("");
   const [leads, setLeads] = React.useState<Lead[]>([]);
   const [leadId, setLeadId] = React.useState("");
+  const [historyOffset, setHistoryOffset] = React.useState(0);
+  const [historyStatus, setHistoryStatus] = React.useState("all");
+  const historyUrl = `${root}?offset=${historyOffset}&status=${historyStatus}`;
 
   const refresh = React.useCallback(async () => {
     try {
-      const next = await api<State>(root);
+      const next = await api<State>(historyUrl);
       setState(next);
       if (next.integration) setPipelineId(next.integration.pipeline_id);
     } catch (error) { toast.error((error as Error).message); }
-  }, []);
+  }, [historyUrl]);
   React.useEffect(() => {
-    void api<State>(root).then(next => {
+    let cancelled = false;
+    void api<State>(historyUrl).then(next => {
+      if (cancelled) return;
       setState(next);
       if (next.integration) setPipelineId(next.integration.pipeline_id);
     }).catch((error: Error) => toast.error(error.message));
     void api<Array<{ id: string; name: string }>>("/api/v1/pipelines")
       .then(setPipelines).catch(() => toast.error(t("Funis indisponíveis.")));
-  }, [t]);
+    return () => { cancelled = true; };
+  }, [t, historyUrl]);
 
   const create = async () => {
     if (!pipelineId) return;
@@ -128,10 +136,11 @@ export function ObraNoBolsoTab() {
     if (!pending || !contactId || !leadId) return;
     setBusy(true);
     try {
-      await api(`${root}/receipts/${pending.id}/associate`, {
+      const result = await api<{ status: string }>(`${root}/receipts/${pending.id}/associate`, {
         method: "POST", body: JSON.stringify({ contact_id: contactId, lead_id: leadId }),
       });
-      toast.success(t("Acesso confirmado e oportunidade encerrada."));
+      if (result.status === "processed") toast.success(t("Acesso confirmado e oportunidade encerrada."));
+      else toast.info(t("Associação salva; confira o estado da conversão no histórico."));
       setPending(null); await refresh();
     } catch (error) { toast.error((error as Error).message); await refresh(); }
     finally { setBusy(false); }
@@ -202,6 +211,14 @@ export function ObraNoBolsoTab() {
           <p>{t("Duplicados")}: <strong>{state.counts.duplicates}</strong></p>
         </div>
         <Button variant="secondary" onClick={() => void refresh()}>{t("Atualizar histórico")}</Button>
+        <Select value={historyStatus} onValueChange={value => { setHistoryStatus(value); setHistoryOffset(0); }}>
+          <SelectTrigger aria-label={t("Filtrar eventos")}><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t("Todos")}</SelectItem>
+            <SelectItem value="pending">{t("Pendentes")}</SelectItem>
+            <SelectItem value="ready">{t("Retomar confirmação")}</SelectItem>
+          </SelectContent>
+        </Select>
         {state.rejections.length > 0 && <div className="rounded-md border border-border p-3 text-sm">
           <strong>{t("Rejeições técnicas recentes")}</strong>
           {state.rejections.map((item, index) => <p key={`${item.created_at}-${index}`}>
@@ -212,19 +229,23 @@ export function ObraNoBolsoTab() {
           <div className="space-y-2">{state.receipts.map(receipt => (
             <div key={receipt.id} className="rounded-md border border-border p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <strong>{receipt.name} · {receipt.modality === "trial" ? t("Teste grátis") : t("Acesso pago")}</strong>
+                <strong>{receipt.name ?? t("Contato anonimizado")} · {receipt.modality === "trial" ? t("Teste grátis") : t("Acesso pago")}</strong>
                 <span>{receipt.status === "pending" ? t("Pendente de conferência") : receipt.status === "processed" ? t("Processado") : receipt.status === "rejected" ? t("Rejeitado") : receipt.status}</span>
               </div>
               <p>{receipt.email} · {receipt.phone ?? t("Telefone inválido")} · {receipt.plan}</p>
               <p className="text-muted-foreground">{new Date(receipt.created_at).toLocaleString("pt-BR")}{receipt.reason ? ` · ${t(reasons[receipt.reason] ?? receipt.reason)}` : ""}</p>
               {receipt.status === "pending" && <Button variant="secondary" onClick={() => {
-                setPending(receipt); setSearch(receipt.phone ?? receipt.email); setContacts([]);
+                setPending(receipt); setSearch(receipt.phone ?? receipt.email ?? ""); setContacts([]);
                 setContactId(""); setLeadId(""); setLeads([]);
               }}>{t("Conferir associação")}</Button>}
-              {receipt.status === "ready" && <Button variant="secondary" disabled={busy}
+              {["ready", "processing"].includes(receipt.status) && <Button variant="secondary" disabled={busy}
                 onClick={() => void retry(receipt.id)}>{t("Retomar confirmação")}</Button>}
             </div>
           ))}</div>}
+        <div className="flex gap-2">
+          <Button variant="secondary" disabled={historyOffset === 0} onClick={() => setHistoryOffset(Math.max(0, historyOffset - 50))}>{t("Página anterior")}</Button>
+          <Button variant="secondary" disabled={!state.pagination.has_more} onClick={() => setHistoryOffset(historyOffset + 50)}>{t("Próxima página")}</Button>
+        </div>
       </section>
 
       {pending && <section className="space-y-3 rounded-md border border-border p-4" aria-label={t("Conferir evento pendente")}>

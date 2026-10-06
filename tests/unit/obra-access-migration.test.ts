@@ -39,7 +39,7 @@ beforeAll(async () => {
     create table contacts(id uuid primary key, organization_id uuid, phone_number text,
       email_normalized text, is_merged_into uuid, is_anonymized boolean default false);
     create table crm_leads(id uuid primary key, organization_id uuid, pipeline_id uuid,
-      contact_id uuid, status text default 'open', source_metadata jsonb default '{}');
+      contact_id uuid, status text default 'open', source_metadata jsonb default '{}', stage_id uuid);
     create table crm_stages(id uuid primary key, organization_id uuid, pipeline_id uuid,
       name text, is_won boolean, is_archived boolean default false);
     create table event_log(id uuid primary key default gen_random_uuid(), organization_id uuid,
@@ -48,7 +48,8 @@ beforeAll(async () => {
       actor_user_id uuid, action text, resource_type text, resource_id uuid, request_id text, metadata jsonb);
     create table user_organizations(user_id uuid, organization_id uuid, role text,
       revoked_at timestamptz, accepted_at timestamptz);
-    create table automation_rules(organization_id uuid, trigger_event text);
+    create table automation_rules(organization_id uuid, trigger_event text,
+      id uuid default gen_random_uuid(), is_active boolean default false);
     create function fn_role_at_least(uuid,text) returns boolean language sql as $$ select false $$;
     create function fn_is_platform_admin() returns boolean language sql as $$ select false $$;
     alter table automation_rules enable row level security;
@@ -93,7 +94,7 @@ it("reenvios, claim, fechamento e falha posterior preservam exatamente uma conve
   const receiptId = receipts[0]!.receipt_id;
   expect((await result("select fn_claim_obra_access($1,$2) result", [org, receiptId])).status).toBe("claimed");
   expect((await result("select fn_finish_obra_access($1,$2) result", [org, receiptId])).status).toBe("closure_unconfirmed");
-  await db.query("update crm_leads set status='won',source_metadata=jsonb_build_object('obra_access_receipt_id',$1::text) where id=$2", [receiptId, o.lead]);
+  await db.query("update crm_leads set status='won',source_metadata=jsonb_build_object('obra_access_receipt_id',$1::text),stage_id=$3 where id=$2", [receiptId, o.lead, wonStage]);
   expect((await result("select fn_finish_obra_access($1,$2) result", [org, receiptId])).status).toBe("processed");
   expect((await result("select fn_finish_obra_access($1,$2) result", [org, receiptId])).status).toBe("duplicate");
   expect((await db.query<{ n: number }>("select count(*)::int n from event_log where event_type='obra_access.activated' and entity_id=$1", [o.lead])).rows[0]!.n).toBe(1);
@@ -127,6 +128,93 @@ it("se a oportunidade mudou antes do fechamento, pendência pode ser reassociada
   expect((await db.query<{ lead_id: string }>("select lead_id from obra_access_links where receipt_id=$1", [first.receipt_id])).rows[0]!.lead_id).toBe(replacement);
 });
 
+it("mudança de contato, merge e anonimização impedem o claim", async () => {
+  for (const change of ["contact", "merge", "anonymous"]) {
+    const o = await opportunity(), received = await receive(payload(o.phone, o.email));
+    if (change === "contact") {
+      const other = await opportunity();
+      await db.query("update crm_leads set contact_id=$1 where id=$2", [other.contact, o.lead]);
+    } else if (change === "merge") {
+      await db.query("update contacts set is_merged_into=$1 where id=$2", [randomUUID(), o.contact]);
+    } else {
+      await db.query("update contacts set is_anonymized=true where id=$1", [o.contact]);
+    }
+    expect((await result("select fn_claim_obra_access($1,$2) result", [org, received.receipt_id])).status).toBe("pending");
+    expect((await db.query<{ reason: string }>("select reason from obra_access_receipts where id=$1", [received.receipt_id])).rows[0]!.reason).toBe("contact_identity_changed");
+    expect((await db.query<{ status: string }>("select status from crm_leads where id=$1", [o.lead])).rows[0]!.status).toBe("open");
+  }
+});
+
+it("mudança de contato após claim impede fechamento e emissão da ativação", async () => {
+  const o = await opportunity(), other = await opportunity();
+  const received = await receive(payload(o.phone, o.email));
+  expect(await result("select fn_claim_obra_access($1,$2) result", [org, received.receipt_id]))
+    .toMatchObject({ status: "claimed", contact_id: o.contact, pipeline_id: pipeline });
+  await expect(db.query("update crm_leads set status='won',contact_id=$1,source_metadata=jsonb_build_object('obra_access_receipt_id',$2::text),stage_id=$4 where id=$3",
+    [other.contact, received.receipt_id, o.lead, wonStage])).rejects.toThrow("obra_association_changed");
+  expect((await db.query<{ status: string }>("select status from crm_leads where id=$1", [o.lead])).rows[0]!.status).toBe("open");
+  expect((await result("select fn_finish_obra_access($1,$2) result", [org, received.receipt_id])).status).toBe("closure_unconfirmed");
+  expect((await db.query<{ n: number }>("select count(*)::int n from event_log where entity_id=$1", [o.lead])).rows[0]!.n).toBe(0);
+});
+
+it("envio exige identidade confirmada e integração/regra ainda ativas", async () => {
+  const o = await opportunity(), received = await receive(payload(o.phone, o.email));
+  await result("select fn_claim_obra_access($1,$2) result", [org, received.receipt_id]);
+  await db.query("update crm_leads set status='won',source_metadata=jsonb_build_object('obra_access_receipt_id',$1::text),stage_id=$3 where id=$2", [received.receipt_id, o.lead, wonStage]);
+  await result("select fn_finish_obra_access($1,$2) result", [org, received.receipt_id]);
+  const eventId = (await db.query<{ event_log_id: string }>("select event_log_id from obra_access_receipts where id=$1", [received.receipt_id])).rows[0]!.event_log_id;
+  const ruleId = randomUUID();
+  await db.query("insert into automation_rules(organization_id,trigger_event,id,is_active) values($1,'obra_access.activated',$2,false)", [org, ruleId]);
+  const live = (contact = o.contact) => result("select fn_obra_access_send_live($1,$2,$3,$4) result", [org, eventId, contact, ruleId]);
+  expect(await live()).toBe(false);
+  await db.query("update automation_rules set is_active=true where id=$1", [ruleId]);
+  expect(await live()).toBe(true);
+  expect(await live(randomUUID())).toBe(false);
+  await db.query("update obra_access_integrations set is_active=false where id=$1", [integration]);
+  expect(await live()).toBe(false);
+  await db.query("update obra_access_integrations set is_active=true where id=$1", [integration]);
+  const other = await opportunity();
+  await db.query("update crm_leads set contact_id=$1 where id=$2", [other.contact, o.lead]);
+  expect(await live()).toBe(false);
+});
+
+it.each(["anonymous", "inactive", "stage"])("mudança de %s após claim é bloqueada no UPDATE do banco", async change => {
+  const o = await opportunity(), received = await receive(payload(o.phone, o.email));
+  await result("select fn_claim_obra_access($1,$2) result", [org, received.receipt_id]);
+  if (change === "anonymous") await db.query("update contacts set is_anonymized=true where id=$1", [o.contact]);
+  if (change === "inactive") await db.query("update obra_access_integrations set is_active=false where id=$1", [integration]);
+  try {
+    await expect(db.query("update crm_leads set status='won',source_metadata=jsonb_build_object('obra_access_receipt_id',$1::text),stage_id=$3 where id=$2",
+      [received.receipt_id, o.lead, change === "stage" ? randomUUID() : wonStage])).rejects.toThrow();
+    expect((await db.query<{ status: string }>("select status from crm_leads where id=$1", [o.lead])).rows[0]!.status).toBe("open");
+  } finally {
+    if (change === "inactive") await db.query("update obra_access_integrations set is_active=true where id=$1", [integration]);
+  }
+});
+
+it("anonimização remove dados do contato e impede restauração no histórico", async () => {
+  const o = await opportunity(), received = await receive(payload(o.phone, o.email));
+  await db.query("update contacts set is_anonymized=true where id=$1", [o.contact]);
+  await db.query("update obra_access_receipts set phone=$1,name='Restored',email=$2 where id=$3",
+    [o.phone, o.email, received.receipt_id]);
+  expect((await db.query("select phone,name,email from obra_access_receipts where id=$1", [received.receipt_id])).rows[0])
+    .toEqual({ phone: null, name: null, email: null });
+  expect((await db.query<{ n: number }>("select count(*)::int n from obra_access_links where receipt_id=$1", [received.receipt_id])).rows[0]!.n).toBe(1);
+});
+
+it("contadores incluem mais de mil eventos, sem limite da API", async () => {
+  const before = await result("select fn_obra_access_counts($1,$2) result", [org, integration]);
+  await db.query(`insert into obra_access_receipts(organization_id,integration_id,external_event_id,
+    product_user_id,fingerprint,event_version,occurred_at,user_created_at,plan,modality,user_status,
+    is_new_user,status,duplicate_count)
+    select $1,$2,'stats-'||n,'stats-user-'||n,repeat('a',64),1,now(),now(),'Pro','paid','active',true,'pending',2
+    from generate_series(1,1005) n`, [org, integration]);
+  const after = await result("select fn_obra_access_counts($1,$2) result", [org, integration]);
+  expect(after.pending).toBe(Number(before.pending) + 1005);
+  expect(after.duplicates).toBe(Number(before.duplicates) + 2010);
+  expect(after.processed).toBe(before.processed);
+});
+
 it("bloqueia troca do funil após recebimentos mesmo com conexão desligada", async () => {
   const otherPipeline = randomUUID();
   await db.query("insert into crm_pipelines values($1,$2)", [otherPipeline, org]);
@@ -136,7 +224,7 @@ it("bloqueia troca do funil após recebimentos mesmo com conexão desligada", as
 });
 
 it("RLS reserva as regras do acesso Obra no Bolso ao administrador", async () => {
-  await db.query("insert into automation_rules values($1,'obra_access.activated'),($1,'lead.created')", [org]);
+  await db.query("insert into automation_rules(organization_id,trigger_event) values($1,'obra_access.activated'),($1,'lead.created')", [org]);
   await db.exec("begin; set local role authenticated;");
   try {
     const visible = await db.query<{ trigger_event: string }>("select trigger_event from automation_rules");

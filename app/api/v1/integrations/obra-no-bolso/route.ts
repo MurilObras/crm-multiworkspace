@@ -21,10 +21,15 @@ async function eligiblePipeline(admin: ReturnType<typeof createAdminClient>, org
   return stages?.length === 1 && stages[0]?.name === "Acesso ativado" ? pipeline : null;
 }
 
-export async function GET(): Promise<Response> {
+export async function GET(req: Request): Promise<Response> {
   const requestId = randomUUID();
   const auth = await requireRole("admin", { requestId, resource: "webhook_sources" });
   if (!auth.ok) return auth.response;
+  const params = new URL(req.url).searchParams;
+  const history = z.object({ status: z.enum(["all", "pending", "ready"]), offset: z.coerce.number().int().min(0).max(1_000_000) })
+    .safeParse({ status: params.get("status") ?? "all", offset: params.get("offset") ?? 0 });
+  if (!history.success) return fail("invalid_request", "Filtro de histórico inválido.", 400, { requestId });
+  const { offset, status } = history.data;
   const admin = createAdminClient();
   const orgId = auth.org.orgId;
   const { data: integration, error } = await admin.from("obra_access_integrations")
@@ -32,34 +37,25 @@ export async function GET(): Promise<Response> {
     .eq("organization_id", orgId).maybeSingle();
   if (error) return fail("internal_error", "Consulta indisponível.", 503, { requestId });
   if (!integration) return ok({ integration: null, receipts: [], rejections: [],
-    counts: { processed: 0, trial: 0, paid: 0, pending: 0, rejected: 0, duplicates: 0 } }, { requestId });
-  const { data: receipts, error: receiptsError } = await admin.from("obra_access_receipts")
+    counts: { processed: 0, trial: 0, paid: 0, pending: 0, rejected: 0, duplicates: 0 },
+    pagination: { offset, has_more: false } }, { requestId });
+  let historyQuery = admin.from("obra_access_receipts")
     .select("id,external_event_id,product_user_id,occurred_at,name,email,phone,plan,modality,provider,status,reason,contact_id,lead_id,duplicate_count,created_at,processed_at")
     .eq("organization_id", orgId).eq("integration_id", integration.id)
-    .order("created_at", { ascending: false }).limit(50);
-  const [{ data: all, error: countError }, { data: rejections, error: rejectionError }] = await Promise.all([
-    admin.from("obra_access_receipts").select("status,modality,duplicate_count")
-      .eq("organization_id", orgId).eq("integration_id", integration.id),
+    .order("created_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + 50);
+  if (status !== "all") historyQuery = historyQuery.eq("status", status);
+  const { data: receipts, error: receiptsError } = await historyQuery;
+  const [{ data: counts, error: countError }, { data: rejections, error: rejectionError }] = await Promise.all([
+    admin.rpc("fn_obra_access_counts", { p_organization_id: orgId, p_integration_id: integration.id }),
     admin.from("api_audit_log").select("created_at,metadata")
       .eq("organization_id", orgId).eq("resource_id", integration.id)
       .eq("action", "obra_access.rejected").order("created_at", { ascending: false }).limit(20),
   ]);
   if (receiptsError || countError || rejectionError) return fail("internal_error", "Histórico indisponível.", 503, { requestId });
-  const counts = { processed: 0, trial: 0, paid: 0, pending: 0, rejected: integration.rejected_count,
-    duplicates: 0 };
-  for (const row of all ?? []) {
-    if (row.status === "processed") {
-      counts.processed++;
-      if (row.modality === "trial") counts.trial++;
-      if (row.modality === "paid") counts.paid++;
-    }
-    if (row.status === "pending") counts.pending++;
-    counts.duplicates += row.duplicate_count;
-  }
-  return ok({ integration, receipts: receipts ?? [],
+  return ok({ integration, receipts: (receipts ?? []).slice(0, 50),
     rejections: (rejections ?? []).map(row => ({ created_at: row.created_at,
       reason: (row.metadata as Record<string, unknown> | null)?.reason ?? "invalid_request" })),
-    counts }, { requestId });
+    counts, pagination: { offset, has_more: (receipts?.length ?? 0) > 50 } }, { requestId });
 }
 
 export async function POST(req: Request): Promise<Response> {

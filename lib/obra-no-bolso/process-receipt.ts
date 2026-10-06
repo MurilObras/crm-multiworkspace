@@ -15,7 +15,8 @@ export async function processObraAccessReceipt(admin: SupabaseClient, organizati
       organization_id: organizationId,
       actor: { type: "webhook_source", id: integrationId },
       requestId: randomUUID(),
-    }, { leadId: claim.lead_id as string, desfecho: "won", obraAccessReceiptId: receiptId });
+    }, { leadId: claim.lead_id as string, desfecho: "won", obraAccessReceiptId: receiptId,
+      obraAccessAssociation: { contactId: claim.contact_id as string, pipelineId: claim.pipeline_id as string } });
     if ((lead.source_metadata as Record<string, unknown> | undefined)?.obra_access_receipt_id !== receiptId) {
       throw new Error("closure_identity_mismatch");
     }

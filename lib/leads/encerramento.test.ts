@@ -30,9 +30,11 @@ type Row = Record<string, unknown>;
 function makeDb({
   leads = [],
   stages = [],
+  beforeUpdate,
 }: {
   leads?: Row[];
   stages?: Row[];
+  beforeUpdate?: (rows: Row[]) => void;
 } = {}) {
   const tables: Record<string, Row[]> = {
     crm_leads: leads,
@@ -52,7 +54,6 @@ function makeDb({
 
     const builder = {
       select: () => {
-        operation = "select";
         return builder;
       },
       update: (value: Row) => {
@@ -92,10 +93,13 @@ function makeDb({
         return { data: rows[0] ?? null, error: null };
       },
       then: async (resolve: (value: unknown) => unknown) => {
+        const changed: Row[] = [];
         if (operation === "update") {
           const rows = tables[table] ?? [];
+          beforeUpdate?.(rows);
           for (const row of rows) {
             if (filters.every(([column, value]) => row[column] === value)) {
+              changed.push(row);
               Object.assign(row, patch);
               const stage = stages.find((candidate) => candidate.id === row.stage_id);
               if (stage?.is_won === true) {
@@ -110,7 +114,7 @@ function makeDb({
         } else if (operation === "insert" && insertRow) {
           (tables[table] ??= []).push(insertRow);
         }
-        return resolve({ data: null, error: null });
+        return resolve({ data: operation === "update" ? changed : null, error: null });
       },
     };
 
@@ -235,5 +239,35 @@ describe("encerraDemanda", () => {
     expect(result).toMatchObject({ jaEstava: true, lead });
     expect(db.updates).toEqual([]);
     expect(db.rpcs).toEqual([]);
+  });
+
+  it("confirmação externa recusa contato diferente antes de fechar", async () => {
+    const db = makeDb({ leads: [baseLead({ contact_id: "outro-contato" })], stages: baseStages() });
+    await expect(encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won",
+      obraAccessReceiptId: "recibo", obraAccessAssociation: { contactId: "contato-conciliado", pipelineId: PIPELINE } }))
+      .rejects.toMatchObject({ status: 409 });
+    expect(db.updates).toHaveLength(0);
+    expect(db.tables.crm_leads![0]!.status).toBe("open");
+  });
+
+  it.each(["contact_id", "pipeline_id"])("confirmação externa recusa mudança concorrente de %s", async (field) => {
+    const db = makeDb({ leads: [baseLead({ contact_id: "contato-conciliado" })], stages: baseStages(),
+      beforeUpdate: rows => { rows[0]![field] = "mudou-durante-o-update"; } });
+    await expect(encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won",
+      obraAccessReceiptId: "recibo", obraAccessAssociation: { contactId: "contato-conciliado", pipelineId: PIPELINE } }))
+      .rejects.toMatchObject({ status: 409 });
+    expect(db.tables.crm_leads![0]!.status).toBe("open");
+    expect(db.tables.crm_leads![0]!.stage_id).toBe(OPEN_STAGE);
+  });
+
+  it("confirmação externa preserva histórico e fecha uma vez com associação correta", async () => {
+    const db = makeDb({ leads: [baseLead({ contact_id: "contato-conciliado",
+      source_metadata: { origin: "captacao" } })], stages: baseStages({ name: "Acesso ativado" }) });
+    const input = { leadId: LEAD, desfecho: "won" as const, obraAccessReceiptId: "recibo",
+      obraAccessAssociation: { contactId: "contato-conciliado", pipelineId: PIPELINE } };
+    expect((await encerraDemanda(db.client as never, ctx, input)).lead).toMatchObject({
+      status: "won", source_metadata: { origin: "captacao", obra_access_receipt_id: "recibo" } });
+    expect((await encerraDemanda(db.client as never, ctx, input)).jaEstava).toBe(true);
+    expect(db.updates).toHaveLength(1);
   });
 });

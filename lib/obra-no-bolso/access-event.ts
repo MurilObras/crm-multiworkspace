@@ -39,6 +39,11 @@ export function validateAccessEvent(input: unknown, now = Date.now()):
   if (created > occurred || occurred > now + 5 * 60_000) {
     return { ok: false, reason: "invalid_event_time", event };
   }
+  // O contrato do produto para Asaas é ativação paga de usuário novo.
+  // Provedor continua sendo contexto; nenhum pagamento é consultado pelo CRM.
+  if (event.provider?.toLowerCase() === "asaas" && event.modality !== "paid") {
+    return { ok: false, reason: "paid_user_not_eligible", event };
+  }
   if (event.modality === "trial") {
     if (!event.trial_active || !event.trial_ends_at || Date.parse(event.trial_ends_at) <= now) {
       return { ok: false, reason: "trial_not_active", event };
@@ -54,7 +59,7 @@ export function validateAccessEvent(input: unknown, now = Date.now()):
 /** A assinatura cobre bytes exatos: v1=HMAC_SHA256(timestamp + '.' + raw_body). */
 export function verifyAccessSignature(raw: Buffer, timestamp: string | null, signature: string | null,
   secret: string, now = Date.now()): boolean {
-  if (!secret || !timestamp || !/^\d{10,13}$/.test(timestamp) || !signature || !/^v1=[a-f0-9]{64}$/.test(signature)) return false;
+  if (!secret || !timestamp || !/^(?:\d{10}|\d{13})$/.test(timestamp) || !signature || !/^v1=[a-f0-9]{64}$/.test(signature)) return false;
   const millis = timestamp.length === 10 ? Number(timestamp) * 1000 : Number(timestamp);
   if (!Number.isSafeInteger(millis) || Math.abs(now - millis) > 5 * 60_000) return false;
   const expected = createHmac("sha256", secret).update(timestamp).update(".").update(raw).digest();

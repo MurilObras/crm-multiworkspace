@@ -157,9 +157,10 @@ export async function runAutomationForEvent(
 
   const kiwify = row.payload.kiwify_event_type === "order_approved";
   const obra = row.event_type === "obra_access.activated";
+  let obraContactId: string | null = null;
   if (obra) {
     const { data: receipt, error: receiptError } = await admin.from("obra_access_receipts")
-      .select("id,integration_id,modality,lead_id,status,event_log_id")
+      .select("id,integration_id,modality,contact_id,lead_id,status,event_log_id")
       .eq("organization_id", row.organization_id).eq("event_log_id", row.id).maybeSingle();
     const { data: source } = receipt ? await admin.from("obra_access_integrations")
       .select("is_active").eq("organization_id", row.organization_id)
@@ -168,6 +169,7 @@ export async function runAutomationForEvent(
       receipt.lead_id !== row.entity_id || receipt.modality !== row.payload.modality || !source?.is_active) {
       return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "obra_receipt_not_confirmed" };
     }
+    obraContactId = receipt.contact_id;
   }
   const durableExternal = kiwify || obra;
   const plan = durableExternal ? await readEventPlan<RuleRow>(getRequestPool(),row.organization_id,row.id) : null;
@@ -187,6 +189,9 @@ export async function runAutomationForEvent(
   }
 
   const context = await buildContext(admin, row);
+  if (obra && (!obraContactId || (context.contact as { id?: string } | undefined)?.id !== obraContactId)) {
+    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "obra_recipient_changed" };
+  }
   let linkedRuleIds: Set<string> | null = null;
   // A origem é comprovada no ledger, não pelo nome ou telefone do comprador.
   if (kiwify) {
@@ -249,6 +254,12 @@ export async function runAutomationForEvent(
       }
       const actionCtx = { admin, organizationId: row.organization_id, ruleId: rule.id,
         ruleName: rule.name, event: row, context: durableExternal ? await buildContext(admin, row) : context, requestId: row.id };
+      if (obra) {
+        const { rows } = await getRequestPool().query<{ live: boolean }>(
+          "select fn_obra_access_send_live($1,$2,$3,$4) live",
+          [row.organization_id,row.id,(actionCtx.context.contact as { id?: string } | undefined)?.id ?? null,rule.id]);
+        if (rows[0]?.live !== true) continue;
+      }
       const intentId = durableExternal ? await acquireActionIntent(getRequestPool(), actionCtx, index, action.type,true) : null;
       if (durableExternal && !intentId) {
         const resumed = await resumeQueuedAutomationMessage(actionCtx, index, action.type);

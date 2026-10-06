@@ -50,6 +50,7 @@ export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageIn
           and not exists(select 1 from conversations cv where cv.organization_id=m.organization_id
             and cv.id=m.conversation_id and cv.bot_silenced_until>now())
           and public.fn_automation_run_live($2,$1,c.id)
+          and ($5::text <> 'obra_access.activated' or public.fn_obra_access_send_live($2,$6,c.id,$7))
           and coalesce(c.consent #> '{marketing,declined_at}','null'::jsonb) in ('null'::jsonb,'false'::jsonb,'0'::jsonb,'""'::jsonb)
           and m.metadata->'outbound_attempt'->>'phase'='prepared' for update of c
       ), acquired as (
@@ -63,7 +64,8 @@ export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageIn
           and c.id=m.contact_id and c.organization_id=m.organization_id
           and not c.is_blocked and not c.is_anonymized and not c.force_human
           and m.metadata->'outbound_attempt'->>'phase'='prepared' returning m.id`,
-        [id,org,message.id,(ctx.context.contact as { phone_number?: string } | undefined)?.phone_number]);
+        [id,org,message.id,(ctx.context.contact as { phone_number?: string } | undefined)?.phone_number,
+          ctx.event.event_type,ctx.event.id,ctx.ruleId]);
       if (!rows.length) throw new ApiError(403,"forbidden",undefined,ctx.requestId,"recipient_changed");
     },
     writeAttemptState: async (message, change) => {
