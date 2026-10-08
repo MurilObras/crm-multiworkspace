@@ -75,6 +75,14 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  ...["obra_subscription_states", "obra_subscription_receipts"].map(tabela => ({
+    tabela,
+    razao: "tests/invariants/obra-subscription.test.ts — controles positivos em dois tenants e SET LOCAL ROLE/JWT negam SELECT, INSERT, UPDATE, DELETE e RPC a anon/authenticated; vínculo e fechamento são escopados no serviço.",
+  })),
+  ...["obra_access_integrations", "obra_access_receipts", "obra_access_links"].map(tabela => ({
+    tabela,
+    razao: "tests/invariants/obra-access.test.ts — SET LOCAL ROLE anon/authenticated com JWT nega leitura, inserção, alteração e exclusão próprias e cross-org; service_role lê dados de controle. Tabelas privadas, sem leitura direta no navegador.",
+  })),
   {
     tabela: "kiwify_automation_links",
     razao: "tests/invariants/kiwify-management.test.ts — SET LOCAL ROLE com JWT nega leitura/escrita direta a anon/authenticated; a RPC e FKs compostas recusam regra de outro tenant, enquanto vínculo próprio funciona.",

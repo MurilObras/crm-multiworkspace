@@ -1,0 +1,170 @@
+// @vitest-environment node
+import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { PGlite } from "@electric-sql/pglite";
+import { afterAll, beforeAll, expect, it } from "vitest";
+
+const db = new PGlite();
+const org = randomUUID(), otherOrg = randomUUID(), integration = randomUUID(), pipeline = randomUUID();
+const openStage = randomUUID(), wonStage = randomUUID();
+const secret = new Uint8Array([1, 2, 3]);
+const checked = new Date(Date.now() - 60_000).toISOString();
+const started = new Date(Date.parse(checked) - 96 * 3600_000).toISOString();
+const migration = readFileSync(new URL("../../supabase/migrations/20261008210000_0230_obra_subscription_lifecycle.sql", import.meta.url), "utf8");
+let counter = 0;
+
+async function opportunity() {
+  const n = ++counter, contact = randomUUID(), lead = randomUUID();
+  const phone = `+551199999${String(n).padStart(4, "0")}`, email = `test${n}@example.invalid`;
+  await db.query("insert into contacts(id,organization_id,phone_number,email_normalized) values($1,$2,$3,$4)", [contact, org, phone, email]);
+  await db.query("insert into crm_leads(id,organization_id,pipeline_id,contact_id,stage_id) values($1,$2,$3,$4,$5)", [lead, org, pipeline, contact, openStage]);
+  return { contact, lead, phone, email };
+}
+function payload(o: { phone: string; email: string }, product_user_id = randomUUID()) {
+  return { version: 2, event_type: "subscription_status_checked", event_id: randomUUID(), product_user_id,
+    occurred_at: checked, checked_at: checked, trial_started_at: started, name: "Synthetic", email: o.email, phone: o.phone,
+    status_pagamento: "ativo", em_trial: false, access_enabled: true,
+    trial_ends_at: null, access_expires_at: new Date(Date.parse(checked) + 30 * 86400_000).toISOString() };
+}
+async function receive(event: ReturnType<typeof payload>, options: { fingerprint?: string; org?: string; secret?: Uint8Array } = {}) {
+  return (await db.query<{ result: Record<string, unknown> }>("select fn_receive_obra_subscription($1,$2,$3::jsonb,$4,$5::text[],$6) result",
+    [options.org ?? org, integration, JSON.stringify(event), options.fingerprint ?? "a".repeat(64), [event.phone], options.secret ?? secret])).rows[0]!.result;
+}
+const state = async (user: string) => (await db.query<{ converted_at: string | null; decision: string }>("select * from obra_subscription_states where product_user_id=$1", [user])).rows[0]!;
+const leadStatus = async (id: string) => (await db.query<{ status: string }>("select status from crm_leads where id=$1", [id])).rows[0]!.status;
+
+beforeAll(async () => {
+  await db.exec(`
+    create role anon; create role authenticated; create role service_role;
+    create table organizations(id uuid primary key);
+    create table crm_pipelines(id uuid primary key, organization_id uuid);
+    create table contacts(id uuid primary key, organization_id uuid, phone_number text,
+      email_normalized text, is_merged_into uuid, is_anonymized boolean default false,
+      tags text[] default '{}', updated_at timestamptz default now());
+    create table crm_leads(id uuid primary key, organization_id uuid, pipeline_id uuid,
+      contact_id uuid, status text default 'open', source_metadata jsonb default '{}', stage_id uuid,
+      position_in_stage numeric default 0,updated_at timestamptz default now());
+    create table crm_stages(id uuid primary key, organization_id uuid, pipeline_id uuid,
+      name text, is_won boolean, is_archived boolean default false);
+    create table crm_lead_activities(id uuid primary key default gen_random_uuid(),organization_id uuid,
+      lead_id uuid,contact_id uuid,source_module text,source_id uuid,type text,payload jsonb,metadata jsonb);
+    create table event_log(id uuid primary key default gen_random_uuid(), organization_id uuid,
+      event_type text, entity_kind text, entity_id uuid, payload jsonb);
+    create table api_audit_log(id uuid primary key default gen_random_uuid(), organization_id uuid,
+      actor_user_id uuid, action text, resource_type text, resource_id uuid, request_id text, metadata jsonb);
+    create table user_organizations(user_id uuid, organization_id uuid, role text,
+      revoked_at timestamptz, accepted_at timestamptz);
+    create table automation_rules(organization_id uuid, trigger_event text,
+      id uuid default gen_random_uuid(), is_active boolean default false);
+    create function fn_role_at_least(uuid,text) returns boolean language sql as $$ select false $$;
+    create function fn_is_platform_admin() returns boolean language sql as $$ select false $$;
+    alter table automation_rules enable row level security;
+    create policy automation_rules_test on automation_rules for all to authenticated using(true) with check(true);
+    create function emit_event(text,text,uuid,jsonb,jsonb,uuid) returns uuid language sql as $$ select gen_random_uuid() $$;
+    -- Apenas fixture reduzida: o harness CI exercita o trigger real do baseline.
+    create function test_stage_status() returns trigger language plpgsql as $$ begin
+      if exists(select 1 from crm_stages where id=new.stage_id and is_won) then new.status:='won'; end if;
+      return new; end $$;
+    create trigger test_stage_status before update of stage_id on crm_leads for each row execute function test_stage_status();
+  `);
+  await db.exec(readFileSync(new URL("../../supabase/migrations/20261005190000_0229_obra_no_bolso_access.sql", import.meta.url), "utf8"));
+  await db.exec(migration);
+  await db.query("insert into organizations values($1),($2)", [org, otherOrg]);
+  await db.query("insert into crm_pipelines values($1,$2)", [pipeline, org]);
+  await db.query("insert into crm_stages values($1,$2,$3,'Aberto',false,false),($4,$2,$3,'Acesso ativado',true,false)", [openStage, org, pipeline, wonStage]);
+  await db.query("insert into obra_access_integrations(id,organization_id,pipeline_id,secret_encrypted,is_active,lifecycle_enabled) values($1,$2,$3,$4,true,true)", [integration, org, pipeline, secret]);
+});
+afterAll(async () => db.close());
+
+it("ativo no início do teste mantém oportunidade aberta", async () => {
+  const o = await opportunity(), event = { ...payload(o), event_type: "trial_started", checked_at: started, occurred_at: started };
+  expect(await receive(event)).toMatchObject({ status: "accepted", decision: "trial", event_id: event.event_id });
+  expect(await leadStatus(o.lead)).toBe("open");
+  expect((await state(event.product_user_id)).converted_at).toBeNull();
+});
+
+it("consulta antecipada não gera recibo nem fechamento", async () => {
+  const o = await opportunity(), event = payload(o);
+  event.checked_at = new Date(Date.parse(checked) - 1000).toISOString();
+  expect(await receive(event)).toMatchObject({ status: "invalid_event" });
+  expect(await leadStatus(o.lead)).toBe("open");
+});
+
+it("confirma exatamente após 96 horas uma vez; reenvio e conflito são distintos", async () => {
+  const o = await opportunity(), event = payload(o);
+  expect(await receive(event)).toMatchObject({ status: "accepted", decision: "paid" });
+  expect(await receive(event)).toMatchObject({ status: "duplicate", event_id: event.event_id });
+  expect(await receive(event, { fingerprint: "b".repeat(64) })).toMatchObject({ status: "conflict" });
+  expect(await leadStatus(o.lead)).toBe("won");
+  expect((await db.query<{ n: number }>("select count(*)::int n from crm_lead_activities where lead_id=$1", [o.lead])).rows[0]!.n).toBe(1);
+});
+
+it.each([
+  ["ativo", true, true, "manual"], ["suspenso", true, false, "recover"],
+  ["cancelado", false, false, "recover"], ["suspenso", false, true, "manual"],
+  ["gratis", false, true, "manual"],
+] as const)("%s/trial=%s/acesso=%s -> %s", async (status_pagamento, em_trial, access_enabled, decision) => {
+  const o = await opportunity(), event = { ...payload(o), status_pagamento, em_trial, access_enabled };
+  expect(await receive(event)).toMatchObject({ status: "accepted", decision });
+  expect(await leadStatus(o.lead)).toBe("open");
+});
+
+it("suspensão depois de conversão preserva venda e exige suporte, sem recuperação", async () => {
+  const o = await opportunity(), event = payload(o);
+  await receive(event);
+  const converted = (await state(event.product_user_id)).converted_at;
+  await db.query("update contacts set tags=array['followup_assinatura'] where id=$1", [o.contact]);
+  expect(await receive({ ...event, event_id: randomUUID(), status_pagamento: "suspenso", access_enabled: false,
+    checked_at: new Date(Date.parse(checked) + 1000).toISOString(), occurred_at: new Date(Date.parse(checked) + 1000).toISOString() }))
+    .toMatchObject({ decision: "post_conversion" });
+  expect((await state(event.product_user_id)).converted_at).toEqual(converted);
+  expect(await leadStatus(o.lead)).toBe("won");
+  expect((await db.query<{ tags: string[] }>("select tags from contacts where id=$1", [o.contact])).rows[0]!.tags).toEqual([]);
+});
+
+it("eventos atrasados e mudança do início do teste não sobrescrevem confirmação", async () => {
+  const o = await opportunity(), event = payload(o);
+  await receive(event);
+  expect(await receive({ ...event, event_id: randomUUID(), event_type: "trial_started" }))
+    .toMatchObject({ decision: "ignored", reason: "initial_event_after_snapshot" });
+  expect(await receive({ ...event, event_id: randomUUID(), trial_started_at: new Date(Date.parse(started) - 1000).toISOString() }))
+    .toMatchObject({ decision: "ignored", reason: "trial_start_changed" });
+  expect((await state(event.product_user_id)).decision).toBe("paid");
+});
+
+it("identidade ambígua ou contato já vinculado nunca fecham segunda venda", async () => {
+  const o = await opportunity(), first = payload(o);
+  await receive(first);
+  expect(await receive(payload(o))).toMatchObject({ decision: "manual", reason: "identity_already_linked" });
+  const other = await opportunity();
+  expect(await receive({ ...payload(other), email: o.email })).toMatchObject({ decision: "manual", reason: "contact_identity_conflict" });
+  expect(await leadStatus(other.lead)).toBe("open");
+});
+
+it("organização, segredo e opt-in são checados no banco", async () => {
+  const o = await opportunity(), event = payload(o);
+  expect(await receive(event, { org: otherOrg })).toMatchObject({ status: "configuration_error" });
+  expect(await receive(event, { secret: new Uint8Array([9]) })).toMatchObject({ status: "configuration_error" });
+  await db.query("update obra_access_integrations set is_active=false where id=$1", [integration]);
+  try { expect(await receive(event)).toMatchObject({ status: "configuration_error" }); }
+  finally { await db.query("update obra_access_integrations set is_active=true where id=$1", [integration]); }
+  expect(await leadStatus(o.lead)).toBe("open");
+});
+
+it("modo não pode mudar depois do histórico e migração é idempotente", async () => {
+  await db.query("update obra_access_integrations set is_active=false where id=$1", [integration]);
+  await expect(db.query("update obra_access_integrations set lifecycle_enabled=false where id=$1", [integration])).rejects.toThrow("obra_configuration_locked");
+  await db.exec(migration);
+  await db.query("update obra_access_integrations set is_active=true where id=$1", [integration]);
+  expect((await db.query<{ n: number }>("select count(*)::int n from obra_subscription_states")).rows[0]!.n).toBeGreaterThan(0);
+});
+
+it("anonimização rompe vínculos e não permite restaurar conversão nem mensagens", async () => {
+  const o = await opportunity(), event = payload(o);
+  await receive(event);
+  await db.query("update contacts set is_anonymized=true where id=$1", [o.contact]);
+  const row = (await db.query<{ contact_id: string | null; lead_id: string | null; decision: string }>(
+    "select contact_id,lead_id,decision from obra_subscription_states where product_user_id=$1", [event.product_user_id])).rows[0]!;
+  expect(row).toEqual({ contact_id: null, lead_id: null, decision: "post_conversion" });
+  expect(await receive({ ...event, event_id: randomUUID() })).toMatchObject({ decision: "post_conversion" });
+});

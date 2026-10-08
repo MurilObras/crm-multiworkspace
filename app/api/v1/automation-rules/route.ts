@@ -61,6 +61,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       details: parsed.error.flatten(),
     });
   }
+  if (parsed.data.trigger_event === "obra_access.activated" && activeOrg.role !== "admin") {
+    return fail("forbidden", "Somente administradores configuram a parabenização do produto.", 403, { requestId });
+  }
 
   const referenceError = await validateAutomationReferences(createAdminClient(), activeOrg.orgId, parsed.data.actions);
   if (referenceError) return fail("invalid_request", referenceError, 422, { requestId });

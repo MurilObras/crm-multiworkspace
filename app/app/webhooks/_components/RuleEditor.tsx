@@ -49,7 +49,7 @@ interface CuratedField {
   value: string;
   label: string;
   op: Op;
-  kind?: "stage";
+  kind?: "stage" | "modality";
 }
 
 const LEAD_FIELDS: CuratedField[] = [
@@ -84,6 +84,10 @@ const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   "message.received": MESSAGE_FIELDS,
   "lead.tag_added": [...LEAD_FIELDS, TAG_ADDED_FIELD],
   "contact.tag_added": [TAG_ADDED_FIELD],
+  "obra_access.activated": [
+    { value: "event.modality", label: "Modalidade", op: "eq", kind: "modality" },
+    { value: "event.plan", label: "Plano", op: "eq" },
+  ],
 };
 
 const OP_LABELS: Record<Op, string> = { eq: "é", neq: "não é", contains: "contém" };
@@ -253,6 +257,14 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                         onChange={(e) => updateCondition(idx, { field: e.target.value })}
                         placeholder={t("ex: lead.custom_fields.minha_chave")}
                       />
+                    ) : curated?.kind === "modality" ? (
+                      <Select value={cond.value} onValueChange={(v) => updateCondition(idx, { value: v, op: "eq" })}>
+                        <SelectTrigger className="flex-1 basis-40"><SelectValue placeholder={t("Trial ou paid")} /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="trial">{t("Teste grátis (trial)")}</SelectItem>
+                          <SelectItem value="paid">{t("Acesso pago (paid)")}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     ) : (
                       <Select
                         value={cond.field}
@@ -399,7 +411,9 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                 <SelectValue placeholder={t("Adicionar ação")} />
               </SelectTrigger>
               <SelectContent>
-                {(Object.keys(ACTION_LABELS) as ActionType[]).map((actionType) => (
+                {(Object.keys(ACTION_LABELS) as ActionType[])
+                  .filter((actionType) => triggerEvent !== "obra_access.activated" || actionType === "send_whatsapp_message")
+                  .map((actionType) => (
                   <SelectItem key={actionType} value={actionType}>
                     {t(ACTION_LABELS[actionType])}
                   </SelectItem>

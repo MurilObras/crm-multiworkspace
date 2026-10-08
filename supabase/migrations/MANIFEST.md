@@ -262,6 +262,8 @@ aplica.
 | `20260924120000` | `0227_kiwify_management` | Arquivamento sem exclusão do histórico, Store ID reutilizável, edição atômica e vínculos tenant-aware com automações. Backfill único preserva o universo legado e não recria vínculos removidos ao reaplicar. |
 
 | `20260924130000` | `0228_kiwify_followup_reply` | Resposta cancela enrollment pós-compra usando a proveniência canônica `automation_run_id`. Cobre resposta anterior à inscrição e durante qualquer nó, preservando o fluxo publicado. |
+| `20261005190000` | `0229_obra_no_bolso_access` | Integração Obra no Bolso desligada por padrão; recebimento autenticado, ledger, conciliação conservadora e associação única. Claim e confirmação duráveis permitem retry após falha, e só a confirmação emite evento para automação. |
+| `20261008210000` | `0230_obra_subscription_lifecycle` | Modo v2 opt-in por workspace; início real do teste e consulta somente após 96 horas. Recebimento atômico, deduplicação, vínculo conservador, venda paga fora do teste e suspensão pós-conversão distinta de recuperação. Histórico privado e anonimização. Não ativa mensagens. |
 
 ## Reproducibility
 
