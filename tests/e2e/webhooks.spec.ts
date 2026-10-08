@@ -68,18 +68,24 @@ test("Obra no Bolso distingue o modo 96h e mostra estados sem confundir teste co
   await loginComoAdmin(page, lerCreds());
   let lifecycle = false;
   let saved: Record<string, unknown> | null = null;
+  let savedOutreach: Record<string, unknown> | null = null;
+  const channelId = "2c3f3457-9a52-4fd3-9e51-9e9842ff4c5a";
   const id = "894eb39f-7969-46be-85dc-613070985152";
   const pipelineId = "d3dd3954-3315-4c7d-8ea9-3287384931ed";
   await page.route("**/api/v1/pipelines", route => route.fulfill({ json: { data: [{ id: pipelineId, name: "Assinaturas sintéticas" }] } }));
+  await page.route("**/api/v1/channel-sessions", route => route.fulfill({ json: { data: [{ id: channelId, display_name: "Número sintético" }] } }));
+  await page.route("**/api/v1/ai/followup-flows", route => route.fulfill({ json: { data: [] } }));
   await page.route("**/api/v1/integrations/obra-no-bolso**", async route => {
     if (route.request().method() === "PATCH") {
       saved = route.request().postDataJSON() as Record<string, unknown>;
-      lifecycle = saved.lifecycle_enabled === true;
+      if ("lifecycle_enabled" in saved) lifecycle = saved.lifecycle_enabled === true;
+      if (saved.outreach) savedOutreach = saved.outreach as Record<string, unknown>;
       await route.fulfill({ json: { data: { id, pipeline_id: pipelineId, is_active: false, lifecycle_enabled: lifecycle } } });
       return;
     }
     await route.fulfill({ json: { data: {
       integration: { id, pipeline_id: pipelineId, is_active: false, lifecycle_enabled: lifecycle, last_received_at: null },
+      ...(savedOutreach ? { outreach: savedOutreach } : {}),
       receipts: [], rejections: [], counts: { processed: 0, trial: 0, paid: 0, pending: 0, rejected: 0, duplicates: 0 },
       pagination: { offset: 0, has_more: false }, subscription_pagination: { offset: 0, has_more: false },
       subscriptions: ["trial", "paid", "recover", "manual", "post_conversion"].map((decision, index) => ({
@@ -100,6 +106,14 @@ test("Obra no Bolso distingue o modo 96h e mostra estados sem confundir teste co
   }
   await expect(page.getByText("Inativa", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Ativar conexão", exact: true })).toBeVisible();
+  const activation = page.getByLabel("Assinatura confirmada — mensagem única");
+  await expect(activation).toHaveValue(/Se surgir algum erro ou dúvida, envie uma mensagem por aqui para receber suporte/);
+  await activation.fill("Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte.");
+  await page.getByRole("button", { name: "Salvar mensagens", exact: true }).click();
+  expect(savedOutreach).toMatchObject({ enabled: false, channel_session_id: null,
+    activation_message: "Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte." });
+  await expect(activation).toHaveValue("Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte.");
+  await expect(page.getByRole("button", { name: "Consultar aplicativo novamente" }).first()).toBeDisabled();
   await testInfo.attach("obra-assinaturas-96h", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
 });
 

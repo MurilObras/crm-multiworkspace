@@ -215,6 +215,8 @@ export const AUDIT_ACTIONS = [
   "obra_access.configured",
   "obra_access.enabled",
   "obra_access.disabled",
+  "obra_subscription.refreshed",
+  "obra_subscription.outreach_configured",
   "automation.rule_created",
   "automation.rule_updated",
   "automation.rule_deleted",

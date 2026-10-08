@@ -39,7 +39,8 @@ export async function GET(): Promise<Response> {
     .eq("organization_id", activeOrg.orgId)
     .order("created_at", { ascending: false });
   if (error) return fail("internal_error", error.message, 500, { requestId });
-  return ok(data ?? [], { requestId });
+  // O ciclo tem editor e habilitação próprios; não expor um segundo interruptor.
+  return ok((data ?? []).filter(row => row.trigger_event !== "obra_subscription.outreach"), { requestId });
 }
 
 export async function POST(req: NextRequest): Promise<Response> {

@@ -51,6 +51,9 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", "Regra não encontrada.", 404, { requestId });
+  if (existing.trigger_event === "obra_subscription.outreach") {
+    return fail("forbidden", "Configure estas mensagens na aba Obra no Bolso.", 403, { requestId });
+  }
   const nextTrigger = parsed.data.trigger_event ?? existing.trigger_event;
   const nextActions = parsed.data.actions ?? existing.actions as Array<{ type: string }>;
   if ((nextTrigger === "obra_access.activated" || existing.trigger_event === "obra_access.activated")
@@ -124,12 +127,15 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
   const supabase = await createClient();
   const { data: existing, error: fetchErr } = await supabase
     .from("automation_rules")
-    .select("id")
+    .select("id,trigger_event")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", "Regra não encontrada.", 404, { requestId });
+  if (existing.trigger_event === "obra_subscription.outreach") {
+    return fail("forbidden", "Configure estas mensagens na aba Obra no Bolso.", 403, { requestId });
+  }
 
   const { error: delErr } = await supabase.from("automation_rules").delete().eq("id", id);
   if (delErr) return fail("internal_error", delErr.message, 500, { requestId });

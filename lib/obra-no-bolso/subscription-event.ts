@@ -9,7 +9,7 @@ export const subscriptionEventSchema = z.object({
   event_type: z.enum(["trial_started", "subscription_status_checked"]),
   event_id: z.uuid(), product_user_id: z.uuid(),
   occurred_at: date, trial_started_at: date, checked_at: date,
-  name: z.string().trim().min(1).max(200), email: z.email().max(254),
+  name: z.string().trim().min(1).max(255), email: z.email().max(254),
   phone: z.string().trim().min(1).max(40),
   status_pagamento: z.string().trim().min(1).max(60),
   em_trial: z.boolean(), access_enabled: z.boolean(),

@@ -10,6 +10,7 @@ import { ApiError } from "@/lib/api/types";
 import { sendMessageSchema } from "@/lib/schemas/messaging";
 import { reportarEnvio } from "./desfecho-do-envio";
 import type { ActionResultDetail } from "./types";
+import { refreshObraOutreachForTransport } from "@/lib/obra-no-bolso/outreach";
 
 /** Reusa o sink e seu protocolo prepared → started → rejected/uncertain.
  * A aquisição pertence ao run, em vez do job_queue do agente. Não existe
@@ -37,6 +38,9 @@ export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageIn
       if (!rows.length) throw new OutboundLeaseLostError();
     },
     beforeTransport: async (message) => {
+      if (ctx.event.event_type === "obra_subscription.outreach") {
+        await refreshObraOutreachForTransport(ctx.admin,org,ctx.event.id);
+      }
       if (await adiarAteAJanelaAbrir(ctx.admin,org,message.channel_session_id)) {
         throw new ApiError(403,"forbidden",undefined,ctx.requestId,"fora_da_janela_de_envio");
       }
@@ -51,6 +55,7 @@ export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageIn
             and cv.id=m.conversation_id and cv.bot_silenced_until>now())
           and public.fn_automation_run_live($2,$1,c.id)
           and ($5::text <> 'obra_access.activated' or public.fn_obra_access_send_live($2,$6,c.id,$7))
+          and ($5::text <> 'obra_subscription.outreach' or public.fn_obra_outreach_send_live($2,$6,c.id,$7))
           and coalesce(c.consent #> '{marketing,declined_at}','null'::jsonb) in ('null'::jsonb,'false'::jsonb,'0'::jsonb,'""'::jsonb)
           and m.metadata->'outbound_attempt'->>'phase'='prepared' for update of c
       ), acquired as (

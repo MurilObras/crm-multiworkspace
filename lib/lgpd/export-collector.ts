@@ -231,6 +231,7 @@ export interface ExportPayload {
   obra_access_receipts?: ObraAccessExport[];
   obra_subscription_states?: Record<string, unknown>[];
   obra_subscription_receipts?: Record<string, unknown>[];
+  obra_subscription_outreach?: Record<string, unknown>[];
 }
 
 // ---------------------------------------------------------------------------
@@ -608,6 +609,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   const obra_access_receipts: ObraAccessExport[] = [];
   const obra_subscription_states: Record<string, unknown>[] = [];
   const obra_subscription_receipts: Record<string, unknown>[] = [];
+  const obra_subscription_outreach: Record<string, unknown>[] = [];
   if (contactId) {
     const { data: states, error: statesError } = await admin.from("obra_subscription_states")
       .select("id,product_user_id,trial_started_at,checked_at,status_pagamento,em_trial,access_enabled,trial_ends_at,access_expires_at,decision,reason,converted_at,recovery_started_at,updated_at")
@@ -615,6 +617,10 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     if (statesError) throw new Error("lgpd_obra_subscription_unavailable");
     obra_subscription_states.push(...(states ?? []));
     for (const state of states ?? []) {
+      const { data: outreach, error: outreachError } = await admin.from("obra_subscription_outreach")
+        .select("id,kind,due_at,event_id,recovery_armed_at").eq("organization_id", organizationId).eq("state_id", state.id);
+      if (outreachError) throw new Error("lgpd_obra_subscription_unavailable");
+      obra_subscription_outreach.push(...(outreach ?? []));
       for (let offset = 0; ; offset += 500) {
         const { data: receipts, error } = await admin.from("obra_subscription_receipts")
           .select("id,external_event_id,event_type,checked_at,decision,reason,duplicate_count,created_at")
@@ -710,6 +716,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     obra_access_receipts,
     obra_subscription_states,
     obra_subscription_receipts,
+    obra_subscription_outreach,
   };
 }
 

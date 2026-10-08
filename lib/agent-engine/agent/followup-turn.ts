@@ -22,7 +22,8 @@ import { followupNeedsTemplate, loadOfficialFollowupTemplate, type OfficialFollo
 
 import { withFields } from '../obs/logger';
 import type { JobRow } from '../queue/queue';
-import { withJobLease, cancelJob } from '../queue/queue';
+import { withJobLease, cancelJob, rescheduleJob } from '../queue/queue';
+import { guardObraFollowup } from '@/lib/obra-no-bolso/followup-guard';
 import { getLeadContext, type LeadContext } from '../edge/crm/get-lead-context';
 import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
@@ -246,6 +247,18 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
       throw new Error('job followup_turn sem contact_id — o CHECK da fila deveria impedir');
     }
     const payload = followupTurnPayloadSchema.parse(job.payload);
+    let obra;
+    try { obra = await guardObraFollowup(pool, tenantId, job.id, leadId); }
+    catch {
+      await rescheduleJob(pool, job.id, ctx.workerId, { delayMs: 60_000, reason: 'obra_subscription_lookup_unavailable' });
+      throw new JobSettledError('consulta de assinatura indisponível; nenhuma mensagem enviada');
+    }
+    if (!obra.allowed) {
+      if (obra.retryAt) {
+        await rescheduleJob(pool, job.id, ctx.workerId, { delayMs: Math.max(1, obra.retryAt.getTime() - Date.now()), reason: 'obra_proactive_window' });
+      } else await cancelJob(pool, job.id, ctx.workerId, 'obra_followup_not_eligible');
+      throw new JobSettledError('follow-up aguardando horário permitido ou deixou de ser elegível');
+    }
 
     let target;
     try { target = await resolveSendTarget(pool, tenantId, leadId, payload.followup_enrollment_id); }

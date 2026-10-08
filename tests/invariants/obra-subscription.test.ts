@@ -47,6 +47,12 @@ beforeAll(async () => {
   // Controles positivos dos dois tenants antes de testar a negação.
   await receive(payload(await opportunity()));
   await receive(payload(await opportunity(otherOrg,b.p,b.s)),otherOrg,b.i);
+  for (const [tenant,cfg,p,st] of [[org,a.i,a.p,a.s],[otherOrg,b.i,b.p,b.s]]) {
+    const channel = (await pool.query("insert into channel_sessions(organization_id,waha_session_name,webhook_secret_encrypted,provider) values($1,$2,$3,'waha') returning id",[tenant,`synthetic-${randomUUID()}`,secret])).rows[0].id;
+    await service.query("select fn_configure_obra_outreach($1,$2,true,$3,null,'Cadastro','Uso','Confirmada')",[tenant,cfg,channel]);
+    await receive(payload(await opportunity(tenant,p,st)),tenant,cfg);
+    await service.query("select fn_configure_obra_outreach($1,$2,false,$3,null,'Cadastro','Uso','Confirmada')",[tenant,cfg,channel]);
+  }
 });
 afterAll(async () => { await service.end(); await pool.end(); });
 
@@ -78,7 +84,7 @@ it("serviço não recebe por integração de outro tenant nem usa seu contato", 
 });
 
 for (const role of ["anon", "authenticated"] as const) {
-  for (const table of ["obra_subscription_states", "obra_subscription_receipts"] as const) {
+  for (const table of ["obra_subscription_states", "obra_subscription_receipts", "obra_subscription_outreach"] as const) {
     it(`${role} com JWT não lê nem escreve ${table}, inclusive fora do workspace`, async () => {
       for (const tenant of [org,otherOrg]) {
         expect((await service.query(`select count(*)::int n from ${table} where organization_id=$1`, [tenant])).rows[0].n).toBeGreaterThan(0);
@@ -104,3 +110,15 @@ for (const role of ["anon", "authenticated"] as const) {
     });
   }
 }
+
+it("nem administrador via JWT chama configuração de envios ou altera regras internas pelo banco", async () => {
+  const client = await pool.connect();
+  try {
+    await client.query("begin"); await client.query("set local role authenticated");
+    await client.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({ sub:actor,role:'authenticated' })]);
+    await client.query("savepoint forbidden");
+    await expect(client.query("select fn_configure_obra_outreach($1,$2,true,null,null,'a','b','c')",[org,source])).rejects.toMatchObject({ code:'42501' });
+    await client.query("rollback to savepoint forbidden");
+    await expect(client.query("update automation_rules set actions='[]' where organization_id=$1 and trigger_event='obra_subscription.outreach'",[org])).rejects.toMatchObject({ code:'42501' });
+  } finally { await client.query("rollback");client.release(); }
+});

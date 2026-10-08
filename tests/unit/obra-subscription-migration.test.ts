@@ -24,7 +24,7 @@ function payload(o: { phone: string; email: string }, product_user_id = randomUU
   return { version: 2, event_type: "subscription_status_checked", event_id: randomUUID(), product_user_id,
     occurred_at: checked, checked_at: checked, trial_started_at: started, name: "Synthetic", email: o.email, phone: o.phone,
     status_pagamento: "ativo", em_trial: false, access_enabled: true,
-    trial_ends_at: null, access_expires_at: new Date(Date.parse(checked) + 30 * 86400_000).toISOString() };
+    trial_ends_at: null as string | null, access_expires_at: new Date(Date.parse(checked) + 30 * 86400_000).toISOString() };
 }
 async function receive(event: ReturnType<typeof payload>, options: { fingerprint?: string; org?: string; secret?: Uint8Array } = {}) {
   return (await db.query<{ result: Record<string, unknown> }>("select fn_receive_obra_subscription($1,$2,$3::jsonb,$4,$5::text[],$6) result",
@@ -69,12 +69,68 @@ beforeAll(async () => {
   `);
   await db.exec(readFileSync(new URL("../../supabase/migrations/20261005190000_0229_obra_no_bolso_access.sql", import.meta.url), "utf8"));
   await db.exec(migration);
+  // Fixture reduzida do envio; o CI mantém a prova com o baseline real.
+  await db.exec(`
+    create table channel_sessions(id uuid primary key,organization_id uuid,provider text,archived_at timestamptz);
+    create table followup_flow_pointers(id uuid primary key,organization_id uuid);
+    create table followup_enrollments(id uuid primary key,organization_id uuid,contact_id uuid,pointer_id uuid,status text);
+    create table job_queue(id uuid primary key,organization_id uuid,contact_id uuid,kind text,payload jsonb);
+    create table conversations(id uuid primary key,organization_id uuid,contact_id uuid,bot_silenced_until timestamptz);
+    create table messages(id uuid primary key,organization_id uuid,contact_id uuid,direction text,created_at timestamptz);
+    alter table contacts add column is_blocked boolean default false,add column force_human boolean default false,
+      add column consent jsonb default '{}';
+    alter table automation_rules add primary key(id),add column name text,add column actions jsonb default '[]',add column updated_at timestamptz default now();
+    alter table event_log add column next_attempt_at timestamptz default now();
+    create or replace function emit_event(text,text,uuid,jsonb,jsonb,uuid) returns uuid language plpgsql as $$
+    declare eid uuid; begin
+      insert into event_log(event_type,entity_kind,entity_id,payload,organization_id) values($1,$2,$3,$4,$6) returning id into eid;
+      return eid; end $$;
+  `);
+  await db.exec(readFileSync(new URL("../../supabase/migrations/20261008230000_0231_obra_subscription_outreach.sql", import.meta.url), "utf8"));
   await db.query("insert into organizations values($1),($2)", [org, otherOrg]);
   await db.query("insert into crm_pipelines values($1,$2)", [pipeline, org]);
   await db.query("insert into crm_stages values($1,$2,$3,'Aberto',false,false),($4,$2,$3,'Acesso ativado',true,false)", [openStage, org, pipeline, wonStage]);
   await db.query("insert into obra_access_integrations(id,organization_id,pipeline_id,secret_encrypted,is_active,lifecycle_enabled) values($1,$2,$3,$4,true,true)", [integration, org, pipeline, secret]);
 });
 afterAll(async () => db.close());
+
+it("agenda somente dois cuidados pelo início real e não repete por reconsulta", async () => {
+  const channel = randomUUID();
+  await db.query("insert into channel_sessions values($1,$2,'waha',null)", [channel,org]);
+  await db.query("select fn_configure_obra_outreach($1,$2,true,$3,null,'Cadastro {{contact.name}}','Uso','Confirmada')", [org,integration,channel]);
+  const o = await opportunity();
+  const start = new Date(Date.now()-3*3600_000).toISOString(), fresh = new Date().toISOString();
+  const event = { ...payload(o), event_type: "trial_started", em_trial: true, trial_started_at: start,
+    occurred_at: fresh, checked_at: fresh, trial_ends_at: new Date(Date.parse(start)+72*3600_000).toISOString() };
+  const result = await receive(event);
+  await receive({ ...event, event_id: randomUUID() });
+  const rows = (await db.query<{ kind: string; due_at: Date }>("select kind,due_at from obra_subscription_outreach where state_id=$1 order by due_at", [result.state_id])).rows;
+  expect(rows.map(r=>r.kind)).toEqual(['registration','usage']);
+  expect(new Date(rows[0]!.due_at).getTime()).toBe(Date.parse(start)+2*3600_000);
+  expect(new Date(rows[1]!.due_at).getTime()).toBe(Date.parse(start)+48*3600_000);
+  await db.query("select fn_configure_obra_outreach($1,$2,false,$3,null,'Cadastro','Uso','Confirmada')", [org,integration,channel]);
+});
+
+it("confirmação tem um único evento de mensagem e guarda bloqueia recusa/resposta/humano/outro tenant", async () => {
+  const channel = randomUUID();
+  await db.query("insert into channel_sessions values($1,$2,'waha',null)", [channel,org]);
+  await db.query("select fn_configure_obra_outreach($1,$2,true,$3,null,'Cadastro','Uso','Confirmada')", [org,integration,channel]);
+  const o = await opportunity(), fresh = new Date().toISOString();
+  const event = { ...payload(o), occurred_at: fresh, checked_at: fresh };
+  const result = await receive(event); await receive({ ...event, event_id: randomUUID() });
+  const rows = (await db.query<{ event_id: string; rule_id: string }>("select event_id,rule_id from obra_subscription_outreach where state_id=$1 and kind='activation'", [result.state_id])).rows;
+  expect(rows).toHaveLength(1);
+  const item = rows[0]!;
+  const live = async (tenant = org) => (await db.query<{ live: boolean }>("select fn_obra_outreach_send_live($1,$2,$3,$4) live", [tenant,item.event_id,o.contact,item.rule_id])).rows[0]!.live;
+  const allowedWindow = (await db.query<{ allowed: boolean }>("select extract(isodow from now() at time zone 'America/Sao_Paulo') between 1 and 5 and extract(hour from now() at time zone 'America/Sao_Paulo')>=8 and extract(hour from now() at time zone 'America/Sao_Paulo')<20 allowed")).rows[0]!.allowed;
+  expect(await live()).toBe(allowedWindow);
+  expect(await live(otherOrg)).toBe(false);
+  await db.query("update contacts set force_human=true where id=$1",[o.contact]); expect(await live()).toBe(false);
+  await db.query("update contacts set force_human=false,consent='{\"marketing\":{\"declined_at\":\"yes\"}}' where id=$1",[o.contact]); expect(await live()).toBe(false);
+  await db.query("update contacts set consent='{}' where id=$1",[o.contact]);
+  await db.query("insert into messages values($1,$2,$3,'inbound',now()+interval '1 second')",[randomUUID(),org,o.contact]); expect(await live()).toBe(false);
+  await db.query("select fn_configure_obra_outreach($1,$2,false,$3,null,'Cadastro','Uso','Confirmada')", [org,integration,channel]);
+});
 
 it("ativo no início do teste mantém oportunidade aberta", async () => {
   const o = await opportunity(), event = { ...payload(o), event_type: "trial_started", checked_at: started, occurred_at: started };

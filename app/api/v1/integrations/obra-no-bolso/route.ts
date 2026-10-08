@@ -5,10 +5,13 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { audit } from "@/lib/audit";
+import { DEFAULT_ACTIVATION_MESSAGE, DEFAULT_REGISTRATION_MESSAGE, DEFAULT_USAGE_MESSAGE } from "@/lib/obra-no-bolso/messages";
 
 export const dynamic = "force-dynamic";
 const createSchema = z.object({ pipeline_id: z.uuid(), lifecycle_enabled: z.boolean().default(false) }).strict();
-const updateSchema = z.object({ is_active: z.boolean().optional(), pipeline_id: z.uuid().optional(), lifecycle_enabled: z.boolean().optional() })
+const outreachSchema = z.object({ enabled: z.boolean(), channel_session_id: z.uuid().nullable(), recovery_pointer_id: z.uuid().nullable(),
+  registration_message: z.string().max(2000), usage_message: z.string().max(2000), activation_message: z.string().max(2000) }).strict();
+const updateSchema = z.object({ is_active: z.boolean().optional(), pipeline_id: z.uuid().optional(), lifecycle_enabled: z.boolean().optional(), outreach: outreachSchema.optional() })
   .strict().refine(value => Object.values(value).some(field => field !== undefined));
 
 async function eligiblePipeline(admin: ReturnType<typeof createAdminClient>, orgId: string, id: string) {
@@ -33,7 +36,7 @@ export async function GET(req: Request): Promise<Response> {
   const admin = createAdminClient();
   const orgId = auth.org.orgId;
   const { data: integration, error } = await admin.from("obra_access_integrations")
-    .select("id,organization_id,pipeline_id,is_active,lifecycle_enabled,last_received_at,rejected_count,created_at")
+    .select("id,organization_id,pipeline_id,is_active,lifecycle_enabled,last_received_at,rejected_count,created_at,outreach_enabled,outreach_channel_id,recovery_pointer_id,registration_rule_id,usage_rule_id,activation_rule_id")
     .eq("organization_id", orgId).maybeSingle();
   if (error) return fail("internal_error", "Consulta indisponível.", 503, { requestId });
   if (!integration) return ok({ integration: null, receipts: [], rejections: [],
@@ -57,7 +60,17 @@ export async function GET(req: Request): Promise<Response> {
     .eq("organization_id", orgId).eq("integration_id", integration.id)
     .order("updated_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + 50);
   if (subscriptionsError) return fail("internal_error", "Acompanhamento indisponível.", 503, { requestId });
-  return ok({ integration, subscriptions: (subscriptions ?? []).slice(0, 50),
+  const ruleIds = [integration.registration_rule_id,integration.usage_rule_id,integration.activation_rule_id].filter(Boolean);
+  const { data: messages, error: messagesError } = ruleIds.length ? await admin.from("automation_rules")
+    .select("id,actions").eq("organization_id", orgId).in("id",ruleIds) : { data: [], error: null };
+  if (messagesError) return fail("internal_error", "Mensagens indisponíveis.", 503, { requestId });
+  const template = (id: string | null, fallback: string) => !id ? fallback
+    : (messages ?? []).find(row => row.id === id)?.actions?.[0]?.config?.template ?? "";
+  return ok({ integration, outreach: { enabled: integration.outreach_enabled ?? false,
+    channel_session_id: integration.outreach_channel_id ?? null, recovery_pointer_id: integration.recovery_pointer_id ?? null,
+    registration_message: template(integration.registration_rule_id, DEFAULT_REGISTRATION_MESSAGE),
+    usage_message: template(integration.usage_rule_id, DEFAULT_USAGE_MESSAGE),
+    activation_message: template(integration.activation_rule_id, DEFAULT_ACTIVATION_MESSAGE) }, subscriptions: (subscriptions ?? []).slice(0, 50),
     subscription_pagination: { offset, has_more: (subscriptions?.length ?? 0) > 50 }, receipts: (receipts ?? []).slice(0, 50),
     rejections: (rejections ?? []).map(row => ({ created_at: row.created_at,
       reason: (row.metadata as Record<string, unknown> | null)?.reason ?? "invalid_request" })),
@@ -107,6 +120,21 @@ export async function PATCH(req: Request): Promise<Response> {
   const { data: current } = await admin.from("obra_access_integrations")
     .select("id,pipeline_id,is_active,lifecycle_enabled").eq("organization_id", orgId).maybeSingle();
   if (!current) return fail("not_found", "Integração não configurada.", 404, { requestId });
+  if (parsed.data.outreach) {
+    if (Object.keys(parsed.data).length !== 1 || !current.lifecycle_enabled) {
+      return fail("invalid_request", "Salve as mensagens separadamente no modo teste e assinatura.", 422, { requestId });
+    }
+    const cfg = parsed.data.outreach;
+    const { data, error: configError } = await admin.rpc("fn_configure_obra_outreach", {
+      p_org: orgId, p_integration: current.id, p_enabled: cfg.enabled, p_channel: cfg.channel_session_id,
+      p_recovery: cfg.recovery_pointer_id, p_registration: cfg.registration_message, p_usage: cfg.usage_message,
+      p_activation: cfg.activation_message,
+    });
+    if (configError || !data) return fail("invalid_request", "Confira o número WAHA e o fluxo de recuperação deste workspace.", 422, { requestId });
+    await audit({ action: "obra_subscription.outreach_configured", actorUserId: auth.user.id, organizationId: orgId,
+      resourceType: "obra_access_integration", resourceId: current.id, requestId, metadata: { outreach_enabled: cfg.enabled } });
+    return ok(data, { requestId });
+  }
   const nextPipeline = parsed.data.pipeline_id ?? current.pipeline_id;
   const nextActive = parsed.data.is_active ?? current.is_active;
   const nextLifecycle = parsed.data.lifecycle_enabled ?? current.lifecycle_enabled;

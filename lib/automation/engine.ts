@@ -25,6 +25,7 @@ import { acquireActionIntent, finishActionIntent, readEventPlan, freezeEventPlan
 import { resumeQueuedAutomationMessage } from "./send-message";
 import { checarGuardasDeContato } from "./guarda-do-contato";
 import { actionSchema } from "@/lib/schemas/webhooks";
+import { prepareObraOutreach } from "@/lib/obra-no-bolso/outreach";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
 
@@ -35,6 +36,7 @@ const EXPECTED_ENTITY_KIND: Record<string, string> = {
   "contact.tag_added": "contact",
   "message.received": "message",
   "obra_access.activated": "crm_lead",
+  "obra_subscription.outreach": "crm_lead",
 };
 
 interface RuleRow {
@@ -160,7 +162,19 @@ export async function runAutomationForEvent(
 
   const kiwify = row.payload.kiwify_event_type === "order_approved";
   const obra = row.event_type === "obra_access.activated";
+  const outreach = row.event_type === "obra_subscription.outreach";
+  let outreachRuleId: string | null = null;
   let obraContactId: string | null = null;
+  if (outreach) {
+    try {
+      const prepared = await prepareObraOutreach(admin, row);
+      if (!prepared.ready) return { consumer_key: AUTOMATION_CONSUMER_KEY, ...prepared.result };
+      obraContactId = prepared.contactId;
+      outreachRuleId = prepared.ruleId;
+    } catch {
+      return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: new Date(Date.now() + 60_000).toISOString() };
+    }
+  }
   if (obra) {
     const { data: receipt, error: receiptError } = await admin.from("obra_access_receipts")
       .select("id,integration_id,modality,contact_id,lead_id,status,event_log_id")
@@ -180,7 +194,7 @@ export async function runAutomationForEvent(
     }
     obraContactId = receipt.contact_id;
   }
-  const durableExternal = kiwify || obra;
+  const durableExternal = kiwify || obra || outreach;
   const plan = durableExternal ? await readEventPlan<RuleRow>(getRequestPool(),row.organization_id,row.id) : null;
   const { data: rules, error } = plan !== null ? {data:plan,error:null} : await admin
     .from("automation_rules")
@@ -197,8 +211,8 @@ export async function runAutomationForEvent(
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_rules" };
   }
 
-  const context = await buildContext(admin, row, obra);
-  if (obra && (!obraContactId || (context.contact as { id?: string } | undefined)?.id !== obraContactId)) {
+  const context = await buildContext(admin, row, obra || outreach);
+  if ((obra || outreach) && (!obraContactId || (context.contact as { id?: string } | undefined)?.id !== obraContactId)) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "obra_recipient_changed" };
   }
   let linkedRuleIds: Set<string> | null = null;
@@ -216,7 +230,8 @@ export async function runAutomationForEvent(
     }
   }
   const candidates = matched.filter((r) => (linkedRuleIds === null || linkedRuleIds.has(r.id)) && evaluateConditions(r.conditions ?? [], context)
-    && (!obra || r.actions.every(action => action.type === "send_whatsapp_message")));
+    && (!outreach || r.id === outreachRuleId && r.actions.length === 1)
+    && (!(obra || outreach) || r.actions.every(action => action.type === "send_whatsapp_message")));
   const applicable = plan ?? (durableExternal ? await freezeEventPlan(getRequestPool(),row.organization_id,row.id,candidates) : candidates);
   if (!applicable.length) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_match" };
@@ -262,7 +277,14 @@ export async function runAutomationForEvent(
         continue;
       }
       const actionCtx = { admin, organizationId: row.organization_id, ruleId: rule.id,
-        ruleName: rule.name, event: row, context: durableExternal ? await buildContext(admin, row, obra) : context, requestId: row.id };
+        ruleName: rule.name, event: row, context: durableExternal ? await buildContext(admin, row, obra || outreach) : context, requestId: row.id };
+      if (outreach) {
+        const { data: live, error: guardError } = await admin.rpc("fn_obra_outreach_send_live", {
+          p_org: row.organization_id, p_event: row.id, p_contact: obraContactId, p_rule: rule.id,
+        });
+        if (guardError) return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: "obra_outreach_guard_unavailable" };
+        if (live !== true) continue;
+      }
       if (obra) {
         const { rows } = await getRequestPool().query<{ live: boolean }>(
           "select fn_obra_access_send_live($1,$2,$3,$4) live",

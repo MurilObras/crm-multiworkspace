@@ -71,33 +71,59 @@ com alterações de configuração; desativação/segredo diferente impedem o ac
 - Tela: Webhooks > Obra no Bolso > Estado das assinaturas, com paginação.
 - Auditoria: `obra_access.received` com decisão/motivo; timeline da venda com `demand_closed`.
 - Pendência fica visível no estado; o operador confere telefone, e-mail, funil e
-  estado no produto. Ainda não há reconsulta/associação administrativa v2.
+  estado no produto. O botão `Consultar aplicativo novamente` reconsulta um
+  snapshot assinado e tenta novamente o vínculo conservador. Não permite forçar
+  associação nem fabricar conversão; a ligação ambígua continua em conferência.
 - As tabelas são privadas para service role; anon/authenticated não têm acesso
   direto nem EXECUTE da RPC. Exportação LGPD inclui o estado/histórico do titular;
   anonimização remove contato/oportunidade da âncora, retendo IDs técnicos de
   deduplicação, conforme o histórico legado.
 
-## O que ainda impede a ativação comercial
+## Mensagens do ciclo (opt-in separado)
 
-Este receptor **não envia** os dois contatos de cuidado, parabenização ou
-recuperação, nem adiciona a tag de recuperação. Remove a tag
-`followup_assinatura` quando o estado deixa de justificar recuperação.
+A migration 0231 armazena a habilitação por integração/workspace, número WAHA,
+fluxo de recuperação e três regras internas de uma única mensagem. O editor da
+aba Obra no Bolso configura cadastro (+2h), uso (+48h) e confirmação única.
+O texto aprovado de confirmação inclui orientação para responder no mesmo
+contato para suporte. Campo vazio desativa aquela mensagem. As regras internas
+não têm um segundo editor na aba Automações; escritas diretas por JWT são negadas.
+
+O início real agenda no `event_log` no máximo dois cuidados. Um registro único
+por estado/fase impede novo envio por reconsulta/replay. Cadastro vencido em
++48h é descartado; uso vencido no término do trial/96h também. Não há backfill
+de congratulação anterior à configuração. A primeira conversão agenda um único
+evento de confirmação. O transporte existente usa uma intenção durável e nunca
+repete uma tentativa que possa ter chegado ao provedor sem confirmação.
+
+Todos estes proativos esperam segunda–sexta 08h–20h America/Sao_Paulo.
+Recebimento continua 24h. Antes de processar e imediatamente antes do transporte,
+o CRM consulta `https://api.obranobolsoai.com/api/v1/crm/subscription-status`,
+origem fixa usada pelo frontend do produto, sem redirecionamento ou URL livre.
+HMAC de consulta `lookup.timestamp.corpo`; resposta `snapshot.timestamp.corpo`,
+chave exclusiva já cifrada da integração, sem tokens de suporte/N8N.
+O snapshot precisa corresponder ao UUID do produto e estar dentro de 2 minutos.
+Falha não autoriza uso do estado antigo. A guarda SQL no CAS revalida
+workspace, contato, oportunidade/funil, etapa, fase, calendário, recusa,
+resposta posterior ao início da fase e silêncio por humano.
+
+Recuperação libera a tag `followup_assinatura` uma única vez após
+`recovery_started_at + 2h`, somente em não convertido, consultado após 96h.
+O fluxo existente deve estar publicado, habilitado no agente e condicionado
+à tag. Seu worker e a guarda final só permitem recuperação no pointer escolhido.
+Pagamento posterior, resposta ou humano impedem o envio mesmo já preparado.
+Outros contatos/workspaces e turnos recebidos não consultam o Obra no Bolso.
+O contrato v2 remove a tag quando o estado deixa de justificar recuperação.
+
+## Gates de ativação comercial
+
 O fechamento pode emitir o evento genérico `lead.won` do próprio CRM; regras
 genéricas já ativas nesse evento precisam ser revisadas antes de ativar a conexão.
-
-A próxima implementação precisa conectar o início real a dois contatos no
-máximo (+2h e +48h), a confirmação paga a uma mensagem personalizada única, e
-a recuperação ao fluxo existente, respeitando respostas, recusas e atendimento
-humano. Os proativos devem operar apenas segunda–sexta, 08h–20h em
-America/Sao_Paulo; atendimento recebido continua 24h. A função pura da janela
-está testada, mas ainda não governa o envio. Não anunciar essa restrição como
-ativa antes de integrá-la ao consumidor e à guarda final do transporte.
-
-Mensagens adiadas precisam de informação atual do produto antes do envio;
-o evento de 96h, sozinho, não prova que a situação continua igual na segunda-feira.
-Será necessário concluir uma reconsulta restrita do backend, ou mecanismo
-equivalente de atualização atualizada, sem expor a chave de suporte do aplicativo.
-A regra de parabenização v1 não serve para os eventos v2 e não deve ser reutilizada.
+Validar em banco real concorrência, replays e permissões, e evidência visual
+do editor. Publicar ambos os PRs/migrations e provar a comunicação assinada real
+na VPS, incluindo Redis do aplicativo e worker/Beat. Exercitar o ciclo com
+contatos de teste antes de habilitar envios comerciais. Não há alteração de
+configuração, chave ou mensagem de cliente em produção neste PR.
+A regra de parabenização v1 não serve como fallback do contrato v2.
 
 Sem teste end-to-end, texto personalizado aprovado, publicação nas duas VPS e
 validação com contatos controlados, manter emissores, conexão e agentes desligados.

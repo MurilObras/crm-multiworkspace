@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { DEFAULT_ACTIVATION_MESSAGE, DEFAULT_REGISTRATION_MESSAGE, DEFAULT_USAGE_MESSAGE } from "@/lib/obra-no-bolso/messages";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
@@ -21,6 +23,8 @@ type State = {
     status_pagamento: string; em_trial: boolean; decision: string; reason: string | null;
     contact?: { name: string | null } | null; lead?: { title: string } | null }>;
   subscription_pagination?: { offset: number; has_more: boolean };
+  outreach?: { enabled: boolean; channel_session_id: string | null; recovery_pointer_id: string | null;
+    registration_message: string; usage_message: string; activation_message: string };
   receipts: Receipt[];
   rejections: Array<{ created_at: string; reason: string }>;
   counts: { processed: number; trial: number; paid: number; pending: number; rejected: number; duplicates: number };
@@ -56,6 +60,11 @@ export function ObraNoBolsoTab() {
   const [funis, setFunis] = React.useState<Array<{ id: string; name: string }>>([]);
   const [pipelineId, setPipelineId] = React.useState("");
   const [lifecycle, setLifecycle] = React.useState(false);
+  const [outreach, setOutreach] = React.useState<NonNullable<State["outreach"]>>({ enabled: false,
+    channel_session_id: null, recovery_pointer_id: null, registration_message: DEFAULT_REGISTRATION_MESSAGE,
+    usage_message: DEFAULT_USAGE_MESSAGE, activation_message: DEFAULT_ACTIVATION_MESSAGE });
+  const [channels, setChannels] = React.useState<Array<{ id: string; display_name: string }>>([]);
+  const [flows, setFlows] = React.useState<Array<{ id: string; name: string; status: string }>>([]);
   const [secretOnce, setSecretOnce] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [pending, setPending] = React.useState<Receipt | null>(null);
@@ -72,6 +81,7 @@ export function ObraNoBolsoTab() {
     try {
       const next = await api<State>(historyUrl);
       setState(next);
+      if (next.outreach) setOutreach(next.outreach);
       if (next.integration) { setPipelineId(next.integration.pipeline_id); setLifecycle(next.integration.lifecycle_enabled); }
     } catch (error) { toast.error((error as Error).message); }
   }, [historyUrl]);
@@ -80,10 +90,15 @@ export function ObraNoBolsoTab() {
     void api<State>(historyUrl).then(next => {
       if (cancelled) return;
       setState(next);
+      if (next.outreach) setOutreach(next.outreach);
       if (next.integration) { setPipelineId(next.integration.pipeline_id); setLifecycle(next.integration.lifecycle_enabled); }
     }).catch((error: Error) => toast.error(error.message));
     void api<Array<{ id: string; name: string }>>("/api/v1/pipelines")
       .then(setFunis).catch(() => toast.error(t("Funis indisponíveis.")));
+    void api<Array<{ id: string; display_name: string }>>("/api/v1/channel-sessions")
+      .then(setChannels).catch(() => toast.error(t("Números indisponíveis.")));
+    void api<Array<{ id: string; name: string; status: string }>>("/api/v1/ai/followup-flows")
+      .then(setFlows).catch(() => toast.error(t("Fluxos indisponíveis.")));
     return () => { cancelled = true; };
   }, [t, historyUrl]);
 
@@ -162,6 +177,22 @@ export function ObraNoBolsoTab() {
     } catch (error) { toast.error((error as Error).message); }
     finally { setBusy(false); }
   };
+  const saveMessages = async () => {
+    setBusy(true);
+    try {
+      await api(root, { method: "PATCH", body: JSON.stringify({ outreach }) });
+      toast.success(t("Mensagens do ciclo salvas.")); await refresh();
+    } catch (error) { toast.error((error as Error).message); }
+    finally { setBusy(false); }
+  };
+  const refreshSubscription = async (id: string) => {
+    setBusy(true);
+    try {
+      await api(`${root}/subscriptions/${id}/refresh`, { method: "POST" });
+      toast.success(t("Estado consultado no aplicativo.")); await refresh();
+    } catch (error) { toast.error((error as Error).message); }
+    finally { setBusy(false); }
+  };
 
   if (!state) return <p className="pt-4 text-sm text-muted-foreground">{t("Carregando integração…")}</p>;
   const integration = state.integration;
@@ -215,11 +246,45 @@ export function ObraNoBolsoTab() {
             )}
             <Button variant="secondary" onClick={toggle} disabled={busy}>{integration.is_active ? t("Desativar conexão") : t("Ativar conexão")}</Button>
             <p className="text-xs text-muted-foreground">{integration.lifecycle_enabled
-              ? t("Esta etapa registra o estado e a conversão. Os contatos de acompanhamento, recuperação e parabenização ainda precisam ser conectados e validados antes da ativação comercial.")
+              ? t("A conexão recebe estados. As mensagens são ativadas separadamente abaixo, somente neste workspace.")
               : t("A conexão e as automações são controles separados. Regras novas de parabenização nascem pausadas na aba Automações; crie uma condição trial ou paid e um texto para cada.")}</p>
           </div>
         )}
       </section>
+
+      {integration?.lifecycle_enabled && <section className="space-y-3 rounded-md border border-border p-4">
+        <h2 className="text-lg font-semibold">{t("Mensagens de teste e assinatura")}</h2>
+        <p className="text-sm text-muted-foreground">{t("Até dois contatos no teste: após 2 e 48 horas. A confirmação ocorre após 96 horas completas. Proativos somente em dias úteis, das 8h às 20h; respostas recebidas continuam 24 horas.")}</p>
+        <Label htmlFor="obra-message-channel">{t("Número para acompanhamento")}</Label>
+        <Select value={outreach.channel_session_id ?? "none"} onValueChange={value => setOutreach({ ...outreach, channel_session_id: value === "none" ? null : value })}>
+          <SelectTrigger id="obra-message-channel"><SelectValue /></SelectTrigger><SelectContent>
+            <SelectItem value="none">{t("Selecione o número WAHA")}</SelectItem>
+            {channels.map(item => <SelectItem value={item.id} key={item.id}>{item.display_name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Label htmlFor="obra-recovery-flow">{t("Fluxo de recuperação")}</Label>
+        <Select value={outreach.recovery_pointer_id ?? "none"} onValueChange={value => setOutreach({ ...outreach, recovery_pointer_id: value === "none" ? null : value })}>
+          <SelectTrigger id="obra-recovery-flow"><SelectValue /></SelectTrigger><SelectContent>
+            <SelectItem value="none">{t("Sem recuperação automática")}</SelectItem>
+            {flows.map(item => <SelectItem value={item.id} key={item.id}>{item.name} ({item.status})</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">{t("O fluxo selecionado precisa estar publicado, vinculado ao agente e condicionado à tag followup_assinatura. Essa tag é liberada após confirmar suspensão ou cancelamento depois das 96 horas e aguardar mais 2 horas.")}</p>
+        <Label htmlFor="obra-registration-message">{t("Cadastro no teste — após 2 horas")}</Label>
+        <Textarea id="obra-registration-message" value={outreach.registration_message} maxLength={2000} onChange={e => setOutreach({ ...outreach, registration_message: e.target.value })} />
+        <Label htmlFor="obra-usage-message">{t("Uso no teste — após 48 horas")}</Label>
+        <Textarea id="obra-usage-message" value={outreach.usage_message} maxLength={2000} onChange={e => setOutreach({ ...outreach, usage_message: e.target.value })} />
+        <Label htmlFor="obra-activation-message">{t("Assinatura confirmada — mensagem única")}</Label>
+        <Textarea id="obra-activation-message" value={outreach.activation_message} maxLength={2000} onChange={e => setOutreach({ ...outreach, activation_message: e.target.value })} />
+        <p className="text-xs text-muted-foreground">{t("Use {{contact.name}} para o nome. Campo vazio desativa aquela mensagem. Resposta, recusa ou atendimento humano interrompem os retornos; mensagens de teste vencidas são descartadas.")}</p>
+        <Label htmlFor="obra-outreach-enabled">{t("Envios deste ciclo")}</Label>
+        <Select value={outreach.enabled ? "on" : "off"} onValueChange={value => setOutreach({ ...outreach, enabled: value === "on" })}>
+          <SelectTrigger id="obra-outreach-enabled"><SelectValue /></SelectTrigger><SelectContent>
+            <SelectItem value="off">{t("Desativados")}</SelectItem><SelectItem value="on">{t("Ativados neste workspace")}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button onClick={saveMessages} disabled={busy || outreach.enabled && !outreach.channel_session_id}>{t("Salvar mensagens")}</Button>
+      </section>}
 
       {integration?.lifecycle_enabled ? <section className="space-y-3 rounded-md border border-border p-4">
         <h2 className="text-lg font-semibold">{t("Estado das assinaturas")}</h2>
@@ -232,6 +297,7 @@ export function ObraNoBolsoTab() {
           <p>{t("Início do teste")}: {new Date(item.trial_started_at).toLocaleString(idioma)}</p>
           <p>{t("Última consulta")}: {new Date(item.checked_at).toLocaleString(idioma)}</p>
           {item.reason && <p className="text-muted-foreground">{t("Confira a identificação e o estado do usuário no aplicativo antes de agir.")}</p>}
+          <Button variant="secondary" disabled={busy || !integration.is_active} onClick={() => void refreshSubscription(item.id)}>{t("Consultar aplicativo novamente")}</Button>
         </div>)}
         <div className="flex gap-2">
           <Button variant="secondary" disabled={historyOffset === 0} onClick={() => setHistoryOffset(Math.max(0, historyOffset - 50))}>{t("Página anterior")}</Button>

@@ -21,6 +21,7 @@ import { webPushInboundHandler } from "@/lib/notifications/push.handler";
 import { conversaoDeVendaHandler } from "@/lib/conversoes/envio.handler";
 import { registerHandler } from "@/lib/event-log/dispatcher";
 import { campaignHandler } from "@/lib/campaigns/worker";
+import { obraRecoveryHandler } from "@/lib/obra-no-bolso/recovery.handler";
 
 let _registered = false;
 
@@ -37,6 +38,7 @@ export function ensureHandlersRegistered(): void {
   registerHandler(lgpdExportHandler);
   registerHandler(lgpdRedactHandler);
   registerHandler(automationRulesHandler);
+  registerHandler(obraRecoveryHandler);
   registerHandler(followupGatilhoEtapaHandler);
   registerHandler(followupGatilhoCasoHandler);
   registerHandler(mediaPersistHandler);

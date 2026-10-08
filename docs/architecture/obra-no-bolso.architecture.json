@@ -75,7 +75,7 @@
       "col": 5,
       "type": "service",
       "label": "Automação WhatsApp",
-      "sublabel": "pausada por padrão; guardas e intenção durável"
+      "sublabel": "opt-in; texto editável, dias úteis, resposta/humano e intenção durável"
     },
     {
       "id": "review",
@@ -91,7 +91,15 @@
       "col": 3,
       "type": "database",
       "label": "Estado de assinatura v2",
-      "sublabel": "opt-in, início real, 96h, decisões e deduplicação"
+      "sublabel": "início real, 96h, decisões e agenda única por fase"
+    },
+    {
+      "id": "lookup",
+      "lane": "product",
+      "col": 5,
+      "type": "api",
+      "label": "Consulta restrita do estado",
+      "sublabel": "UUID; HMAC de consulta e resposta; sem pagamento externo"
     }
   ],
   "edges": [
@@ -159,7 +167,25 @@
       "id": "o11",
       "from": "subscription",
       "to": "review",
-      "label": "histórico de estados e conferência"
+      "label": "histórico de estados, reconsulta e mensagens editáveis"
+    },
+    {
+      "id": "o12",
+      "from": "automation",
+      "to": "lookup",
+      "label": "reconsulta antes de transporte e retomada"
+    },
+    {
+      "id": "o13",
+      "from": "lookup",
+      "to": "subscription",
+      "label": "snapshot assinado e identidade revalidada"
+    },
+    {
+      "id": "o14",
+      "from": "subscription",
+      "to": "event",
+      "label": "dois cuidados, confirmação única e recuperação elegível"
     }
   ]
 }

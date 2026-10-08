@@ -9,7 +9,7 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn(async (role: stri
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ from: state.from, rpc: state.rpc }) }));
 vi.mock("@/lib/webhooks/secrets", () => ({ encryptWebhookSecret: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
-import { GET } from "./route";
+import { GET, PATCH } from "./route";
 
 beforeEach(() => {
   vi.clearAllMocks(); state.allowed = true;
@@ -21,12 +21,32 @@ beforeEach(() => {
       order: () => query,
       range: (start: number, end: number) => { state.range(start, end); return query; },
       limit: () => query,
-      maybeSingle: async () => ({ data: { id: "source", organization_id: "trusted-org", is_active: false }, error: null }),
+      maybeSingle: async () => ({ data: { id: "source", organization_id: "trusted-org", is_active: false, lifecycle_enabled: true }, error: null }),
       then: (resolve: (value: unknown) => unknown) => resolve({ error: null,
         data: table === "obra_access_receipts" ? Array.from({ length: 51 }, (_, n) => ({ id: `receipt-${n}` })) : [] }),
     };
     return query;
   });
+});
+
+const outreach = { enabled: false, channel_session_id: "2c3f3457-9a52-4fd3-9e51-9e9842ff4c5a", recovery_pointer_id: null,
+  registration_message: "Cadastro", usage_message: "Uso", activation_message: "Parabéns, {{contact.name}}! Responda aqui para receber suporte." };
+it("somente administrador configura textos pelo workspace da sessão", async () => {
+  state.rpc.mockResolvedValue({ data: { outreach_enabled: false }, error: null });
+  const response = await PATCH(new Request("http://localhost/api/v1/integrations/obra-no-bolso", {
+    method: "PATCH", body: JSON.stringify({ outreach }),
+  }));
+  expect(response.status).toBe(200);
+  expect(state.rpc).toHaveBeenCalledWith("fn_configure_obra_outreach", expect.objectContaining({ p_org: "trusted-org",
+    p_integration: "source", p_enabled: false, p_activation: outreach.activation_message }));
+  state.allowed = false; state.rpc.mockClear();
+  expect((await PATCH(new Request("http://localhost", { method: "PATCH", body: JSON.stringify({ outreach }) }))).status).toBe(403);
+  expect(state.rpc).not.toHaveBeenCalled();
+});
+it.each([{ organization_id: "forged", outreach }, { outreach: { ...outreach, organization_id: "forged" } },
+  { outreach: { ...outreach, activation_message: "x".repeat(2001) } }])("não permite forjar workspace nem exceder limite do texto", async body => {
+  expect((await PATCH(new Request("http://localhost", { method: "PATCH", body: JSON.stringify(body) }))).status).toBe(400);
+  expect(state.rpc).not.toHaveBeenCalled();
 });
 
 it("somente administrador lê histórico, antes de tocar no banco", async () => {
