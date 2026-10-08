@@ -110,6 +110,7 @@ test("Obra no Bolso distingue o modo 96h e mostra estados sem confundir teste co
   await expect(activation).toHaveValue(/Se surgir algum erro ou dúvida, envie uma mensagem por aqui para receber suporte/);
   await activation.fill("Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte.");
   await page.getByRole("button", { name: "Salvar mensagens", exact: true }).click();
+  await expect(page.getByText("Mensagens do ciclo salvas.", { exact: true })).toBeVisible();
   expect(savedOutreach).toMatchObject({ enabled: false, channel_session_id: null,
     activation_message: "Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte." });
   await expect(activation).toHaveValue("Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte.");

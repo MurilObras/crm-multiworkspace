@@ -258,7 +258,7 @@ export function ObraNoBolsoTab() {
         <Label htmlFor="obra-message-channel">{t("Número para acompanhamento")}</Label>
         <Select value={outreach.channel_session_id ?? "none"} onValueChange={value => setOutreach({ ...outreach, channel_session_id: value === "none" ? null : value })}>
           <SelectTrigger id="obra-message-channel"><SelectValue /></SelectTrigger><SelectContent>
-            <SelectItem value="none">{t("Selecione o número WAHA")}</SelectItem>
+            <SelectItem value="none">{t("Selecione o número conectado por QR code")}</SelectItem>
             {channels.map(item => <SelectItem value={item.id} key={item.id}>{item.display_name}</SelectItem>)}
           </SelectContent>
         </Select>

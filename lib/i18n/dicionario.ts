@@ -47,7 +47,7 @@ export const DICIONARIO: Traducoes = {
   "Mensagens de teste e assinatura": { es: "Mensajes de prueba y suscripción" },
   "Até dois contatos no teste: após 2 e 48 horas. A confirmação ocorre após 96 horas completas. Proativos somente em dias úteis, das 8h às 20h; respostas recebidas continuam 24 horas.": { es: "Hasta dos contactos durante la prueba: después de 2 y 48 horas. La confirmación ocurre después de 96 horas completas. Mensajes proactivos solo en días hábiles, de 8 a 20 horas; las respuestas recibidas continúan las 24 horas." },
   "Número para acompanhamento": { es: "Número para seguimiento" },
-  "Selecione o número WAHA": { es: "Seleccione el número WAHA" },
+  "Selecione o número conectado por QR code": { es: "Seleccione el número conectado mediante código QR" },
   "Fluxo de recuperação": { es: "Flujo de recuperación" },
   "Sem recuperação automática": { es: "Sin recuperación automática" },
   "O fluxo selecionado precisa estar publicado, vinculado ao agente e condicionado à tag followup_assinatura. Essa tag é liberada após confirmar suspensão ou cancelamento depois das 96 horas e aguardar mais 2 horas.": { es: "El flujo seleccionado debe estar publicado, vinculado al agente y condicionado a la etiqueta followup_assinatura. Esta etiqueta se habilita tras confirmar suspensión o cancelación después de 96 horas y esperar otras 2 horas." },

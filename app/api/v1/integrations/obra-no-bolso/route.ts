@@ -130,7 +130,7 @@ export async function PATCH(req: Request): Promise<Response> {
       p_recovery: cfg.recovery_pointer_id, p_registration: cfg.registration_message, p_usage: cfg.usage_message,
       p_activation: cfg.activation_message,
     });
-    if (configError || !data) return fail("invalid_request", "Confira o número WAHA e o fluxo de recuperação deste workspace.", 422, { requestId });
+    if (configError || !data) return fail("invalid_request", "Confira o número conectado por QR code e o fluxo de recuperação deste workspace.", 422, { requestId });
     await audit({ action: "obra_subscription.outreach_configured", actorUserId: auth.user.id, organizationId: orgId,
       resourceType: "obra_access_integration", resourceId: current.id, requestId, metadata: { outreach_enabled: cfg.enabled } });
     return ok(data, { requestId });

@@ -132,6 +132,31 @@ it("confirmação tem um único evento de mensagem e guarda bloqueia recusa/resp
   await db.query("select fn_configure_obra_outreach($1,$2,false,$3,null,'Cadastro','Uso','Confirmada')", [org,integration,channel]);
 });
 
+it("cuidados vencidos não acumulam e resposta retira o segmento sem rearmar", async () => {
+  const channel = randomUUID();
+  await db.query("insert into channel_sessions values($1,$2,'waha',null)",[channel,org]);
+  await db.query("select fn_configure_obra_outreach($1,$2,true,$3,null,'Cadastro','Uso','Confirmada')",[org,integration,channel]);
+  const o = await opportunity(), fresh = new Date().toISOString(), start = new Date(Date.now()-80*3600_000).toISOString();
+  const event = { ...payload(o), event_type:'trial_started', em_trial:true, trial_started_at:start,
+    occurred_at:fresh, checked_at:fresh, trial_ends_at:new Date(Date.parse(start)+72*3600_000).toISOString() };
+  const result = await receive(event);
+  expect((await db.query<{ n: number }>("select count(*)::int n from obra_subscription_outreach where state_id=$1",[result.state_id])).rows[0]!.n).toBe(0);
+  await db.query("update contacts set tags=array['followup_assinatura'] where id=$1",[o.contact]);
+  await db.query("insert into messages values($1,$2,$3,'inbound',now())",[randomUUID(),org,o.contact]);
+  expect((await db.query<{ tags: string[] }>("select tags from contacts where id=$1",[o.contact])).rows[0]!.tags).not.toContain('followup_assinatura');
+  await db.query("update contacts set tags=array['followup_assinatura'],force_human=true where id=$1",[o.contact]);
+  expect((await db.query<{ tags: string[] }>("select tags from contacts where id=$1",[o.contact])).rows[0]!.tags).not.toContain('followup_assinatura');
+  await db.query("select fn_configure_obra_outreach($1,$2,false,$3,null,'Cadastro','Uso','Confirmada')",[org,integration,channel]);
+});
+
+it("configuração não usa número ou fluxo de outro workspace", async () => {
+  const channel = randomUUID(), pointer = randomUUID();
+  await db.query("insert into channel_sessions values($1,$2,'waha',null)",[channel,otherOrg]);
+  await db.query("insert into followup_flow_pointers values($1,$2)",[pointer,otherOrg]);
+  await expect(db.query("select fn_configure_obra_outreach($1,$2,true,$3,null,'a','b','c')",[org,integration,channel])).rejects.toThrow('obra_channel_invalid');
+  await expect(db.query("select fn_configure_obra_outreach($1,$2,false,null,$3,'a','b','c')",[org,integration,pointer])).rejects.toThrow('obra_recovery_invalid');
+});
+
 it("ativo no início do teste mantém oportunidade aberta", async () => {
   const o = await opportunity(), event = { ...payload(o), event_type: "trial_started", checked_at: started, occurred_at: started };
   expect(await receive(event)).toMatchObject({ status: "accepted", decision: "trial", event_id: event.event_id });
