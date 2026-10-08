@@ -140,3 +140,12 @@ concorrência real, isolamento e privilégios. A spec `webhooks` existente traz
 uma prova visual com respostas sintéticas de UI; não comprova transporte.
 Checks novos devem estar verdes antes de merge/publicação. PR antigo verde não
 é prova desta alteração. Os workflows/proteções não foram modificados.
+
+Os contratos de `lib/database.types.ts` deste domínio foram gerados por
+`@supabase/postgrest-typegen@0.4.0`, motor oficial de geração do Supabase.
+A introspecção executou as migrations 0229/0230/0231 sobre a fixture PGlite de
+`tests/unit/obra-subscription-migration.test.ts`. Foram incorporados por AST
+somente os seis contratos `obra_*` e as treze RPCs `*_obra_*`, incluindo
+nullabilidade, defaults e relacionamentos. Os demais contratos preexistentes
+foram preservados; nenhum campo ou assinatura foi escrito à mão. Isso não
+substitui a aplicação/reaplicação do baseline nem a prova RLS no CI.
