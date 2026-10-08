@@ -75,7 +75,7 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
-  ...["obra_subscription_states", "obra_subscription_receipts"].map(tabela => ({
+  ...["obra_subscription_states", "obra_subscription_receipts", "obra_subscription_outreach"].map(tabela => ({
     tabela,
     razao: "tests/invariants/obra-subscription.test.ts — controles positivos em dois tenants e SET LOCAL ROLE/JWT negam SELECT, INSERT, UPDATE, DELETE e RPC a anon/authenticated; vínculo e fechamento são escopados no serviço.",
   })),
