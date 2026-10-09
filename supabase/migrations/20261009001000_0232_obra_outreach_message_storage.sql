@@ -58,4 +58,3 @@ grant execute on function public.fn_configure_obra_outreach(uuid,uuid,boolean,uu
 
 
 notify pgrst,'reload schema';
-
