@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { closeSync, mkdtempSync, openSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 import pg from "pg";
 import { beforeAll, beforeEach, afterEach, afterAll, it, expect, vi } from "vitest";
 import { acquireActionIntent, freezeEventPlan } from "@/lib/automation/action-intent";
@@ -32,11 +33,26 @@ function psql(text:string,stop:boolean,transaction=false,conflict=false) {
   // Autocommit reproduz update.sh; --single-transaction reproduz atomicidade do runner.
   if(stop)args.push("-v","ON_ERROR_STOP=1");
   if(transaction)args.push("--single-transaction");
-  const result=native
-    ?spawnSync(join(process.env.KIWIFY_TEST_PG_BIN!,process.platform==="win32"?"psql.exe":"psql"),["-h","127.0.0.1","-p",String(port),...args],{input:text,encoding:"utf8",maxBuffer:20*1024*1024})
-    :spawnSync("docker",["exec","-i",container!,"psql",...args],{input:text,encoding:"utf8",maxBuffer:20*1024*1024});
-  expect(result.error).toBeUndefined();expect(result.status).toBe(conflict && stop?3:0);
-  return result;
+  // ON_ERROR_STOP encerra psql no conflito esperado antes de consumir todo o
+  // baseline. Um pipe escrito por spawnSync pode falhar com EPIPE e esconder
+  // o status SQL; stdin por arquivo mantém a mesma prova sem essa corrida.
+  const scratch=mkdtempSync(join(tmpdir(),"kiwify-update-sql-"));
+  const sqlFile=join(scratch,"input.sql");
+  let fd: number | undefined;
+  try {
+    writeFileSync(sqlFile,text,"utf8");
+    fd=openSync(sqlFile,"r");
+    const options: SpawnSyncOptionsWithStringEncoding={stdio:[fd,"pipe","pipe"],encoding:"utf8",maxBuffer:20*1024*1024};
+    const result=native
+      ?spawnSync(join(process.env.KIWIFY_TEST_PG_BIN!,process.platform==="win32"?"psql.exe":"psql"),["-h","127.0.0.1","-p",String(port),...args],options)
+      :spawnSync("docker",["exec","-i",container!,"psql",...args],options);
+    expect(result.error).toBeUndefined();expect(result.status).toBe(conflict && stop?3:0);
+    return result;
+  } finally {
+    if(fd!==undefined)closeSync(fd);
+    unlinkSync(sqlFile);
+    rmdirSync(scratch);
+  }
 }
 beforeAll(async()=>{
   expect(start).toBeGreaterThan(0);expect(end).toBeGreaterThan(start);
