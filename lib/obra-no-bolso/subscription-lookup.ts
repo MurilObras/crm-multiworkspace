@@ -5,6 +5,7 @@ import { z } from "zod";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { fingerprintAccessEvent, readAccessBody } from "./access-event";
 import { validateSubscriptionEvent } from "./subscription-event";
+import { SubscriptionLookupUnavailableError } from "./subscription-errors";
 
 // Origem do backend já usada pelo frontend do aplicativo. Sem URL arbitrária/SSRF.
 export const SUBSCRIPTION_LOOKUP_URL = "https://api.obranobolsoai.com/api/v1/crm/subscription-status";
@@ -17,14 +18,31 @@ export async function fetchSubscriptionSnapshot(productUserId: string, secret: s
   if (!z.uuid().safeParse(productUserId).success || secret.length < 32) throw new Error("subscription_lookup_invalid");
   const stamp = String(Math.floor(now / 1000));
   const body = Buffer.from(JSON.stringify({ product_user_id: productUserId }));
-  const response = await transport(SUBSCRIPTION_LOOKUP_URL, { method: "POST", body,
-    headers: { "Content-Type": "application/json", "X-Obra-Timestamp": stamp,
-      "X-Obra-Signature": signLookup(body, stamp, secret, "lookup") },
-    redirect: "error", cache: "no-store", signal: AbortSignal.timeout(10_000) });
+  let response: Response;
+  try {
+    response = await transport(SUBSCRIPTION_LOOKUP_URL, { method: "POST", body,
+      headers: { "Content-Type": "application/json", "X-Obra-Timestamp": stamp,
+        "X-Obra-Signature": signLookup(body, stamp, secret, "lookup") },
+      redirect: "error", cache: "no-store", signal: AbortSignal.timeout(10_000) });
+  } catch {
+    // A origem e o input já são fixos/validados. Não persistir erro livre da rede.
+    throw new SubscriptionLookupUnavailableError();
+  }
+  if ([408, 425, 429].includes(response.status) || response.status >= 500) {
+    throw new SubscriptionLookupUnavailableError();
+  }
   if (!response.ok || response.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
     throw new Error("subscription_lookup_unavailable");
   }
-  const raw = await readAccessBody(new Request(SUBSCRIPTION_LOOKUP_URL, { method: "POST", body: response.body, duplex: "half" } as RequestInit));
+  let raw: Buffer;
+  try {
+    raw = await readAccessBody(new Request(SUBSCRIPTION_LOOKUP_URL, { method: "POST", body: response.body, duplex: "half" } as RequestInit));
+  } catch (error) {
+    if (error instanceof TypeError || (error instanceof DOMException && ["TimeoutError", "AbortError"].includes(error.name))) {
+      throw new SubscriptionLookupUnavailableError();
+    }
+    throw error;
+  }
   const receivedStamp = response.headers.get("x-obra-timestamp") ?? "";
   const signature = response.headers.get("x-obra-signature") ?? "";
   const current = Date.now();

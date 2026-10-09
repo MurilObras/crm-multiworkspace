@@ -1814,3 +1814,21 @@ COLUMN`, `UPDATE`, `ALTER COLUMN`, um bloco `DO` com `pg_constraint`), e
 `scripts/test-db.sh` já sobe `pgvector/pgvector:pg15` — os `pnpm test:db`
 anteriores desta sessão já corriam contra o piso certo, mesmo antes deste
 achado.
+
+## Obra no Bolso — retomada após indisponibilidade da consulta (2026-10-09)
+
+Falha encontrada: a segunda consulta do aplicativo podia encerrar como falha
+definitiva uma mensagem que ainda não havia tocado o WhatsApp. Correção:
+indisponibilidade de rede/timeout, HTTP 408/425/429 ou 5xx conserva a mesma
+mensagem preparada e a intenção adiada. A próxima execução exige nova consulta
+válida e revalida contato, humano, resposta, fase e calendário. Tentativa já
+iniciada/incerta continua sem reenvio automático.
+
+Prova de backend em `tests/unit/obra-outreach-retry.test.ts`: duas consultas
+indisponíveis seguidas, recuperação com uma única mensagem/envio, bloqueio e
+humano durante a espera, falhas permanentes e erro depois de STARTED. A fixture
+PGlite isola a retomada; guardas de domínio usam SQL real nos invariantes. A
+Atividade traduz a espera em português. Não há nova tela; a prova de UX e banco
+completos segue no CI existente, conforme decisão de ambiente registrada em
+`docs/specs/obra-subscription-lifecycle.md`. Transporte real entre servidores e
+contatos controlados continua sendo gate de ativação, sem clientes nesta prova.

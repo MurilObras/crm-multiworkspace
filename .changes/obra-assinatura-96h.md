@@ -17,3 +17,7 @@ existente escolhido, apenas após a confirmação de não conversão e mais duas
 horas. O administrador pode reconsultar uma pendência diretamente pela tela.
 Os textos personalizados permanecem salvos mesmo antes de selecionar o número
 ou ao remover o canal, com os envios desligados.
+
+Uma falha temporária na consulta do aplicativo imediatamente antes do envio
+mantém a mensagem aguardando. Ao restabelecer a consulta, o CRM revalida as
+condições e retoma a mesma mensagem, sem duplicar uma tentativa já iniciada.

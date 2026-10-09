@@ -110,6 +110,18 @@ Falha não autoriza uso do estado antigo. A guarda SQL no CAS revalida
 workspace, contato, oportunidade/funil, etapa, fase, calendário, recusa,
 resposta posterior ao início da fase e silêncio por humano.
 
+Se a consulta imediatamente anterior ao transporte falhar por rede/timeout,
+HTTP 408/425/429 ou 5xx, a mensagem permanece `queued/prepared`; sua intenção
+fica `pending/adiado` e o consumidor reagenda pelo mecanismo existente. A
+retomada consulta novamente e usa o mesmo ID, texto e intenção, sem gerar
+outra mensagem. A Atividade informa que a consulta de assinatura está
+temporariamente indisponível. Falha de autenticação, integração desligada,
+chave inválida ou snapshot não confiável não vira essa espera. Nenhuma falha
+depois de `started` permite reenvio automático; a incerteza continua terminal.
+Cobertura: `tests/unit/obra-outreach-retry.test.ts` prova duas falhas antes da
+recuperação, bloqueio/humano posterior e ausência de repetição; as guardas
+comerciais e de calendário usam as provas SQL reais da suíte de invariantes.
+
 Recuperação libera a tag `followup_assinatura` uma única vez após
 `recovery_started_at + 2h`, somente em não convertido, consultado após 96h.
 O fluxo existente deve estar publicado, habilitado no agente e condicionado

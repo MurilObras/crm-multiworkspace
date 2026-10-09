@@ -35,6 +35,8 @@ const FRASES: Record<string, string> = {
   zernio_error: "O canal recusou o envio. Confira a conexão em Conexões.",
   // Falha do NOSSO Storage ao preparar a mídia — não é do canal.
   storage_sign_failed: "Não conseguimos preparar o arquivo para envio.",
+  subscription_lookup_unavailable:
+    "A consulta de assinatura está temporariamente indisponível. A mensagem aguarda uma nova consulta antes de sair.",
 };
 
 /**

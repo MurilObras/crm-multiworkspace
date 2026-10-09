@@ -29,3 +29,11 @@ export class DeliveryRejectedError extends Error {
 export class OutboundLeaseLostError extends Error {
   constructor() { super('outbound_lease_lost'); this.name = 'OutboundLeaseLostError'; }
 }
+
+/** Espera de uma dependência pré-envio. Só PREPARED permite retomar com segurança. */
+export class OutboundPreflightDeferredError extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+    this.name = 'OutboundPreflightDeferredError';
+  }
+}

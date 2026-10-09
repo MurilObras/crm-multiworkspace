@@ -1,6 +1,6 @@
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { OutboundLeaseLostError } from "@/lib/channels/delivery-error";
+import { OutboundLeaseLostError, OutboundPreflightDeferredError } from "@/lib/channels/delivery-error";
 import type { Message } from "@/lib/types/messaging";
 import type { SendMessageInput } from "@/lib/schemas";
 import type { ActionCtx } from "./types";
@@ -11,6 +11,7 @@ import { sendMessageSchema } from "@/lib/schemas/messaging";
 import { reportarEnvio } from "./desfecho-do-envio";
 import type { ActionResultDetail } from "./types";
 import { refreshObraOutreachForTransport } from "@/lib/obra-no-bolso/outreach";
+import { SubscriptionLookupUnavailableError } from "@/lib/obra-no-bolso/subscription-errors";
 
 /** Reusa o sink e seu protocolo prepared → started → rejected/uncertain.
  * A aquisição pertence ao run, em vez do job_queue do agente. Não existe
@@ -39,7 +40,14 @@ export async function sendAutomationMessage(ctx: ActionCtx, input: SendMessageIn
     },
     beforeTransport: async (message) => {
       if (ctx.event.event_type === "obra_subscription.outreach") {
-        await refreshObraOutreachForTransport(ctx.admin,org,ctx.event.id);
+        try {
+          await refreshObraOutreachForTransport(ctx.admin,org,ctx.event.id);
+        } catch (error) {
+          if (error instanceof SubscriptionLookupUnavailableError) {
+            throw new OutboundPreflightDeferredError("subscription_lookup_unavailable");
+          }
+          throw error;
+        }
       }
       if (await adiarAteAJanelaAbrir(ctx.admin,org,message.channel_session_id)) {
         throw new ApiError(403,"forbidden",undefined,ctx.requestId,"fora_da_janela_de_envio");

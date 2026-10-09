@@ -72,7 +72,7 @@ export async function finishActionIntent(db: Queryable, org: string, id: string,
   const reason = result.detail?.reason ?? result.detail?.error_code ?? result.error;
   const knownReasons = ["no_contact", "no_phone", "contact_blocked", "contact_anonymized", "consent_declined", "human_handoff",
     "missing_config", "invalid_config", "flow_not_active", "live_enrollment_exists", "sem_agente_publicado", "ia_indisponivel",
-    "recipient_changed", "awaiting_processing", "fora_da_janela_de_envio", "daily_limit", "outbound_delivery_uncertain",
+    "recipient_changed", "awaiting_processing", "subscription_lookup_unavailable", "fora_da_janela_de_envio", "daily_limit", "outbound_delivery_uncertain",
     "template_not_found", "template_not_approved", "template_lookup_failed", "template_missing_values", "template_invalid_values", "outbound_session_unavailable"];
   const safeReason = typeof reason === "string" && knownReasons.includes(reason)
     ? reason : result.status === "success" ? (result.detail?.message_id ? "provider_accepted" : "action_completed") : "action_failed";

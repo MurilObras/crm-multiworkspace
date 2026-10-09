@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { fetchSubscriptionSnapshot, signLookup, SUBSCRIPTION_LOOKUP_URL } from "./subscription-lookup";
+import { SubscriptionLookupUnavailableError } from "./subscription-errors";
 const secret = "synthetic-key-that-is-longer-than-32-characters";
 const user = "820d31a5-1b20-48f4-babc-9f7039034765";
 const now = Date.parse("2026-10-12T12:00:00Z");
@@ -42,4 +43,29 @@ it("não aceita JSON sem assinatura, corpo grande, erro HTTP ou identificador ar
   const transport = vi.fn();
   await expect(fetchSubscriptionSnapshot("forged", secret, now, transport)).rejects.toThrow();
   expect(transport).not.toHaveBeenCalled();
+});
+it.each([408, 425, 429, 500, 502, 503, 504])("HTTP %s adia somente por indisponibilidade temporária", async status => {
+  await expect(fetchSubscriptionSnapshot(user, secret, now,
+    vi.fn(async () => new Response(null, { status })) as typeof fetch)).rejects.toBeInstanceOf(SubscriptionLookupUnavailableError);
+});
+it.each([new TypeError("fetch failed"), new DOMException("timeout", "TimeoutError")])("rede/timeout é espera sanitizada", async error => {
+  await expect(fetchSubscriptionSnapshot(user, secret, now, vi.fn(async () => { throw error; }) as typeof fetch))
+    .rejects.toMatchObject({ name: "SubscriptionLookupUnavailableError", message: "subscription_lookup_unavailable" });
+});
+it("perda de conexão ao ler a resposta também permite nova consulta", async () => {
+  const body = new ReadableStream({ start(controller) { controller.error(new TypeError("terminated")); } });
+  await expect(fetchSubscriptionSnapshot(user, secret, now, vi.fn(async () =>
+    new Response(body, { headers: { "Content-Type": "application/json" } })) as typeof fetch))
+    .rejects.toBeInstanceOf(SubscriptionLookupUnavailableError);
+});
+it.each([400, 401, 403, 404, 422])("HTTP %s não vira espera por indisponibilidade", async status => {
+  await expect(fetchSubscriptionSnapshot(user, secret, now,
+    vi.fn(async () => new Response(null, { status })) as typeof fetch))
+    .rejects.not.toBeInstanceOf(SubscriptionLookupUnavailableError);
+});
+it("assinatura inválida, JSON inválido e corpo excessivo não viram espera", async () => {
+  for (const reply of [Response.json({ data: event }), response({ data: "x".repeat(17_000) }), response({ data: null })]) {
+    await expect(fetchSubscriptionSnapshot(user, secret, now, vi.fn(async () => reply) as typeof fetch))
+      .rejects.not.toBeInstanceOf(SubscriptionLookupUnavailableError);
+  }
 });
