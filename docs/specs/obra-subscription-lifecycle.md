@@ -87,6 +87,10 @@ aba Obra no Bolso configura cadastro (+2h), uso (+48h) e confirmação única.
 O texto aprovado de confirmação inclui orientação para responder no mesmo
 contato para suporte. Campo vazio desativa aquela mensagem. As regras internas
 não têm um segundo editor na aba Automações; escritas diretas por JWT são negadas.
+Os três textos são persistidos na integração independentemente do canal. Salvar
+com envios desligados e sem número, ou retirar o número, preserva a personalização;
+as ações permanecem vazias e inativas até escolher um canal. A migration 0232
+preserva textos antigos e campos vazios sem reativar mensagens na atualização.
 
 O início real agenda no `event_log` no máximo dois cuidados. Um registro único
 por estado/fase impede novo envio por reconsulta/replay. Cadastro vencido em
@@ -143,7 +147,7 @@ Checks novos devem estar verdes antes de merge/publicação. PR antigo verde nã
 
 Os contratos de `lib/database.types.ts` deste domínio foram gerados por
 `@supabase/postgrest-typegen@0.4.0`, motor oficial de geração do Supabase.
-A introspecção executou as migrations 0229/0230/0231 sobre a fixture PGlite de
+A introspecção executou as migrations 0229/0230/0231/0232 sobre a fixture PGlite de
 `tests/unit/obra-subscription-migration.test.ts`. Foram incorporados por AST
 somente os seis contratos `obra_*` e as treze RPCs `*_obra_*`, incluindo
 nullabilidade, defaults e relacionamentos. Os demais contratos preexistentes

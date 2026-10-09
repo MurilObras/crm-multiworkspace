@@ -36,7 +36,7 @@ export async function GET(req: Request): Promise<Response> {
   const admin = createAdminClient();
   const orgId = auth.org.orgId;
   const { data: integration, error } = await admin.from("obra_access_integrations")
-    .select("id,organization_id,pipeline_id,is_active,lifecycle_enabled,last_received_at,rejected_count,created_at,outreach_enabled,outreach_channel_id,recovery_pointer_id,registration_rule_id,usage_rule_id,activation_rule_id")
+    .select("id,organization_id,pipeline_id,is_active,lifecycle_enabled,last_received_at,rejected_count,created_at,outreach_enabled,outreach_channel_id,recovery_pointer_id,registration_rule_id,usage_rule_id,activation_rule_id,registration_message,usage_message,activation_message")
     .eq("organization_id", orgId).maybeSingle();
   if (error) return fail("internal_error", "Consulta indisponível.", 503, { requestId });
   if (!integration) return ok({ integration: null, receipts: [], rejections: [],
@@ -68,9 +68,9 @@ export async function GET(req: Request): Promise<Response> {
     : (messages ?? []).find(row => row.id === id)?.actions?.[0]?.config?.template ?? "";
   return ok({ integration, outreach: { enabled: integration.outreach_enabled ?? false,
     channel_session_id: integration.outreach_channel_id ?? null, recovery_pointer_id: integration.recovery_pointer_id ?? null,
-    registration_message: template(integration.registration_rule_id, DEFAULT_REGISTRATION_MESSAGE),
-    usage_message: template(integration.usage_rule_id, DEFAULT_USAGE_MESSAGE),
-    activation_message: template(integration.activation_rule_id, DEFAULT_ACTIVATION_MESSAGE) }, subscriptions: (subscriptions ?? []).slice(0, 50),
+    registration_message: integration.registration_message ?? template(integration.registration_rule_id, DEFAULT_REGISTRATION_MESSAGE),
+    usage_message: integration.usage_message ?? template(integration.usage_rule_id, DEFAULT_USAGE_MESSAGE),
+    activation_message: integration.activation_message ?? template(integration.activation_rule_id, DEFAULT_ACTIVATION_MESSAGE) }, subscriptions: (subscriptions ?? []).slice(0, 50),
     subscription_pagination: { offset, has_more: (subscriptions?.length ?? 0) > 50 }, receipts: (receipts ?? []).slice(0, 50),
     rejections: (rejections ?? []).map(row => ({ created_at: row.created_at,
       reason: (row.metadata as Record<string, unknown> | null)?.reason ?? "invalid_request" })),

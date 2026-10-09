@@ -114,6 +114,9 @@ test("Obra no Bolso distingue o modo 96h e mostra estados sem confundir teste co
   expect(savedOutreach).toMatchObject({ enabled: false, channel_session_id: null,
     activation_message: "Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte." });
   await expect(activation).toHaveValue("Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte.");
+  await page.reload();
+  await page.getByRole("tab", { name: "Obra no Bolso" }).click();
+  await expect(activation).toHaveValue("Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte.");
   await expect(page.getByRole("button", { name: "Consultar aplicativo novamente" }).first()).toBeDisabled();
   await testInfo.attach("obra-assinaturas-96h", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
 });

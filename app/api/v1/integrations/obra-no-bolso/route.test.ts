@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, expect, it, vi } from "vitest";
-const state = vi.hoisted(() => ({ allowed: true, from: vi.fn(), rpc: vi.fn(), eq: vi.fn(), range: vi.fn() }));
+const state = vi.hoisted(() => ({ allowed: true, from: vi.fn(), rpc: vi.fn(), eq: vi.fn(), range: vi.fn(), integration: {} as Record<string, unknown> }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn(async (role: string) => {
   expect(role).toBe("admin");
   return state.allowed ? { ok: true, user: { id: "actor" }, org: { orgId: "trusted-org" } }
@@ -12,7 +12,7 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 import { GET, PATCH } from "./route";
 
 beforeEach(() => {
-  vi.clearAllMocks(); state.allowed = true;
+  vi.clearAllMocks(); state.allowed = true; state.integration = {};
   state.rpc.mockResolvedValue({ data: { processed: 1500, pending: 1200, duplicates: 2400, rejected: 0, trial: 500, paid: 1000 }, error: null });
   state.from.mockImplementation((table: string) => {
     const query = {
@@ -21,7 +21,7 @@ beforeEach(() => {
       order: () => query,
       range: (start: number, end: number) => { state.range(start, end); return query; },
       limit: () => query,
-      maybeSingle: async () => ({ data: { id: "source", organization_id: "trusted-org", is_active: false, lifecycle_enabled: true }, error: null }),
+      maybeSingle: async () => ({ data: { id: "source", organization_id: "trusted-org", is_active: false, lifecycle_enabled: true, ...state.integration }, error: null }),
       then: (resolve: (value: unknown) => unknown) => resolve({ error: null,
         data: table === "obra_access_receipts" ? Array.from({ length: 51 }, (_, n) => ({ id: `receipt-${n}` })) : [] }),
     };
@@ -31,6 +31,13 @@ beforeEach(() => {
 
 const outreach = { enabled: false, channel_session_id: "2c3f3457-9a52-4fd3-9e51-9e9842ff4c5a", recovery_pointer_id: null,
   registration_message: "Cadastro", usage_message: "Uso", activation_message: "Parabéns, {{contact.name}}! Responda aqui para receber suporte." };
+it("retorna textos persistidos e campo vazio sem precisar de canal nem ações de envio", async () => {
+  state.integration = { registration_message: "Cadastro personalizado", usage_message: "",
+    activation_message: "Meu suporte", outreach_channel_id: null, outreach_enabled: false };
+  const response = await GET(new Request("http://localhost/api/v1/integrations/obra-no-bolso"));
+  expect((await response.json()).data.outreach).toMatchObject({ registration_message: "Cadastro personalizado",
+    usage_message: "", activation_message: "Meu suporte", channel_session_id: null, enabled: false });
+});
 it("somente administrador configura textos pelo workspace da sessão", async () => {
   state.rpc.mockResolvedValue({ data: { outreach_enabled: false }, error: null });
   const response = await PATCH(new Request("http://localhost/api/v1/integrations/obra-no-bolso", {

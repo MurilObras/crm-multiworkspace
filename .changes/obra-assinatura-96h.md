@@ -15,3 +15,5 @@ esperam dias úteis das 8h às 20h e exigem estado atual do aplicativo; resposta
 recusa e atendimento humano bloqueiam o retorno. Recuperação usa o fluxo
 existente escolhido, apenas após a confirmação de não conversão e mais duas
 horas. O administrador pode reconsultar uma pendência diretamente pela tela.
+Os textos personalizados permanecem salvos mesmo antes de selecionar o número
+ou ao remover o canal, com os envios desligados.

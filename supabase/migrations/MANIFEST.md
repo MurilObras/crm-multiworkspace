@@ -265,6 +265,7 @@ aplica.
 | `20261005190000` | `0229_obra_no_bolso_access` | Integração Obra no Bolso desligada por padrão; recebimento autenticado, ledger, conciliação conservadora e associação única. Claim e confirmação duráveis permitem retry após falha, e só a confirmação emite evento para automação. |
 | `20261008210000` | `0230_obra_subscription_lifecycle` | Modo v2 opt-in por workspace; início real do teste e consulta somente após 96 horas. Recebimento atômico, deduplicação, vínculo conservador, venda paga fora do teste e suspensão pós-conversão distinta de recuperação. Histórico privado e anonimização. Não ativa mensagens. |
 | `20261008230000` | `0231_obra_subscription_outreach` | Mensagens editáveis e habilitação separada por workspace; event_log agenda até dois cuidados, confirmação única e liberação do segmento de recuperação. Guardas finais de identidade, resposta, humano, dias úteis 08–20h e snapshot atual. Regras internas privadas e recuperação limitada ao fluxo escolhido. |
+| `20261009001000` | `0232_obra_outreach_message_storage` | Preserva os três textos do ciclo sem exigir canal conectado; mantém envio desligado sem número, migra textos existentes sem reativar mensagens vazias e conserva as permissões privadas. |
 
 ## Reproducibility
 

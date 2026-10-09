@@ -87,12 +87,41 @@ beforeAll(async () => {
       return eid; end $$;
   `);
   await db.exec(readFileSync(new URL("../../supabase/migrations/20261008230000_0231_obra_subscription_outreach.sql", import.meta.url), "utf8"));
+  await db.exec(readFileSync(new URL("../../supabase/migrations/20261009001000_0232_obra_outreach_message_storage.sql", import.meta.url), "utf8"));
   await db.query("insert into organizations values($1),($2)", [org, otherOrg]);
   await db.query("insert into crm_pipelines values($1,$2)", [pipeline, org]);
   await db.query("insert into crm_stages values($1,$2,$3,'Aberto',false,false),($4,$2,$3,'Acesso ativado',true,false)", [openStage, org, pipeline, wonStage]);
   await db.query("insert into obra_access_integrations(id,organization_id,pipeline_id,secret_encrypted,is_active,lifecycle_enabled) values($1,$2,$3,$4,true,true)", [integration, org, pipeline, secret]);
 });
 afterAll(async () => db.close());
+
+it("preserva textos sem número, ao remover canal e ao reaplicar a atualização", async () => {
+  const channel = randomUUID();
+  await db.query("insert into channel_sessions values($1,$2,'waha',null)", [channel,org]);
+  const messages = ["Meu cadastro", "Meu uso", "Meu suporte"];
+  const save = async (number: string | null) => db.query(
+    "select fn_configure_obra_outreach($1,$2,false,$3,null,$4,$5,$6)", [org,integration,number,...messages]);
+  const read = async () => (await db.query<{ registration_message: string; usage_message: string; activation_message: string; outreach_enabled: boolean }>(
+    "select registration_message,usage_message,activation_message,outreach_enabled from obra_access_integrations where id=$1", [integration])).rows[0];
+  await save(null);
+  expect(await read()).toEqual({ registration_message: messages[0],usage_message: messages[1],activation_message: messages[2],outreach_enabled: false });
+  await save(channel);
+  // Emula configuração anterior à 0232: texto nas ações, sem colunas preenchidas.
+  await db.query("update obra_access_integrations set registration_message=null,usage_message=null,activation_message=null where id=$1", [integration]);
+  await db.exec(readFileSync(new URL("../../supabase/migrations/20261009001000_0232_obra_outreach_message_storage.sql", import.meta.url), "utf8"));
+  expect((await read())?.activation_message).toBe("Meu suporte");
+  await save(null);
+  await db.exec(readFileSync(new URL("../../supabase/migrations/20261009001000_0232_obra_outreach_message_storage.sql", import.meta.url), "utf8"));
+  expect((await read())?.activation_message).toBe("Meu suporte");
+  const rules = (await db.query<{ actions: unknown[]; is_active: boolean }>(
+    "select actions,is_active from automation_rules where id=(select activation_rule_id from obra_access_integrations where id=$1)", [integration])).rows[0];
+  expect(rules).toEqual({ actions: [],is_active: false });
+  await expect(db.query("select fn_configure_obra_outreach($1,$2,true,null,null,'a','b','c')", [org,integration])).rejects.toThrow("obra_channel_required");
+  // Campo vazio deve continuar vazio, inclusive após reapply.
+  await db.query("select fn_configure_obra_outreach($1,$2,false,null,null,'a','b','')", [org,integration]);
+  await db.exec(readFileSync(new URL("../../supabase/migrations/20261009001000_0232_obra_outreach_message_storage.sql", import.meta.url), "utf8"));
+  expect((await read())?.activation_message).toBe("");
+});
 
 it("agenda somente dois cuidados pelo início real e não repete por reconsulta", async () => {
   const channel = randomUUID();

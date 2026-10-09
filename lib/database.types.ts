@@ -7303,6 +7303,7 @@ export type Database = {
       }
       obra_access_integrations: {
         Row: {
+          activation_message: string | null
           activation_rule_id: string | null
           created_at: string
           id: string
@@ -7314,14 +7315,17 @@ export type Database = {
           outreach_enabled: boolean
           pipeline_id: string
           recovery_pointer_id: string | null
+          registration_message: string | null
           registration_rule_id: string | null
           rejected_count: number
           secret_encrypted: string
           updated_at: string
+          usage_message: string | null
           usage_rule_id: string | null
         }
         ComputedFields: never
         Insert: {
+          activation_message?: string | null
           activation_rule_id?: string | null
           created_at?: string
           id?: string
@@ -7333,13 +7337,16 @@ export type Database = {
           outreach_enabled?: boolean
           pipeline_id: string
           recovery_pointer_id?: string | null
+          registration_message?: string | null
           registration_rule_id?: string | null
           rejected_count?: number
           secret_encrypted: string
           updated_at?: string
+          usage_message?: string | null
           usage_rule_id?: string | null
         }
         Update: {
+          activation_message?: string | null
           activation_rule_id?: string | null
           created_at?: string
           id?: string
@@ -7351,10 +7358,12 @@ export type Database = {
           outreach_enabled?: boolean
           pipeline_id?: string
           recovery_pointer_id?: string | null
+          registration_message?: string | null
           registration_rule_id?: string | null
           rejected_count?: number
           secret_encrypted?: string
           updated_at?: string
+          usage_message?: string | null
           usage_rule_id?: string | null
         }
         Relationships: [

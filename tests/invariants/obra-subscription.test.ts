@@ -56,6 +56,15 @@ beforeAll(async () => {
 });
 afterAll(async () => { await service.end(); await pool.end(); });
 
+it("baseline mantém mensagens sem canal, desativa ações e não permite ligar envio sem número", async () => {
+  await service.query("select fn_configure_obra_outreach($1,$2,false,null,null,'Meu cadastro','Meu uso','Meu suporte')", [org,source]);
+  expect((await service.query("select registration_message,usage_message,activation_message,outreach_enabled,outreach_channel_id from obra_access_integrations where organization_id=$1 and id=$2", [org,source])).rows[0])
+    .toEqual({ registration_message: "Meu cadastro",usage_message: "Meu uso",activation_message: "Meu suporte",outreach_enabled: false,outreach_channel_id: null });
+  expect((await service.query("select actions,is_active from automation_rules where organization_id=$1 and id=(select activation_rule_id from obra_access_integrations where id=$2)", [org,source])).rows[0])
+    .toEqual({ actions: [],is_active: false });
+  await expect(service.query("select fn_configure_obra_outreach($1,$2,true,null,null,'a','b','c')", [org,source])).rejects.toThrow("obra_channel_required");
+});
+
 it("o baseline real fecha a oportunidade e registra somente uma atividade sob reenvios concorrentes", async () => {
   const o = await opportunity(), event = payload(o);
   const results = await Promise.all(Array.from({ length: 8 }, () => receive(event)));
