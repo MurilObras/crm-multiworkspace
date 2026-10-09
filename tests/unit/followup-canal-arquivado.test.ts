@@ -121,6 +121,8 @@ const ctx = { workerId: "w1" };
  * folga sobre o custo medido sem esconder travamento: quem trava continua
  * reprovando.
  */
+// Este cenário trata de canais em workspace sem a integração Obra no Bolso.
+vi.mock("@/lib/obra-no-bolso/followup-guard", () => ({ guardObraFollowup: async () => ({ allowed: true }) }));
 let criarHandler: typeof import("@/lib/agent-engine/agent/followup-turn").createFollowupTurnHandler;
 
 beforeAll(async () => {

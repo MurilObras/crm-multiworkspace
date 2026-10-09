@@ -9,6 +9,7 @@ import { cancelJob, type Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
 import type { SendMessageInput, SendOutcome } from './send-message';
 import { decideOutboundRecovery, type RecoveryMessage } from './outbound-recovery';
+import { guardObraFollowup } from '@/lib/obra-no-bolso/followup-guard';
 
 export interface OutboundAttemptOptions {
   actor?: HandlerCtx['actor'];
@@ -160,9 +161,15 @@ export async function executeOutboundAttempt(
         if (!rows.length) throw new OutboundLeaseLostError();
       },
       beforeTransport: async () => {
+        const obra = contact ? await guardObraFollowup(db, org, job, contact) : { allowed: true };
+        if (!obra.allowed) throw new ApiError(403, 'forbidden', undefined, job, 'obra_followup_not_eligible');
         const { rows } = await db.query<{ id: string }>(
           `with owner as materialized (select id from job_queue where id=$1 and organization_id=$2
-             and status='running' and locked_by=$3 for update)
+             and status='running' and locked_by=$3 for update),
+           eligible_contact as materialized (select c.id from contacts c join job_queue j
+             on j.contact_id=c.id and j.organization_id=c.organization_id
+             where j.id=$1 and j.organization_id=$2 and j.kind='followup_turn'
+               and exists(select 1 from owner) and public.fn_obra_followup_live($2,$1,c.id) for update of c)
            update messages set status='sending',
               metadata=jsonb_set(metadata,'{outbound_attempt,phase}','"started"'::jsonb)
                 || coalesce((select jsonb_build_object('automation_destination_phone',c.phone_number)
@@ -170,6 +177,8 @@ export async function executeOutboundAttempt(
                     and not c.is_anonymized), '{}'::jsonb)
            where id=$4 and organization_id=$2 and status='queued'
              and metadata->'outbound_attempt'->>'phase'='prepared'
+             and (not exists(select 1 from job_queue where id=$1 and organization_id=$2 and kind='followup_turn')
+               or exists(select 1 from eligible_contact))
              and exists(select 1 from owner) returning id`, [job, org, owner, messageId],
         );
         if (!rows.length) throw new OutboundLeaseLostError();

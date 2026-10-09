@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Obra no Bolso: primeiro acesso e assinatura após 96h",
+    "output": "obra-no-bolso.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "product",
+      "label": "Produto"
+    },
+    {
+      "id": "crm",
+      "label": "CRM"
+    },
+    {
+      "id": "data",
+      "label": "Banco"
+    }
+  ],
+  "mainPath": [
+    "emitter",
+    "endpoint",
+    "receipt",
+    "closure",
+    "event",
+    "automation"
+  ],
+  "nodes": [
+    {
+      "id": "emitter",
+      "lane": "product",
+      "col": 1,
+      "type": "service",
+      "label": "Primeiro acesso liberado",
+      "sublabel": "trial/paid explícito; provedor só contexto"
+    },
+    {
+      "id": "endpoint",
+      "lane": "crm",
+      "col": 1,
+      "type": "api",
+      "label": "Webhook Obra no Bolso",
+      "sublabel": "HMAC, timestamp, limite de corpo/frequência"
+    },
+    {
+      "id": "receipt",
+      "lane": "data",
+      "col": 2,
+      "type": "database",
+      "label": "Recibo e vínculo",
+      "sublabel": "UNIQUE evento/usuário/contato/oportunidade"
+    },
+    {
+      "id": "closure",
+      "lane": "crm",
+      "col": 3,
+      "type": "service",
+      "label": "encerraDemanda",
+      "sublabel": "estágio ganho e timeline compartilhados"
+    },
+    {
+      "id": "event",
+      "lane": "data",
+      "col": 4,
+      "type": "database",
+      "label": "event_log",
+      "sublabel": "um acesso confirmado por recibo"
+    },
+    {
+      "id": "automation",
+      "lane": "crm",
+      "col": 5,
+      "type": "service",
+      "label": "Automação WhatsApp",
+      "sublabel": "opt-in; texto editável, dias úteis, resposta/humano e intenção durável"
+    },
+    {
+      "id": "review",
+      "lane": "crm",
+      "col": 2,
+      "type": "frontend",
+      "label": "Conferência administrativa",
+      "sublabel": "pendentes e auditoria da associação"
+    },
+    {
+      "id": "subscription",
+      "lane": "data",
+      "col": 3,
+      "type": "database",
+      "label": "Estado de assinatura v2",
+      "sublabel": "início real, 96h, decisões e agenda única por fase"
+    },
+    {
+      "id": "lookup",
+      "lane": "product",
+      "col": 5,
+      "type": "api",
+      "label": "Consulta restrita do estado",
+      "sublabel": "UUID; HMAC de consulta e resposta; sem pagamento externo"
+    }
+  ],
+  "edges": [
+    {
+      "id": "o1",
+      "from": "emitter",
+      "to": "endpoint",
+      "label": "evento assinado"
+    },
+    {
+      "id": "o2",
+      "from": "endpoint",
+      "to": "receipt",
+      "label": "validado e conciliado"
+    },
+    {
+      "id": "o3",
+      "from": "receipt",
+      "to": "closure",
+      "label": "somente vínculo único"
+    },
+    {
+      "id": "o4",
+      "from": "closure",
+      "to": "event",
+      "label": "após fechamento comprovado"
+    },
+    {
+      "id": "o5",
+      "from": "event",
+      "to": "automation",
+      "label": "regra ativa opcional"
+    },
+    {
+      "id": "o6",
+      "from": "receipt",
+      "to": "review",
+      "label": "sem associação segura"
+    },
+    {
+      "id": "o7",
+      "from": "review",
+      "to": "receipt",
+      "label": "decisão auditada"
+    },
+    {
+      "id": "o8",
+      "from": "automation",
+      "to": "review",
+      "label": "execução e bloqueio visíveis"
+    },
+    {
+      "id": "o9",
+      "from": "endpoint",
+      "to": "subscription",
+      "label": "somente contrato v2 no modo 96h"
+    },
+    {
+      "id": "o10",
+      "from": "subscription",
+      "to": "closure",
+      "label": "pago fora de teste e identidade única"
+    },
+    {
+      "id": "o11",
+      "from": "subscription",
+      "to": "review",
+      "label": "histórico de estados, reconsulta e mensagens editáveis"
+    },
+    {
+      "id": "o12",
+      "from": "automation",
+      "to": "lookup",
+      "label": "reconsulta antes de transporte e retomada"
+    },
+    {
+      "id": "o13",
+      "from": "lookup",
+      "to": "subscription",
+      "label": "snapshot assinado e identidade revalidada"
+    },
+    {
+      "id": "o14",
+      "from": "subscription",
+      "to": "event",
+      "label": "dois cuidados, confirmação única e recuperação elegível"
+    }
+  ]
+}

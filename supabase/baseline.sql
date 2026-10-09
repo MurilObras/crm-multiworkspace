@@ -19546,6 +19546,982 @@ drop trigger if exists kiwify_followup_after_reply on public.messages;
 create trigger kiwify_followup_after_reply after insert on public.messages
   for each row execute function public.fn_kiwify_followup_reply();
 
+-- ---- Obra no Bolso: primeiro acesso (migration 0229) ----
+-- 0229: confirmação de acesso do produto, separada da captação de leads.
+-- Segredo e dados pessoais só são acessíveis ao service_role. A integração nasce desligada.
+create table if not exists public.obra_access_integrations (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  pipeline_id uuid not null references public.crm_pipelines(id),
+  secret_encrypted bytea not null,
+  is_active boolean not null default false,
+  rejected_count bigint not null default 0,
+  last_received_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id),
+  unique (organization_id, id)
+);
+
+create table if not exists public.obra_access_receipts (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  integration_id uuid not null,
+  external_event_id text not null check (length(external_event_id) between 1 and 128),
+  product_user_id text not null check (length(product_user_id) between 1 and 128),
+  fingerprint text not null check (fingerprint ~ '^[a-f0-9]{64}$'),
+  event_version integer not null,
+  occurred_at timestamptz not null,
+  user_created_at timestamptz not null,
+  trial_ends_at timestamptz,
+  phone text,
+  name text,
+  email text,
+  plan text not null,
+  modality text not null check (modality in ('trial','paid')),
+  provider text,
+  user_status text not null,
+  is_new_user boolean not null,
+  status text not null check (status in ('rejected','pending','ready','processing','processed')),
+  reason text,
+  contact_id uuid references public.contacts(id) on delete set null,
+  lead_id uuid references public.crm_leads(id) on delete set null,
+  event_log_id uuid references public.event_log(id) on delete set null,
+  duplicate_count integer not null default 0,
+  claimed_at timestamptz,
+  processed_at timestamptz,
+  created_at timestamptz not null default now(),
+  foreign key (organization_id,integration_id) references public.obra_access_integrations(organization_id,id),
+  unique (organization_id,integration_id,external_event_id),
+  unique (organization_id,id)
+);
+create index if not exists obra_receipts_history_idx
+  on public.obra_access_receipts(organization_id,created_at desc);
+
+-- Um usuário do produto e um negócio do CRM só podem produzir uma conversão.
+create table if not exists public.obra_access_links (
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  product_user_id text not null,
+  contact_id uuid not null references public.contacts(id),
+  lead_id uuid not null references public.crm_leads(id),
+  receipt_id uuid not null,
+  modality text not null check (modality in ('trial','paid')),
+  plan text not null,
+  activated_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  primary key (organization_id,product_user_id),
+  unique (organization_id,contact_id),
+  unique (organization_id,lead_id),
+  unique (organization_id,receipt_id),
+  foreign key (organization_id,receipt_id) references public.obra_access_receipts(organization_id,id)
+);
+
+-- A troca de funil compete com o recebimento sob o mesmo lock da integração.
+-- Mesmo um PATCH que leu contagem zero não pode mover recibos recém-gravados.
+create or replace function public.fn_guard_obra_pipeline_update()
+returns trigger language plpgsql set search_path=public,pg_temp as $$
+begin
+  if new.pipeline_id is distinct from old.pipeline_id and
+    (old.is_active or new.is_active or exists(select 1 from public.obra_access_receipts
+      where organization_id=old.organization_id and integration_id=old.id)) then
+    raise exception 'obra_pipeline_locked' using errcode='23514';
+  end if;
+  return new;
+end $$;
+drop trigger if exists tr_guard_obra_pipeline_update on public.obra_access_integrations;
+create trigger tr_guard_obra_pipeline_update before update on public.obra_access_integrations
+  for each row execute function public.fn_guard_obra_pipeline_update();
+
+alter table public.obra_access_integrations enable row level security;
+alter table public.obra_access_receipts enable row level security;
+alter table public.obra_access_links enable row level security;
+revoke all on public.obra_access_integrations,public.obra_access_receipts,public.obra_access_links from public,anon,authenticated;
+grant all on public.obra_access_integrations,public.obra_access_receipts,public.obra_access_links to service_role;
+
+-- A API exige admin, e a política impede contorno pela API direta do Supabase.
+drop policy if exists automation_rules_obra_admin on public.automation_rules;
+create policy automation_rules_obra_admin on public.automation_rules as restrictive
+  for all to authenticated
+  using (trigger_event <> 'obra_access.activated' or
+    public.fn_role_at_least(organization_id,'admin') or public.fn_is_platform_admin())
+  with check (trigger_event <> 'obra_access.activated' or
+    public.fn_role_at_least(organization_id,'admin') or public.fn_is_platform_admin());
+
+-- Serializa por integração para que dois eventos do mesmo usuário não conciliem
+-- antes de enxergar o vínculo um do outro. O fingerprint cobre o corpo autenticado.
+create or replace function public.fn_receive_obra_access(
+  p_organization_id uuid,p_integration_id uuid,p_payload jsonb,p_fingerprint text,
+  p_phone_variants text[],p_rejection_reason text,p_secret_encrypted bytea
+) returns jsonb language plpgsql security invoker set search_path=public,pg_temp as $$
+declare
+  v_integration public.obra_access_integrations;
+  v_receipt public.obra_access_receipts;
+  v_contact uuid;
+  v_lead uuid;
+  v_phone_count integer;
+  v_lead_count integer;
+  v_email_count integer;
+  v_reason text := p_rejection_reason;
+  v_status text := 'ready';
+begin
+  select * into v_integration from public.obra_access_integrations
+    where organization_id=p_organization_id and id=p_integration_id for update;
+  if not found or not v_integration.is_active or v_integration.secret_encrypted is distinct from p_secret_encrypted then
+    return jsonb_build_object('status','configuration_error');
+  end if;
+  update public.obra_access_integrations set last_received_at=now()
+    where organization_id=p_organization_id and id=p_integration_id;
+  select * into v_receipt from public.obra_access_receipts
+    where organization_id=p_organization_id and integration_id=p_integration_id
+      and external_event_id=p_payload->>'event_id' for update;
+  if found then
+    if v_receipt.fingerprint <> p_fingerprint then
+      update public.obra_access_integrations set rejected_count=rejected_count+1 where id=p_integration_id;
+      insert into public.api_audit_log(organization_id,action,resource_type,resource_id,metadata)
+        values(p_organization_id,'obra_access.rejected','obra_access_integration',p_integration_id,
+          jsonb_build_object('reason','idempotency_conflict'));
+      return jsonb_build_object('status','conflict','receipt_id',v_receipt.id);
+    end if;
+    update public.obra_access_receipts set duplicate_count=duplicate_count+1 where id=v_receipt.id;
+    return jsonb_build_object('status','duplicate','original_status',v_receipt.status,
+      'reason',v_receipt.reason,'receipt_id',v_receipt.id);
+  end if;
+
+  if v_reason is not null then
+    v_status := 'rejected';
+  elsif exists(select 1 from public.obra_access_links where organization_id=p_organization_id
+      and product_user_id=p_payload->>'product_user_id') then
+    v_status := 'rejected'; v_reason := 'product_user_already_linked';
+  elsif coalesce(array_length(p_phone_variants,1),0)=0 then
+    v_status := 'pending'; v_reason := 'invalid_phone';
+  else
+    select count(*),(array_agg(id order by id))[1] into v_phone_count,v_contact from public.contacts
+      where organization_id=p_organization_id and phone_number=any(p_phone_variants)
+        and is_merged_into is null and not is_anonymized;
+    if v_phone_count<>1 then
+      v_status := 'pending';
+      v_reason := case when v_phone_count=0 then 'contact_not_found' else 'multiple_contacts' end;
+      v_contact := null;
+    else
+      select count(*) into v_email_count from public.contacts
+        where organization_id=p_organization_id and is_merged_into is null
+          and email_normalized=lower(p_payload->>'email') and id<>v_contact;
+      if v_email_count>0 or exists(select 1 from public.contacts where organization_id=p_organization_id
+          and id=v_contact and email_normalized is not null
+          and email_normalized<>lower(p_payload->>'email')) then
+        v_status := 'pending'; v_reason := 'contact_identity_conflict';
+      else
+        select count(*),(array_agg(id order by id))[1] into v_lead_count,v_lead from public.crm_leads
+          where organization_id=p_organization_id and pipeline_id=v_integration.pipeline_id
+            and contact_id=v_contact and status='open';
+        if v_lead_count<>1 then
+          v_status := 'pending';
+          v_reason := case when v_lead_count=0 then 'open_lead_not_found' else 'multiple_open_leads' end;
+          v_lead := null;
+        elsif exists(select 1 from public.obra_access_links where organization_id=p_organization_id
+            and (contact_id=v_contact or lead_id=v_lead)) then
+          v_status := 'pending'; v_reason := 'crm_identity_already_linked';
+        end if;
+      end if;
+    end if;
+  end if;
+
+  insert into public.obra_access_receipts(
+    organization_id,integration_id,external_event_id,product_user_id,fingerprint,event_version,
+    occurred_at,user_created_at,trial_ends_at,phone,name,email,plan,modality,provider,
+    user_status,is_new_user,status,reason,contact_id,lead_id)
+  values(p_organization_id,p_integration_id,p_payload->>'event_id',p_payload->>'product_user_id',
+    p_fingerprint,(p_payload->>'version')::integer,(p_payload->>'occurred_at')::timestamptz,
+    (p_payload->>'user_created_at')::timestamptz,nullif(p_payload->>'trial_ends_at','')::timestamptz,
+    p_payload->>'phone',p_payload->>'name',p_payload->>'email',p_payload->>'plan',
+    p_payload->>'modality',p_payload->>'provider',p_payload->>'user_status',
+    (p_payload->>'is_new_user')::boolean,v_status,v_reason,v_contact,v_lead)
+  returning * into v_receipt;
+  if v_status='ready' then
+    insert into public.obra_access_links(organization_id,product_user_id,contact_id,lead_id,
+      receipt_id,modality,plan,activated_at)
+    values(p_organization_id,v_receipt.product_user_id,v_contact,v_lead,v_receipt.id,
+      v_receipt.modality,v_receipt.plan,v_receipt.occurred_at);
+  elsif v_status='rejected' then
+    update public.obra_access_integrations set rejected_count=rejected_count+1 where id=p_integration_id;
+  end if;
+  insert into public.api_audit_log(organization_id,action,resource_type,resource_id,metadata)
+    values(p_organization_id,'obra_access.received','obra_access_receipt',v_receipt.id,
+      jsonb_build_object('status',v_status,'reason',v_reason));
+  return jsonb_build_object('status',v_status,'reason',v_reason,'receipt_id',v_receipt.id);
+end $$;
+revoke execute on function public.fn_receive_obra_access(uuid,uuid,jsonb,text,text[],text,bytea) from public,anon,authenticated;
+grant execute on function public.fn_receive_obra_access(uuid,uuid,jsonb,text,text[],text,bytea) to service_role;
+
+-- Claim persistente: falha do processo não perde evento; lease vencido permite retry.
+create or replace function public.fn_claim_obra_access(p_organization_id uuid,p_receipt_id uuid)
+returns jsonb language plpgsql security invoker set search_path=public,pg_temp as $$
+declare r public.obra_access_receipts; l public.crm_leads;
+begin
+  select * into r from public.obra_access_receipts
+    where organization_id=p_organization_id and id=p_receipt_id for update;
+  if not found then return jsonb_build_object('status','not_found'); end if;
+  if r.status='processed' then return jsonb_build_object('status','duplicate'); end if;
+  if r.status='processing' and r.claimed_at>now()-interval '2 minutes' then
+    return jsonb_build_object('status','in_progress');
+  end if;
+  if r.status not in ('ready','processing') then return jsonb_build_object('status',r.status); end if;
+  if not exists(select 1 from public.obra_access_integrations i
+      where i.organization_id=p_organization_id and i.id=r.integration_id and i.is_active) then
+    return jsonb_build_object('status','integration_inactive');
+  end if;
+  select * into l from public.crm_leads where organization_id=p_organization_id and id=r.lead_id;
+  if found and (l.contact_id is distinct from r.contact_id or not exists(
+      select 1 from public.contacts c where c.organization_id=p_organization_id and c.id=r.contact_id
+        and c.is_merged_into is null and not c.is_anonymized)) then
+    update public.obra_access_receipts set status='pending',reason='contact_identity_changed',claimed_at=null
+      where id=r.id;
+    return jsonb_build_object('status','pending');
+  end if;
+  if not found or l.pipeline_id is distinct from
+      (select pipeline_id from public.obra_access_integrations where organization_id=p_organization_id and id=r.integration_id)
+    or (l.status<>'open' and l.source_metadata->>'obra_access_receipt_id' is distinct from r.id::text) then
+    update public.obra_access_receipts set status='pending',reason='lead_no_longer_open',claimed_at=null
+      where id=r.id;
+    return jsonb_build_object('status','pending');
+  end if;
+  if l.status='open' and not exists(select 1 from public.crm_stages st
+      where st.organization_id=p_organization_id and st.pipeline_id=l.pipeline_id
+        and st.is_won and not st.is_archived
+      having count(*)=1 and min(st.name)='Acesso ativado') then
+    update public.obra_access_receipts set status='pending',reason='won_stage_unavailable',claimed_at=null
+      where id=r.id;
+    return jsonb_build_object('status','pending');
+  end if;
+  update public.obra_access_receipts set status='processing',claimed_at=now() where id=r.id;
+  return jsonb_build_object('status','claimed','lead_id',r.lead_id,
+    'contact_id',r.contact_id,'pipeline_id',l.pipeline_id);
+end $$;
+revoke execute on function public.fn_claim_obra_access(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_claim_obra_access(uuid,uuid) to service_role;
+
+create or replace function public.fn_finish_obra_access(p_organization_id uuid,p_receipt_id uuid)
+returns jsonb language plpgsql security invoker set search_path=public,pg_temp as $$
+declare r public.obra_access_receipts; l public.crm_leads; v_event uuid;
+begin
+  select * into r from public.obra_access_receipts
+    where organization_id=p_organization_id and id=p_receipt_id for update;
+  if not found then return jsonb_build_object('status','not_found'); end if;
+  if r.status='processed' then return jsonb_build_object('status','duplicate'); end if;
+  if r.status<>'processing' then return jsonb_build_object('status','not_claimed'); end if;
+  select * into l from public.crm_leads where organization_id=p_organization_id and id=r.lead_id;
+  if not found or l.status<>'won' or l.source_metadata->>'obra_access_receipt_id' is distinct from r.id::text
+    or l.contact_id is distinct from r.contact_id or l.pipeline_id is distinct from
+      (select pipeline_id from public.obra_access_integrations where organization_id=p_organization_id and id=r.integration_id)
+    or not exists(select 1 from public.contacts c where c.organization_id=p_organization_id
+      and c.id=r.contact_id and c.is_merged_into is null and not c.is_anonymized) then
+    return jsonb_build_object('status','closure_unconfirmed');
+  end if;
+  v_event := public.emit_event('obra_access.activated','crm_lead',r.lead_id,
+    jsonb_build_object('receipt_id',r.id,'modality',r.modality,'plan',r.plan,
+      'product_user_id',r.product_user_id,'activated_at',r.occurred_at),
+    jsonb_build_object('integration_id',r.integration_id),p_organization_id);
+  update public.obra_access_receipts set status='processed',reason=null,event_log_id=v_event,
+    processed_at=now(),claimed_at=null where id=r.id;
+  insert into public.api_audit_log(organization_id,action,resource_type,resource_id,metadata)
+    values(p_organization_id,'obra_access.activated','obra_access_receipt',r.id,
+      jsonb_build_object('lead_id',r.lead_id,'modality',r.modality));
+  return jsonb_build_object('status','processed','receipt_id',r.id,'lead_id',r.lead_id);
+end $$;
+revoke execute on function public.fn_finish_obra_access(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_finish_obra_access(uuid,uuid) to service_role;
+
+create or replace function public.fn_release_obra_access(p_organization_id uuid,p_receipt_id uuid)
+returns void language plpgsql security invoker set search_path=public,pg_temp as $$
+begin
+  update public.obra_access_receipts set status='ready',claimed_at=null
+    where organization_id=p_organization_id and id=p_receipt_id and status='processing';
+end $$;
+revoke execute on function public.fn_release_obra_access(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_release_obra_access(uuid,uuid) to service_role;
+
+-- Tentativas sem corpo autenticado não entram no ledger de pessoas; só conta e
+-- motivo técnico, sem telefone/e-mail/token/corpo.
+create or replace function public.fn_reject_obra_access(p_organization_id uuid,p_integration_id uuid,p_reason text)
+returns void language plpgsql security invoker set search_path=public,pg_temp as $$
+begin
+  update public.obra_access_integrations set rejected_count=rejected_count+1,last_received_at=now()
+    where organization_id=p_organization_id and id=p_integration_id;
+  insert into public.api_audit_log(organization_id,action,resource_type,resource_id,metadata)
+    values(p_organization_id,'obra_access.rejected','obra_access_integration',p_integration_id,
+      jsonb_build_object('reason',p_reason));
+end $$;
+revoke execute on function public.fn_reject_obra_access(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.fn_reject_obra_access(uuid,uuid,text) to service_role;
+
+-- Associação manual é uma decisão explícita do administrador; transação única
+-- preserva o pendente quando contato/lead já foram associados em outra requisição.
+create or replace function public.fn_manual_link_obra_access(
+  p_organization_id uuid,p_receipt_id uuid,p_contact_id uuid,p_lead_id uuid,
+  p_actor_user_id uuid,p_request_id uuid
+) returns jsonb language plpgsql security invoker set search_path=public,pg_temp as $$
+declare r public.obra_access_receipts; s public.obra_access_integrations;
+begin
+  if not exists(select 1 from public.user_organizations where organization_id=p_organization_id
+    and user_id=p_actor_user_id and role='admin' and revoked_at is null and accepted_at is not null)
+    then raise exception 'invalid_configuration_actor' using errcode='42501'; end if;
+  select * into r from public.obra_access_receipts where organization_id=p_organization_id
+    and id=p_receipt_id;
+  if not found then raise exception 'receipt_not_pending'; end if;
+  select * into s from public.obra_access_integrations where organization_id=p_organization_id
+    and id=r.integration_id for update;
+  if not found then raise exception 'integration_not_found'; end if;
+  if not s.is_active then raise exception 'integration_inactive'; end if;
+  select * into r from public.obra_access_receipts where organization_id=p_organization_id
+    and id=p_receipt_id for update;
+  if not found or r.status<>'pending' then raise exception 'receipt_not_pending'; end if;
+  if not exists(select 1 from public.contacts where organization_id=p_organization_id
+    and id=p_contact_id and is_merged_into is null and not is_anonymized)
+    then raise exception 'contact_not_found'; end if;
+  if not exists(select 1 from public.crm_leads where organization_id=p_organization_id
+    and id=p_lead_id and contact_id=p_contact_id and pipeline_id=s.pipeline_id and status='open')
+    then raise exception 'open_lead_not_found'; end if;
+  insert into public.obra_access_links(organization_id,product_user_id,contact_id,lead_id,
+    receipt_id,modality,plan,activated_at)
+    values(p_organization_id,r.product_user_id,p_contact_id,p_lead_id,r.id,
+      r.modality,r.plan,r.occurred_at)
+    on conflict (organization_id,receipt_id) do update set
+      contact_id=excluded.contact_id,lead_id=excluded.lead_id;
+  update public.obra_access_receipts set status='ready',reason=null,contact_id=p_contact_id,
+    lead_id=p_lead_id where id=r.id;
+  insert into public.api_audit_log(organization_id,actor_user_id,action,resource_type,
+    resource_id,request_id,metadata)
+    values(p_organization_id,p_actor_user_id,'obra_access.manual_link','obra_access_receipt',
+      r.id,p_request_id::text,jsonb_build_object('contact_id',p_contact_id,'lead_id',p_lead_id,
+        'previous_contact_id',r.contact_id,'previous_lead_id',r.lead_id));
+  return jsonb_build_object('status','ready','receipt_id',r.id);
+end $$;
+revoke execute on function public.fn_manual_link_obra_access(uuid,uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_manual_link_obra_access(uuid,uuid,uuid,uuid,uuid,uuid) to service_role;
+
+-- Uma intenção congelada não autoriza envio para outra pessoa nem após pausa.
+-- Usada novamente imediatamente antes de adquirir o transporte do WhatsApp.
+create or replace function public.fn_obra_access_send_live(
+  p_organization_id uuid,p_event_id uuid,p_contact_id uuid,p_rule_id uuid
+) returns boolean language sql volatile security invoker set search_path=public,pg_temp as $$
+  select exists(select 1 from public.obra_access_receipts r
+    join public.obra_access_integrations i on i.organization_id=r.organization_id and i.id=r.integration_id
+    join public.crm_leads l on l.organization_id=r.organization_id and l.id=r.lead_id
+    join public.contacts c on c.organization_id=r.organization_id and c.id=r.contact_id
+    join public.automation_rules a on a.organization_id=r.organization_id and a.id=p_rule_id
+    where r.organization_id=p_organization_id and r.event_log_id=p_event_id and r.status='processed'
+      and r.contact_id=p_contact_id and l.contact_id=r.contact_id and l.pipeline_id=i.pipeline_id
+      and l.status='won' and l.source_metadata->>'obra_access_receipt_id'=r.id::text
+      and c.is_merged_into is null and not c.is_anonymized
+      and i.is_active and a.is_active and a.trigger_event='obra_access.activated');
+$$;
+revoke execute on function public.fn_obra_access_send_live(uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_obra_access_send_live(uuid,uuid,uuid,uuid) to service_role;
+
+-- Agregação no banco: o limite de linhas da API não pode truncar as métricas.
+create or replace function public.fn_obra_access_counts(p_organization_id uuid,p_integration_id uuid)
+returns jsonb language sql stable security invoker set search_path=public,pg_temp as $$
+  select jsonb_build_object(
+    'processed',count(*) filter(where status='processed'),
+    'trial',count(*) filter(where status='processed' and modality='trial'),
+    'paid',count(*) filter(where status='processed' and modality='paid'),
+    'pending',count(*) filter(where status='pending'),
+    'duplicates',coalesce(sum(duplicate_count),0),
+    'rejected',coalesce((select rejected_count from public.obra_access_integrations
+      where organization_id=p_organization_id and id=p_integration_id),0))
+  from public.obra_access_receipts where organization_id=p_organization_id and integration_id=p_integration_id;
+$$;
+revoke execute on function public.fn_obra_access_counts(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_obra_access_counts(uuid,uuid) to service_role;
+
+-- Fecha a janela entre claim e UPDATE: o próprio banco valida a associação,
+-- a disponibilidade do contato e a etapa antes de gravar a marca da conversão.
+create or replace function public.fn_guard_obra_access_closure()
+returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
+declare r public.obra_access_receipts; v_contact uuid;
+begin
+  if new.source_metadata->>'obra_access_receipt_id' is null or
+    new.source_metadata->>'obra_access_receipt_id' is not distinct from old.source_metadata->>'obra_access_receipt_id' then
+    return new;
+  end if;
+  select * into r from public.obra_access_receipts where organization_id=new.organization_id
+    and id::text=new.source_metadata->>'obra_access_receipt_id';
+  if not found or r.status<>'processing' or old.status<>'open' or r.lead_id<>new.id
+    or r.contact_id is distinct from new.contact_id or not exists(
+      select 1 from public.obra_access_integrations i where i.organization_id=new.organization_id
+        and i.id=r.integration_id and i.pipeline_id=new.pipeline_id and i.is_active)
+    or not exists(select 1 from public.crm_stages st where st.organization_id=new.organization_id
+      and st.id=new.stage_id and st.pipeline_id=new.pipeline_id and st.is_won
+      and not st.is_archived and st.name='Acesso ativado') then
+    raise exception 'obra_association_changed' using errcode='23514';
+  end if;
+  select id into v_contact from public.contacts where organization_id=new.organization_id
+    and id=r.contact_id and is_merged_into is null and not is_anonymized for share;
+  if not found then raise exception 'obra_contact_unavailable' using errcode='23514'; end if;
+  return new;
+end $$;
+revoke execute on function public.fn_guard_obra_access_closure() from public,anon,authenticated;
+grant execute on function public.fn_guard_obra_access_closure() to service_role;
+drop trigger if exists tr_guard_obra_access_closure on public.crm_leads;
+create trigger tr_guard_obra_access_closure before update of source_metadata,stage_id on public.crm_leads
+  for each row execute function public.fn_guard_obra_access_closure();
+
+-- O novo histórico acompanha a anonimização canônica do contato. Identidades
+-- técnicas do evento/vínculo ficam para deduplicação; dados de contato não.
+create or replace function public.fn_guard_obra_receipt_privacy()
+returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_anonymous boolean;
+begin
+  if new.contact_id is not null then
+    select is_anonymized into v_anonymous from public.contacts
+      where organization_id=new.organization_id and id=new.contact_id for share;
+    if coalesce(v_anonymous,true) then new.phone:=null; new.name:=null; new.email:=null; end if;
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_guard_obra_receipt_privacy() from public,anon,authenticated;
+grant execute on function public.fn_guard_obra_receipt_privacy() to service_role;
+drop trigger if exists tr_guard_obra_receipt_privacy on public.obra_access_receipts;
+create trigger tr_guard_obra_receipt_privacy before insert or update on public.obra_access_receipts
+  for each row execute function public.fn_guard_obra_receipt_privacy();
+
+create or replace function public.fn_redact_contact_obra_receipts()
+returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+  if new.is_anonymized and not old.is_anonymized then
+    update public.obra_access_receipts set phone=null,name=null,email=null
+      where organization_id=new.organization_id and contact_id=new.id;
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_redact_contact_obra_receipts() from public,anon,authenticated;
+grant execute on function public.fn_redact_contact_obra_receipts() to service_role;
+drop trigger if exists tr_redact_contact_obra_receipts on public.contacts;
+create trigger tr_redact_contact_obra_receipts after update of is_anonymized on public.contacts
+  for each row execute function public.fn_redact_contact_obra_receipts();
+
+notify pgrst,'reload schema';
+
+-- BEGIN 0230 OBRA SUBSCRIPTION LIFECYCLE
+-- 0230: ciclo de teste opt-in. O contrato legado permanece separado.
+alter table public.obra_access_integrations add column if not exists lifecycle_enabled boolean not null default false;
+
+create table if not exists public.obra_subscription_states (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  integration_id uuid not null,
+  product_user_id uuid not null,
+  contact_id uuid references public.contacts(id) on delete set null,
+  lead_id uuid references public.crm_leads(id) on delete set null,
+  trial_started_at timestamptz not null,
+  checked_at timestamptz not null,
+  status_pagamento text not null,
+  em_trial boolean not null,
+  access_enabled boolean not null,
+  trial_ends_at timestamptz,
+  access_expires_at timestamptz,
+  decision text not null check (decision in ('trial','paid','recover','manual','post_conversion')),
+  reason text,
+  converted_at timestamptz,
+  recovery_started_at timestamptz,
+  updated_at timestamptz not null default now(),
+  foreign key (organization_id,integration_id) references public.obra_access_integrations(organization_id,id),
+  unique (organization_id,product_user_id),
+  unique (organization_id,id),
+  unique (organization_id,contact_id),
+  unique (organization_id,lead_id)
+);
+create table if not exists public.obra_subscription_receipts (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  integration_id uuid not null,
+  external_event_id uuid not null,
+  product_user_id uuid not null,
+  fingerprint text not null check (fingerprint ~ '^[a-f0-9]{64}$'),
+  event_type text not null check (event_type in ('trial_started','subscription_status_checked')),
+  checked_at timestamptz not null,
+  decision text not null,
+  reason text,
+  duplicate_count integer not null default 0,
+  created_at timestamptz not null default now(),
+  foreign key (organization_id,integration_id) references public.obra_access_integrations(organization_id,id),
+  unique (organization_id,integration_id,external_event_id)
+);
+-- Nenhum nome, e-mail, telefone ou corpo bruto é armazenado neste histórico.
+alter table public.obra_subscription_states enable row level security;
+alter table public.obra_subscription_receipts enable row level security;
+revoke all on public.obra_subscription_states,public.obra_subscription_receipts from public,anon,authenticated;
+grant all on public.obra_subscription_states,public.obra_subscription_receipts to service_role;
+
+-- A mudança de modo/funil compete com os dois tipos de recebimento sob o mesmo lock.
+create or replace function public.fn_guard_obra_pipeline_update()
+returns trigger language plpgsql set search_path=public,pg_temp as $$
+begin
+  if (new.pipeline_id is distinct from old.pipeline_id or new.lifecycle_enabled is distinct from old.lifecycle_enabled)
+    and (old.is_active or new.is_active or exists(select 1 from public.obra_access_receipts
+      where organization_id=old.organization_id and integration_id=old.id)
+      or exists(select 1 from public.obra_subscription_states where organization_id=old.organization_id and integration_id=old.id)) then
+    raise exception 'obra_configuration_locked' using errcode='23514';
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_guard_obra_pipeline_update() from public,anon,authenticated;
+grant execute on function public.fn_guard_obra_pipeline_update() to service_role;
+
+create or replace function public.fn_guard_obra_legacy_mode()
+returns trigger language plpgsql set search_path=public,pg_temp as $$
+begin
+  if exists(select 1 from public.obra_access_integrations where organization_id=new.organization_id
+    and id=new.integration_id and lifecycle_enabled) then raise exception 'obra_requires_lifecycle_v2' using errcode='23514'; end if;
+  return new;
+end $$;
+revoke execute on function public.fn_guard_obra_legacy_mode() from public,anon,authenticated;
+grant execute on function public.fn_guard_obra_legacy_mode() to service_role;
+drop trigger if exists tr_guard_obra_legacy_mode on public.obra_access_receipts;
+create trigger tr_guard_obra_legacy_mode before insert on public.obra_access_receipts
+  for each row execute function public.fn_guard_obra_legacy_mode();
+
+create or replace function public.fn_receive_obra_subscription(
+  p_org uuid,p_integration uuid,p_payload jsonb,p_fingerprint text,p_phone_variants text[],
+  p_secret_encrypted bytea
+) returns jsonb language plpgsql security invoker set search_path=public,pg_temp as $$
+declare
+  cfg public.obra_access_integrations; s public.obra_subscription_states; receipt public.obra_subscription_receipts;
+  c uuid; l uuid; n integer; stage uuid; phase text; reason text; event_type text:=p_payload->>'event_type';
+  started timestamptz:=(p_payload->>'trial_started_at')::timestamptz;
+  checked timestamptz:=(p_payload->>'checked_at')::timestamptz;
+  product_user uuid:=(p_payload->>'product_user_id')::uuid;
+  event_id uuid:=(p_payload->>'event_id')::uuid;
+  final_check boolean:=event_type='subscription_status_checked'; was_converted boolean;
+begin
+  select * into cfg from public.obra_access_integrations where organization_id=p_org and id=p_integration for update;
+  if not found or not cfg.is_active or not cfg.lifecycle_enabled or cfg.secret_encrypted is distinct from p_secret_encrypted then
+    return jsonb_build_object('status','configuration_error');
+  end if;
+  if (p_payload->>'version')::integer<>2 or event_type not in ('trial_started','subscription_status_checked')
+    or started>checked or checked>now()+interval '5 minutes'
+    or (final_check and checked<started+interval '96 hours') then
+    return jsonb_build_object('status','invalid_event');
+  end if;
+  select * into receipt from public.obra_subscription_receipts
+    where organization_id=p_org and integration_id=p_integration and external_event_id=event_id for update;
+  if found then
+    if receipt.fingerprint<>p_fingerprint then return jsonb_build_object('status','conflict'); end if;
+    update public.obra_subscription_receipts set duplicate_count=duplicate_count+1 where organization_id=p_org and id=receipt.id;
+    return jsonb_build_object('status','duplicate','event_id',event_id,'decision',receipt.decision);
+  end if;
+  select * into s from public.obra_subscription_states where organization_id=p_org and product_user_id=product_user for update;
+  if found and (started<>s.trial_started_at or checked<s.checked_at
+    or (not final_check and exists(select 1 from public.obra_subscription_receipts r
+      where r.organization_id=p_org and r.product_user_id=product_user and r.event_type='subscription_status_checked'))) then
+    reason:=case when started<>s.trial_started_at then 'trial_start_changed'
+      when checked<s.checked_at then 'stale_event' else 'initial_event_after_snapshot' end;
+    insert into public.obra_subscription_receipts(organization_id,integration_id,external_event_id,product_user_id,
+      fingerprint,event_type,checked_at,decision,reason)
+      values(p_org,p_integration,event_id,product_user,p_fingerprint,event_type,checked,'ignored',reason);
+    return jsonb_build_object('status','accepted','event_id',event_id,'decision','ignored','reason',reason);
+  end if;
+  c:=s.contact_id; l:=s.lead_id; was_converted:=s.converted_at is not null;
+  if c is null then
+    select count(*),(array_agg(id order by id))[1] into n,c from public.contacts
+      where organization_id=p_org and phone_number=any(p_phone_variants) and not is_anonymized and is_merged_into is null;
+    if n<>1 then c:=null; reason:='contact_not_unique'; end if;
+  end if;
+  -- Serializa mudanças de identidade feitas pela UI com a classificação/fechamento.
+  if c is not null then
+    perform 1 from public.contacts where organization_id=p_org and id=c for update;
+    if exists(select 1 from public.obra_subscription_states where organization_id=p_org
+      and product_user_id<>product_user and contact_id=c) then
+      c:=null;l:=null;reason:='identity_already_linked';
+    end if;
+  end if;
+  if c is not null and (not exists(select 1 from public.contacts where organization_id=p_org and id=c
+      and phone_number=any(p_phone_variants) and not is_anonymized and is_merged_into is null
+      and (email_normalized is null or email_normalized=lower(p_payload->>'email')))
+    or exists(select 1 from public.contacts where organization_id=p_org and id<>c
+      and email_normalized=lower(p_payload->>'email') and not is_anonymized and is_merged_into is null)) then
+    reason:='contact_identity_conflict';
+  end if;
+  if c is not null and l is null and reason is null then
+    select count(*),(array_agg(id order by id))[1] into n,l from public.crm_leads
+      where organization_id=p_org and pipeline_id=cfg.pipeline_id and contact_id=c and status='open';
+    if n<>1 then l:=null; reason:='open_lead_not_unique'; end if;
+  end if;
+  if l is not null then
+    perform 1 from public.crm_leads where organization_id=p_org and id=l for update;
+    if exists(select 1 from public.obra_subscription_states where organization_id=p_org
+      and product_user_id<>product_user and lead_id=l) then
+      c:=null;l:=null;reason:='identity_already_linked';
+    end if;
+  end if;
+  if l is not null and not exists(select 1 from public.crm_leads where organization_id=p_org and id=l
+      and pipeline_id=cfg.pipeline_id and contact_id=c) then reason:='lead_identity_changed'; end if;
+  phase:='manual';
+  if reason is null then
+    if not final_check then phase:='trial';
+    elsif p_payload->>'status_pagamento' in ('suspenso','cancelado') and not (p_payload->>'access_enabled')::boolean then phase:='recover';
+    elsif (p_payload->>'em_trial')::boolean or p_payload->>'status_pagamento'='trial' then reason:='status_still_trial';
+    elsif p_payload->>'status_pagamento'='ativo' and (p_payload->>'access_enabled')::boolean
+      and (nullif(p_payload->>'trial_ends_at','')::timestamptz is null or (p_payload->>'trial_ends_at')::timestamptz<=checked)
+      and (nullif(p_payload->>'access_expires_at','')::timestamptz is null or (p_payload->>'access_expires_at')::timestamptz>checked) then phase:='paid';
+    else reason:='status_requires_review'; end if;
+  end if;
+  if was_converted and phase<>'paid' then phase:='post_conversion'; end if;
+  if phase='paid' and not was_converted then
+    select (array_agg(id))[1],count(*) into stage,n from public.crm_stages
+      where organization_id=p_org and pipeline_id=cfg.pipeline_id and is_won and not is_archived and name='Acesso ativado';
+    if n<>1 or not exists(select 1 from public.crm_leads where organization_id=p_org and id=l and status='open') then
+      phase:='manual';reason:='lead_not_open_or_won_stage_unavailable';
+    else
+      -- O trigger de etapa mantém status/closed_at e emite lead.won; a confirmação é atômica com seu histórico.
+      update public.crm_leads set stage_id=stage,updated_at=now(),source_metadata=coalesce(source_metadata,'{}'::jsonb)
+        ||jsonb_build_object('obra_subscription_product_user_id',product_user),
+        position_in_stage=(select coalesce(max(position_in_stage),0)+1000 from public.crm_leads where organization_id=p_org and stage_id=stage)
+        where organization_id=p_org and id=l and contact_id=c and pipeline_id=cfg.pipeline_id and status='open';
+      if not found then phase:='manual';reason:='lead_identity_changed';
+      else
+        insert into public.crm_lead_activities(organization_id,lead_id,contact_id,source_module,source_id,type,payload,metadata)
+          values(p_org,l,c,'crm',p_integration,'demand_closed',jsonb_build_object('desfecho','won','reason','Assinatura ativa fora de teste, confirmada após 96 horas'),
+            jsonb_build_object('actor_type','webhook_source','actor_id',p_integration));
+      end if;
+    end if;
+  end if;
+  insert into public.obra_subscription_states(organization_id,integration_id,product_user_id,contact_id,lead_id,
+    trial_started_at,checked_at,status_pagamento,em_trial,access_enabled,trial_ends_at,access_expires_at,decision,reason,converted_at,recovery_started_at)
+    values(p_org,p_integration,product_user,c,l,started,checked,p_payload->>'status_pagamento',(p_payload->>'em_trial')::boolean,
+      (p_payload->>'access_enabled')::boolean,nullif(p_payload->>'trial_ends_at','')::timestamptz,
+      nullif(p_payload->>'access_expires_at','')::timestamptz,phase,reason,
+      case when phase='paid' then coalesce(s.converted_at,checked) else s.converted_at end,
+      case when phase='recover' then coalesce(s.recovery_started_at,checked) else s.recovery_started_at end)
+    on conflict(organization_id,product_user_id) do update set contact_id=excluded.contact_id,lead_id=excluded.lead_id,
+      checked_at=excluded.checked_at,status_pagamento=excluded.status_pagamento,em_trial=excluded.em_trial,
+      access_enabled=excluded.access_enabled,trial_ends_at=excluded.trial_ends_at,access_expires_at=excluded.access_expires_at,
+      decision=excluded.decision,reason=excluded.reason,converted_at=excluded.converted_at,recovery_started_at=excluded.recovery_started_at,updated_at=now()
+    returning * into s;
+  insert into public.obra_subscription_receipts(organization_id,integration_id,external_event_id,product_user_id,fingerprint,event_type,checked_at,decision,reason)
+    values(p_org,p_integration,event_id,product_user,p_fingerprint,event_type,checked,phase,reason);
+  if c is not null and (phase in ('paid','post_conversion','manual','trial')) then
+    update public.contacts set tags=array_remove(tags,'followup_assinatura'),updated_at=now() where organization_id=p_org and id=c;
+  end if;
+  update public.obra_access_integrations set last_received_at=now() where organization_id=p_org and id=p_integration;
+  insert into public.api_audit_log(organization_id,action,resource_type,resource_id,metadata)
+    values(p_org,'obra_access.received','obra_subscription_state',s.id,jsonb_build_object('decision',phase,'reason',reason));
+  return jsonb_build_object('status','accepted','event_id',event_id,'decision',phase,'reason',reason,'state_id',s.id);
+end $$;
+revoke execute on function public.fn_receive_obra_subscription(uuid,uuid,jsonb,text,text[],bytea) from public,anon,authenticated;
+grant execute on function public.fn_receive_obra_subscription(uuid,uuid,jsonb,text,text[],bytea) to service_role;
+
+-- Mantém apenas o identificador técnico necessário à deduplicação após anonimização.
+create or replace function public.fn_redact_contact_obra_subscription()
+returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+  if new.is_anonymized and not old.is_anonymized then
+    update public.obra_subscription_states set contact_id=null,lead_id=null,
+      decision=case when converted_at is null then 'manual' else 'post_conversion' end,
+      reason='contact_anonymized',updated_at=now()
+      where organization_id=new.organization_id and contact_id=new.id;
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_redact_contact_obra_subscription() from public,anon,authenticated;
+grant execute on function public.fn_redact_contact_obra_subscription() to service_role;
+drop trigger if exists tr_redact_contact_obra_subscription on public.contacts;
+create trigger tr_redact_contact_obra_subscription after update of is_anonymized on public.contacts
+  for each row execute function public.fn_redact_contact_obra_subscription();
+
+notify pgrst,'reload schema';
+
+-- END 0230 OBRA SUBSCRIPTION LIFECYCLE
+
+-- 0231: mensagens opt-in do ciclo de teste, no event_log e transporte existentes.
+alter table public.obra_access_integrations add column if not exists outreach_enabled boolean not null default false;
+alter table public.obra_access_integrations add column if not exists outreach_channel_id uuid references public.channel_sessions(id);
+alter table public.obra_access_integrations add column if not exists recovery_pointer_id uuid references public.followup_flow_pointers(id);
+alter table public.obra_access_integrations add column if not exists registration_rule_id uuid references public.automation_rules(id);
+alter table public.obra_access_integrations add column if not exists usage_rule_id uuid references public.automation_rules(id);
+alter table public.obra_access_integrations add column if not exists activation_rule_id uuid references public.automation_rules(id);
+
+create table if not exists public.obra_subscription_outreach (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  state_id uuid not null,
+  kind text not null check(kind in ('registration','usage','activation','recovery')),
+  due_at timestamptz not null,
+  event_id uuid references public.event_log(id) on delete set null,
+  rule_id uuid references public.automation_rules(id),
+  recovery_armed_at timestamptz,
+  unique(organization_id,state_id,kind),
+  foreign key(organization_id,state_id) references public.obra_subscription_states(organization_id,id) on delete cascade
+);
+alter table public.obra_subscription_outreach enable row level security;
+revoke all on public.obra_subscription_outreach from public,anon,authenticated;
+grant all on public.obra_subscription_outreach to service_role;
+
+create or replace function public.fn_configure_obra_outreach(p_org uuid,p_integration uuid,p_enabled boolean,
+  p_channel uuid,p_recovery uuid,p_registration text,p_usage text,p_activation text)
+returns jsonb language plpgsql security invoker set search_path=public,pg_temp as $$
+declare cfg public.obra_access_integrations; ids uuid[]; templates text[]:=array[p_registration,p_usage,p_activation]; n integer; created_rule uuid;
+begin
+  select * into cfg from public.obra_access_integrations where organization_id=p_org and id=p_integration for update;
+  if not found or not cfg.lifecycle_enabled then raise exception 'obra_lifecycle_required' using errcode='23514'; end if;
+  if p_channel is not null and not exists(select 1 from public.channel_sessions where organization_id=p_org and id=p_channel
+    and provider='waha' and to_jsonb(channel_sessions)->>'archived_at' is null) then
+    raise exception 'obra_channel_invalid' using errcode='23514'; end if;
+  if p_recovery is not null and not exists(select 1 from public.followup_flow_pointers where organization_id=p_org and id=p_recovery) then
+    raise exception 'obra_recovery_invalid' using errcode='23514'; end if;
+  if p_enabled and p_channel is null then raise exception 'obra_channel_required' using errcode='23514'; end if;
+  if exists(select 1 from unnest(templates) t where t is null or length(t)>2000) then
+    raise exception 'obra_message_invalid' using errcode='23514'; end if;
+  ids:=array[cfg.registration_rule_id,cfg.usage_rule_id,cfg.activation_rule_id];
+  for n in 1..3 loop
+    if ids[n] is null then
+      insert into public.automation_rules(organization_id,name,trigger_event,actions,is_active)
+        values(p_org,case n when 1 then 'Obra no Bolso: cadastro no teste' when 2 then 'Obra no Bolso: uso no teste'
+          else 'Obra no Bolso: assinatura confirmada' end,'obra_subscription.outreach','[]',false) returning id into created_rule;
+      ids[n]:=created_rule;
+    end if;
+    update public.automation_rules set actions=case when p_channel is null or btrim(templates[n])='' then '[]'::jsonb else
+      jsonb_build_array(jsonb_build_object('type','send_whatsapp_message','config',
+        jsonb_build_object('channel_session_id',p_channel,'template',templates[n]))) end,
+      is_active=p_enabled and btrim(templates[n])<>'',updated_at=now()
+      where organization_id=p_org and id=ids[n];
+  end loop;
+  update public.obra_access_integrations set outreach_enabled=p_enabled,outreach_channel_id=p_channel,
+    recovery_pointer_id=p_recovery,registration_rule_id=ids[1],usage_rule_id=ids[2],activation_rule_id=ids[3],updated_at=now()
+    where organization_id=p_org and id=p_integration;
+  return jsonb_build_object('outreach_enabled',p_enabled);
+end $$;
+revoke execute on function public.fn_configure_obra_outreach(uuid,uuid,boolean,uuid,uuid,text,text,text) from public,anon,authenticated;
+grant execute on function public.fn_configure_obra_outreach(uuid,uuid,boolean,uuid,uuid,text,text,text) to service_role;
+
+-- Apenas agendamento interno. Nenhuma chamada HTTP numa transação/trigger.
+create or replace function public.fn_schedule_obra_outreach() returns trigger
+language plpgsql security invoker set search_path=public,pg_temp as $$
+declare cfg public.obra_access_integrations; k text; due timestamptz; rule uuid; outbound uuid; item uuid;
+begin
+  select * into cfg from public.obra_access_integrations where organization_id=new.organization_id and id=new.integration_id;
+  if not cfg.is_active or not cfg.lifecycle_enabled or not cfg.outreach_enabled or new.contact_id is null or new.lead_id is null then return new; end if;
+  foreach k in array array['registration','usage','activation','recovery'] loop
+    due:=null;rule:=null;
+    if k='registration' and new.decision='trial' and now()<new.trial_started_at+interval '48 hours' then
+      due:=new.trial_started_at+interval '2 hours';rule:=cfg.registration_rule_id;
+    elsif k='usage' and new.decision='trial' and new.em_trial and now()<least(new.trial_started_at+interval '96 hours',coalesce(new.trial_ends_at,new.trial_started_at+interval '96 hours')) then
+      due:=new.trial_started_at+interval '48 hours';rule:=cfg.usage_rule_id;
+    elsif k='activation' and new.decision='paid' and (tg_op='INSERT' or old.converted_at is null) then
+      due:=new.converted_at;rule:=cfg.activation_rule_id;
+    elsif k='recovery' and new.decision='recover' and new.converted_at is null and cfg.recovery_pointer_id is not null then
+      due:=new.recovery_started_at+interval '2 hours';
+    end if;
+    if due is null or (k<>'recovery' and rule is null) then continue; end if;
+    item:=null;
+    insert into public.obra_subscription_outreach(organization_id,state_id,kind,due_at,rule_id)
+      values(new.organization_id,new.id,k,due,rule) on conflict(organization_id,state_id,kind) do nothing returning id into item;
+    if item is not null then
+      outbound:=public.emit_event(case when k='recovery' then 'obra_subscription.recovery' else 'obra_subscription.outreach' end,
+        'crm_lead',new.lead_id,jsonb_build_object('contact_id',new.contact_id,'kind',k),'{}',new.organization_id);
+      update public.obra_subscription_outreach set event_id=outbound where organization_id=new.organization_id and id=item;
+      update public.event_log set next_attempt_at=greatest(now(),due) where organization_id=new.organization_id and id=outbound;
+    end if;
+  end loop;
+  return new;
+end $$;
+revoke execute on function public.fn_schedule_obra_outreach() from public,anon,authenticated;
+grant execute on function public.fn_schedule_obra_outreach() to service_role;
+drop trigger if exists tr_schedule_obra_outreach on public.obra_subscription_states;
+create trigger tr_schedule_obra_outreach after insert or update on public.obra_subscription_states
+  for each row execute function public.fn_schedule_obra_outreach();
+
+-- Guarda final dentro do CAS do transporte: identidade, fase, resposta/humano,
+-- recusa e estado reconsultado. Ausência/erro da prova jamais autoriza envio.
+create or replace function public.fn_obra_outreach_send_live(p_org uuid,p_event uuid,p_contact uuid,p_rule uuid)
+returns boolean language sql security invoker set search_path=public,pg_temp as $$
+ select exists(select 1 from public.obra_subscription_outreach o
+  join public.obra_subscription_states s on s.organization_id=o.organization_id and s.id=o.state_id
+  join public.obra_access_integrations i on i.organization_id=s.organization_id and i.id=s.integration_id
+  join public.contacts c on c.organization_id=s.organization_id and c.id=s.contact_id
+  join public.crm_leads l on l.organization_id=s.organization_id and l.id=s.lead_id
+  join public.event_log e on e.organization_id=o.organization_id and e.id=o.event_id
+  where o.organization_id=p_org and o.event_id=p_event and c.id=p_contact and o.due_at<=now()
+    and e.entity_id=s.lead_id and l.contact_id=c.id and l.pipeline_id=i.pipeline_id
+    and i.is_active and i.lifecycle_enabled and i.outreach_enabled
+    and s.checked_at>=now()-interval '2 minutes' and s.checked_at<=now()+interval '5 seconds'
+    and extract(isodow from now() at time zone 'America/Sao_Paulo') between 1 and 5
+    and extract(hour from now() at time zone 'America/Sao_Paulo')>=8
+    and extract(hour from now() at time zone 'America/Sao_Paulo')<20
+    and not c.is_blocked and not c.is_anonymized and not c.force_human and c.is_merged_into is null
+    and coalesce(c.consent #> '{marketing,declined_at}','null'::jsonb) in ('null'::jsonb,'false'::jsonb,'0'::jsonb,'""'::jsonb)
+    and not exists(select 1 from public.conversations cv where cv.organization_id=p_org and cv.contact_id=c.id
+      and cv.bot_silenced_until>now())
+    and not exists(select 1 from public.messages m where m.organization_id=p_org and m.contact_id=c.id and m.direction='inbound'
+      and m.created_at>case when o.kind='activation' then s.converted_at when o.kind='recovery' then s.recovery_started_at else s.trial_started_at end)
+    and ((o.kind in ('registration','usage') and s.decision='trial' and s.em_trial and l.status='open'
+      and now()<least(s.trial_started_at+interval '96 hours',coalesce(s.trial_ends_at,s.trial_started_at+interval '96 hours'))
+      and (o.kind<>'registration' or now()<s.trial_started_at+interval '48 hours'))
+      or (o.kind='activation' and s.decision='paid' and s.converted_at is not null and l.status='won')
+      or (o.kind='recovery' and s.decision='recover' and s.converted_at is null and l.status='open'
+        and now()>=s.trial_started_at+interval '96 hours' and i.recovery_pointer_id is not null))
+    and (o.kind='recovery' and p_rule is null or o.kind<>'recovery' and o.rule_id=p_rule and exists(
+      select 1 from public.automation_rules r where r.organization_id=p_org and r.id=p_rule and r.is_active
+        and r.trigger_event='obra_subscription.outreach' and jsonb_array_length(r.actions)=1
+        and r.actions->0->>'type'='send_whatsapp_message'
+        and r.actions->0->'config'->>'channel_session_id'=i.outreach_channel_id::text))
+ )
+$$;
+revoke execute on function public.fn_obra_outreach_send_live(uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_obra_outreach_send_live(uuid,uuid,uuid,uuid) to service_role;
+
+-- Só este fluxo e contato opt-in ganham esta guarda; inbound continua 24h.
+create or replace function public.fn_obra_followup_live(p_org uuid,p_job uuid,p_contact uuid)
+returns boolean language sql security invoker set search_path=public,pg_temp as $$
+ select case when not exists(select 1 from public.job_queue where organization_id=p_org and id=p_job and kind='followup_turn') then true
+  when not exists(select 1 from public.obra_subscription_states s join public.obra_access_integrations i
+    on i.organization_id=s.organization_id and i.id=s.integration_id
+    where s.organization_id=p_org and s.contact_id=p_contact and i.lifecycle_enabled) then true
+  else exists(select 1 from public.obra_subscription_outreach o
+    join public.obra_subscription_states s on s.organization_id=o.organization_id and s.id=o.state_id
+    join public.obra_access_integrations i on i.organization_id=s.organization_id and i.id=s.integration_id
+    join public.followup_enrollments f on f.organization_id=s.organization_id and f.contact_id=s.contact_id
+    join public.job_queue j on j.organization_id=s.organization_id and j.contact_id=s.contact_id
+      and j.payload->>'followup_enrollment_id'=f.id::text
+    where o.organization_id=p_org and o.kind='recovery' and s.contact_id=p_contact and j.id=p_job
+      and f.pointer_id=i.recovery_pointer_id and f.status='active' and o.recovery_armed_at is not null
+      and public.fn_obra_outreach_send_live(p_org,o.event_id,p_contact,null)) end
+$$;
+revoke execute on function public.fn_obra_followup_live(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_obra_followup_live(uuid,uuid,uuid) to service_role;
+
+create or replace function public.fn_arm_obra_recovery(p_org uuid,p_event uuid,p_contact uuid)
+returns boolean language plpgsql security invoker set search_path=public,pg_temp as $$
+declare item public.obra_subscription_outreach;
+begin
+  -- Contato trava junto com a guarda final do transporte e a identidade.
+  perform 1 from public.contacts where organization_id=p_org and id=p_contact for update;
+  select * into item from public.obra_subscription_outreach where organization_id=p_org and event_id=p_event and kind='recovery' for update;
+  if not found or item.recovery_armed_at is not null or not public.fn_obra_outreach_send_live(p_org,p_event,p_contact,null) then return false; end if;
+  update public.contacts set tags=case when 'followup_assinatura'=any(tags) then tags else array_append(tags,'followup_assinatura') end,
+    updated_at=now() where organization_id=p_org and id=p_contact;
+  update public.obra_subscription_outreach set recovery_armed_at=now() where organization_id=p_org and id=item.id;
+  return true;
+end $$;
+revoke execute on function public.fn_arm_obra_recovery(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_arm_obra_recovery(uuid,uuid,uuid) to service_role;
+
+create or replace function public.fn_guard_obra_managed_rule() returns trigger
+language plpgsql security invoker set search_path=public,pg_temp as $$
+begin
+  if current_user in ('anon','authenticated') and
+    ((tg_op<>'INSERT' and old.trigger_event='obra_subscription.outreach')
+      or (tg_op<>'DELETE' and new.trigger_event='obra_subscription.outreach')) then
+    raise exception 'obra_managed_rule_private' using errcode='42501';
+  end if;
+  if tg_op='DELETE' then return old; end if; return new;
+end $$;
+revoke execute on function public.fn_guard_obra_managed_rule() from public,anon,authenticated;
+grant execute on function public.fn_guard_obra_managed_rule() to service_role;
+drop trigger if exists tr_guard_obra_managed_rule on public.automation_rules;
+create trigger tr_guard_obra_managed_rule before insert or update or delete on public.automation_rules
+  for each row execute function public.fn_guard_obra_managed_rule();
+
+-- Resposta remove o segmento antes do sweep seguinte: não reinscrever quem respondeu.
+create or replace function public.fn_stop_obra_recovery_on_reply() returns trigger
+language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+  if new.direction='inbound' and exists(select 1 from public.obra_subscription_states s
+    join public.obra_access_integrations i on i.organization_id=s.organization_id and i.id=s.integration_id
+    where s.organization_id=new.organization_id and s.contact_id=new.contact_id and i.lifecycle_enabled) then
+    update public.contacts set tags=array_remove(tags,'followup_assinatura'),updated_at=now()
+      where organization_id=new.organization_id and id=new.contact_id and 'followup_assinatura'=any(tags);
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_stop_obra_recovery_on_reply() from public,anon,authenticated;
+grant execute on function public.fn_stop_obra_recovery_on_reply() to service_role;
+drop trigger if exists tr_stop_obra_recovery_on_reply on public.messages;
+create trigger tr_stop_obra_recovery_on_reply after insert on public.messages for each row execute function public.fn_stop_obra_recovery_on_reply();
+
+create or replace function public.fn_stop_obra_recovery_on_contact_guard() returns trigger
+language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+  if (new.force_human or new.is_blocked or coalesce(new.consent #> '{marketing,declined_at}','null'::jsonb)
+      not in ('null'::jsonb,'false'::jsonb,'0'::jsonb,'""'::jsonb))
+    and exists(select 1 from public.obra_subscription_states s join public.obra_access_integrations i
+      on i.organization_id=s.organization_id and i.id=s.integration_id
+      where s.organization_id=new.organization_id and s.contact_id=new.id and i.lifecycle_enabled) then
+    new.tags:=array_remove(new.tags,'followup_assinatura');
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_stop_obra_recovery_on_contact_guard() from public,anon,authenticated;
+grant execute on function public.fn_stop_obra_recovery_on_contact_guard() to service_role;
+drop trigger if exists tr_stop_obra_recovery_on_contact_guard on public.contacts;
+create trigger tr_stop_obra_recovery_on_contact_guard before update of force_human,is_blocked,consent on public.contacts
+  for each row execute function public.fn_stop_obra_recovery_on_contact_guard();
+
+notify pgrst,'reload schema';
+
+-- ---- Obra no Bolso: preservar mensagens sem canal (migration 0232) ----
+-- 0232: textos do ciclo são configuração, mesmo sem número conectado.
+alter table public.obra_access_integrations
+  add column if not exists registration_message text check (length(registration_message)<=2000),
+  add column if not exists usage_message text check (length(usage_message)<=2000),
+  add column if not exists activation_message text check (length(activation_message)<=2000);
+
+-- Preserva inclusive texto vazio (mensagem desativada) nas configurações antigas.
+update public.obra_access_integrations i set
+  registration_message=coalesce((select r.actions->0->'config'->>'template' from public.automation_rules r
+    where r.organization_id=i.organization_id and r.id=i.registration_rule_id),'')
+  where i.registration_rule_id is not null and i.registration_message is null;
+update public.obra_access_integrations i set
+  usage_message=coalesce((select r.actions->0->'config'->>'template' from public.automation_rules r
+    where r.organization_id=i.organization_id and r.id=i.usage_rule_id),'')
+  where i.usage_rule_id is not null and i.usage_message is null;
+update public.obra_access_integrations i set
+  activation_message=coalesce((select r.actions->0->'config'->>'template' from public.automation_rules r
+    where r.organization_id=i.organization_id and r.id=i.activation_rule_id),'')
+  where i.activation_rule_id is not null and i.activation_message is null;
+
+create or replace function public.fn_configure_obra_outreach(p_org uuid,p_integration uuid,p_enabled boolean,
+  p_channel uuid,p_recovery uuid,p_registration text,p_usage text,p_activation text)
+returns jsonb language plpgsql security invoker set search_path=public,pg_temp as $$
+declare cfg public.obra_access_integrations; ids uuid[]; templates text[]:=array[p_registration,p_usage,p_activation]; n integer; created_rule uuid;
+begin
+  select * into cfg from public.obra_access_integrations where organization_id=p_org and id=p_integration for update;
+  if not found or not cfg.lifecycle_enabled then raise exception 'obra_lifecycle_required' using errcode='23514'; end if;
+  if p_channel is not null and not exists(select 1 from public.channel_sessions where organization_id=p_org and id=p_channel
+    and provider='waha' and to_jsonb(channel_sessions)->>'archived_at' is null) then
+    raise exception 'obra_channel_invalid' using errcode='23514'; end if;
+  if p_recovery is not null and not exists(select 1 from public.followup_flow_pointers where organization_id=p_org and id=p_recovery) then
+    raise exception 'obra_recovery_invalid' using errcode='23514'; end if;
+  if p_enabled and p_channel is null then raise exception 'obra_channel_required' using errcode='23514'; end if;
+  if exists(select 1 from unnest(templates) t where t is null or length(t)>2000) then
+    raise exception 'obra_message_invalid' using errcode='23514'; end if;
+  ids:=array[cfg.registration_rule_id,cfg.usage_rule_id,cfg.activation_rule_id];
+  for n in 1..3 loop
+    if ids[n] is null then
+      insert into public.automation_rules(organization_id,name,trigger_event,actions,is_active)
+        values(p_org,case n when 1 then 'Obra no Bolso: cadastro no teste' when 2 then 'Obra no Bolso: uso no teste'
+          else 'Obra no Bolso: assinatura confirmada' end,'obra_subscription.outreach','[]',false) returning id into created_rule;
+      ids[n]:=created_rule;
+    end if;
+    update public.automation_rules set actions=case when p_channel is null or btrim(templates[n])='' then '[]'::jsonb else
+      jsonb_build_array(jsonb_build_object('type','send_whatsapp_message','config',
+        jsonb_build_object('channel_session_id',p_channel,'template',templates[n]))) end,
+      is_active=p_enabled and btrim(templates[n])<>'',updated_at=now()
+      where organization_id=p_org and id=ids[n];
+  end loop;
+  update public.obra_access_integrations set registration_message=p_registration,usage_message=p_usage,activation_message=p_activation,
+    outreach_enabled=p_enabled,outreach_channel_id=p_channel,
+    recovery_pointer_id=p_recovery,registration_rule_id=ids[1],usage_rule_id=ids[2],activation_rule_id=ids[3],updated_at=now()
+    where organization_id=p_org and id=p_integration;
+  return jsonb_build_object('outreach_enabled',p_enabled);
+end $$;
+revoke execute on function public.fn_configure_obra_outreach(uuid,uuid,boolean,uuid,uuid,text,text,text) from public,anon,authenticated;
+grant execute on function public.fn_configure_obra_outreach(uuid,uuid,boolean,uuid,uuid,text,text,text) to service_role;
+
+
+notify pgrst,'reload schema';
+
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES

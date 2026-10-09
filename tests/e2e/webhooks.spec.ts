@@ -23,6 +23,7 @@ import * as path from "node:path";
 
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
 // Segue o dev server do harness (playwright.config webServer) — nunca hardcodar
 // porta: o config usa E2E_PORT (default 3001).
@@ -60,6 +61,65 @@ const SOURCE_NAME = `E2E Landing ${ts}`;
 const RULE_NAME = `E2E Automação ${ts}`;
 const LEAD_NAME = `Ana E2E ${ts}`;
 const TAG = "e2e-tag";
+
+// Prova de UX com dados sintéticos; isolamento e conversão reais estão no harness de banco.
+test("Obra no Bolso distingue o modo 96h e mostra estados sem confundir teste com venda", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  await loginComoAdmin(page, lerCreds());
+  let lifecycle = false;
+  let saved: Record<string, unknown> | null = null;
+  let savedOutreach: Record<string, unknown> | null = null;
+  const channelId = "2c3f3457-9a52-4fd3-9e51-9e9842ff4c5a";
+  const id = "894eb39f-7969-46be-85dc-613070985152";
+  const pipelineId = "d3dd3954-3315-4c7d-8ea9-3287384931ed";
+  await page.route("**/api/v1/pipelines", route => route.fulfill({ json: { data: [{ id: pipelineId, name: "Assinaturas sintéticas" }] } }));
+  await page.route("**/api/v1/channel-sessions", route => route.fulfill({ json: { data: [{ id: channelId, display_name: "Número sintético" }] } }));
+  await page.route("**/api/v1/ai/followup-flows", route => route.fulfill({ json: { data: [] } }));
+  await page.route("**/api/v1/integrations/obra-no-bolso**", async route => {
+    if (route.request().method() === "PATCH") {
+      saved = route.request().postDataJSON() as Record<string, unknown>;
+      if ("lifecycle_enabled" in saved) lifecycle = saved.lifecycle_enabled === true;
+      if (saved.outreach) savedOutreach = saved.outreach as Record<string, unknown>;
+      await route.fulfill({ json: { data: { id, pipeline_id: pipelineId, is_active: false, lifecycle_enabled: lifecycle } } });
+      return;
+    }
+    await route.fulfill({ json: { data: {
+      integration: { id, pipeline_id: pipelineId, is_active: false, lifecycle_enabled: lifecycle, last_received_at: null },
+      ...(savedOutreach ? { outreach: savedOutreach } : {}),
+      receipts: [], rejections: [], counts: { processed: 0, trial: 0, paid: 0, pending: 0, rejected: 0, duplicates: 0 },
+      pagination: { offset: 0, has_more: false }, subscription_pagination: { offset: 0, has_more: false },
+      subscriptions: ["trial", "paid", "recover", "manual", "post_conversion"].map((decision, index) => ({
+        id: `synthetic-${index}`, lead_id: null, trial_started_at: "2026-10-01T12:00:00Z", checked_at: "2026-10-05T12:00:00Z",
+        status_pagamento: "ativo", em_trial: decision === "trial", decision, reason: decision === "manual" ? "contact_not_unique" : null,
+      })),
+    } } });
+  });
+  await page.goto(`${APP_URL}/app/webhooks`);
+  await page.getByRole("tab", { name: "Obra no Bolso" }).click();
+  await page.locator("#obra-lifecycle-mode").click();
+  await page.getByRole("option", { name: "Teste e assinatura após 96 horas" }).click();
+  await page.getByRole("button", { name: "Salvar configuração" }).click();
+  await expect(page.getByRole("heading", { name: "Estado das assinaturas" })).toBeVisible();
+  expect(saved).toEqual({ pipeline_id: pipelineId, lifecycle_enabled: true });
+  for (const label of ["Em teste", "Assinatura confirmada", "Elegível para recuperação", "Conferência necessária", "Suporte após assinatura"]) {
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
+  }
+  await expect(page.getByText("Inativa", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ativar conexão", exact: true })).toBeVisible();
+  const activation = page.getByLabel("Assinatura confirmada — mensagem única");
+  await expect(activation).toHaveValue(/Se surgir algum erro ou dúvida, envie uma mensagem por aqui para receber suporte/);
+  await activation.fill("Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte.");
+  await page.getByRole("button", { name: "Salvar mensagens", exact: true }).click();
+  await expect(page.getByText("Mensagens do ciclo salvas.", { exact: true })).toBeVisible();
+  expect(savedOutreach).toMatchObject({ enabled: false, channel_session_id: null,
+    activation_message: "Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte." });
+  await expect(activation).toHaveValue("Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte.");
+  await page.reload();
+  await page.getByRole("tab", { name: "Obra no Bolso" }).click();
+  await expect(activation).toHaveValue("Parabéns, {{contact.name}}! Assinatura confirmada. Responda aqui para receber suporte.");
+  await expect(page.getByRole("button", { name: "Consultar aplicativo novamente" }).first()).toBeDisabled();
+  await testInfo.attach("obra-assinaturas-96h", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
+});
 
 // Card do design system (Card/CardHeader) — mesmas classes em toda a app.
 // Sobe do texto (título) até o container do card pra escopar asserções vizinhas.

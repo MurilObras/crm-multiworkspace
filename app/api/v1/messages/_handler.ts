@@ -11,7 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
-import { DeliveryRejectedError, OutboundLeaseLostError, type OutboundAttemptWrite } from "@/lib/channels/delivery-error";
+import { DeliveryRejectedError, OutboundLeaseLostError, OutboundPreflightDeferredError, type OutboundAttemptWrite } from "@/lib/channels/delivery-error";
 import { isWindowOpen } from "@/lib/agent-engine/guardrails/messaging-window";
 import {
   capabilitiesOf,
@@ -825,6 +825,15 @@ export async function sendMessageHandler(
       if (updated) message = updated as unknown as Message;
     } catch (err) {
       if (err instanceof OutboundLeaseLostError) throw err;
+      // Uma dependência indisponível antes da rede conserva a mesma tentativa.
+      // Depois de STARTED, nem este erro autoriza repetir o transporte.
+      if (!transportStarted && options?.messageId && err instanceof OutboundPreflightDeferredError) {
+        const { data: queued } = await writeState({ status: "queued",
+          metadata: { ...message.metadata, queued_reason: err.reason },
+        }, 'prepared', 'prepared');
+        if (queued) message = queued as unknown as Message;
+        return message;
+      }
       const msg = err instanceof Error ? err.message : adapter.codes.unknownError;
       // `storage_sign_failed` fica literal: é falha do NOSSO Storage, não do
       // canal — a URL assinada é montada antes de qualquer coisa tocar o adapter.

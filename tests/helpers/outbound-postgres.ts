@@ -1,4 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
+import { readFileSync } from 'node:fs';
 import type pg from 'pg';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -38,6 +39,7 @@ export async function outboundPostgres() {
       status text default 'WORKING', archived_at timestamptz, waha_session_name text default 'default');
     create table contacts(id uuid primary key, organization_id uuid, phone_number text,
       is_blocked boolean default false, is_anonymized boolean default false, consent jsonb default '{}',
+      force_human boolean default false,is_merged_into uuid,
       last_activity_at timestamptz, wa_identity text, wa_lid text);
     create table conversations(id uuid primary key, organization_id uuid, contact_id uuid, channel_session_id uuid,
       status text default 'open', is_group boolean default false, group_chat_id text, bot_silenced_until timestamptz,
@@ -45,14 +47,33 @@ export async function outboundPostgres() {
       last_message_at timestamptz, last_message_preview text, unread_count_for_assignee int,
       created_at timestamptz default now(), updated_at timestamptz default now());
     create table followup_enrollments(id uuid primary key, organization_id uuid, contact_id uuid, conversation_id uuid,
-      current_node_id text, status text default 'active', version_id uuid, steps_taken int default 0,
+      current_node_id text, status text default 'active', version_id uuid, pointer_id uuid, steps_taken int default 0,
       attempts int default 0,max_attempts int default 5, next_eval_at timestamptz,claimed_until timestamptz,
       started_at timestamptz default now(),updated_at timestamptz default now());
     create table followup_flow_versions(id uuid primary key,organization_id uuid,graph jsonb);
     create table followup_enrollment_events(organization_id uuid,enrollment_id uuid,node_id text,event_type text,
       payload jsonb,idempotency_key text,unique(enrollment_id,idempotency_key));
     create table agent_inbox_items(organization_id uuid,kind text,severity text,title text,body text,ref_kind text,ref_id uuid);
+    create table obra_access_integrations(id uuid primary key,organization_id uuid,pipeline_id uuid,
+      lifecycle_enabled boolean default false,is_active boolean default false,outreach_enabled boolean default false,
+      outreach_channel_id uuid,recovery_pointer_id uuid);
+    create table obra_subscription_states(id uuid primary key,organization_id uuid,integration_id uuid,contact_id uuid,
+      lead_id uuid,checked_at timestamptz,trial_started_at timestamptz,trial_ends_at timestamptz,
+      converted_at timestamptz,recovery_started_at timestamptz,decision text,em_trial boolean);
+    create table obra_subscription_outreach(organization_id uuid,state_id uuid,kind text,due_at timestamptz,
+      event_id uuid,rule_id uuid,recovery_armed_at timestamptz);
+    create table crm_leads(id uuid,organization_id uuid,contact_id uuid,pipeline_id uuid,status text);
+    create table event_log(id uuid,organization_id uuid,entity_id uuid);
+    create table automation_rules(id uuid,organization_id uuid,is_active boolean,trigger_event text,actions jsonb);
   `);
+  // A fixture do ledger usa as guardas SQL reais. Nenhum vínculo Obra por padrão:
+  // as provas antigas continuam exercitando contatos/workspaces sem a integração.
+  const outreachMigration = readFileSync('supabase/migrations/20261008230000_0231_obra_subscription_outreach.sql', 'utf8');
+  for (const name of ['fn_obra_outreach_send_live', 'fn_obra_followup_live']) {
+    const definition = outreachMigration.match(new RegExp(`create or replace function public\\.${name}\\([\\s\\S]+?\\$\\$;`))?.[0];
+    if (!definition) throw new Error(`Guarda SQL ausente na migration: ${name}`);
+    await sql.exec(definition);
+  }
   let tail = Promise.resolve();
   async function lock() { let release!: () => void; const next = new Promise<void>((r) => { release = r; }); const old = tail; tail = next; await old; return release; }
   const query = async (text: string, values: unknown[] = []) => {
@@ -104,7 +125,7 @@ export async function outboundPostgres() {
   }, rpc: async (name: string) => ({data:name==='fn_automation_message_live'?true:name==='fn_automation_message_preview'?false:null,error:null}) } as unknown as SupabaseClient;
 
   async function seed() {
-    await sql.exec('truncate send_ledger,messages,job_queue,channel_sessions,contacts,conversations,followup_enrollments,agent_inbox_items,followup_flow_versions,followup_enrollment_events cascade');
+    await sql.exec('truncate send_ledger,messages,job_queue,channel_sessions,contacts,conversations,followup_enrollments,agent_inbox_items,followup_flow_versions,followup_enrollment_events,obra_access_integrations,obra_subscription_states,obra_subscription_outreach,crm_leads,event_log,automation_rules cascade');
     await pool.query('insert into job_queue(id,organization_id,contact_id,payload) values ($1,$2,$3,$4)',[JOB,ORG,CONTACT,JSON.stringify({fixed_body:'Oi',followup_enrollment_id:ENROLLMENT,node_id:'node'})]);
     await pool.query('insert into contacts(id,organization_id,phone_number) values ($1,$2,$3)',[CONTACT,ORG,'+5511000000000']);
     await pool.query('insert into channel_sessions(id,organization_id) values ($1,$2)',[SESSION,ORG]);

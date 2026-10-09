@@ -45,12 +45,25 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const supabase = await createClient();
   const { data: existing, error: fetchErr } = await supabase
     .from("automation_rules")
-    .select("id,actions")
+    .select("id,actions,trigger_event")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", "Regra não encontrada.", 404, { requestId });
+  if (existing.trigger_event === "obra_subscription.outreach") {
+    return fail("forbidden", "Configure estas mensagens na aba Obra no Bolso.", 403, { requestId });
+  }
+  const nextTrigger = parsed.data.trigger_event ?? existing.trigger_event;
+  const nextActions = parsed.data.actions ?? existing.actions as Array<{ type: string }>;
+  if ((nextTrigger === "obra_access.activated" || existing.trigger_event === "obra_access.activated")
+    && activeOrg.role !== "admin") {
+    return fail("forbidden", "Somente administradores alteram a parabenização do produto.", 403, { requestId });
+  }
+  if (nextTrigger === "obra_access.activated" &&
+    !nextActions.every(action => action.type === "send_whatsapp_message")) {
+    return fail("invalid_request", "Este gatilho permite somente mensagem WhatsApp.", 422, { requestId });
+  }
   if (parsed.data.actions || parsed.data.is_active === true) {
     const referenceError = await validateAutomationReferences(createAdminClient(), activeOrg.orgId,
       parsed.data.actions ?? existing.actions as Array<{ type: string; config?: Record<string, unknown> }>);
@@ -114,12 +127,15 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
   const supabase = await createClient();
   const { data: existing, error: fetchErr } = await supabase
     .from("automation_rules")
-    .select("id")
+    .select("id,trigger_event")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", "Regra não encontrada.", 404, { requestId });
+  if (existing.trigger_event === "obra_subscription.outreach") {
+    return fail("forbidden", "Configure estas mensagens na aba Obra no Bolso.", 403, { requestId });
+  }
 
   const { error: delErr } = await supabase.from("automation_rules").delete().eq("id", id);
   if (delErr) return fail("internal_error", delErr.message, 500, { requestId });

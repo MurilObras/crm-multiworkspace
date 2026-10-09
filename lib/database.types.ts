@@ -7301,6 +7301,533 @@ export type Database = {
           },
         ]
       }
+      obra_access_integrations: {
+        Row: {
+          activation_message: string | null
+          activation_rule_id: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          last_received_at: string | null
+          lifecycle_enabled: boolean
+          organization_id: string
+          outreach_channel_id: string | null
+          outreach_enabled: boolean
+          pipeline_id: string
+          recovery_pointer_id: string | null
+          registration_message: string | null
+          registration_rule_id: string | null
+          rejected_count: number
+          secret_encrypted: string
+          updated_at: string
+          usage_message: string | null
+          usage_rule_id: string | null
+        }
+        ComputedFields: never
+        Insert: {
+          activation_message?: string | null
+          activation_rule_id?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_received_at?: string | null
+          lifecycle_enabled?: boolean
+          organization_id: string
+          outreach_channel_id?: string | null
+          outreach_enabled?: boolean
+          pipeline_id: string
+          recovery_pointer_id?: string | null
+          registration_message?: string | null
+          registration_rule_id?: string | null
+          rejected_count?: number
+          secret_encrypted: string
+          updated_at?: string
+          usage_message?: string | null
+          usage_rule_id?: string | null
+        }
+        Update: {
+          activation_message?: string | null
+          activation_rule_id?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_received_at?: string | null
+          lifecycle_enabled?: boolean
+          organization_id?: string
+          outreach_channel_id?: string | null
+          outreach_enabled?: boolean
+          pipeline_id?: string
+          recovery_pointer_id?: string | null
+          registration_message?: string | null
+          registration_rule_id?: string | null
+          rejected_count?: number
+          secret_encrypted?: string
+          updated_at?: string
+          usage_message?: string | null
+          usage_rule_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "obra_access_integrations_activation_rule_id_fkey"
+            columns: ["activation_rule_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_integrations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_integrations_outreach_channel_id_fkey"
+            columns: ["outreach_channel_id"]
+            isOneToOne: false
+            referencedRelation: "channel_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_integrations_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "crm_pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_integrations_recovery_pointer_id_fkey"
+            columns: ["recovery_pointer_id"]
+            isOneToOne: false
+            referencedRelation: "followup_flow_pointers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_integrations_registration_rule_id_fkey"
+            columns: ["registration_rule_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_integrations_usage_rule_id_fkey"
+            columns: ["usage_rule_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      obra_access_links: {
+        Row: {
+          activated_at: string
+          contact_id: string
+          created_at: string
+          lead_id: string
+          modality: string
+          organization_id: string
+          plan: string
+          product_user_id: string
+          receipt_id: string
+        }
+        ComputedFields: never
+        Insert: {
+          activated_at: string
+          contact_id: string
+          created_at?: string
+          lead_id: string
+          modality: string
+          organization_id: string
+          plan: string
+          product_user_id: string
+          receipt_id: string
+        }
+        Update: {
+          activated_at?: string
+          contact_id?: string
+          created_at?: string
+          lead_id?: string
+          modality?: string
+          organization_id?: string
+          plan?: string
+          product_user_id?: string
+          receipt_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "obra_access_links_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_links_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "crm_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_links_organization_id_receipt_id_fkey"
+            columns: ["organization_id", "receipt_id"]
+            isOneToOne: true
+            referencedRelation: "obra_access_receipts"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
+      obra_access_receipts: {
+        Row: {
+          claimed_at: string | null
+          contact_id: string | null
+          created_at: string
+          duplicate_count: number
+          email: string | null
+          event_log_id: string | null
+          event_version: number
+          external_event_id: string
+          fingerprint: string
+          id: string
+          integration_id: string
+          is_new_user: boolean
+          lead_id: string | null
+          modality: string
+          name: string | null
+          occurred_at: string
+          organization_id: string
+          phone: string | null
+          plan: string
+          processed_at: string | null
+          product_user_id: string
+          provider: string | null
+          reason: string | null
+          status: string
+          trial_ends_at: string | null
+          user_created_at: string
+          user_status: string
+        }
+        ComputedFields: never
+        Insert: {
+          claimed_at?: string | null
+          contact_id?: string | null
+          created_at?: string
+          duplicate_count?: number
+          email?: string | null
+          event_log_id?: string | null
+          event_version: number
+          external_event_id: string
+          fingerprint: string
+          id?: string
+          integration_id: string
+          is_new_user: boolean
+          lead_id?: string | null
+          modality: string
+          name?: string | null
+          occurred_at: string
+          organization_id: string
+          phone?: string | null
+          plan: string
+          processed_at?: string | null
+          product_user_id: string
+          provider?: string | null
+          reason?: string | null
+          status: string
+          trial_ends_at?: string | null
+          user_created_at: string
+          user_status: string
+        }
+        Update: {
+          claimed_at?: string | null
+          contact_id?: string | null
+          created_at?: string
+          duplicate_count?: number
+          email?: string | null
+          event_log_id?: string | null
+          event_version?: number
+          external_event_id?: string
+          fingerprint?: string
+          id?: string
+          integration_id?: string
+          is_new_user?: boolean
+          lead_id?: string | null
+          modality?: string
+          name?: string | null
+          occurred_at?: string
+          organization_id?: string
+          phone?: string | null
+          plan?: string
+          processed_at?: string | null
+          product_user_id?: string
+          provider?: string | null
+          reason?: string | null
+          status?: string
+          trial_ends_at?: string | null
+          user_created_at?: string
+          user_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "obra_access_receipts_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_receipts_event_log_id_fkey"
+            columns: ["event_log_id"]
+            isOneToOne: false
+            referencedRelation: "event_log"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_receipts_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "crm_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_receipts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_access_receipts_organization_id_integration_id_fkey"
+            columns: ["organization_id", "integration_id"]
+            isOneToOne: false
+            referencedRelation: "obra_access_integrations"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
+      obra_subscription_outreach: {
+        Row: {
+          due_at: string
+          event_id: string | null
+          id: string
+          kind: string
+          organization_id: string
+          recovery_armed_at: string | null
+          rule_id: string | null
+          state_id: string
+        }
+        ComputedFields: never
+        Insert: {
+          due_at: string
+          event_id?: string | null
+          id?: string
+          kind: string
+          organization_id: string
+          recovery_armed_at?: string | null
+          rule_id?: string | null
+          state_id: string
+        }
+        Update: {
+          due_at?: string
+          event_id?: string | null
+          id?: string
+          kind?: string
+          organization_id?: string
+          recovery_armed_at?: string | null
+          rule_id?: string | null
+          state_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "obra_subscription_outreach_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "event_log"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_subscription_outreach_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_subscription_outreach_organization_id_state_id_fkey"
+            columns: ["organization_id", "state_id"]
+            isOneToOne: false
+            referencedRelation: "obra_subscription_states"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "obra_subscription_outreach_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      obra_subscription_receipts: {
+        Row: {
+          checked_at: string
+          created_at: string
+          decision: string
+          duplicate_count: number
+          event_type: string
+          external_event_id: string
+          fingerprint: string
+          id: string
+          integration_id: string
+          organization_id: string
+          product_user_id: string
+          reason: string | null
+        }
+        ComputedFields: never
+        Insert: {
+          checked_at: string
+          created_at?: string
+          decision: string
+          duplicate_count?: number
+          event_type: string
+          external_event_id: string
+          fingerprint: string
+          id?: string
+          integration_id: string
+          organization_id: string
+          product_user_id: string
+          reason?: string | null
+        }
+        Update: {
+          checked_at?: string
+          created_at?: string
+          decision?: string
+          duplicate_count?: number
+          event_type?: string
+          external_event_id?: string
+          fingerprint?: string
+          id?: string
+          integration_id?: string
+          organization_id?: string
+          product_user_id?: string
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "obra_subscription_receipts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_subscription_receipts_organization_id_integration_id_fkey"
+            columns: ["organization_id", "integration_id"]
+            isOneToOne: false
+            referencedRelation: "obra_access_integrations"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
+      obra_subscription_states: {
+        Row: {
+          access_enabled: boolean
+          access_expires_at: string | null
+          checked_at: string
+          contact_id: string | null
+          converted_at: string | null
+          decision: string
+          em_trial: boolean
+          id: string
+          integration_id: string
+          lead_id: string | null
+          organization_id: string
+          product_user_id: string
+          reason: string | null
+          recovery_started_at: string | null
+          status_pagamento: string
+          trial_ends_at: string | null
+          trial_started_at: string
+          updated_at: string
+        }
+        ComputedFields: never
+        Insert: {
+          access_enabled: boolean
+          access_expires_at?: string | null
+          checked_at: string
+          contact_id?: string | null
+          converted_at?: string | null
+          decision: string
+          em_trial: boolean
+          id?: string
+          integration_id: string
+          lead_id?: string | null
+          organization_id: string
+          product_user_id: string
+          reason?: string | null
+          recovery_started_at?: string | null
+          status_pagamento: string
+          trial_ends_at?: string | null
+          trial_started_at: string
+          updated_at?: string
+        }
+        Update: {
+          access_enabled?: boolean
+          access_expires_at?: string | null
+          checked_at?: string
+          contact_id?: string | null
+          converted_at?: string | null
+          decision?: string
+          em_trial?: boolean
+          id?: string
+          integration_id?: string
+          lead_id?: string | null
+          organization_id?: string
+          product_user_id?: string
+          reason?: string | null
+          recovery_started_at?: string | null
+          status_pagamento?: string
+          trial_ends_at?: string | null
+          trial_started_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "obra_subscription_states_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_subscription_states_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "crm_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_subscription_states_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obra_subscription_states_organization_id_integration_id_fkey"
+            columns: ["organization_id", "integration_id"]
+            isOneToOne: false
+            referencedRelation: "obra_access_integrations"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
     }
     Views: {
       ai_provider_credentials_safe: {
@@ -7720,6 +8247,103 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      fn_arm_obra_recovery: {
+        Args: { p_contact: string; p_event: string; p_org: string }
+        Returns: boolean
+      }
+      fn_claim_obra_access: {
+        Args: { p_organization_id: string; p_receipt_id: string }
+        Returns: Json
+      }
+      fn_configure_obra_outreach: {
+        Args: {
+          p_activation: string
+          p_channel: string
+          p_enabled: boolean
+          p_integration: string
+          p_org: string
+          p_recovery: string
+          p_registration: string
+          p_usage: string
+        }
+        Returns: Json
+      }
+      fn_finish_obra_access: {
+        Args: { p_organization_id: string; p_receipt_id: string }
+        Returns: Json
+      }
+      fn_manual_link_obra_access: {
+        Args: {
+          p_actor_user_id: string
+          p_contact_id: string
+          p_lead_id: string
+          p_organization_id: string
+          p_receipt_id: string
+          p_request_id: string
+        }
+        Returns: Json
+      }
+      fn_obra_access_counts: {
+        Args: { p_integration_id: string; p_organization_id: string }
+        Returns: Json
+      }
+      fn_obra_access_send_live: {
+        Args: {
+          p_contact_id: string
+          p_event_id: string
+          p_organization_id: string
+          p_rule_id: string
+        }
+        Returns: boolean
+      }
+      fn_obra_followup_live: {
+        Args: { p_contact: string; p_job: string; p_org: string }
+        Returns: boolean
+      }
+      fn_obra_outreach_send_live: {
+        Args: {
+          p_contact: string
+          p_event: string
+          p_org: string
+          p_rule: string
+        }
+        Returns: boolean
+      }
+      fn_receive_obra_access: {
+        Args: {
+          p_fingerprint: string
+          p_integration_id: string
+          p_organization_id: string
+          p_payload: Json
+          p_phone_variants: string[]
+          p_rejection_reason: string
+          p_secret_encrypted: string
+        }
+        Returns: Json
+      }
+      fn_receive_obra_subscription: {
+        Args: {
+          p_fingerprint: string
+          p_integration: string
+          p_org: string
+          p_payload: Json
+          p_phone_variants: string[]
+          p_secret_encrypted: string
+        }
+        Returns: Json
+      }
+      fn_reject_obra_access: {
+        Args: {
+          p_integration_id: string
+          p_organization_id: string
+          p_reason: string
+        }
+        Returns: undefined
+      }
+      fn_release_obra_access: {
+        Args: { p_organization_id: string; p_receipt_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

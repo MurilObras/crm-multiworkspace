@@ -25,6 +25,7 @@ import { acquireActionIntent, finishActionIntent, readEventPlan, freezeEventPlan
 import { resumeQueuedAutomationMessage } from "./send-message";
 import { checarGuardasDeContato } from "./guarda-do-contato";
 import { actionSchema } from "@/lib/schemas/webhooks";
+import { prepareObraOutreach } from "@/lib/obra-no-bolso/outreach";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
 
@@ -34,6 +35,8 @@ const EXPECTED_ENTITY_KIND: Record<string, string> = {
   "lead.tag_added": "crm_lead",
   "contact.tag_added": "contact",
   "message.received": "message",
+  "obra_access.activated": "crm_lead",
+  "obra_subscription.outreach": "crm_lead",
 };
 
 interface RuleRow {
@@ -43,28 +46,31 @@ interface RuleRow {
   actions: Array<{ type: string; config?: Record<string, unknown> }>;
 }
 
-/** Hidrata o contexto avaliado pelas condições/ações a partir do entity do evento. */
-export async function buildContext(admin: SupabaseClient, row: EventRow): Promise<Record<string, unknown>> {
+/** Hidrata o contexto. No acesso confirmado, falha de leitura é retomável,
+ * não prova de que a identidade mudou nem autorização para consumir o evento. */
+export async function buildContext(admin: SupabaseClient, row: EventRow, strict = false): Promise<Record<string, unknown>> {
   const context: Record<string, unknown> = { event: row.payload };
   // Admin client bypassa RLS — todo lookup filtra organization_id do evento
   // (doutrina multi-tenant; um FK cross-org corrompido nunca vaza pro contexto).
   const org = row.organization_id;
   if (row.entity_kind === "crm_lead" && row.entity_id) {
-    const { data: lead } = await admin
+    const { data: lead, error: leadError } = await admin
       .from("crm_leads")
       .select("*")
       .eq("id", row.entity_id)
       .eq("organization_id", org)
       .maybeSingle();
+    if (strict && leadError) throw new Error("automation_context_unavailable");
     if (lead) {
       context.lead = lead;
       if (lead.contact_id) {
-        const { data: contact } = await admin
+        const { data: contact, error: contactError } = await admin
           .from("contacts")
           .select("*")
           .eq("id", lead.contact_id)
           .eq("organization_id", org)
           .maybeSingle();
+        if (strict && contactError) throw new Error("automation_context_unavailable");
         if (contact) context.contact = contact;
       }
     }
@@ -155,7 +161,41 @@ export async function runAutomationForEvent(
   }
 
   const kiwify = row.payload.kiwify_event_type === "order_approved";
-  const plan = kiwify ? await readEventPlan<RuleRow>(getRequestPool(),row.organization_id,row.id) : null;
+  const obra = row.event_type === "obra_access.activated";
+  const outreach = row.event_type === "obra_subscription.outreach";
+  let outreachRuleId: string | null = null;
+  let obraContactId: string | null = null;
+  if (outreach) {
+    try {
+      const prepared = await prepareObraOutreach(admin, row);
+      if (!prepared.ready) return { consumer_key: AUTOMATION_CONSUMER_KEY, ...prepared.result };
+      obraContactId = prepared.contactId;
+      outreachRuleId = prepared.ruleId;
+    } catch {
+      return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: new Date(Date.now() + 60_000).toISOString() };
+    }
+  }
+  if (obra) {
+    const { data: receipt, error: receiptError } = await admin.from("obra_access_receipts")
+      .select("id,integration_id,modality,contact_id,lead_id,status,event_log_id")
+      .eq("organization_id", row.organization_id).eq("event_log_id", row.id).maybeSingle();
+    if (receiptError) {
+      return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: "obra_receipt_lookup_unavailable" };
+    }
+    const { data: source, error: sourceError } = receipt ? await admin.from("obra_access_integrations")
+      .select("is_active").eq("organization_id", row.organization_id)
+      .eq("id", receipt.integration_id).maybeSingle() : { data: null, error: null };
+    if (sourceError) {
+      return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: "obra_integration_lookup_unavailable" };
+    }
+    if (!receipt || receipt.status !== "processed" ||
+      receipt.lead_id !== row.entity_id || receipt.modality !== row.payload.modality || !source?.is_active) {
+      return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "obra_receipt_not_confirmed" };
+    }
+    obraContactId = receipt.contact_id;
+  }
+  const durableExternal = kiwify || obra || outreach;
+  const plan = durableExternal ? await readEventPlan<RuleRow>(getRequestPool(),row.organization_id,row.id) : null;
   const { data: rules, error } = plan !== null ? {data:plan,error:null} : await admin
     .from("automation_rules")
     .select("id, name, conditions, actions")
@@ -164,14 +204,17 @@ export async function runAutomationForEvent(
     .eq("is_active", true)
     .order("created_at", { ascending: true });
   if (error) {
-    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: error.message };
+    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: obra ? "obra_rules_unavailable" : error.message };
   }
   const matched = (rules ?? []) as unknown as RuleRow[];
-  if (!matched.length && !kiwify) {
+  if (!matched.length && !durableExternal) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_rules" };
   }
 
-  const context = await buildContext(admin, row);
+  const context = await buildContext(admin, row, obra || outreach);
+  if ((obra || outreach) && (!obraContactId || (context.contact as { id?: string } | undefined)?.id !== obraContactId)) {
+    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "obra_recipient_changed" };
+  }
   let linkedRuleIds: Set<string> | null = null;
   // A origem é comprovada no ledger, não pelo nome ou telefone do comprador.
   if (kiwify) {
@@ -186,8 +229,10 @@ export async function runAutomationForEvent(
       linkedRuleIds = new Set((links ?? []).map(link => link.rule_id as string));
     }
   }
-  const candidates = matched.filter((r) => (linkedRuleIds === null || linkedRuleIds.has(r.id)) && evaluateConditions(r.conditions ?? [], context));
-  const applicable = plan ?? (kiwify ? await freezeEventPlan(getRequestPool(),row.organization_id,row.id,candidates) : candidates);
+  const candidates = matched.filter((r) => (linkedRuleIds === null || linkedRuleIds.has(r.id)) && evaluateConditions(r.conditions ?? [], context)
+    && (!outreach || r.id === outreachRuleId && r.actions.length === 1)
+    && (!(obra || outreach) || r.actions.every(action => action.type === "send_whatsapp_message")));
+  const applicable = plan ?? (durableExternal ? await freezeEventPlan(getRequestPool(),row.organization_id,row.id,candidates) : candidates);
   if (!applicable.length) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_match" };
   }
@@ -200,7 +245,7 @@ export async function runAutomationForEvent(
       if (!executor?.postponeUntil) continue;
       // Recusa/configuração inválida não devem ficar escondidas atrás de um
       // adiamento que promete envio futuro. O execute registrará o bloqueio.
-      if (kiwify && (!actionSchema.safeParse(action).success || !checarGuardasDeContato({
+      if (durableExternal && (!actionSchema.safeParse(action).success || !checarGuardasDeContato({
         admin,organizationId:row.organization_id,ruleId:rule.id,ruleName:rule.name,event:row,context,requestId:row.id,
       }).ok)) continue;
       const until = await executor.postponeUntil(
@@ -221,7 +266,7 @@ export async function runAutomationForEvent(
   for (const rule of applicable) {
     const results: ActionResultDetail[] = [];
     for (const [index, action] of (rule.actions ?? []).entries()) {
-      if (kiwify && ["bind_ai_agent", "start_message_flow"].includes(action.type)) {
+      if (durableExternal && ["bind_ai_agent", "start_message_flow"].includes(action.type)) {
         const state = await precedingActionsState(getRequestPool(), row.organization_id, row.id, rule.id, index);
         if (state === "waiting") return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: new Date(Date.now() + 5000).toISOString() };
         if (state === "failed") break;
@@ -232,9 +277,22 @@ export async function runAutomationForEvent(
         continue;
       }
       const actionCtx = { admin, organizationId: row.organization_id, ruleId: rule.id,
-        ruleName: rule.name, event: row, context: kiwify ? await buildContext(admin, row) : context, requestId: row.id };
-      const intentId = kiwify ? await acquireActionIntent(getRequestPool(), actionCtx, index, action.type,true) : null;
-      if (kiwify && !intentId) {
+        ruleName: rule.name, event: row, context: durableExternal ? await buildContext(admin, row, obra || outreach) : context, requestId: row.id };
+      if (outreach) {
+        const { data: live, error: guardError } = await admin.rpc("fn_obra_outreach_send_live", {
+          p_org: row.organization_id, p_event: row.id, p_contact: obraContactId, p_rule: rule.id,
+        });
+        if (guardError) return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: "obra_outreach_guard_unavailable" };
+        if (live !== true) continue;
+      }
+      if (obra) {
+        const { rows } = await getRequestPool().query<{ live: boolean }>(
+          "select fn_obra_access_send_live($1,$2,$3,$4) live",
+          [row.organization_id,row.id,(actionCtx.context.contact as { id?: string } | undefined)?.id ?? null,rule.id]);
+        if (rows[0]?.live !== true) continue;
+      }
+      const intentId = durableExternal ? await acquireActionIntent(getRequestPool(), actionCtx, index, action.type,true) : null;
+      if (durableExternal && !intentId) {
         const resumed = await resumeQueuedAutomationMessage(actionCtx, index, action.type);
         if (resumed) await finishActionIntent(getRequestPool(), row.organization_id, resumed.id, resumed.result);
         if (await actionStillWaiting(getRequestPool(), row.organization_id, row.id, rule.id, index)) {
@@ -244,7 +302,7 @@ export async function runAutomationForEvent(
       }
       let result: ActionResultDetail;
       try {
-        result = kiwify && !await actionPlanLive(getRequestPool(),row.organization_id,row.id)
+        result = durableExternal && !await actionPlanLive(getRequestPool(),row.organization_id,row.id)
           ? { type:action.type,status:"skipped",detail:{reason:"contact_anonymized"} }
           : await executor.execute(
             { ...actionCtx, ...(intentId ? { actionIntentId: intentId } : {}) },
@@ -266,7 +324,7 @@ export async function runAutomationForEvent(
     }
 
     // Cada ação Kiwify já é um run durável, correlacionado à mensagem.
-    if (kiwify) continue;
+    if (durableExternal) continue;
 
     // ═══ O AGREGADOR TAMBÉM PRECISA DIZER A VERDADE ═══
     //

@@ -7,6 +7,7 @@ import { RulesTab } from "./RulesTab";
 import { ActivityTab } from "./ActivityTab";
 import { KiwifyTab } from "./KiwifyTab";
 import { CapturasTab } from "./CapturasTab";
+import { ObraNoBolsoTab } from "./ObraNoBolsoTab";
 import { useT } from "@/hooks/i18n/useT";
 
 export function WebhooksClient({organizationId}:{organizationId:string}) {
@@ -38,12 +39,14 @@ export function WebhooksClient({organizationId}:{organizationId:string}) {
         <TabsTrigger value="rules">{t("Automações")}</TabsTrigger>
         <TabsTrigger value="activity">{t("Atividade")}</TabsTrigger>
         <TabsTrigger value="kiwify">Kiwify</TabsTrigger>
+        <TabsTrigger value="obra-no-bolso">Obra no Bolso</TabsTrigger>
       </TabsList>
       <TabsContent value="sources"><SourcesTab /></TabsContent>
       <TabsContent value="capturas"><CapturasTab /></TabsContent>
       <TabsContent value="rules"><RulesTab /></TabsContent>
       <TabsContent value="activity"><ActivityTab /></TabsContent>
       <TabsContent value="kiwify"><KiwifyTab organizationId={organizationId} /></TabsContent>
+      <TabsContent value="obra-no-bolso"><ObraNoBolsoTab /></TabsContent>
     </Tabs>
   );
 }

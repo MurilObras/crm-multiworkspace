@@ -143,6 +143,24 @@ describe('N1 — owner expirado não reclassifica a tentativa atual', () => {
 });
 
 describe('protocolo único sobre snapshots persistidos no PostgreSQL', () => {
+  it('integração desligada bloqueia somente o follow-up vinculado; inbound continua enviando', async () => {
+    const integration = '10000000-0000-4000-8000-000000000009';
+    await db.pool.query('insert into obra_access_integrations(id,organization_id,lifecycle_enabled) values($1,$2,true)', [integration,ORG]);
+    await db.pool.query('insert into obra_subscription_states(id,organization_id,integration_id,contact_id) values(gen_random_uuid(),$1,$2,$3)', [ORG,integration,CONTACT]);
+    await claim('worker');
+    expect((await worker('worker')).kind).toBe('failed');
+    expect(transport).not.toHaveBeenCalled();
+    expect((await db.pool.query('select error_code from messages')).rows[0]?.error_code).toBe('automatic_send_blocked');
+    expect((await db.pool.query('select public.fn_obra_followup_live($1,$2,$3) live', [ORG,JOB,CONTACT])).rows[0]?.live).toBe(false);
+    // Novo job inbound, mesma identidade: nenhuma consulta do produto nem guarda comercial.
+    await db.seed();
+    await db.pool.query('insert into obra_access_integrations(id,organization_id,lifecycle_enabled) values($1,$2,true)', [integration,ORG]);
+    await db.pool.query('insert into obra_subscription_states(id,organization_id,integration_id,contact_id) values(gen_random_uuid(),$1,$2,$3)', [ORG,integration,CONTACT]);
+    await db.pool.query("update job_queue set kind='inbound_turn' where id=$1", [JOB]);
+    await claim('worker');
+    expect((await worker('worker')).kind).toBe('sent');
+    expect(transport).toHaveBeenCalledOnce();
+  });
   it('watchdog não disputa transporte de mensagens que pertencem ao ledger', async () => {
     await snapshot('queued','prepared');
     await db.pool.query("update messages set created_at=now()-interval '1 hour',sent_via='ai'");

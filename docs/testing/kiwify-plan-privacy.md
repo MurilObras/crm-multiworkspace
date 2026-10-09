@@ -46,6 +46,12 @@ já adquirida cuja regra original é excluída.
 
 Matriz executada, sem reordenação:
 
+O SQL entra pelo stdin ligado a um arquivo temporário local, removido ao final.
+No conflito transacional esperado, `ON_ERROR_STOP` pode encerrar `psql` antes de
+consumir o baseline inteiro; escrever esse volume por pipe em `spawnSync`
+produzia `EPIPE`, ocultando o resultado SQL. O arquivo elimina essa corrida sem
+alterar comandos, códigos de saída esperados ou asserções de rollback/privacidade.
+
 | Caminho | Autocommit, sem ON_ERROR_STOP/BEGIN/savepoints | Transacional |
 |---|---|---|
 | Baseline completo | continua após erro | `psql --single-transaction`, aborta com rollback |
