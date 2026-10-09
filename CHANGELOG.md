@@ -8,6 +8,60 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.0.0] — 2026-10-09
+
+### ⚠️ Requer atenção
+
+- **Confirmação de conta e recuperação pelo e-mail padrão** No Supabase, em Auth > URL Configuration, defina Site URL com o domínio
+  público do CRM. Em Redirect URLs, adicione o endereço completo de
+  `/auth/confirm` seguido de dois asteriscos, para permitir os parâmetros do
+  tipo de confirmação e do identificador do fluxo. Peça um novo e-mail e abra
+  o link no mesmo navegador em que iniciou o pedido.
+
+### Adicionado
+
+- **Base revisável para o Assistente Deskcomm** A documentação passa a incluir guias de onboarding, conexões e automações, com
+  verificação das fontes que sustentam cada orientação. O pacote de assistente é
+  opcional e local; não altera o atendimento automático nem a instalação do CRM.
+  O uso no ChatGPT pela web ainda depende da configuração de um serviço remoto
+  aprovado pelo responsável.
+
+- **Estado de assinatura do Obra no Bolso após o teste** O administrador pode escolher um modo separado de teste e assinatura na conexão
+  Obra no Bolso do workspace. O acesso inicial permanece em teste; somente uma
+  consulta do aplicativo após 96 horas completas, com assinatura ativa fora do
+  teste e identificação única, encerra a venda. Dados ambíguos ficam para
+  conferência. Suspensão posterior a uma conversão preserva a venda e pede suporte.
+  A conexão e os envios nascem desligados. A aba permite personalizar dois
+  cuidados no teste e a confirmação única com orientação de suporte. Mensagens
+  esperam dias úteis das 8h às 20h e exigem estado atual do aplicativo; resposta,
+  recusa e atendimento humano bloqueiam o retorno. Recuperação usa o fluxo
+  existente escolhido, apenas após a confirmação de não conversão e mais duas
+  horas. O administrador pode reconsultar uma pendência diretamente pela tela.
+  Os textos personalizados permanecem salvos mesmo antes de selecionar o número
+  ou ao remover o canal, com os envios desligados.
+
+  Uma falha temporária na consulta do aplicativo imediatamente antes do envio
+  mantém a mensagem aguardando. Ao restabelecer a consulta, o CRM revalida as
+  condições e retoma a mesma mensagem, sem duplicar uma tentativa já iniciada.
+
+- **Confirmação de acesso do Obra no Bolso** O administrador pode conectar o Obra no Bolso a um funil de assinaturas e conferir
+  acessos liberados antes de encerrar oportunidades ambíguas. A integração e as
+  mensagens de parabenização nascem desligadas. O emissor precisa implementar o
+  contrato autenticado documentado antes de haver eventos reais.
+  O fechamento preserva edições simultâneas dos dados da oportunidade; falhas
+  temporárias de consulta na parabenização permitem retomada, sem autorizar envio
+  com identidade não confirmada.
+
+### Corrigido
+
+- **Confirmação de conta e recuperação pelo e-mail padrão** O verificador do link enviado pelo Supabase pode voltar do webmail no mesmo
+  navegador sem expor a sessão principal. O login distingue conta pendente de
+  senha incorreta e oferece reenvio da confirmação. A instalação ainda precisa
+  ter o domínio público configurado em Auth > URL Configuration no Supabase,
+  com Redirect URLs aceitando os parâmetros de confirmação e de identificação
+  do fluxo na rota `/auth/confirm`. O retorno do e-mail também preserva a
+  nova sessão e distingue os verificadores de links pedidos em abas diferentes.
+
 ## [2.2.0] — 2026-09-25
 
 ### Adicionado
@@ -3175,7 +3229,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.2.0...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.2.0...v3.0.0
 [2.2.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.0.0...v2.1.0
