@@ -8,3 +8,7 @@ Salvar a proteção de envio reavalia as respostas retidas daquele número.
 Rajadas não entram em jobs represados, e uma mensagem nova interrompe a resposta
 ao assunto anterior. O seletor de acompanhamento identifica números sem apelido,
 e o negrito é adaptado ao WhatsApp.
+
+Um turno dispensado encerra suas ferramentas antes de liberar a fila. A recência
+é conferida novamente antes do transporte de texto, mídia e template; tentativas
+superadas não ficam aguardando envio nem voltam a ser enviadas automaticamente.

@@ -302,3 +302,63 @@ describe("retomada de inbound no turno completo", () => {
     expect(JSON.stringify(resultadosVistos)).toContain("media_not_approved");
   });
 });
+
+it.each([false, true])(
+  "dispensa ferramentas mutantes e encerra o loop (mesmo step: %s)",
+  async (sameStep) => {
+    let calls = 0;
+    const marker = "acao_que_nao_pode_sobreviver_ao_turno";
+    const model = async () => {
+      const step = calls++;
+      const send = {
+        type: "tool-call" as const,
+        toolCallId: "send-superseded",
+        toolName: "send_message",
+        input: JSON.stringify({ body: "Resposta antiga" }),
+      };
+      const update = {
+        type: "tool-call" as const,
+        toolCallId: "update-superseded",
+        toolName: "update_lead_state",
+        input: JSON.stringify({ next_action: marker }),
+      };
+      if (step === 0) await novaMensagem();
+      if (step < 2)
+        return {
+          content: step === 0 ? (sameStep ? [send, update] : [send]) : [update],
+          finishReason: { unified: "tool-calls" as const, raw: undefined },
+          usage: USO,
+          warnings: [],
+        };
+      return {
+        content: [{ type: "text" as const, text: CHECKPOINT }],
+        finishReason: { unified: "stop" as const, raw: undefined },
+        usage: USO,
+        warnings: [],
+      };
+    };
+    try {
+      const error = await rodaTurno(montaHandler(model));
+      expect(error?.constructor.name).toBe("JobSettledError");
+      expect(calls).toBe(1); // Sem outro step nem chamada de checkpoint.
+      expect(enviados).toHaveLength(0);
+      const state = (
+        await pool.query(
+          "select next_action from lead_state where organization_id=$1 and contact_id=$2",
+          [ORG, CONTACT],
+        )
+      ).rows[0];
+      expect(state?.next_action).not.toBe(marker);
+      expect(
+        (
+          await pool.query(
+            "select status from job_queue where organization_id=$1 and kind='inbound_turn' order by created_at desc limit 1",
+            [ORG],
+          )
+        ).rows[0]?.status,
+      ).toBe("done");
+    } finally {
+      await pool.query("delete from messages where organization_id=$1 and id=$2", [ORG, NEW_MSG]);
+    }
+  },
+);

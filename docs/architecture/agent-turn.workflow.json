@@ -271,6 +271,15 @@
       "type": "frontend",
       "label": "Alertas",
       "sublabel": "a Central (/app/ai/inbox)"
+    },
+    {
+      "id": "inboundtools",
+      "lane": "guardrails",
+      "col": 3,
+      "type": "security",
+      "label": "Tools da inbound atual",
+      "sublabel": "serializa nativas/MCP; drena antes de liberar lane",
+      "tag": "guardCurrentInboundTools"
     }
   ],
   "edges": [
@@ -303,10 +312,10 @@
       "variant": "dashed"
     },
     {
-      "id": "turn-toolbreaker",
-      "from": "turn",
+      "id": "inboundtools-toolbreaker",
+      "from": "inboundtools",
       "to": "toolbreaker",
-      "label": "tools do CRM",
+      "label": "tool ainda atual",
       "variant": "dashed",
       "fromSide": "bottom",
       "toSide": "right",
@@ -610,6 +619,20 @@
         692,
         1565
       ]
+    },
+    {
+      "id": "turn-inboundtools",
+      "from": "turn",
+      "to": "inboundtools",
+      "label": "inbound ancorada",
+      "variant": "security"
+    },
+    {
+      "id": "inboundtools-turn",
+      "from": "inboundtools",
+      "to": "turn",
+      "label": "stopWhen + drain antes de complete",
+      "variant": "dashed"
     }
   ],
   "cards": [

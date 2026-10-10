@@ -3,7 +3,7 @@ import type { HandlerCtx } from '@/lib/api/handlers/types';
 import { ApiError } from '@/lib/api/types';
 import type { SendMessageInput as SinkInput } from '@/lib/schemas';
 import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
-import { OutboundLeaseLostError, type OutboundAttemptWrite } from '@/lib/channels/delivery-error';
+import { OutboundLeaseLostError, OutboundSupersededError, type OutboundAttemptWrite } from '@/lib/channels/delivery-error';
 import type { Message } from '@/lib/types/messaging';
 import { cancelJob, type Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
@@ -138,8 +138,8 @@ export async function executeOutboundAttempt(
       : { type: 'text' }),
   });
   const messageId = previous?.id ?? key;
-  await input.beforePersist?.();
   try {
+    await input.beforePersist?.();
     await sendMessageHandler(cfg.supabase, { organization_id: org, requestId: key,
       actor: options.actor ?? { type: 'ai_agent', id: cfg.agentActorId ?? 'agent-engine', role: 'manager' } }, {
       ...prepared, metadata: { ...prepared.metadata, idempotency_key: key,
@@ -168,6 +168,8 @@ export async function executeOutboundAttempt(
       beforeTransport: async () => {
         const obra = contact ? await guardObraFollowup(db, org, job, contact) : { allowed: true };
         if (!obra.allowed) throw new ApiError(403, 'forbidden', undefined, job, 'obra_followup_not_eligible');
+        // Depois da assinatura do Storage/pré-voo e antes do CAS que abre a rede.
+        await input.beforePersist?.();
         const { rows } = await db.query<{ id: string }>(
           `with owner as materialized (select id from job_queue where id=$1 and organization_id=$2
              and status='running' and locked_by=$3 for update),
@@ -191,6 +193,18 @@ export async function executeOutboundAttempt(
     });
   } catch (error) {
     if (error instanceof OutboundLeaseLostError) throw error;
+    if (error instanceof OutboundSupersededError) {
+      const message = await readMessage();
+      const phase = (message?.metadata?.outbound_attempt as { phase?: string } | undefined)?.phase;
+      // Também encerra a linha de um retry que foi dispensado no beforePersist.
+      if (message && phase === 'prepared') {
+        await writeAttemptState(message.id, { expectedPhase: 'prepared', phase: 'rejected', retryable: false,
+          patch: { status: 'failed', error_code: 'inbound_superseded',
+            error_message: 'Resposta dispensada porque chegou uma nova mensagem.' } });
+      }
+      await saveLedger('vetoed', message?.id ?? null, 'inbound_superseded');
+      throw error; // O turno conserva sua lane até terminar o laço de tools.
+    }
     if (error instanceof ApiError && error.status === 403) {
       await saveLedger('vetoed', previous?.id ?? null, 'contact_blocked');
       return { kind: 'blocked', idempotencyKey: key };

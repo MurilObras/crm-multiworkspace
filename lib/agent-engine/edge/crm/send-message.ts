@@ -67,6 +67,7 @@ export interface SendMessageInput {
   conversationId: string;
   body: string;
   media?: { type: 'image' | 'video'; url: string; mimeType?: string };
+  /** Veto antes de persistir e antes do transporte; pode executar duas vezes. */
   beforePersist?: () => Promise<void>;
   /**
    * Presente = envio de TEMPLATE. O `body` continua sendo o texto RENDERIZADO — é

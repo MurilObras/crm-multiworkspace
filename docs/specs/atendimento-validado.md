@@ -83,3 +83,26 @@ afetados passaram em Linux/Node 22. O CI segue necessário antes do merge.
 Roteiro visual: número sem apelido legível; salvar proteção mostra sucesso/aviso;
 rajada muda de assunto; pedido de humano; demonstração em arquivo recebida uma vez.
 Entrega real do arquivo e o ciclo 96h não são provados por modelos sintéticos.
+
+
+## Correções da revisão R01/R02
+
+R01: `guardCurrentInboundTools` serializa as tools nativas e MCP de uma inbound
+ancorada. Cada execução revalida a mensagem atual; o primeiro descarte arma
+`shouldStop` no seam de LLM. O turno espera `drain` antes de limpar MCP e concluir
+o job, conservando a lane do contato enquanto qualquer ferramenta está em voo.
+Nenhuma ferramenta posterior ao descarte altera o estado, nem no mesmo step.
+
+R02: a recência é reavaliada em `beforeTransport`, depois da assinatura de Storage
+e pré-voo, antes de marcar a rede como iniciada. `OutboundSupersededError` encerra
+a mensagem preparada como failed/rejected, retryable=false, e o ledger como
+vetoed. Um retry dispensado em beforePersist recebe o mesmo desfecho; nenhuma
+linha fica queued sem dono. O executor não libera a lane: o turno a conclui.
+
+Provas permanentes: `current-inbound-tools.test.ts` verifica serialização, bloqueio
+de mutações nativas/MCP e espera de efeito em andamento. O invariante do turno
+cobre chamadas no mesmo step e steps posteriores, parada do modelo, estado
+preservado e job concluído. `agent-media-storage.test.ts` cobre texto, imagem,
+vídeo e template, descarte terminal antes da rede e ausência de reenvio.
+A atividade send_vetoed e a linha failed explicam o descarte nas telas existentes.
+Sem nova configuração, credencial, migration ou ativação de disparos.

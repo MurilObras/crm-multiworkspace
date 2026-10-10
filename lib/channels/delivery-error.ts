@@ -25,6 +25,14 @@ export class DeliveryRejectedError extends Error {
   }
 }
 
+/** Resposta superada antes da rede: descarte terminal, nunca autorização de retry. */
+export class OutboundSupersededError extends DeliveryRejectedError {
+  constructor() {
+    super('inbound_superseded', false, true);
+    this.name = 'OutboundSupersededError';
+  }
+}
+
 /** Perda de propriedade não é falha da mensagem de outro executor. */
 export class OutboundLeaseLostError extends Error {
   constructor() { super('outbound_lease_lost'); this.name = 'OutboundLeaseLostError'; }

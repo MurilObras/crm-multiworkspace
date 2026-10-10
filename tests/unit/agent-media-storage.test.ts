@@ -5,6 +5,8 @@ import { prepareAgentMedia } from "@/lib/agent-engine/edge/crm/prepare-media";
 import { sendTurnMessage } from "@/lib/agent-engine/edge/crm/send-message";
 import { claimJobs } from "@/lib/agent-engine/queue/queue";
 import { getAdapter } from "@/lib/channels";
+import * as templateSender from "@/lib/channels/meta/send-template-for-session";
+import { OutboundSupersededError } from "@/lib/channels/delivery-error";
 import { MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
 import { outboundPostgres, ORG, CONTACT, JOB, CONV } from "../helpers/outbound-postgres";
 
@@ -17,6 +19,7 @@ const state = vi.hoisted(() => ({
   })),
 }));
 vi.mock("@/lib/automation/outbound-ip", () => ({ assertDestinoResolvidoSeguro: state.dns }));
+vi.mock("@/lib/channels/conferir-definicao", () => ({ conferirDefinicao: async () => {} }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => {}) }));
 vi.mock("@/lib/ai/elegibilidade/consulta-supabase", () => ({
   decidirElegibilidadeDaConversaViaSupabase: async () => ({ permite: true }),
@@ -211,4 +214,102 @@ describe("preparo limitado e isolado", () => {
       /^agent_media_prepare_failed$/,
     );
   });
+});
+
+it.each(["image", "video", "text", "template"] as const)(
+  "descarta %s superado no preparo final, sem transporte ou retry",
+  async (type) => {
+    let current = true;
+    if (type === "template") {
+      await db.pool.query("update channel_sessions set provider='meta_cloud'");
+    }
+    const adapter = getAdapter(type === "template" ? "meta_cloud" : "waha");
+    vi.spyOn(adapter, "isConfigured").mockReturnValue(true);
+    const transport = vi.spyOn(adapter, "send").mockResolvedValue({ externalId: "nao-deve-sair" });
+    const templateTransport =
+      type === "template"
+        ? vi
+            .spyOn(templateSender, "sendTemplateForSession")
+            .mockResolvedValue("nao-deve-sair-template")
+        : null;
+    const rpc = supabase.rpc.bind(supabase);
+    vi.spyOn(supabase, "rpc").mockImplementation(((name: string, ...args: unknown[]) => {
+      if (name === "fn_automation_message_live") current = false;
+      return rpc(name, ...args);
+    }) as typeof supabase.rpc);
+    if (type === "image" || type === "video") {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response("bytes", {
+              headers: { "content-type": type === "image" ? "image/jpeg" : "video/mp4" },
+            }),
+        ),
+      );
+      state.sign.mockImplementationOnce(async () => {
+        current = false;
+        return { data: { signedUrl: "https://signed.example/official.mp4" }, error: null };
+      });
+    }
+    await claimJobs(db.pool, { workerId: "media-test", maxConcurrency: 1, jobIds: [JOB] });
+    const guard = vi.fn(async () => {
+      if (!current) throw new OutboundSupersededError();
+    });
+    const { media, ...base } = input();
+    const args = {
+      ...base,
+      beforePersist: guard,
+      ...(type === "image" || type === "video" ? { media: { ...media, type } } : {}),
+      ...(type === "template"
+        ? { template: { name: "retorno", language: "pt_BR", values: {} } }
+        : {}),
+    };
+    await expect(sendTurnMessage(db.pool, { supabase }, args)).rejects.toBeInstanceOf(
+      OutboundSupersededError,
+    );
+    expect(guard).toHaveBeenCalledTimes(2);
+    expect(transport).not.toHaveBeenCalled();
+    if (templateTransport) expect(templateTransport).not.toHaveBeenCalled();
+    const row = (await db.pool.query("select status,error_code,metadata from messages")).rows[0];
+    expect(row).toMatchObject({
+      status: "failed",
+      error_code: "inbound_superseded",
+      metadata: { outbound_attempt: { phase: "rejected", retryable: false } },
+    });
+    expect((await db.pool.query("select status from send_ledger")).rows[0]?.status).toBe("vetoed");
+    // O executor não libera a lane enquanto o laço de ferramentas não terminou.
+    expect(
+      (await db.pool.query("select status from job_queue where id=$1", [JOB])).rows[0]?.status,
+    ).toBe("running");
+    expect((await sendTurnMessage(db.pool, { supabase }, args)).kind).toBe("failed");
+    expect(transport).not.toHaveBeenCalled();
+    if (templateTransport) expect(templateTransport).not.toHaveBeenCalled();
+  },
+);
+
+it("encerra também a linha queued de um retry dispensado antes de persistir", async () => {
+  await db.pool.query("update channel_sessions set status='STOPPED'");
+  await claimJobs(db.pool, { workerId: "media-test", maxConcurrency: 1, jobIds: [JOB] });
+  expect((await sendTurnMessage(db.pool, { supabase }, input())).kind).toBe("queued");
+  await expect(
+    sendTurnMessage(
+      db.pool,
+      { supabase },
+      {
+        ...input(),
+        beforePersist: async () => {
+          throw new OutboundSupersededError();
+        },
+      },
+    ),
+  ).rejects.toBeInstanceOf(OutboundSupersededError);
+  expect(
+    (await db.pool.query("select status,error_code,metadata from messages")).rows[0],
+  ).toMatchObject({
+    status: "failed",
+    error_code: "inbound_superseded",
+    metadata: { outbound_attempt: { phase: "rejected", retryable: false } },
+  });
+  expect((await db.pool.query("select status from send_ledger")).rows[0]?.status).toBe("vetoed");
 });

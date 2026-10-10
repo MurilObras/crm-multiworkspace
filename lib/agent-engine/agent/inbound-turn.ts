@@ -59,6 +59,8 @@ import { buildNativeMediaParts } from './media-parts';
 import { enqueueJob, rescheduleJob, completeJob, type JobRow, type Queryable } from '../queue/queue';
 import { isCurrentInbound } from '../queue/inbound-pending';
 import { collectApprovedMediaUrls } from './approved-media';
+import { guardCurrentInboundTools } from './current-inbound-tools';
+import { OutboundSupersededError } from '@/lib/channels/delivery-error';
 import { applyLeadStateUpdate, getLeadState, type LeadStage, type LeadStateRow } from './lead-state';
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -1320,14 +1322,13 @@ async function executarTurnoDoAgente(
     return;
   }
   // Revalida após o LLM/pacing e entre bolhas: outro assunto pode ter chegado.
-  let supersededError: JobSettledError | null = null;
+  let supersededError: OutboundSupersededError | null = null;
   const assertCurrentInbound = async (): Promise<void> => {
     if (supersededError !== null) throw supersededError;
     if (await inboundStillCurrent()) return;
-    await completeJob(pool, job.id, ctx.workerId);
+    supersededError = new OutboundSupersededError();
     await recordSuperseded('before_send');
     runLog.info('envio interrompido — mensagem substituída por inbound mais recente');
-    supersededError = new JobSettledError('turno substituído por inbound mais recente — envio interrompido');
     throw supersededError;
   };
 
@@ -2152,6 +2153,7 @@ async function executarTurnoDoAgente(
               seq,
               conversationId: input.conversationId,
               body: finalBody,
+              beforePersist: assertCurrentInbound,
               template: { name: template_name, language, values },
             });
           },
@@ -2896,11 +2898,23 @@ async function executarTurnoDoAgente(
 
   // Circuit breaker de tools (F2-15): estado no closure DESTA invocação — zera
   // entre runs por construção (mesma garantia de isolamento do resto do run).
-  const tools = wrapToolsWithBreaker(rawTools, {
+  const breakerTools = wrapToolsWithBreaker(rawTools, {
     thresholds: deps.knobs.breaker,
     readOnlyTools: READ_ONLY_TOOLS,
     log: runLog, // os warns dos gates do breaker saem carimbados com o run
   });
+  const execution = inboundAnchor === null
+    ? { tools: breakerTools, drain: () => Promise.resolve() }
+    : guardCurrentInboundTools(breakerTools, assertCurrentInbound);
+  const tools = execution.tools;
+  const settleSuperseded = async (): Promise<never> => {
+    // Só libera a lane depois de terminarem TODAS as tools, inclusive as que
+    // o SDK iniciou no mesmo step. Nenhuma tool posterior atravessa o wrapper.
+    await execution.drain();
+    await mcpCleanup?.();
+    await completeJob(pool, job.id, ctx.workerId);
+    throw new JobSettledError('turno substituído por inbound mais recente — envio interrompido');
+  };
 
   // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
   // agnóstico) e sugere o estágio; a sugestão entra como HINT no SUFIXO por-lead — o modelo
@@ -3040,32 +3054,41 @@ async function executarTurnoDoAgente(
   // este corpo inteiro. Escoltar aqui deixaria de fora as chamadas de modelo dos
   // auxiliares (`classifyStage`, `maybeCompact`), que rodam ANTES desta e por
   // isso são as que estouram primeiro.
-  const turn = await runModelCall(
-    pool,
-    deps.llmCfg,
-    {
-      tenantId,
-      leadId,
-      jobId: job.id,
-      // De quem é esta execução. Vai para `llm_calls.agent_id` e é o que permite
-      // a aba "Execuções" da tela do agente mostrar o que ELE fez — antes ela
-      // lia `ai_agent_runs`, tabela que motor nenhum vivo escreve, e dizia
-      // "Nenhuma execução ainda" com o agente respondendo no WhatsApp.
-      agentId: agentConfig?.agentId ?? null,
-      purpose: 'agent_turn',
-      system,
-      messages: openingMessages,
-      tools,
-      maxSteps,
-      ...(agentConfig !== null
-        ? {
-            model: agentConfig.model,
-            llmOverride: { provider: agentConfig.provider, credentialId: agentConfig.credentialId },
-          }
-        : {}),
-    },
-    { registry: deps.registry, log: runLog },
-  );
+  let turn: Awaited<ReturnType<typeof runModelCall>>;
+  try {
+    turn = await runModelCall(
+      pool,
+      deps.llmCfg,
+      {
+        tenantId,
+        leadId,
+        jobId: job.id,
+        // De quem é esta execução. Vai para `llm_calls.agent_id` e é o que permite
+        // a aba "Execuções" da tela do agente mostrar o que ELE fez — antes ela
+        // lia `ai_agent_runs`, tabela que motor nenhum vivo escreve, e dizia
+        // "Nenhuma execução ainda" com o agente respondendo no WhatsApp.
+        agentId: agentConfig?.agentId ?? null,
+        purpose: 'agent_turn',
+        system,
+        messages: openingMessages,
+        tools,
+        maxSteps,
+        shouldStop: () => supersededError !== null,
+        ...(agentConfig !== null
+          ? {
+              model: agentConfig.model,
+              llmOverride: { provider: agentConfig.provider, credentialId: agentConfig.credentialId },
+            }
+          : {}),
+      },
+      { registry: deps.registry, log: runLog },
+    );
+  } catch (error) {
+    if (supersededError !== null) await settleSuperseded();
+    await execution.drain();
+    await mcpCleanup?.();
+    throw error;
+  }
 
   // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
   // promessa fora de tabela (F4-01). Ambos estão determinados aqui (o jailbreak rodou na
@@ -3074,8 +3097,7 @@ async function executarTurnoDoAgente(
   // determinístico é que confirma a promessa indevida. Feito antes do runError/veto para
   // não se perder num turno que falha o envio depois.
   if (supersededError !== null) {
-    await mcpCleanup?.();
-    throw supersededError;
+    await settleSuperseded();
   }
   if (jailbreakLevel === JAILBREAK_ESCALATION_LEVEL && outOfTablePromiseAttempted) {
     const created = await escalateJailbreakPromise(pool, { tenantId, leadId, level: jailbreakLevel });

@@ -25,7 +25,7 @@ export interface ChannelSendInput {
   body: string;
   /** Mídia opcional, enviada uma vez com o corpo como legenda. */
   media?: { type: 'image' | 'video'; url: string; mimeType?: string };
-  /** Revalida a conversa após preparar arquivo, antes de persistir a saída. */
+  /** Revalida após preparar arquivo e novamente no último pré-voo antes da rede. */
   beforePersist?: () => Promise<void>;
   /**
    * Presente = este envio é um TEMPLATE aprovado, não texto livre.
