@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
+import { OutboundApprovalRevokedError } from '@/lib/channels/delivery-error';
 
 import type * as InboundTurn from "@/lib/agent-engine/agent/inbound-turn";
 import type * as Providers from "@/lib/agent-engine/edge/llm/providers";
@@ -34,7 +35,7 @@ const MSG = "eeeeeeee-0000-4000-8000-000000000005";
 
 interface EnvioCapturado {
   body: string;
-  media?: { type: string; url: string };
+  media?: { type: string; url?: string; audio_id?: string; agent_id?: string };
 }
 
 type Modules = {
@@ -62,7 +63,7 @@ const USO = {
   outputTokens: { total: 1, text: 1, reasoning: 0 },
 };
 
-function montaHandler(doGenerate: unknown, maxSendsPerTurn?: number) {
+function montaHandler(doGenerate: unknown, maxSendsPerTurn?: number, onSend?: (input: EnvioCapturado) => void) {
   return m.createInboundTurnHandler({
     crmCfg: { supabase: {} as never },
     llmCfg: { anthropicApiKey: "fake" } as never,
@@ -88,6 +89,7 @@ function montaHandler(doGenerate: unknown, maxSendsPerTurn?: number) {
       ({
         channel: "captura",
         send: async (i: EnvioCapturado) => {
+          onSend?.(i);
           enviados.push(i);
           return {
             kind: "sent" as const,
@@ -256,6 +258,46 @@ async function conferirAtividade(phase: string) {
 }
 
 describe("retomada de inbound no turno completo", () => {
+  it.each([false, true])('áudio aprovado exige contexto, não repete e retoma em texto se revogado (%s)', async revoked => {
+    const agent = 'eeeeeeee-0000-4000-8000-000000000070';
+    const version = 'eeeeeeee-0000-4000-8000-000000000071';
+    const audioId = 'eeeeeeee-0000-4000-8000-000000000072';
+    const audio = { id: audioId, title: 'Apresentação aprovada', use_when: 'Quando perguntar como funciona o aplicativo',
+      mime: 'audio/ogg', size_bytes: 17, enabled: true, storage_path: `${ORG}/agent-audios/${agent}/${audioId}.ogg` };
+    await pool.query(`insert into ai_agents(id,organization_id,name,system_prompt,kind,config)
+      values($1,$2,'Agente de áudio','Atende com gravações aprovadas','mcp_agent',$3)
+      on conflict(id) do update set config=excluded.config,archived_at=null`, [agent, ORG, JSON.stringify({ approved_audios: [audio] })]);
+    await pool.query(`insert into ai_agent_versions(id,organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,max_steps)
+      values($1,$2,$3,1,'Use gravação somente quando ajudar.','anthropic','claude-sonnet-4-6',$4,'published',12) on conflict do nothing`, [version, ORG, agent, SESSION]);
+    await pool.query('update ai_agents set published_version_id=$1 where id=$2', [version, agent]);
+    const inputs = [
+      { body: 'Título', media: { type: 'audio', audio_id: audioId } },
+      { body: 'Preparei uma apresentação curta do aplicativo para você.' },
+      { body: 'Legenda que não deve ser enviada', media: { type: 'audio', audio_id: audioId } },
+      { body: 'Repetição', media: { type: 'audio', audio_id: audioId } },
+      { body: 'Forjado', media: { type: 'audio', audio_id: MSG } },
+      ...(revoked ? [{ body: 'Posso explicar por texto: o aplicativo ajuda a organizar suas obras.' }] : []),
+    ];
+    let step = 0;
+    try {
+      const error = await rodaTurno(montaHandler(async (opts: { prompt?: unknown }) => {
+        resultadosVistos.push(opts.prompt);
+        const input = inputs[step++];
+        return { content: input ? [{ type: 'tool-call', toolCallId: `audio-step-${step}`, toolName: 'send_message', input: JSON.stringify(input) }]
+          : [{ type: 'text', text: CHECKPOINT }], finishReason: { unified: input ? 'tool-calls' : 'stop', raw: undefined }, usage: USO, warnings: [] };
+      }, 4, revoked ? i => { if (i.media?.type === 'audio') throw new OutboundApprovalRevokedError(); } : undefined));
+      expect(error).toBeNull(); expect(enviados).toHaveLength(2);
+      expect(enviados[0]?.media).toBeUndefined();
+      if (revoked) expect(enviados[1]?.media).toBeUndefined();
+      else expect(enviados[1]).toMatchObject({ body: audio.title, media: { type: 'audio', audio_id: audioId, agent_id: agent } });
+      const observed = JSON.stringify(resultadosVistos);
+      expect(observed).toContain('audio_not_ready'); expect(observed).toContain('audio_not_approved');
+      if (revoked) expect(observed).toContain('audio_approval_revoked');
+      expect(observed).toContain('ÁUDIOS PRÉ-GRAVADOS APROVADOS'); expect(observed).not.toContain(audio.storage_path);
+    } finally {
+      await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1', [agent]);
+    }
+  });
   it("não chama modelo nem envia resposta ao assunto anterior", async () => {
     await leadParaAtividade();
     await novaMensagem();

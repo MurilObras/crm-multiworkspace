@@ -33,6 +33,11 @@ export class OutboundSupersededError extends DeliveryRejectedError {
   }
 }
 
+/** Arquivo aprovado foi retirado do catálogo antes do transporte. */
+export class OutboundApprovalRevokedError extends DeliveryRejectedError {
+  constructor() { super('audio_approval_revoked', false, true); this.name = 'OutboundApprovalRevokedError'; }
+}
+
 /** Perda de propriedade não é falha da mensagem de outro executor. */
 export class OutboundLeaseLostError extends Error {
   constructor() { super('outbound_lease_lost'); this.name = 'OutboundLeaseLostError'; }

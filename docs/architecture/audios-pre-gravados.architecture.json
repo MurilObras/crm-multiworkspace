@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": { "title": "Áudios pré-gravados aprovados", "subtitle": "Catálogo por agente e envio pela fila existente", "output": "audios-pre-gravados.html" },
+  "lanes": [{ "id": "config", "label": "Configuração" }, { "id": "turno", "label": "Atendimento" }, { "id": "entrega", "label": "Entrega e retorno" }],
+  "nodes": [
+    { "id": "editor", "lane": "config", "label": "AgentForm → ApprovedAudios" },
+    { "id": "api", "lane": "config", "label": "API agents/:id/audios", "sublabel": "RBAC, org da sessão, CAS e audit" },
+    { "id": "storage", "lane": "config", "label": "ffmpeg → Storage privado", "sublabel": "Ogg/Opus imutável" },
+    { "id": "catalogo", "lane": "turno", "label": "ai_agents.config.approved_audios" },
+    { "id": "modelo", "lane": "turno", "label": "agent-config → catálogo no turno → send_message" },
+    { "id": "sink", "lane": "entrega", "label": "prepareAgentMedia → outbound-attempt", "sublabel": "Aprovação fresca, inbound atual, lease e ledger" },
+    { "id": "canal", "lane": "entrega", "label": "Handler de mensagens → adapter do canal" },
+    { "id": "inbox", "lane": "entrega", "label": "Inbox: áudio, histórico e estado de entrega" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "editor", "to": "api", "label": "anexar, aprovar, ouvir e desativar" },
+    { "id": "e2", "from": "api", "to": "storage", "label": "normalizar arquivo aprovado" },
+    { "id": "e3", "from": "storage", "to": "catalogo", "label": "referência privada, sem URL assinada persistida" },
+    { "id": "e4", "from": "api", "to": "catalogo", "label": "CAS da configuração operacional" },
+    { "id": "e5", "from": "catalogo", "to": "modelo", "label": "IDs aprovados, título e finalidade" },
+    { "id": "e6", "from": "modelo", "to": "sink", "label": "texto de contexto e áudio em intenções próprias" },
+    { "id": "e7", "from": "catalogo", "to": "sink", "label": "revalidar retirada de aprovação antes da rede" },
+    { "id": "e8", "from": "sink", "to": "canal", "label": "mesma fila, sem duplicar replay" },
+    { "id": "e9", "from": "canal", "to": "inbox", "label": "arquivo e desfecho visíveis" },
+    { "id": "e10", "from": "inbox", "to": "editor", "label": "humano avalia e retira gravação inadequada" }
+  ]
+}

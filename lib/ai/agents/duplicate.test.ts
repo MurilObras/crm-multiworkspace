@@ -157,6 +157,13 @@ describe("duplicateAgentWithVersion", () => {
     expect(versao.row.system_prompt).toBe("rascunho novo");
   });
 
+  it('cópia exige aprovação própria dos áudios e conserva as outras configurações', async () => {
+    const { db, inserts } = makeDb({ agent: { ...AGENTE_MCP, config: { rag_top_k: 8, approved_audios: [{ id: 'aprovacao-origem' }] } }, published: VERSAO_PUBLICADA });
+    const result = await duplicateAgentWithVersion(db, { orgId: ORG, agentId: 'agent-1', actorUserId: ACTOR, requireVersion: false });
+    expect(result.ok).toBe(true);
+    expect(inserts.find(i => i.table === 'ai_agents')!.row.config).toEqual({ rag_top_k: 8 });
+  });
+
   it("rag_bot legado não tem versão e ainda assim duplica", async () => {
     const ragBot = { ...AGENTE_MCP, kind: "rag_bot" };
     const { db, inserts } = makeDb({ agent: ragBot });

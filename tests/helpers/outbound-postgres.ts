@@ -110,6 +110,7 @@ export async function outboundPostgres() {
     const q = {
       select: () => q, order: () => q, limit: () => q,
       eq(k: string,v: unknown) { values.push(v); filters.push(`${col(k)}=$${values.length}`); return q; },
+      filter(k: string, op: string, v: unknown) { if (op !== 'eq') throw new Error('unsupported filter'); return q.eq(k, v); },
       neq(k: string,v: unknown) { values.push(v); filters.push(`${col(k)}<>$${values.length}`); return q; },
       lt(k: string,v: unknown) { values.push(v); filters.push(`${col(k)}<$${values.length}`); return q; },
       lte(k: string,v: unknown) { values.push(v); filters.push(`${col(k)}<=$${values.length}`); return q; },

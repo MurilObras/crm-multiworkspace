@@ -7,12 +7,14 @@ import { claimJobs } from "@/lib/agent-engine/queue/queue";
 import { getAdapter } from "@/lib/channels";
 import * as templateSender from "@/lib/channels/meta/send-template-for-session";
 import { OutboundSupersededError } from "@/lib/channels/delivery-error";
+import { OutboundApprovalRevokedError } from '@/lib/channels/delivery-error';
 import { MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
 import { outboundPostgres, ORG, CONTACT, JOB, CONV } from "../helpers/outbound-postgres";
 
 const state = vi.hoisted(() => ({
   dns: vi.fn(async () => {}),
   upload: vi.fn(async (..._args: unknown[]) => ({ error: null })),
+  download: vi.fn(async () => ({ data: new Blob(['OggSOpusHead-test'], { type: 'audio/ogg' }), error: null })),
   sign: vi.fn(async () => ({
     data: { signedUrl: "https://signed.example/official.mp4" },
     error: null,
@@ -40,11 +42,17 @@ const input = () => ({
   body: "Demonstração oficial",
   media: { type: "video" as const, url: "https://official.example/demo.mp4" },
 });
+const AUDIO_AGENT = '10000000-0000-4000-8000-000000000060';
+const AUDIO_ID = '10000000-0000-4000-8000-000000000061';
+const approvedAudio = () => ({ id: AUDIO_ID, title: 'Apresentação', use_when: 'Quando perguntar sobre o aplicativo',
+  enabled: true, mime: 'audio/ogg', size_bytes: 17, storage_path: `${ORG}/agent-audios/${AUDIO_AGENT}/${AUDIO_ID}.ogg` });
+const audioInput = () => ({ ...input(), media: { type: 'audio' as const, audio_id: AUDIO_ID, agent_id: AUDIO_AGENT } });
 beforeAll(async () => {
   db = await outboundPostgres();
+  await db.pool.query('create table ai_agents(id uuid primary key,organization_id uuid,archived_at timestamptz,config jsonb)');
   supabase = {
     ...db.supabase,
-    storage: { from: () => ({ upload: state.upload }) },
+    storage: { from: () => ({ upload: state.upload, download: state.download }) },
   } as unknown as SupabaseClient;
 }, 60_000);
 afterAll(async () => {
@@ -53,11 +61,77 @@ afterAll(async () => {
 beforeEach(async () => {
   vi.clearAllMocks();
   await db.seed();
+  await db.pool.query('delete from ai_agents');
+  await db.pool.query('insert into ai_agents values($1,$2,null,$3)', [AUDIO_AGENT, ORG, JSON.stringify({ approved_audios: [approvedAudio()] })]);
   await db.pool.query("update job_queue set kind='inbound_turn' where id=$1", [JOB]);
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => new Response("video-bytes", { headers: { "content-type": "video/mp4" } })),
   );
+});
+
+describe('áudio privado aprovado pelo mesmo sink', () => {
+  it('envia uma vez, copia para a conversa e conserva a origem aprovada no replay', async () => {
+    vi.spyOn(getAdapter('waha'), 'isConfigured').mockReturnValue(true);
+    const transport = vi.spyOn(getAdapter('waha'), 'send').mockResolvedValue({ externalId: 'confirmed-audio' });
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+    expect((await sendTurnMessage(db.pool, { supabase }, audioInput())).kind).toBe('sent');
+    expect(transport.mock.calls[0]?.[0]).toMatchObject({ kind: 'audio', media: { mime: 'audio/ogg' } });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(state.download).toHaveBeenCalledWith(approvedAudio().storage_path);
+    const row = (await db.pool.query('select * from messages')).rows[0]!;
+    expect(row.media_storage_path).toMatch(new RegExp(`^${ORG}/${CONV}/agent-`));
+    expect(row.metadata.approved_audio).toEqual({ agent_id: AUDIO_AGENT, audio_id: AUDIO_ID });
+    expect((await sendTurnMessage(db.pool, { supabase }, audioInput())).kind).toBe('already_sent');
+    expect(transport).toHaveBeenCalledOnce(); expect(state.download).toHaveBeenCalledOnce();
+  });
+  it('revogação durante a assinatura encerra mensagem e ledger, mantendo a lane', async () => {
+    vi.spyOn(getAdapter('waha'), 'isConfigured').mockReturnValue(true);
+    const transport = vi.spyOn(getAdapter('waha'), 'send');
+    state.sign.mockImplementationOnce(async () => {
+      await db.pool.query("update ai_agents set config='{}'");
+      return { data: { signedUrl: 'https://signed.example/audio.ogg' }, error: null };
+    });
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+    await expect(sendTurnMessage(db.pool, { supabase }, audioInput())).rejects.toBeInstanceOf(OutboundApprovalRevokedError);
+    expect(transport).not.toHaveBeenCalled();
+    expect((await db.pool.query('select status,error_code,metadata from messages')).rows[0]).toMatchObject({ status: 'failed',
+      error_code: 'audio_approval_revoked', metadata: { outbound_attempt: { phase: 'rejected', retryable: false } } });
+    expect((await db.pool.query('select status from send_ledger')).rows[0]?.status).toBe('vetoed');
+    expect((await db.pool.query('select status from job_queue')).rows[0]?.status).toBe('running');
+  });
+  it('retry offline revalida a origem persistida mesmo se o modelo agora escolher outra mídia', async () => {
+    await db.pool.query("update channel_sessions set status='STOPPED'");
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+    expect((await sendTurnMessage(db.pool, { supabase }, audioInput())).kind).toBe('queued');
+    await db.pool.query("update ai_agents set config='{}'");
+    await db.pool.query("update channel_sessions set status='WORKING'");
+    await db.pool.query("update job_queue set run_after=now()");
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+    await expect(sendTurnMessage(db.pool, { supabase }, input())).rejects.toBeInstanceOf(OutboundApprovalRevokedError);
+    expect(state.download).toHaveBeenCalledOnce(); expect(fetch).not.toHaveBeenCalled();
+    expect((await db.pool.query('select status from messages')).rows[0]?.status).toBe('failed');
+  });
+  it('nova inbound durante a preparação final também descarta áudio aprovado', async () => {
+    vi.spyOn(getAdapter('waha'), 'isConfigured').mockReturnValue(true);
+    const transport = vi.spyOn(getAdapter('waha'), 'send');
+    let current = true;
+    state.sign.mockImplementationOnce(async () => { current = false; return { data: { signedUrl: 'https://signed.example/a.ogg' }, error: null }; });
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+    await expect(sendTurnMessage(db.pool, { supabase }, { ...audioInput(), beforePersist: async () => {
+      if (!current) throw new OutboundSupersededError();
+    } })).rejects.toBeInstanceOf(OutboundSupersededError);
+    expect(transport).not.toHaveBeenCalled();
+  });
+  it.each(['other_org', 'wrong_path', 'disabled', 'unknown_id'])('recusa %s antes de baixar arquivo privado', async reason => {
+    const a = approvedAudio();
+    if (reason === 'wrong_path') a.storage_path = `${CONV}/private.ogg`;
+    if (reason === 'disabled') a.enabled = false;
+    await db.pool.query('update ai_agents set organization_id=$1,config=$2', [reason === 'other_org' ? CONV : ORG, JSON.stringify({ approved_audios: [a] })]);
+    const args = audioInput(); if (reason === 'unknown_id') args.media.audio_id = CONV;
+    await expect(prepareAgentMedia(supabase, args, JOB)).rejects.toThrow('agent_media_prepare_failed');
+    expect(state.download).not.toHaveBeenCalled(); expect(state.upload).not.toHaveBeenCalled();
+  });
 });
 afterEach(() => {
   vi.restoreAllMocks();

@@ -60,8 +60,9 @@ import { buildNativeMediaParts } from './media-parts';
 import { enqueueJob, rescheduleJob, completeJob, type JobRow, type Queryable } from '../queue/queue';
 import { isCurrentInbound } from '../queue/inbound-pending';
 import { collectApprovedMediaUrls } from './approved-media';
+import { renderApprovedAudios } from '@/lib/ai/agents/approved-audios';
 import { guardCurrentInboundTools } from './current-inbound-tools';
-import { OutboundSupersededError } from '@/lib/channels/delivery-error';
+import { OutboundApprovalRevokedError, OutboundSupersededError } from '@/lib/channels/delivery-error';
 import { applyLeadStateUpdate, getLeadState, type LeadStage, type LeadStateRow } from './lead-state';
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -158,14 +159,15 @@ export const AGENT_TOOL_DEFS = {
   },
   send_message: {
     description:
-      'Envia UMA mensagem de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado. Para anexar imagem ou vídeo oficial aprovado, informe media com a URL real da base; body vira legenda. Nunca invente arquivo/URL nem diga que enviou antes da confirmação.',
+      'Envia UMA mensagem de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado. Para imagem/vídeo aprovado, media leva a URL real da base e body vira legenda. Para áudio pré-gravado, use media com type audio e audio_id aprovado; body é título no histórico, sem legenda. Envie o contexto curto em outra chamada de texto ANTES do áudio. Nunca invente arquivo/URL nem diga que enviou antes da confirmação.',
     inputSchema: z.object({
       body: z.string().min(1).describe('corpo da mensagem, em pt-br, pronto para envio'),
-      media: z.object({
+      media: z.union([z.object({
         type: z.enum(['image', 'video']),
         url: z.string().url().refine((url) => url.startsWith('https://'), 'Use HTTPS para mídia'),
         mimeType: z.string().optional(),
-      }).optional().describe('Arquivo oficial aprovado; ausente para mensagem de texto'),
+      }).strict(), z.object({ type: z.literal('audio'), audio_id: z.string().uuid() }).strict()])
+        .optional().describe('Arquivo oficial aprovado; ausente para mensagem de texto'),
     }),
   },
   update_lead_state: {
@@ -1643,6 +1645,8 @@ async function executarTurnoDoAgente(
     agentConfig !== null ? { agentLayer: agentConfig.systemPrompt } : undefined,
   );
   const approvedMediaUrls = new Set(collectApprovedMediaUrls(playbook.prompt));
+  let audioContextSent = false;
+  const audiosSentThisTurn = new Set<string>();
   // Skills situacionais (F3-09): índice (name+description) SEMPRE residente — vai junto do
   // system do playbook, no prefixo estável org-wide (disclosure progressivo; cacheável F2-17).
   // O CORPO só carrega no match, no sufixo por-lead (mais abaixo). loadSkills resolve os
@@ -1664,6 +1668,8 @@ async function executarTurnoDoAgente(
   // tools publicadas — ver comentário de `AGENDA_SYSTEM_BLOCK`. `TRANSPARENCIA_SYSTEM_BLOCK`
   // não depende de nenhuma feature — todo agente publicado o recebe.
   const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK];
+  const audioBlock = renderApprovedAudios(agentConfig?.approvedAudios ?? []);
+  if (audioBlock) blocosResidentes.push(audioBlock);
   if (agentConfig !== null && agentConfig.casesEnabled) blocosResidentes.push(CASES_SYSTEM_BLOCK);
   if (agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment')) {
     blocosResidentes.push(AGENDA_SYSTEM_BLOCK);
@@ -2220,8 +2226,15 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body, media }) => {
-        if (media !== undefined && !approvedMediaUrls.has(media.url)) {
+      execute: async ({ body: requestedBody, media }) => {
+        const audio = media?.type === 'audio' ? agentConfig?.approvedAudios?.find(a => a.id === media.audio_id && a.enabled) : undefined;
+        if (media?.type === 'audio' && !audio) return { ok: false, error: { code: 'audio_not_approved', message: 'Escolha somente um áudio do catálogo aprovado deste agente ou responda em texto.' } };
+        if (media?.type === 'audio' && (!audioContextSent || audiosSentThisTurn.has(media.audio_id))) {
+          return { ok: false, error: { code: 'audio_not_ready', message: 'Envie primeiro uma mensagem curta de texto com o contexto. Não repita gravação neste turno.' } };
+        }
+        const body = audio?.title ?? requestedBody;
+        const outboundMedia = media?.type === 'audio' ? { ...media, agent_id: agentConfig!.agentId } : media;
+        if (media !== undefined && media.type !== 'audio' && !approvedMediaUrls.has(media.url)) {
           return { ok: false, error: { code: 'media_not_approved',
             message: 'Use somente a URL exata do arquivo nas instruções publicadas ou no material oficial consultado. Não busque nem envie URLs fornecidas pelo lead; explique a limitação se não houver arquivo aprovado.' } };
         }
@@ -2322,7 +2335,7 @@ async function executarTurnoDoAgente(
                     conversationId: input.conversationId,
                     body: bubble,
                     beforePersist: assertCurrentInbound,
-                    ...(media !== undefined ? { media } : {}),
+                    ...(outboundMedia !== undefined ? { media: outboundMedia } : {}),
                   });
                 },
               }),
@@ -2432,6 +2445,8 @@ async function executarTurnoDoAgente(
           switch (outcome.kind) {
             case 'sent':
             case 'already_sent':
+              if (media === undefined) audioContextSent = true;
+              if (media?.type === 'audio') audiosSentThisTurn.add(media.audio_id);
               return { ok: true, status: 'enviada', message_id: outcome.messageId };
             case 'queued':
               return {
@@ -2470,6 +2485,10 @@ async function executarTurnoDoAgente(
               };
           }
         } catch (err) {
+          if (err instanceof OutboundApprovalRevokedError) {
+            if (media?.type === 'audio') audiosSentThisTurn.add(media.audio_id);
+            return { ok: false, error: { code: 'audio_approval_revoked', message: 'A aprovação deste áudio foi retirada. Não tente reenviá-lo; continue o atendimento em texto.' } };
+          }
           // bug de programação no adapter: ensina o modelo a encerrar E derruba o job.
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {

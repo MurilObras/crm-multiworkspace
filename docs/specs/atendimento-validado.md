@@ -160,3 +160,9 @@ Living System Checklist deste ajuste:
 Provas: integridade das fontes e cobertura de português verificadas na aquisição;
 teste de regressão e checks existentes. Aprovação do E2E do commit anterior não
 é aprovação deste ajuste: a nova execução completa precisa terminar antes do merge.
+
+## Áudios pré-gravados no mesmo PR
+
+Biblioteca por agente, aprovação pelas telas, contexto curto em texto separado,
+normalização Ogg/Opus e envio pela mesma fila. Plano e critérios completos em
+[audios-pre-gravados.md](audios-pre-gravados.md). Sem alteração de schema.

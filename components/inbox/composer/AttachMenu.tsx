@@ -4,7 +4,8 @@ import { useT } from "@/hooks/i18n/useT";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { FileText, ImageSquare, Plus, UserCircle } from "@/lib/ui/icons";
+import { FileText, ImageSquare, Plus, UserCircle, Microphone } from "@/lib/ui/icons";
+import { AUDIO_ACCEPT } from '@/lib/ai/agents/approved-audios';
 
 interface Props {
   disabled?: boolean;
@@ -17,6 +18,7 @@ export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
   const t = useT();
   const mediaRef = useRef<HTMLInputElement | null>(null);
   const docRef = useRef<HTMLInputElement | null>(null);
+  const audioRef = useRef<HTMLInputElement | null>(null);
 
   const handle = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -66,6 +68,11 @@ export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
               {t("Contato")}
             </button>
           )}
+          <button type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted"
+            onClick={() => audioRef.current?.click()}>
+            <Microphone size={18} weight="duotone" className="text-primary" aria-hidden />
+            {t('Áudio pré-gravado')}
+          </button>
         </PopoverContent>
       </Popover>
       {/* Os inputs vivem FORA do PopoverContent: o Radix desmonta o conteúdo do
@@ -73,6 +80,7 @@ export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
           file picker ("nada acontece"). Aqui os refs seguem válidos após o
           fechamento — o .click() síncrono no onClick preserva o user-gesture. */}
       <input ref={mediaRef} type="file" accept="image/*,video/*" className="hidden" onChange={handle} />
+      <input ref={audioRef} type="file" accept={AUDIO_ACCEPT} aria-label={t('Escolher áudio pré-gravado')} className="hidden" onChange={handle} />
       <input
         ref={docRef}
         type="file"

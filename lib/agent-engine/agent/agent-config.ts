@@ -14,6 +14,7 @@
  *     de fallback: playbook por ponteiro + settings.llm da org + knobs de env).
  */
 import type pg from 'pg';
+import { audioPathOwnedBy, readApprovedAudios, type ApprovedAudio } from '@/lib/ai/agents/approved-audios';
 
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
 
@@ -21,6 +22,7 @@ export interface PublishedAgentConfig {
   agentId: string;
   versionId: string;
   agentName: string;
+  approvedAudios?: ApprovedAudio[];
   systemPrompt: string;
   provider: string;
   model: string;
@@ -89,6 +91,7 @@ export interface PublishedAgentConfig {
 
 interface Row {
   agent_id: string;
+  organization_id: string;
   version_id: string;
   agent_name: string;
   system_prompt: string;
@@ -118,6 +121,7 @@ interface Row {
 }
 
 const SELECT_AGENT_CONFIG_COLUMNS = `a.id as agent_id,
+            a.organization_id,
             v.id as version_id,
             a.name as agent_name,
             v.system_prompt,
@@ -165,6 +169,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     agentId: r.agent_id,
     versionId: r.version_id,
     agentName: r.agent_name,
+    approvedAudios: readApprovedAudios(r.config).filter(a => a.enabled && audioPathOwnedBy(a, r.organization_id, r.agent_id)),
     systemPrompt: r.system_prompt,
     provider: r.provider,
     model: r.model,

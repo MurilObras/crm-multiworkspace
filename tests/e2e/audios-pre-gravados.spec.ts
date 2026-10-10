@@ -1,0 +1,63 @@
+import { execFileSync } from 'node:child_process';
+import { test, expect } from '@playwright/test';
+import { loginComoAdmin, lerCreds } from './helpers/login-admin';
+
+// PCM sintético curto; não contém voz de pessoa e nunca é enviado a contato real.
+function wav(): Buffer {
+  const pcm = Buffer.alloc(1600);
+  for (let i = 0; i < 800; i++) pcm.writeInt16LE(Math.round(Math.sin(i * Math.PI / 10) * 1000), i * 2);
+  const header = Buffer.alloc(44);
+  header.write('RIFF'); header.writeUInt32LE(36 + pcm.length, 4); header.write('WAVEfmt ', 8);
+  header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(8000, 24); header.writeUInt32LE(16000, 28); header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34); header.write('data', 36); header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]);
+}
+test.describe.configure({ timeout: 240_000 });
+test.beforeAll(() => { execFileSync('npx', ['tsx', 'scripts/seed-e2e-capacidades.ts'], { stdio: 'inherit' }); });
+test('aprovar gravação → ouvir → recarregar → desativar → remover pela tela real', async ({ page }, info) => {
+  const creds = await loginComoAdmin(page, lerCreds());
+  const agent = creds.capacidades?.agent_id;
+  if (!agent) throw new Error('Fixture mcp_agent ausente.');
+  // Retry do Playwright pode encontrar a gravação deixada por um teste interrompido.
+  const endpoint = `/api/v1/ai/agents/${agent}/audios`;
+  const previous = await page.request.get(endpoint);
+  expect(previous.status()).toBe(200);
+  for (const audio of (await previous.json()).data) {
+    if (audio.title === 'E2E gravação aprovada') {
+      expect((await page.request.delete(endpoint, { data: { audio_id: audio.id } })).status()).toBe(200);
+    }
+  }
+  await page.goto(`/app/ai/agents/${agent}`);
+  await page.getByTestId('papel-conversa').click();
+  const library = page.getByTestId('approved-audios');
+  await expect(library.getByRole('heading', { name: 'Áudios pré-gravados' })).toBeVisible();
+  await expect(library.getByLabel('Gravação')).toBeEnabled();
+  await library.getByLabel('Gravação').setInputFiles({ name: 'teste-isolado.wav', mimeType: 'audio/wav', buffer: wav() });
+  await library.getByLabel('Título do áudio').fill('E2E gravação aprovada');
+  await library.getByLabel('Quando o agente deve usar').fill('Somente em testes isolados. Gravação sintética de validação, sem mensagem comercial.');
+  const upload = page.waitForResponse(r => r.url().endsWith(`/agents/${agent}/audios`) && r.request().method() === 'POST');
+  await library.getByRole('button', { name: 'Aprovar áudio para o agente' }).click();
+  expect((await upload).status()).toBe(200);
+  const player = library.getByLabel('Ouvir: E2E gravação aprovada');
+  await expect(player).toBeVisible();
+  await player.evaluate(async el => {
+    const audio = el as HTMLAudioElement;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Áudio não carregou.')), 15_000);
+      audio.onloadeddata = () => { clearTimeout(timer); resolve(); };
+      audio.onerror = () => { clearTimeout(timer); reject(new Error('Arquivo de áudio inválido.')); };
+      audio.load();
+    });
+  });
+  await info.attach('biblioteca-de-audios', { body: await library.screenshot(), contentType: 'image/png' });
+  await page.reload();
+  await page.getByTestId('papel-conversa').click();
+  const toggle = library.getByRole('switch', { name: 'Ativar áudio: E2E gravação aprovada' });
+  await expect(toggle).toBeChecked(); await toggle.click(); await expect(toggle).not.toBeChecked();
+  await page.reload(); await page.getByTestId('papel-conversa').click();
+  await expect(toggle).not.toBeChecked();
+  const item = library.locator('div.rounded-md').filter({ hasText: 'E2E gravação aprovada' });
+  await item.getByRole('button', { name: 'Remover áudio' }).click();
+  await expect(library.getByText('E2E gravação aprovada', { exact: true })).toHaveCount(0);
+});

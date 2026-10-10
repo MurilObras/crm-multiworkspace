@@ -87,7 +87,11 @@ function admin(linha: Record<string, unknown>) {
       select: () => enc,
       eq: () => enc,
       is: () => enc,
-      maybeSingle: async () => ({ data: linha, error: null }),
+      filter: () => enc,
+      maybeSingle: async () => {
+        if (op === 'update') gravado = patch ?? {};
+        return { data: op === 'update' ? { ...linha, ...patch } : linha, error: null };
+      },
       single: async () => {
         if (op === "update") {
           gravado = patch ?? {};

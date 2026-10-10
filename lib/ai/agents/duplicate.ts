@@ -132,6 +132,9 @@ export async function duplicateAgentWithVersion(
   if (!srcAgent) return { ok: false, error: "not_found" };
 
   const src = srcAgent as Record<string, unknown>;
+  // Aprovação é específica do agente; uma cópia não herda autorização de envio.
+  const copiedConfig = { ...(src.config as Record<string, unknown> ?? {}) };
+  delete copiedConfig.approved_audios;
   const isMcp = src.kind === "mcp_agent";
   const srcVersion = isMcp ? await pickSourceVersion(admin, orgId, agentId) : null;
 
@@ -154,7 +157,7 @@ export async function duplicateAgentWithVersion(
       // Cópia nasce fora do ar: sem published_version_id, nenhum runtime a enxerga.
       is_active: isMcp ? true : false,
       is_default: false,
-      config: src.config ?? {},
+      config: copiedConfig,
       guardrails: src.guardrails ?? null,
       active_kb_version_id: src.active_kb_version_id,
       created_by: actorUserId,

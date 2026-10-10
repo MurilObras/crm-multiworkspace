@@ -285,6 +285,7 @@ jobs:
         credenciais-de-ia.spec.ts
         risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts
         agente-papeis-operador.spec.ts prova-painel-provedores.spec.ts
+        audios-pre-gravados.spec.ts
         followup-linguagem.spec.ts followup-ramos.spec.ts
         wizard-do-funcionario.spec.ts mfa-opcional.spec.ts inbox-responder-citando.spec.ts
         agenda-tela-do-produto.spec.ts
@@ -559,6 +560,11 @@ jobs:
       - uses: supabase/setup-cli@v3
         with:
           version: latest
+
+      # A imagem do app já contém ffmpeg; a suíte roda Next fora da imagem.
+      - name: Preparar conversão de áudios do app no ambiente de testes
+        run: |
+          command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
 
       # Os runners hospedados compartilham IPs e o GHCR aplica rate limit a
       # pulls anônimos. Autenticar antes do `supabase start` usa a cota da

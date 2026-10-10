@@ -11,7 +11,9 @@ import { requireRole } from "@/lib/auth/require-role";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { extFromMime, MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
 import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
-import { transcodificarNotaDeVoz } from "@/lib/messaging/media/voice-transcode";
+import { normalizePrerecordedAudio } from '@/lib/messaging/media/prerecorded-audio';
+import { AUDIO_MAX_BYTES } from '@/lib/ai/agents/approved-audios';
+import { logger } from '@/lib/logger';
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -68,16 +70,22 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     const status = verdict.code === "payload_too_large" ? 413 : verdict.code === "unsupported_media_type" ? 415 : 422;
     return fail(verdict.code, verdict.message, status, { requestId });
   }
+  if (verdict.kind === 'audio' && file.size > AUDIO_MAX_BYTES) {
+    return fail('payload_too_large', 'Áudio acima de 16 MB.', 413, { requestId });
+  }
 
   const bruto = Buffer.from(await file.arrayBuffer());
 
-  // Nota de voz gravada no browser sai em `webm` (o Chrome não grava ogg), e o
-  // canal oficial recusa depois de aceitar — `131053 Media upload error`, que
-  // culpa a URL quando o problema é o container. Converter AQUI faz todo canal
-  // receber um arquivo válido, e o mesmo áudio poder ser reenviado depois sem
-  // repetir o trabalho. Falha devolve o original: o canal que converte sozinho
-  // continua funcionando como sempre.
-  const audio = await transcodificarNotaDeVoz({ buffer: bruto, mime });
+  // Gravações prontas e notas do microfone usam o mesmo Ogg/Opus validado.
+  // Erro é visível no upload; nunca aprovar um original incompatível.
+  let audio: { buffer: Buffer; mime: string };
+  try {
+    audio = verdict.kind === 'audio'
+      ? { buffer: await normalizePrerecordedAudio(bruto, mime), mime: 'audio/ogg' }
+      : { buffer: bruto, mime };
+  } catch {
+    return fail('validation_failed', 'Não foi possível preparar este áudio. Confira o arquivo e tente novamente.', 422, { requestId });
+  }
   const mimeFinal = audio.mime;
   const buffer = audio.buffer;
 
@@ -87,7 +95,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .from("whatsapp-media")
     .upload(storagePath, buffer, { contentType: mimeFinal, upsert: false });
   if (upErr) {
-    console.error("[conversations.media] upload failed", upErr.message);
+    logger.error('conversation_media_upload_failed', { requestId });
     return fail("internal_error", "Erro ao subir o arquivo.", 500, { requestId });
   }
 
