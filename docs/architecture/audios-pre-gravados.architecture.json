@@ -59,7 +59,7 @@
       "id": "historico",
       "lane": "turno",
       "label": "messages → conversation-audios",
-      "sublabel": "Uma gravação por conversa; preferência durável de texto; fila e incerteza não duplicam"
+      "sublabel": "Uma gravação por conversa; preferência durável em todas as mensagens agrupadas; fila e incerteza não duplicam"
     },
     {
       "id": "modelo",
@@ -208,7 +208,7 @@
       "id": "e20",
       "from": "catalogo",
       "to": "assunto",
-      "label": "condição, exemplos e descrição fiel; primeiro contato verificado no histórico"
+      "label": "condição, exemplos e descrição fiel; primeira resposta verificada no histórico; rajada inicial não encerra recepção"
     },
     {
       "id": "e21",

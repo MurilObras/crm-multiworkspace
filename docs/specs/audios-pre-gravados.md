@@ -28,7 +28,9 @@ espera outra pergunta e não dispara só porque um cartão mudou de etapa.
 3. MP3/M4A/AAC/OGG/WAV/WebM viram Ogg/Opus com ffmpeg já existente. Até 16 MiB
    por arquivo e 20 gravações por agente. Storage privado imutável, sem URL
    assinada persistida. Arquivo inválido falha antes da aprovação.
-4. Primeiro atendimento é verificado no histórico durável da conversa. Para
+4. Primeiro atendimento é a primeira resposta da conversa: mensagens iniciais
+   agrupadas pelo debounce continuam no mesmo atendimento. Saídas do próprio
+   job não o transformam em atendimento posterior durante retry. Para
    assunto, o ponto `audio_intent` usa runModelCall com modelo, provider e
    credencial do agente, sujeito ao painel de provedores e ao orçamento normal.
    O assunto específico tem prioridade mesmo no primeiro contato; recepção é
@@ -62,6 +64,10 @@ espera outra pergunta e não dispara só porque um cartão mudou de etapa.
 9. Mesma gravação cadastrada no máximo uma vez por conversa. Histórico enviado,
    fila pendente e resultado incerto bloqueiam outra cópia. Texto/áudio como
    preferência explícita persiste na inbound e pode ser alterado pelo cliente.
+   Preferências de todas as inbounds agrupadas são reconciliadas em lotes de
+   até 100, inclusive no pré-voo, com marcador durável por mensagem e CAS do
+   corpo. A última preferência explícita por created_at/id prevalece; mensagens
+   neutras não a apagam. Queries e atualizações filtram org/conversa.
    Recência, lease/CAS, opt-out, humano e limites do canal prevalecem. O último
    pré-voo revalida aprovação, etapa, preferência e repetição antes da rede.
 10. Retirar plano usa discardPreparedOutbound apenas nas sequências 1/2, sem
@@ -98,6 +104,14 @@ espera outra pergunta e não dispara só porque um cartão mudou de etapa.
     regras de assunto, histórico, etapa, fila, sink e revisão humana.
 
 ## Validação e limites
+
+- Revisão de rajadas (2026-10-10): os dois casos que falhavam passaram após
+  a correção, tanto com SQL embarcado quanto no turno completo em PostgreSQL
+  efêmero. 298 testes direcionados em 25 arquivos e 53 testes de banco em
+  quatro arquivos passaram. Há controles de preferência posterior, histórico
+  acima de 100 mensagens, pré-voo e isolamento por workspace/conversa.
+  Typecheck e lint dos arquivos alterados passaram. O E2E deve validar o
+  commit atualizado; resultado do commit anterior não o substitui.
 
 - 307 testes direcionados em 15 arquivos passaram: regras/decisão persistida,
   legado, lease/workspace, histórico, upload/CAS, componentes, sink/replay,

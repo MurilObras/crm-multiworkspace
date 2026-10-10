@@ -26,6 +26,28 @@ export function explicitAudioPreference(text: string): 'text' | 'audio' | null {
 
 /** Preferência durável na própria inbound; não some quando a janela do LLM gira. */
 export async function conversationAllowsAudio(db: Queryable, org: string, conversation: string): Promise<boolean> {
+  // O debounce pode absorver a mensagem que contém a preferência. Reconciliar
+  // todas as inbounds ainda não examinadas, inclusive no último pré-voo, evita
+  // depender de um turno separado para aquela mensagem. Lotes limitam memória;
+  // o marcador durável impede reprocessar o histórico a cada tentativa.
+  for (;;) {
+    const { rows: pending } = await db.query<{ id: string; body: string | null }>(
+      `select id,body from messages where organization_id=$1 and conversation_id=$2
+        and direction='inbound' and metadata->>'agent_audio_preference_checked' is distinct from 'true'
+        order by created_at,id limit 100`, [org, conversation],
+    );
+    if (!pending.length) break;
+    await db.query(
+      `update messages m set metadata=coalesce(m.metadata,'{}'::jsonb)
+        || jsonb_build_object('agent_audio_preference_checked',true)
+        || case when p.preference in ('text','audio') then jsonb_build_object('agent_audio_preference',p.preference) else '{}'::jsonb end
+        from jsonb_to_recordset($3::jsonb) as p(id uuid,body text,preference text)
+        where m.organization_id=$1 and m.conversation_id=$2 and m.id=p.id and m.direction='inbound'
+          and m.body is not distinct from p.body
+          and m.metadata->>'agent_audio_preference_checked' is distinct from 'true'`,
+      [org, conversation, JSON.stringify(pending.map(m => ({ ...m, preference: explicitAudioPreference(m.body ?? '') })))],
+    );
+  }
   const { rows } = await db.query<{ preference: string }>(
     `select metadata->>'agent_audio_preference' as preference from messages
       where organization_id=$1 and conversation_id=$2 and direction='inbound'
@@ -47,7 +69,7 @@ export async function availableConversationAudios(
   );
   const preference = explicitAudioPreference(inbound[0]?.body ?? '');
   if (preference) await db.query(
-    `update messages set metadata=coalesce(metadata,'{}'::jsonb) || jsonb_build_object('agent_audio_preference',$4::text)
+    `update messages set metadata=coalesce(metadata,'{}'::jsonb) || jsonb_build_object('agent_audio_preference',$4::text,'agent_audio_preference_checked',true)
       where organization_id=$1 and conversation_id=$2 and id=$3 and direction='inbound'`,
     [org, conversation, inbound[0]!.id, preference],
   );

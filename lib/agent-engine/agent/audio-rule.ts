@@ -24,7 +24,8 @@ export function audioIntentMessage(message: string, candidates: ApprovedAudio[])
   })) });
 }
 
-/** Primeiro atendimento é histórico durável da conversa, não ausência de checkpoint.
+/** Primeiro atendimento é a primeira resposta, não a primeira bolha inbound.
+ * Uma rajada ainda sem resposta pertence ao mesmo primeiro atendimento.
  * As saídas do próprio job são desconsideradas para manter a decisão em retries. */
 export async function isFirstAudioContact(db: Queryable, org: string, conversation: string, job: string, inbound: string | null): Promise<boolean> {
   if (!inbound) return false;
@@ -34,7 +35,7 @@ export async function isFirstAudioContact(db: Queryable, org: string, conversati
          on l.organization_id=m.organization_id and l.id::text=m.metadata->>'idempotency_key'
        where m.organization_id=$1 and m.conversation_id=$2 and m.id<>anchor.id
          and m.created_at<=anchor.created_at
-         and (m.direction='inbound' or (m.direction='outbound' and l.job_id is distinct from $3::uuid))
+         and m.direction='outbound' and l.job_id is distinct from $3::uuid
      ) as first_contact from messages anchor
      where anchor.organization_id=$1 and anchor.conversation_id=$2 and anchor.id=$4 and anchor.direction='inbound'`,
     [org, conversation, job, inbound],

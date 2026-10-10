@@ -584,3 +584,42 @@ it.each([false, true])(
     }
   },
 );
+
+it.each(['reception-burst','text-preference-burst'])(
+  'revisão isolada de mensagens agrupadas: %s', async behavior => {
+    const agent='eeeeeeee-0000-4000-8000-000000000070';
+    const version='eeeeeeee-0000-4000-8000-000000000071';
+    const audioId='eeeeeeee-0000-4000-8000-000000000072';
+    const earlier='eeeeeeee-0000-4000-8000-000000000098';
+    const original=(await pool.query('select body,metadata from messages where id=$1',[MSG])).rows[0]!;
+    await leadParaAtividade();
+    const audio={id:audioId,title:'Orientação aprovada',use_when:'Explicação aprovada para o atendimento',
+      send_when:'Quando perguntar como funciona o aplicativo',trigger_type:behavior==='reception-burst'?'first_contact':'topic',
+      required:true,enabled:true,mime:'audio/ogg',size_bytes:17,storage_path:`${ORG}/agent-audios/${agent}/${audioId}.ogg`,stage_ids:[]};
+    await pool.query(`insert into ai_agents(id,organization_id,name,system_prompt,kind,config)
+      values($1,$2,'Áudio de revisão','Atendimento de revisão','mcp_agent',$3)
+      on conflict(id) do update set config=excluded.config,archived_at=null`,[agent,ORG,JSON.stringify({approved_audios:[audio]})]);
+    await pool.query(`insert into ai_agent_versions(id,organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,max_steps)
+      values($1,$2,$3,1,'Responda à pergunta atual.','anthropic','claude-sonnet-4-6',$4,'published',12) on conflict do nothing`,[version,ORG,agent,SESSION]);
+    await pool.query('update ai_agents set published_version_id=$1 where id=$2',[version,agent]);
+    await pool.query(`insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,created_at)
+      select $1,organization_id,conversation_id,channel_session_id,contact_id,'text','inbound','delivered',$2,'external_device',
+      sent_at-interval '2 seconds',created_at-interval '2 seconds' from messages where id=$3`,
+      [earlier,behavior==='reception-burst'?'Oi':'Prefiro apenas texto, por favor',MSG]);
+    await pool.query('update messages set body=$1 where id=$2',[behavior==='reception-burst'?'Tudo bem?':'Como funciona o aplicativo?',MSG]);
+    const main=modeloDeEnvio();
+    try {
+      const error=await rodaTurno(montaHandler(async (opts:{prompt?:unknown})=>{
+        if(JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual'))
+          return {content:[{type:'text',text:JSON.stringify({audio_id:audioId})}],finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[]};
+        return main(opts);
+      },3));
+      expect(error).toBeNull();
+      expect(enviados.filter(e=>e.media?.type==='audio')).toHaveLength(behavior==='reception-burst'?1:0);
+    } finally {
+      await pool.query('update messages set body=$1,metadata=$2 where id=$3',[original.body,original.metadata,MSG]);
+      await pool.query('delete from messages where organization_id=$1 and id=$2',[ORG,earlier]);
+      await pool.query('delete from crm_leads where organization_id=$1 and id=$2',[ORG,LEAD]);
+      await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1',[agent]);
+    }
+  });

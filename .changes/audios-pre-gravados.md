@@ -22,3 +22,7 @@ A biblioteca permite desativar e remover gravações por agente e
 workspace. O Inbox também aceita anexar áudio pronto, com prévia antes do envio.
 Os arquivos são preparados como nota de voz no armazenamento privado; não exige
 outra chave de IA. Agentes sem gravações seguem atendendo como antes.
+
+Mensagens iniciais agrupadas continuam elegíveis à recepção. Pedidos de texto
+nessas mensagens são respeitados mesmo quando uma pergunta posterior é atendida
+no mesmo turno; a preferência explícita mais recente prevalece.

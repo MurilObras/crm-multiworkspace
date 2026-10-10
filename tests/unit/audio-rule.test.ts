@@ -85,6 +85,8 @@ it('primeiro contato vem do histórico da conversa, isolado e estável no retry'
     values($1,$2,$3,'outbound','2026-01-01',$4)`, [OTHER, ORG, CONV, JSON.stringify({ idempotency_key: OTHER })]);
   expect(await first()).toBe(true);
   await db.pool.query("update messages set direction='inbound' where id=$1", [OTHER]);
+  expect(await first()).toBe(true); // Uma segunda inbound não é outro atendimento.
+  await db.pool.query("update messages set direction='outbound',metadata='{}' where id=$1", [OTHER]);
   expect(await first()).toBe(false);
 });
 it('texto já confirmado é contexto suficiente: envia áudio sem repetir a introdução', async () => {
