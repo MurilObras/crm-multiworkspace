@@ -8,6 +8,65 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.1.0] — 2026-10-10
+
+### Adicionado
+
+- **Agentes podem enviar imagem e vídeo como arquivo** A capacidade de enviar mensagem aceita imagem e vídeo HTTPS aprovado com legenda.
+  O arquivo é guardado no armazenamento privado antes de ser enviado ao canal.
+  O envio passa pelas mesmas proteções, registro e retomada das mensagens de texto,
+  sem dividir a legenda em vários anexos.
+
+- **Gravações aprovadas para o agente e envio de áudio pronto no Inbox** Na edição do agente, anexe uma gravação, ouça, descreva quando usar e aprove.
+  Disponível em todos os workspaces para vendas, atendimento e suporte. Escolha
+  na tela se cada áudio vale em todas as etapas ou apenas nas etapas selecionadas
+  dos funis do workspace. O botão Envio obrigatório começa ligado no cadastro:
+  configure se o áudio é de primeiro atendimento ou corresponde a um assunto,
+  com condição e exemplos de perguntas. Obrigatório significa enviar quando
+  essa condição ocorrer, na mesma interação e dentro das etapas permitidas.
+  A etapa sozinha não dispara o áudio. Desligado, o agente escolhe quando útil.
+  Se a etapa avançar durante a resposta, ela é conferida novamente antes do áudio,
+  sem esperar o cliente repetir a pergunta. Um texto curto confirmado dá contexto. Cada gravação cadastrada sai no
+  máximo uma vez por conversa, inclusive entre turnos e retomadas após desconexão.
+  No máximo um obrigatório por resposta; pedidos de só texto, humano e limites
+  do canal prevalecem. Gravações antigas mantêm o modo opcional. Mudança de etapa
+  durante a preparação impede o envio de um áudio que deixou de ser permitido.
+  A biblioteca permite desativar e remover gravações por agente e
+  workspace. O Inbox também aceita anexar áudio pronto, com prévia antes do envio.
+  Os arquivos são preparados como nota de voz no armazenamento privado; não exige
+  outra chave de IA. Agentes sem gravações seguem atendendo como antes.
+
+  Mensagens iniciais agrupadas continuam elegíveis à recepção. Pedidos de texto
+  nessas mensagens são respeitados mesmo quando uma pergunta posterior é atendida
+  no mesmo turno; a preferência explícita mais recente prevalece.
+  Pedidos feitos por áudio também são respeitados pela transcrição, mesmo se ela
+  chegar depois ou for corrigida. Tentativas descartadas antes do envio não impedem
+  a primeira recepção. A ordem das mensagens usa o horário de envio do canal para
+  preservar perguntas que chegam com atraso.
+
+  Perguntas seguidas de complementos rápidos continuam acionando o áudio do assunto,
+  sem recuperar perguntas já respondidas. Se a etapa não permitir o áudio, o cliente
+  recebe a resposta por texto mesmo com limite de dois envios. O teto conta texto,
+  cada mensagem dividida e áudio; quando falta espaço, o texto é agrupado inteiro.
+
+### Corrigido
+
+- **Respostas retidas são reavaliadas sem prender mensagens novas** Salvar a proteção de envio reavalia as respostas retidas daquele número.
+  Rajadas não entram em jobs represados, e uma mensagem nova interrompe a resposta
+  ao assunto anterior. O seletor de acompanhamento identifica números sem apelido,
+  e o negrito é adaptado ao WhatsApp.
+
+  Um turno dispensado encerra suas ferramentas antes de liberar a fila. A recência
+  é conferida novamente antes do transporte de texto, mídia e template; tentativas
+  superadas não ficam aguardando envio nem voltam a ser enviadas automaticamente.
+  Isso também vale para respostas retidas por desconexão cujo processamento foi
+  dispensado antes de chamar o modelo porque o cliente enviou outra mensagem.
+
+- **Preparação do CRM não depende do Google Fonts** As fontes da interface e do mostruário de design acompanham o projeto, com suas
+  licenças. O build deixa de consultar o Google Fonts, cuja resposta ocasional
+  impedia a preparação do CRM e o início dos testes E2E. Não exige configuração
+  adicional de quem instala ou atualiza.
+
 ## [3.0.0] — 2026-10-09
 
 ### ⚠️ Requer atenção
@@ -3229,7 +3288,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.0.0...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.2.0...v3.0.0
 [2.2.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.1.0...v2.1.1
