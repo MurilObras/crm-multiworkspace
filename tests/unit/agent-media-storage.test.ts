@@ -76,7 +76,7 @@ describe('áudio privado aprovado pelo mesmo sink', () => {
     const transport = vi.spyOn(getAdapter('waha'), 'send').mockResolvedValue({ externalId: 'confirmed-audio' });
     await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
     expect((await sendTurnMessage(db.pool, { supabase }, audioInput())).kind).toBe('sent');
-    expect(transport.mock.calls[0]?.[0]).toMatchObject({ kind: 'audio', media: { mime: 'audio/ogg' } });
+    expect(transport.mock.calls[0]?.[0]).toMatchObject({ kind: 'audio', media: { mime: 'audio/ogg', caption: null } });
     expect(fetch).not.toHaveBeenCalled();
     expect(state.download).toHaveBeenCalledWith(approvedAudio().storage_path);
     const row = (await db.pool.query('select * from messages')).rows[0]!;

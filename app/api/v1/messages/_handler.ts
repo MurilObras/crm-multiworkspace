@@ -755,7 +755,8 @@ export async function sendMessageHandler(
             url: signed.signedUrl,
             mime: input.media_mime ?? "application/octet-stream",
             filename,
-            caption: input.body ?? null,
+            // Áudio não tem legenda: o body pode ser o título no histórico.
+            caption: input.type === 'audio' ? null : input.body ?? null,
           },
           // O id que a PLATAFORMA conhece, lido da linha citada agora — não uma
           // cópia guardada no envio, que poderia divergir da linha.
