@@ -11,7 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
-import { DeliveryRejectedError, OutboundApprovalRevokedError, OutboundLeaseLostError, OutboundPreflightDeferredError, OutboundSupersededError, type OutboundAttemptWrite } from "@/lib/channels/delivery-error";
+import { DeliveryRejectedError, OutboundAudioUnavailableError, OutboundLeaseLostError, OutboundPreflightDeferredError, OutboundSupersededError, type OutboundAttemptWrite } from "@/lib/channels/delivery-error";
 import { isWindowOpen } from "@/lib/agent-engine/guardrails/messaging-window";
 import {
   capabilitiesOf,
@@ -826,10 +826,10 @@ export async function sendMessageHandler(
       if (updated) message = updated as unknown as Message;
     } catch (err) {
       if (err instanceof OutboundLeaseLostError) throw err;
-      if (!transportStarted && (err instanceof OutboundSupersededError || err instanceof OutboundApprovalRevokedError)) {
+      if (!transportStarted && (err instanceof OutboundSupersededError || err instanceof OutboundAudioUnavailableError)) {
         // Veto antes da rede: a mensagem sai de queued e não pode ser retomada.
         await writeState({ status: 'failed', error_code: err.message,
-          error_message: err instanceof OutboundApprovalRevokedError ? 'A aprovação deste áudio foi retirada antes do envio.' : 'Resposta dispensada porque chegou uma nova mensagem.' }, 'prepared', 'rejected', false);
+          error_message: err instanceof OutboundAudioUnavailableError ? 'Este áudio deixou de estar disponível para o atendimento antes do envio.' : 'Resposta dispensada porque chegou uma nova mensagem.' }, 'prepared', 'rejected', false);
         throw err;
       }
       // Uma dependência indisponível antes da rede conserva a mesma tentativa.

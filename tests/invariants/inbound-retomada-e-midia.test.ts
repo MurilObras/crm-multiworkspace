@@ -181,9 +181,11 @@ beforeAll(async () => {
   );
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   enviados = [];
   resultadosVistos = [];
+  // Cada cenário é independente; repetir a fixture não é uma campanha real.
+  await pool.query('delete from outbound_copies where organization_id=$1 and channel_session_id=$2', [ORG, SESSION]);
 });
 
 async function novaMensagem() {
@@ -258,12 +260,66 @@ async function conferirAtividade(phase: string) {
 }
 
 describe("retomada de inbound no turno completo", () => {
-  it.each([false, true])('áudio aprovado exige contexto, não repete e retoma em texto se revogado (%s)', async revoked => {
+  it.each(['required', 'optional', 'text', 'used', 'limited'])('recepção %s: envio obrigatório independe de escolha do modelo e não repete entre turnos', async behavior => {
     const agent = 'eeeeeeee-0000-4000-8000-000000000070';
     const version = 'eeeeeeee-0000-4000-8000-000000000071';
     const audioId = 'eeeeeeee-0000-4000-8000-000000000072';
+    const captured = 'eeeeeeee-0000-4000-8000-000000000094';
+    const original = (await pool.query('select body,metadata from messages where id=$1', [MSG])).rows[0]!;
+    await leadParaAtividade();
+    const audio = { id: audioId, title: 'Recepção aprovada', use_when: 'Apresentação de recepção no primeiro contato',
+      mime: 'audio/ogg', size_bytes: 17, enabled: true, required: behavior !== 'optional',
+      storage_path: `${ORG}/agent-audios/${agent}/${audioId}.ogg`, stage_ids: ['eeeeeeee-0000-4000-8000-000000000022'] };
+    await pool.query(`insert into ai_agents(id,organization_id,name,system_prompt,kind,config)
+      values($1,$2,'Agente de áudio','Atende com gravações aprovadas','mcp_agent',$3)
+      on conflict(id) do update set config=excluded.config,archived_at=null`, [agent, ORG, JSON.stringify({ approved_audios: [audio] })]);
+    await pool.query(`insert into ai_agent_versions(id,organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,max_steps)
+      values($1,$2,$3,1,'Atenda ao pedido do cliente.','anthropic','claude-sonnet-4-6',$4,'published',12) on conflict do nothing`, [version, ORG, agent, SESSION]);
+    await pool.query('update ai_agents set published_version_id=$1 where id=$2', [version, agent]);
+    const persistCapture = () => pool.query(`insert into messages(id,organization_id,conversation_id,contact_id,channel_session_id,direction,type,status,body,metadata)
+      values($1,$2,$3,$4,$5,'outbound','audio','sent','Recepção',$6)`, [captured, ORG, CONV, CONTACT, SESSION,
+      JSON.stringify({ approved_audio: { agent_id: agent, audio_id: audioId } })]);
+    try {
+      if (behavior === 'text') await pool.query("update messages set body='Prefiro só texto, sem áudio' where id=$1", [MSG]);
+      if (behavior === 'used') await persistCapture();
+      expect(await rodaTurno(montaHandler(modeloDeEnvio(), behavior === 'limited' ? 1 : 4))).toBeNull();
+      expect(enviados.filter(e => e.media?.type === 'audio')).toHaveLength(behavior === 'required' ? 1 : 0);
+      if (behavior === 'limited') expect(JSON.stringify(resultadosVistos)).toContain('Áudio obrigatório pendente');
+      if (behavior === 'required') {
+        expect(enviados[0]?.body).toBe('Vou te enviar uma breve orientação em áudio.');
+        expect(enviados[1]?.media).toMatchObject({ type: 'audio', audio_id: audioId });
+        expect(JSON.stringify(resultadosVistos)).toContain('Recepção com áudio obrigatório');
+        await persistCapture(); // O seam de captura substitui o transporte, não o histórico durável.
+        expect(await rodaTurno(montaHandler(modeloDeEnvio(), 4))).toBeNull();
+        expect(enviados.filter(e => e.media?.type === 'audio')).toHaveLength(1);
+      }
+    } finally {
+      await pool.query('update messages set body=$1,metadata=$2 where id=$3', [original.body, original.metadata, MSG]);
+      await pool.query('delete from messages where organization_id=$1 and id=$2', [ORG, captured]);
+      await pool.query('delete from crm_leads where organization_id=$1 and id=$2', [ORG, LEAD]);
+      await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1', [agent]);
+    }
+  });
+  it.each([
+    { revoked: false, binding: 'all' }, { revoked: true, binding: 'all' },
+    { revoked: false, binding: 'matching' }, { revoked: true, binding: 'matching' },
+    { revoked: false, binding: 'outside' },
+  ])('áudio aprovado exige contexto, etapa, não repete e retoma em texto se revogado (%j)', async ({ revoked, binding }) => {
+    const agent = 'eeeeeeee-0000-4000-8000-000000000070';
+    const version = 'eeeeeeee-0000-4000-8000-000000000071';
+    const audioId = 'eeeeeeee-0000-4000-8000-000000000072';
+    const outside = binding === 'outside';
+    if (binding !== 'all') {
+      await leadParaAtividade();
+      if (outside) {
+        await pool.query(`insert into crm_stages(id,organization_id,pipeline_id,name,slug,position)
+          values($1,$2,'eeeeeeee-0000-4000-8000-000000000021','Outra etapa','outra-etapa',2000) on conflict do nothing`, [audioId, ORG]);
+        await pool.query('update crm_leads set stage_id=$1 where id=$2 and organization_id=$3', [audioId, LEAD, ORG]);
+      }
+    }
     const audio = { id: audioId, title: 'Apresentação aprovada', use_when: 'Quando perguntar como funciona o aplicativo',
-      mime: 'audio/ogg', size_bytes: 17, enabled: true, storage_path: `${ORG}/agent-audios/${agent}/${audioId}.ogg` };
+      mime: 'audio/ogg', size_bytes: 17, enabled: true, storage_path: `${ORG}/agent-audios/${agent}/${audioId}.ogg`,
+      stage_ids: binding === 'all' ? [] : ['eeeeeeee-0000-4000-8000-000000000022'] };
     await pool.query(`insert into ai_agents(id,organization_id,name,system_prompt,kind,config)
       values($1,$2,'Agente de áudio','Atende com gravações aprovadas','mcp_agent',$3)
       on conflict(id) do update set config=excluded.config,archived_at=null`, [agent, ORG, JSON.stringify({ approved_audios: [audio] })]);
@@ -276,7 +332,7 @@ describe("retomada de inbound no turno completo", () => {
       { body: 'Legenda que não deve ser enviada', media: { type: 'audio', audio_id: audioId } },
       { body: 'Repetição', media: { type: 'audio', audio_id: audioId } },
       { body: 'Forjado', media: { type: 'audio', audio_id: MSG } },
-      ...(revoked ? [{ body: 'Posso explicar por texto: o aplicativo ajuda a organizar suas obras.' }] : []),
+      ...(revoked || outside ? [{ body: 'Posso explicar por texto: o aplicativo ajuda a organizar suas obras.' }] : []),
     ];
     let step = 0;
     try {
@@ -288,14 +344,18 @@ describe("retomada de inbound no turno completo", () => {
       }, 4, revoked ? i => { if (i.media?.type === 'audio') throw new OutboundApprovalRevokedError(); } : undefined));
       expect(error).toBeNull(); expect(enviados).toHaveLength(2);
       expect(enviados[0]?.media).toBeUndefined();
-      if (revoked) expect(enviados[1]?.media).toBeUndefined();
+      if (revoked || outside) expect(enviados[1]?.media).toBeUndefined();
       else expect(enviados[1]).toMatchObject({ body: audio.title, media: { type: 'audio', audio_id: audioId, agent_id: agent } });
       const observed = JSON.stringify(resultadosVistos);
-      expect(observed).toContain('audio_not_ready'); expect(observed).toContain('audio_not_approved');
+      if (!outside) expect(observed).toContain('audio_not_ready');
+      expect(observed).toContain('audio_not_approved');
       if (revoked) expect(observed).toContain('audio_approval_revoked');
-      expect(observed).toContain('ÁUDIOS PRÉ-GRAVADOS APROVADOS'); expect(observed).not.toContain(audio.storage_path);
+      if (outside) expect(observed).not.toContain('ÁUDIOS PRÉ-GRAVADOS APROVADOS');
+      else expect(observed).toContain('ÁUDIOS PRÉ-GRAVADOS APROVADOS');
+      expect(observed).not.toContain(audio.storage_path);
     } finally {
       await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1', [agent]);
+      if (binding !== 'all') await pool.query('delete from crm_leads where organization_id=$1 and id=$2', [ORG, LEAD]);
     }
   });
   it("não chama modelo nem envia resposta ao assunto anterior", async () => {

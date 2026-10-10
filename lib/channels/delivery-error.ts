@@ -33,9 +33,14 @@ export class OutboundSupersededError extends DeliveryRejectedError {
   }
 }
 
-/** Arquivo aprovado foi retirado do catálogo antes do transporte. */
-export class OutboundApprovalRevokedError extends DeliveryRejectedError {
-  constructor() { super('audio_approval_revoked', false, true); this.name = 'OutboundApprovalRevokedError'; }
+/** Aprovação ou etapa deixou de permitir o áudio; o agente pode seguir por texto. */
+export class OutboundAudioUnavailableError extends DeliveryRejectedError {
+  constructor(reason: 'audio_approval_revoked' | 'audio_stage_mismatch' | 'audio_already_used' | 'audio_text_preference') {
+    super(reason, false, true); this.name = 'OutboundAudioUnavailableError';
+  }
+}
+export class OutboundApprovalRevokedError extends OutboundAudioUnavailableError {
+  constructor() { super('audio_approval_revoked'); this.name = 'OutboundApprovalRevokedError'; }
 }
 
 /** Perda de propriedade não é falha da mensagem de outro executor. */

@@ -1,13 +1,16 @@
 {
   "schema_version": 1,
   "diagram_type": "architecture",
-  "meta": { "title": "Áudios pré-gravados aprovados", "subtitle": "Catálogo por agente e envio pela fila existente", "output": "audios-pre-gravados.html" },
+  "meta": { "title": "Áudios pré-gravados aprovados", "subtitle": "Todos os workspaces: catálogo por agente, vínculo por etapa e envio pela fila existente", "output": "audios-pre-gravados.html" },
   "lanes": [{ "id": "config", "label": "Configuração" }, { "id": "turno", "label": "Atendimento" }, { "id": "entrega", "label": "Entrega e retorno" }],
   "nodes": [
     { "id": "editor", "lane": "config", "label": "AgentForm → ApprovedAudios" },
     { "id": "api", "lane": "config", "label": "API agents/:id/audios", "sublabel": "RBAC, org da sessão, CAS e audit" },
     { "id": "storage", "lane": "config", "label": "ffmpeg → Storage privado", "sublabel": "Ogg/Opus imutável" },
     { "id": "catalogo", "lane": "turno", "label": "ai_agents.config.approved_audios" },
+    { "id": "etapas", "lane": "turno", "label": "crm_pipelines → crm_stages → crm_leads", "sublabel": "Org explícita, negócio atual sem empate, etapas ativas" },
+    { "id": "recepcao", "lane": "turno", "label": "requiredAudioPlan → job_queue.payload", "sublabel": "Obrigatório: plano sob lease, intenções 1/2, um áudio por resposta" },
+    { "id": "historico", "lane": "turno", "label": "messages → conversation-audios", "sublabel": "Uma gravação por conversa; preferência durável de texto; fila e incerteza não duplicam" },
     { "id": "modelo", "lane": "turno", "label": "agent-config → catálogo no turno → send_message" },
     { "id": "sink", "lane": "entrega", "label": "prepareAgentMedia → outbound-attempt", "sublabel": "Aprovação fresca, inbound atual, lease e ledger" },
     { "id": "canal", "lane": "entrega", "label": "Handler de mensagens → adapter do canal" },
@@ -20,9 +23,18 @@
     { "id": "e4", "from": "api", "to": "catalogo", "label": "CAS da configuração operacional" },
     { "id": "e5", "from": "catalogo", "to": "modelo", "label": "IDs aprovados, título e finalidade" },
     { "id": "e6", "from": "modelo", "to": "sink", "label": "texto de contexto e áudio em intenções próprias" },
-    { "id": "e7", "from": "catalogo", "to": "sink", "label": "revalidar retirada de aprovação antes da rede" },
+    { "id": "e7", "from": "catalogo", "to": "sink", "label": "revalidar aprovação e etapa antes da rede" },
     { "id": "e8", "from": "sink", "to": "canal", "label": "mesma fila, sem duplicar replay" },
     { "id": "e9", "from": "canal", "to": "inbox", "label": "arquivo e desfecho visíveis" },
-    { "id": "e10", "from": "inbox", "to": "editor", "label": "humano avalia e retira gravação inadequada" }
+    { "id": "e10", "from": "inbox", "to": "editor", "label": "humano avalia e retira gravação inadequada" },
+    { "id": "e11", "from": "etapas", "to": "api", "label": "opções da tela e validação de vínculos por workspace" },
+    { "id": "e12", "from": "etapas", "to": "modelo", "label": "filtrar catálogo disponível na etapa atual" },
+    { "id": "e13", "from": "etapas", "to": "sink", "label": "mudança de etapa veta áudio preparado e permite continuar em texto" },
+    { "id": "e14", "from": "catalogo", "to": "recepcao", "label": "switch obrigatório; legado opcional" },
+    { "id": "e15", "from": "recepcao", "to": "sink", "label": "invoca send_message com as mesmas guardas antes da escolha do modelo" },
+    { "id": "e16", "from": "historico", "to": "modelo", "label": "oferece somente opcionais não usados e permitidos" },
+    { "id": "e17", "from": "historico", "to": "recepcao", "label": "não planeja nova cópia já enviada ou pendente" },
+    { "id": "e18", "from": "historico", "to": "sink", "label": "revalida repetição e preferência imediatamente antes da rede" },
+    { "id": "e19", "from": "recepcao", "to": "modelo", "label": "resultado real e orçamento restante no contexto do atendimento" }
   ]
 }

@@ -3,9 +3,10 @@ import type { HandlerCtx } from '@/lib/api/handlers/types';
 import { ApiError } from '@/lib/api/types';
 import type { SendMessageInput as SinkInput } from '@/lib/schemas';
 import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
-import { OutboundApprovalRevokedError, OutboundLeaseLostError, OutboundSupersededError, type OutboundAttemptWrite } from '@/lib/channels/delivery-error';
+import { OutboundApprovalRevokedError, OutboundAudioUnavailableError, OutboundLeaseLostError, OutboundSupersededError, type OutboundAttemptWrite } from '@/lib/channels/delivery-error';
 import { z } from 'zod';
 import { assertAudioStillApproved } from '../../agent/approved-audios';
+import { assertConversationAudioAvailable } from '../../agent/conversation-audios';
 import type { Message } from '@/lib/types/messaging';
 import { cancelJob, type Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
@@ -137,7 +138,9 @@ export async function executeOutboundAttempt(
     if (!audioSource) return;
     const source = z.object({ agent_id: z.string().uuid(), audio_id: z.string().uuid() }).safeParse(audioSource);
     if (!source.success) throw new OutboundApprovalRevokedError();
-    await assertAudioStillApproved(db, org, source.data.agent_id, source.data.audio_id);
+    await assertAudioStillApproved(db, org, source.data.agent_id, source.data.audio_id, contact);
+    await assertConversationAudioAvailable(db, org, persisted?.conversation_id ?? input.conversationId,
+      source.data.agent_id, source.data.audio_id, previous?.id ?? key);
   };
   const messageId = previous?.id ?? key;
   try {
@@ -206,15 +209,15 @@ export async function executeOutboundAttempt(
     });
   } catch (error) {
     if (error instanceof OutboundLeaseLostError) throw error;
-    if (error instanceof OutboundSupersededError || error instanceof OutboundApprovalRevokedError) {
-      const reason = error instanceof OutboundApprovalRevokedError ? 'audio_approval_revoked' : 'inbound_superseded';
+    if (error instanceof OutboundSupersededError || error instanceof OutboundAudioUnavailableError) {
+      const reason = error instanceof OutboundAudioUnavailableError ? error.message : 'inbound_superseded';
       const message = await readMessage();
       const phase = (message?.metadata?.outbound_attempt as { phase?: string } | undefined)?.phase;
       // Também encerra a linha de um retry que foi dispensado no beforePersist.
       if (message && phase === 'prepared') {
         await writeAttemptState(message.id, { expectedPhase: 'prepared', phase: 'rejected', retryable: false,
           patch: { status: 'failed', error_code: reason,
-            error_message: reason === 'audio_approval_revoked' ? 'A aprovação deste áudio foi retirada antes do envio.' : 'Resposta dispensada porque chegou uma nova mensagem.' } });
+            error_message: error instanceof OutboundAudioUnavailableError ? 'Este áudio deixou de estar disponível para o atendimento antes do envio.' : 'Resposta dispensada porque chegou uma nova mensagem.' } });
       }
       await saveLedger('vetoed', message?.id ?? null, reason);
       throw error; // O turno conserva sua lane até terminar o laço de tools.

@@ -8,6 +8,8 @@ import { GET, POST, PATCH, DELETE } from '@/app/api/v1/ai/agents/[id]/audios/rou
 import { POST as uploadConversationMedia } from '@/app/api/v1/conversations/[id]/media/route';
 
 const AGENT = '10000000-0000-4000-8000-000000000060';
+const PIPELINE = '10000000-0000-4000-8000-000000000071';
+const STAGE = '10000000-0000-4000-8000-000000000072';
 const state = vi.hoisted(() => ({ admin: null as unknown as SupabaseClient, org: '10000000-0000-4000-8000-000000000001',
   authorized: true, role: '', upload: vi.fn(async (..._args: unknown[]) => ({ error: null })),
   remove: vi.fn(async () => ({ error: null })), normalize: vi.fn(async () => Buffer.from('OggSOpusHead-test')),
@@ -53,7 +55,7 @@ async function add() {
 }
 it('aprova, ouve, desativa e remove no workspace, preservando os knobs existentes', async () => {
   const audio = await add();
-  expect(audio).toMatchObject({ enabled: true, mime: 'audio/ogg', title: 'Apresentação' });
+  expect(audio).toMatchObject({ enabled: true, required: true, mime: 'audio/ogg', title: 'Apresentação' });
   expect(audio.storage_path).toBe(`${ORG}/agent-audios/${AGENT}/${audio.id}.ogg`);
   expect(audio.preview_url).toContain('https://private.example/');
   const stored = (await db.pool.query('select config from ai_agents')).rows[0]!.config;
@@ -64,15 +66,55 @@ it('aprova, ouve, desativa e remove no workspace, preservando os knobs existente
   expect(state.role).toBe('manager');
   expect((await PATCH(request('PATCH', { audio_id: audio.id, title: 'Nova apresentação', use_when: 'Somente quando o cliente pedir detalhes.' }), ctx)).status).toBe(200);
   expect((await (await GET(request('GET'), ctx)).json()).data[0]).toMatchObject({ enabled: false, title: 'Nova apresentação' });
+  expect((await (await GET(request('GET'), ctx)).json()).data[0].required).toBe(true);
   expect((await DELETE(request('DELETE', { audio_id: audio.id }), ctx)).status).toBe(200);
   expect((await (await GET(request('GET'), ctx)).json()).data).toEqual([]);
   expect(state.audit).toHaveBeenCalledTimes(4);
+});
+it('permite cadastrar opcional e alterar o modo sem reenviar a gravação', async () => {
+  const data = form(); data.set('required', 'false');
+  expect((await POST(request('POST', data), ctx)).status).toBe(200);
+  const audio = (await (await GET(request('GET'), ctx)).json()).data[0]; expect(audio.required).toBe(false);
+  expect((await PATCH(request('PATCH', { audio_id: audio.id, required: true }), ctx)).status).toBe(200);
+  expect((await (await GET(request('GET'), ctx)).json()).data[0].required).toBe(true);
+  expect(state.upload).toHaveBeenCalledOnce();
+});
+it('recusa modo de envio malformado antes de preparar arquivo', async () => {
+  const data = form(); data.set('required', 'yes');
+  expect((await POST(request('POST', data), ctx)).status).toBe(422);
+  expect(state.normalize).not.toHaveBeenCalled(); expect(state.upload).not.toHaveBeenCalled();
 });
 it('não lê, assina nem escreve áudio de outra organização', async () => {
   await add(); state.org = AGENT; state.upload.mockClear();
   expect((await GET(request('GET'), ctx)).status).toBe(404);
   expect((await POST(request('POST', form()), ctx)).status).toBe(404);
   expect(state.upload).not.toHaveBeenCalled();
+});
+it('está disponível também em outro workspace, com armazenamento próprio', async () => {
+  await db.pool.query('update ai_agents set organization_id=$1', [AGENT]); state.org = AGENT;
+  const audio = await add(); expect(audio.storage_path).toBe(`${AGENT}/agent-audios/${AGENT}/${audio.id}.ogg`);
+});
+it('lista etapas do workspace, vincula no cadastro, preserva e edita a seleção', async () => {
+  await db.pool.query('insert into crm_pipelines(id,organization_id,name) values($1,$2,$3)', [PIPELINE, ORG, 'Suporte']);
+  await db.pool.query('insert into crm_stages(id,organization_id,pipeline_id,name) values($1,$2,$3,$4)', [STAGE, ORG, PIPELINE, 'Orientação']);
+  const data = form(); data.set('stage_ids', JSON.stringify([STAGE]));
+  expect((await POST(request('POST', data), ctx)).status).toBe(200);
+  const json = await (await GET(request('GET'), ctx)).json();
+  expect(json.meta.stage_options).toEqual([{ id: STAGE, name: 'Orientação', pipeline_id: PIPELINE, pipeline_name: 'Suporte' }]);
+  const audio = json.data[0]; expect(audio.stage_ids).toEqual([STAGE]);
+  expect((await PATCH(request('PATCH', { audio_id: audio.id, title: 'Orientação do suporte' }), ctx)).status).toBe(200);
+  expect((await (await GET(request('GET'), ctx)).json()).data[0].stage_ids).toEqual([STAGE]);
+  expect((await PATCH(request('PATCH', { audio_id: audio.id, stage_ids: [] }), ctx)).status).toBe(200);
+  expect((await (await GET(request('GET'), ctx)).json()).data[0].stage_ids).toEqual([]);
+});
+it.each(['foreign', 'archived_stage', 'archived_pipeline', 'invalid_json'])('recusa vínculo %s sem guardar arquivo', async reason => {
+  await db.pool.query('insert into crm_pipelines(id,organization_id,name,is_archived) values($1,$2,$3,$4)', [PIPELINE, reason === 'foreign' ? AGENT : ORG, 'Outro funil', reason === 'archived_pipeline']);
+  await db.pool.query('insert into crm_stages(id,organization_id,pipeline_id,name,is_archived) values($1,$2,$3,$4,$5)', [STAGE, reason === 'foreign' ? AGENT : ORG, PIPELINE, 'Etapa', reason === 'archived_stage']);
+  const data = form(); data.set('stage_ids', reason === 'invalid_json' ? '{broken' : JSON.stringify([STAGE]));
+  expect((await POST(request('POST', data), ctx)).status).toBe(422);
+  expect(state.upload).not.toHaveBeenCalled(); expect(state.normalize).not.toHaveBeenCalled();
+  const json = await (await GET(request('GET'), ctx)).json(); expect(json.meta.stage_options).toEqual(reason === 'invalid_json'
+    ? [{ id: STAGE, name: 'Etapa', pipeline_id: PIPELINE, pipeline_name: 'Outro funil' }] : []);
 });
 it('respeita a rejeição do guard de papel antes de acessar Storage', async () => {
   state.authorized = false;

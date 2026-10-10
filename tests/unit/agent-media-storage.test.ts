@@ -3,11 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prepareAgentMedia } from "@/lib/agent-engine/edge/crm/prepare-media";
 import { sendTurnMessage } from "@/lib/agent-engine/edge/crm/send-message";
-import { claimJobs } from "@/lib/agent-engine/queue/queue";
+import { claimJobs, completeJob, rescheduleJob, type JobRow } from "@/lib/agent-engine/queue/queue";
+import { readApprovedAudios } from '@/lib/ai/agents/approved-audios';
+import { requiredAudioPlan, deliverRequiredAudio } from '@/lib/agent-engine/agent/required-audio';
 import { getAdapter } from "@/lib/channels";
 import * as templateSender from "@/lib/channels/meta/send-template-for-session";
 import { OutboundSupersededError } from "@/lib/channels/delivery-error";
-import { OutboundApprovalRevokedError } from '@/lib/channels/delivery-error';
+import { OutboundApprovalRevokedError, OutboundAudioUnavailableError } from '@/lib/channels/delivery-error';
 import { MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
 import { outboundPostgres, ORG, CONTACT, JOB, CONV } from "../helpers/outbound-postgres";
 
@@ -71,6 +73,91 @@ beforeEach(async () => {
 });
 
 describe('áudio privado aprovado pelo mesmo sink', () => {
+  it('recepção obrigatória retoma a mesma intenção após desconexão, sem repetir contexto nem áudio', async () => {
+    const audios = readApprovedAudios({ approved_audios: [{ ...approvedAudio(), required: true }] });
+    await db.pool.query('update ai_agents set config=$1', [JSON.stringify({ approved_audios: audios })]);
+    await db.pool.query("update job_queue set payload=payload || jsonb_build_object('conversation_id',$1::text)", [CONV]);
+    vi.spyOn(getAdapter('waha'), 'isConfigured').mockReturnValue(true);
+    const transport = vi.spyOn(getAdapter('waha'), 'send').mockImplementationOnce(async () => {
+      await db.pool.query("update channel_sessions set status='STOPPED'");
+      return { externalId: 'context-once' };
+    }).mockResolvedValue({ externalId: 'voice-once' });
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+    const job = async () => (await db.pool.query<JobRow>('select * from job_queue where id=$1', [JOB])).rows[0]!;
+    const plan = (await requiredAudioPlan(db.pool, await job(), 'media-test', AUDIO_AGENT, audios, 3))!;
+    let sequence = 0;
+    const invoke: Parameters<typeof deliverRequiredAudio>[0]['invoke'] = async args => {
+      const result = await sendTurnMessage(db.pool, { supabase }, { ...audioInput(), seq: ++sequence, body: args.body,
+        media: args.media ? { ...args.media, agent_id: AUDIO_AGENT } : undefined });
+      return { ok: true, status: result.kind === 'sent' || result.kind === 'already_sent' ? 'enviada' : 'aceita_aguardando_canal' };
+    };
+    const reserve = () => { sequence = Math.max(sequence, 2); };
+    await deliverRequiredAudio({ plan, agent: AUDIO_AGENT, audios, invoke, reserve, discard: async () => {} });
+    expect(transport).toHaveBeenCalledOnce();
+    expect((await db.pool.query('select status from messages where type=\'audio\'')).rows[0]?.status).toBe('queued');
+    await rescheduleJob(db.pool, JOB, 'media-test', { delayMs: 0, reason: 'fixture offline' });
+    await db.pool.query("update channel_sessions set status='WORKING'");
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+    expect(await requiredAudioPlan(db.pool, await job(), 'media-test', AUDIO_AGENT, audios, 3)).toEqual(plan);
+    sequence = 0;
+    await deliverRequiredAudio({ plan, agent: AUDIO_AGENT, audios, invoke, reserve, discard: async () => {} });
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect((await db.pool.query('select status from messages')).rows.map(r => r.status)).toEqual(['sent','sent']);
+    expect((await db.pool.query('select status from send_ledger')).rows.map(r => r.status)).toEqual(['accepted','accepted']);
+  });
+  it('outro job na mesma conversa não repete a gravação já enviada', async () => {
+    const next = '10000000-0000-4000-8000-000000000080';
+    vi.spyOn(getAdapter('waha'), 'isConfigured').mockReturnValue(true);
+    const transport = vi.spyOn(getAdapter('waha'), 'send').mockResolvedValue({ externalId: 'confirmed-once' });
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+    expect((await sendTurnMessage(db.pool, { supabase }, audioInput())).kind).toBe('sent');
+    await completeJob(db.pool, JOB, 'media-test');
+    await db.pool.query("insert into job_queue(id,organization_id,contact_id,kind,payload) values($1,$2,$3,'inbound_turn',$4)",
+      [next, ORG, CONTACT, JSON.stringify({ conversation_id: CONV })]);
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [next] });
+    await expect(sendTurnMessage(db.pool, { supabase }, { ...audioInput(), jobId: next })).rejects.toMatchObject({ message: 'audio_already_used' });
+    expect(transport).toHaveBeenCalledOnce(); expect(state.download).toHaveBeenCalledOnce();
+    expect((await db.pool.query('select status,last_error from send_ledger where job_id=$1', [next])).rows[0])
+      .toMatchObject({ status: 'vetoed', last_error: 'audio_already_used' });
+  });
+  it.each(['audio_already_used', 'audio_text_preference'])('revalida %s após assinar o arquivo e não abre transporte', async reason => {
+    vi.spyOn(getAdapter('waha'), 'isConfigured').mockReturnValue(true);
+    const transport = vi.spyOn(getAdapter('waha'), 'send');
+    state.sign.mockImplementationOnce(async () => {
+      await db.pool.query(`insert into messages(organization_id,conversation_id,contact_id,direction,type,status,metadata)
+        values($1,$2,$3,$4,$5,'sent',$6)`, [ORG, CONV, CONTACT,
+        reason === 'audio_already_used' ? 'outbound' : 'inbound', reason === 'audio_already_used' ? 'audio' : 'text',
+        JSON.stringify(reason === 'audio_already_used' ? { approved_audio: { agent_id: AUDIO_AGENT, audio_id: AUDIO_ID } }
+          : { agent_audio_preference: 'text' })]);
+      return { data: { signedUrl: 'https://signed.example/audio.ogg' }, error: null };
+    });
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+    await expect(sendTurnMessage(db.pool, { supabase }, audioInput())).rejects.toMatchObject({ message: reason });
+    expect(transport).not.toHaveBeenCalled();
+    expect((await db.pool.query('select status,error_code,metadata from messages where direction=\'outbound\' and status=\'failed\'')).rows[0])
+      .toMatchObject({ status: 'failed', error_code: reason, metadata: { outbound_attempt: { phase: 'rejected', retryable: false } } });
+    expect((await db.pool.query('select status,last_error from send_ledger')).rows[0]).toMatchObject({ status: 'vetoed', last_error: reason });
+  });
+  it('mudar de etapa durante a assinatura veta o áudio já preparado sem abrir transporte', async () => {
+    const pipeline = '10000000-0000-4000-8000-000000000071';
+    const stage = '10000000-0000-4000-8000-000000000072';
+    const other = '10000000-0000-4000-8000-000000000073';
+    await db.pool.query('insert into crm_pipelines(id,organization_id) values($1,$2)', [pipeline, ORG]);
+    await db.pool.query('insert into crm_stages(id,organization_id,pipeline_id) values($1,$2,$3),($4,$2,$3)', [stage, ORG, pipeline, other]);
+    await db.pool.query("insert into crm_leads(id,organization_id,contact_id,pipeline_id,stage_id,status) values($1,$2,$3,$4,$5,'open')", [AUDIO_AGENT, ORG, CONTACT, pipeline, stage]);
+    await db.pool.query('update ai_agents set config=$1', [JSON.stringify({ approved_audios: [{ ...approvedAudio(), stage_ids: [stage] }] })]);
+    vi.spyOn(getAdapter('waha'), 'isConfigured').mockReturnValue(true);
+    const transport = vi.spyOn(getAdapter('waha'), 'send');
+    state.sign.mockImplementationOnce(async () => {
+      await db.pool.query('update crm_leads set stage_id=$1', [other]);
+      return { data: { signedUrl: 'https://signed.example/audio.ogg' }, error: null };
+    });
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+    await expect(sendTurnMessage(db.pool, { supabase }, audioInput())).rejects.toBeInstanceOf(OutboundAudioUnavailableError);
+    expect(transport).not.toHaveBeenCalled();
+    expect((await db.pool.query('select status,error_code,metadata from messages')).rows[0]).toMatchObject({ status: 'failed', error_code: 'audio_stage_mismatch', metadata: { outbound_attempt: { phase: 'rejected', retryable: false } } });
+    expect((await db.pool.query('select status,last_error from send_ledger')).rows[0]).toMatchObject({ status: 'vetoed', last_error: 'audio_stage_mismatch' });
+  });
   it('envia uma vez, copia para a conversa e conserva a origem aprovada no replay', async () => {
     vi.spyOn(getAdapter('waha'), 'isConfigured').mockReturnValue(true);
     const transport = vi.spyOn(getAdapter('waha'), 'send').mockResolvedValue({ externalId: 'confirmed-audio' });

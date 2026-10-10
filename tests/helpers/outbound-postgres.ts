@@ -62,7 +62,10 @@ export async function outboundPostgres() {
       converted_at timestamptz,recovery_started_at timestamptz,decision text,em_trial boolean);
     create table obra_subscription_outreach(organization_id uuid,state_id uuid,kind text,due_at timestamptz,
       event_id uuid,rule_id uuid,recovery_armed_at timestamptz);
-    create table crm_leads(id uuid,organization_id uuid,contact_id uuid,pipeline_id uuid,status text);
+    create table crm_pipelines(id uuid primary key,organization_id uuid,name text,is_archived boolean default false,position numeric default 0);
+    create table crm_stages(id uuid primary key,organization_id uuid,pipeline_id uuid,name text,is_archived boolean default false,position numeric default 0);
+    create table crm_leads(id uuid,organization_id uuid,contact_id uuid,pipeline_id uuid,status text,
+      stage_id uuid,last_activity_at timestamptz,created_at timestamptz default now());
     create table event_log(id uuid,organization_id uuid,entity_id uuid);
     create table automation_rules(id uuid,organization_id uuid,is_active boolean,trigger_event text,actions jsonb);
   `);
@@ -126,7 +129,7 @@ export async function outboundPostgres() {
   }, rpc: async (name: string) => ({data:name==='fn_automation_message_live'?true:name==='fn_automation_message_preview'?false:null,error:null}) } as unknown as SupabaseClient;
 
   async function seed() {
-    await sql.exec('truncate send_ledger,messages,job_queue,channel_sessions,contacts,conversations,followup_enrollments,agent_inbox_items,followup_flow_versions,followup_enrollment_events,obra_access_integrations,obra_subscription_states,obra_subscription_outreach,crm_leads,event_log,automation_rules cascade');
+    await sql.exec('truncate send_ledger,messages,job_queue,channel_sessions,contacts,conversations,followup_enrollments,agent_inbox_items,followup_flow_versions,followup_enrollment_events,obra_access_integrations,obra_subscription_states,obra_subscription_outreach,crm_leads,crm_pipelines,crm_stages,event_log,automation_rules cascade');
     await pool.query('insert into job_queue(id,organization_id,contact_id,payload) values ($1,$2,$3,$4)',[JOB,ORG,CONTACT,JSON.stringify({fixed_body:'Oi',followup_enrollment_id:ENROLLMENT,node_id:'node'})]);
     await pool.query('insert into contacts(id,organization_id,phone_number) values ($1,$2,$3)',[CONTACT,ORG,'+5511000000000']);
     await pool.query('insert into channel_sessions(id,organization_id) values ($1,$2)',[SESSION,ORG]);

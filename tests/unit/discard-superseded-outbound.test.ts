@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { discardSupersededOutbound } from '@/lib/agent-engine/edge/crm/discard-superseded-outbound';
+import { discardSupersededOutbound, discardPreparedOutbound } from '@/lib/agent-engine/edge/crm/discard-superseded-outbound';
 import { OutboundLeaseLostError } from '@/lib/channels/delivery-error';
 import { outboundPostgres, ORG, CONTACT, JOB, CONV } from '../helpers/outbound-postgres';
 
@@ -52,6 +52,17 @@ async function state(id: string) {
 }
 
 describe('descarte de tentativas de inbound superada', () => {
+  it('retirada do plano de áudio encerra só as intenções reservadas, preservando ACK e resposta normal', async () => {
+    const context = await attempt({ status: 'sent', phase: 'confirmed', externalId: 'ack', ledgerStatus: 'accepted' });
+    const audio = await attempt();
+    const response = await attempt();
+    const before = await state(context); const normal = await state(response);
+    await discardPreparedOutbound(db.pool, input, { code: 'required_audio_no_longer_eligible', maxSequence: 2 });
+    expect(await state(context)).toEqual(before);
+    expect(await state(response)).toEqual(normal);
+    expect(await state(audio)).toMatchObject({ ledger_status: 'vetoed', message_status: 'failed',
+      error_code: 'required_audio_no_longer_eligible', metadata: { outbound_attempt: { phase: 'rejected', retryable: false } } });
+  });
   it('encerra todas as intenções preparadas, inclusive crash antes de ligar o ledger, e é idempotente', async () => {
     const ids = [await attempt(), await attempt({ status: 'failed', linked: false, ledgerStatus: 'requested' })];
     await discardSupersededOutbound(db.pool, input);
