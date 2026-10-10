@@ -11,7 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
-import { DeliveryRejectedError, OutboundLeaseLostError, OutboundPreflightDeferredError, type OutboundAttemptWrite } from "@/lib/channels/delivery-error";
+import { DeliveryRejectedError, OutboundAudioUnavailableError, OutboundLeaseLostError, OutboundPreflightDeferredError, OutboundSupersededError, type OutboundAttemptWrite } from "@/lib/channels/delivery-error";
 import { isWindowOpen } from "@/lib/agent-engine/guardrails/messaging-window";
 import {
   capabilitiesOf,
@@ -755,7 +755,8 @@ export async function sendMessageHandler(
             url: signed.signedUrl,
             mime: input.media_mime ?? "application/octet-stream",
             filename,
-            caption: input.body ?? null,
+            // Áudio não tem legenda: o body pode ser o título no histórico.
+            caption: input.type === 'audio' ? null : input.body ?? null,
           },
           // O id que a PLATAFORMA conhece, lido da linha citada agora — não uma
           // cópia guardada no envio, que poderia divergir da linha.
@@ -825,6 +826,12 @@ export async function sendMessageHandler(
       if (updated) message = updated as unknown as Message;
     } catch (err) {
       if (err instanceof OutboundLeaseLostError) throw err;
+      if (!transportStarted && (err instanceof OutboundSupersededError || err instanceof OutboundAudioUnavailableError)) {
+        // Veto antes da rede: a mensagem sai de queued e não pode ser retomada.
+        await writeState({ status: 'failed', error_code: err.message,
+          error_message: err instanceof OutboundAudioUnavailableError ? 'Este áudio deixou de estar disponível para o atendimento antes do envio.' : 'Resposta dispensada porque chegou uma nova mensagem.' }, 'prepared', 'rejected', false);
+        throw err;
+      }
       // Uma dependência indisponível antes da rede conserva a mesma tentativa.
       // Depois de STARTED, nem este erro autoriza repetir o transporte.
       if (!transportStarted && options?.messageId && err instanceof OutboundPreflightDeferredError) {

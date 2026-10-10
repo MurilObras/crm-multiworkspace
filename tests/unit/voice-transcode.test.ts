@@ -113,7 +113,8 @@ describe("o elo que some sem barulho", () => {
     // Converter no envio faria a mesma gravação ser transcodificada por
     // destinatário, e deixaria guardado um formato que só um canal aceita.
     const fonte = readFileSync("app/api/v1/conversations/[id]/media/route.ts", "utf8");
-    expect(fonte).toContain("transcodificarNotaDeVoz");
+    // Gravações prontas também precisam converter codec, não só o container.
+    expect(fonte).toContain("normalizePrerecordedAudio");
     expect(fonte).toMatch(/upload\(storagePath,\s*buffer,\s*\{\s*contentType:\s*mimeFinal/);
   });
 

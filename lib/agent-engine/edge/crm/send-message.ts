@@ -16,6 +16,7 @@
  *      resultados incertos são terminais, nunca autorização de reenvio.
  */
 import { executeOutboundAttempt, type OutboundAttemptOptions } from './outbound-attempt';
+import type { ChannelSendInput } from '../../channel-adapter';
 
 import type { Queryable } from '../../queue/queue';
 import { cancelJob, rescheduleJob, type JobRow } from '../../queue/queue';
@@ -66,6 +67,9 @@ export interface SendMessageInput {
   seq: number;
   conversationId: string;
   body: string;
+  media?: ChannelSendInput['media'];
+  /** Veto antes de persistir e antes do transporte; pode executar duas vezes. */
+  beforePersist?: () => Promise<void>;
   /**
    * Presente = envio de TEMPLATE. O `body` continua sendo o texto RENDERIZADO — é
    * ele que entra no hash de idempotência e é ele que os gates de conteúdo avaliaram.

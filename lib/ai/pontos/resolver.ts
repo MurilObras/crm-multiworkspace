@@ -141,6 +141,7 @@ export const PONTOS_DO_AGENTE_PUBLICADO: ReadonlySet<string> = new Set([
  */
 export const PONTOS_QUE_HERDAM_DO_AGENTE: ReadonlySet<string> = new Set([
   "stage_classifier",
+  "audio_intent",
   "jailbreak_detect",
   "promise_semantic",
   "compaction",

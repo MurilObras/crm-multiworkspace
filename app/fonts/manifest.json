@@ -1,0 +1,115 @@
+{
+  "revision": "bd8f81ddb5c74d5c8897b36ad88b440266245103",
+  "conversion": "fonttools 4.66.1 + brotli 1.2.0; TTF -> WOFF2, sem subset ou alteração de eixos/glifos",
+  "files": [
+    {
+      "file": "bricolage-grotesque.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/bricolagegrotesque/BricolageGrotesque%5Bopsz%2Cwdth%2Cwght%5D.ttf",
+      "source_sha256": "413e7357809ddd12fd80a96a8a396de0e401638d4acd3cb3e37532f0472ac682",
+      "sha256": "900b05c857e3783840f46d21d45116899c519458b5c349e4cfe5102ea751e149",
+      "axes": {
+        "opsz": [12.0, 96.0, 96.0],
+        "wght": [200.0, 800.0, 800.0],
+        "wdth": [75.0, 100.0, 100.0]
+      },
+      "glyphs": 527
+    },
+    {
+      "file": "plus-jakarta-sans.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/plusjakartasans/PlusJakartaSans%5Bwght%5D.ttf",
+      "source_sha256": "89b3fb38aa0d275d7a731d0d817a4f1622b316b4d7fbdedcf02ee9099ff68bc8",
+      "sha256": "e5d1361eae19f88b611f17bbb6ea7b8e7ab1f3219e113f33bbdc8ae89b0112b8",
+      "axes": {
+        "wght": [200.0, 400.0, 800.0]
+      },
+      "glyphs": 721
+    },
+    {
+      "file": "fraunces.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/fraunces/Fraunces%5BSOFT%2CWONK%2Copsz%2Cwght%5D.ttf",
+      "source_sha256": "177ff6c0f14e5550a3c624247cd1189611d4eb65d000b14944c63d967958abbb",
+      "sha256": "443367913f55573d783a7c7d428bd3d58bc9f1e5546a6b1408284636c59c27af",
+      "axes": {
+        "opsz": [9.0, 9.0, 144.0],
+        "wght": [100.0, 900.0, 900.0],
+        "SOFT": [0.0, 0.0, 100.0],
+        "WONK": [0.0, 1.0, 1.0]
+      },
+      "glyphs": 624
+    },
+    {
+      "file": "manrope.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/manrope/Manrope%5Bwght%5D.ttf",
+      "source_sha256": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
+      "sha256": "8cb1bff675d3281202cc3441ef42e51098e128e298569b6fac637de0f90a3bd6",
+      "axes": {
+        "wght": [200.0, 200.0, 800.0]
+      },
+      "glyphs": 678
+    },
+    {
+      "file": "atkinson-regular.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/atkinsonhyperlegible/AtkinsonHyperlegible-Regular.ttf",
+      "source_sha256": "7fb917c89019896d0b52ee84b7cbb3304c18cb90b19a62f5e32712bd23e97669",
+      "sha256": "0733953be0e3189a42a58cea564d527b0c49a251c96d08b663f0eff4b859dbb4",
+      "axes": {},
+      "glyphs": 342
+    },
+    {
+      "file": "atkinson-bold.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/atkinsonhyperlegible/AtkinsonHyperlegible-Bold.ttf",
+      "source_sha256": "5a3b0c8cc8ca545155150b4512a1fa248298df121c50d6557e651e61fbdab92f",
+      "sha256": "7e7d8d2d0fa4a2e55ea9518d26cad7c9402b2e7a1b8f14e865f7468c17bff4b1",
+      "axes": {},
+      "glyphs": 342
+    },
+    {
+      "file": "source-serif-4.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/sourceserif4/SourceSerif4%5Bopsz%2Cwght%5D.ttf",
+      "source_sha256": "97b2d4da6e3cb494b5a1e66ae176914d852ccabef49e0c02c0df25f3e39aca0b",
+      "sha256": "50605e65f7f502081d54ed541fed2f3e78ff3398562538c4b0cf1bbf4149b9c9",
+      "axes": {
+        "wght": [200.0, 400.0, 900.0],
+        "opsz": [8.0, 20.0, 60.0]
+      },
+      "glyphs": 918
+    },
+    {
+      "file": "ibm-plex-sans.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/ibmplexsans/IBMPlexSans%5Bwdth%2Cwght%5D.ttf",
+      "source_sha256": "3b031aa4216174205bd8471f88a49b91f093169e9e87bd5262242bc5967fe2e3",
+      "sha256": "67d1f156115c54d88ec86992cccf3896c43bd957ced5bb8a180a706b822c7331",
+      "axes": {
+        "wght": [100.0, 400.0, 700.0],
+        "wdth": [75.0, 100.0, 100.0]
+      },
+      "glyphs": 891
+    },
+    {
+      "file": "ibm-plex-mono-regular.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/ibmplexmono/IBMPlexMono-Regular.ttf",
+      "source_sha256": "6a3412f058c7d8dfd9170c41e85ade48e5156ecb89356110ca57a0a27734af46",
+      "sha256": "a0838059edf9cab356f61718823495da39e9683356cf7e6801e25d165ada2bf2",
+      "axes": {},
+      "glyphs": 930
+    },
+    {
+      "file": "ibm-plex-mono-medium.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/ibmplexmono/IBMPlexMono-Medium.ttf",
+      "source_sha256": "a9b4c49bb299e05b5f6c481e7fb5e78943d2793249a0c8874ab574a2d1ea6755",
+      "sha256": "e7e20696c7120c57dac2ca683d3ce241539bea06af9ea9e2d9e4ac8244da7544",
+      "axes": {},
+      "glyphs": 930
+    },
+    {
+      "file": "jetbrains-mono.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf",
+      "source_sha256": "48715a42ec242c21e9f02692891e147d022299a52e48d5e413e1a942193ffeda",
+      "sha256": "d6feae8bc962d1e80566081f4bcbbbc32eec0a7960b5f7124360298cb3eaf791",
+      "axes": {
+        "wght": [100.0, 400.0, 800.0]
+      },
+      "glyphs": 976
+    }
+  ]
+}

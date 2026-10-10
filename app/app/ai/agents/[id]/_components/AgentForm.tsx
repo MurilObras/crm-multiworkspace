@@ -48,6 +48,7 @@ import { FollowupFlowPicker } from "./FollowupFlowPicker";
 import { PainelDoOperador } from "./PainelDoOperador";
 import { PainelDeSeguranca } from "./PainelDeSeguranca";
 import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
+import { ApprovedAudios } from './ApprovedAudios';
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import {
@@ -995,6 +996,8 @@ export function AgentForm(props: Props) {
           </Card>
 
           {/* O acervo que este assistente consulta (0181) */}
+          {props.mode === 'edit' ? <ApprovedAudios key={props.agent.id} agentId={props.agent.id} readOnly={readOnly || saving || publishing} />
+            : <p className="text-xs text-muted-foreground">{t('Salve o agente para adicionar áudios pré-gravados.')}</p>}
           <BasesDoAgente
             materiais={materiais}
             value={form.knowledge_source_ids}

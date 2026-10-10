@@ -126,6 +126,8 @@ export interface RunModelCallInput {
    * agente), nunca constante.
    */
   maxSteps?: number;
+  /** Interrompe o próximo step quando o dono do turno dispensa a resposta. */
+  shouldStop?: () => boolean;
   /**
    * Override de provider/credencial vindo da versão PUBLICADA do agente (Fase
    * 2B) — resolvido no seam, nunca no call site. Sem ele, config da org.
@@ -423,7 +425,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       system: prefix.system,
       messages: input.messages,
       tools: prefix.tools,
-      stopWhen: input.maxSteps === undefined ? undefined : stepCountIs(input.maxSteps),
+      stopWhen: [stepCountIs(input.maxSteps ?? 1),
+        ...(input.shouldStop ? [input.shouldStop] : [])],
       temperature,
       topP,
       topK,

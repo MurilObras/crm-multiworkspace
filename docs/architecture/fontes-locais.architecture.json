@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Fontes locais — build sem consulta ao Google Fonts",
+    "subtitle": "origem fixada, arquivos licenciados e integridade antes da distribuição",
+    "output": "fontes-locais.html"
+  },
+  "lanes": [
+    { "id": "fonte", "label": "Origem e arquivos versionados" },
+    { "id": "consumidor", "label": "Consumidores" },
+    { "id": "distribuicao", "label": "Build e distribuição" }
+  ],
+  "nodes": [
+    {
+      "id": "origem",
+      "lane": "fonte",
+      "label": "google/fonts — revisão fixada",
+      "sublabel": "Aquisição manual na implementação; fora do build"
+    },
+    { "id": "arquivos", "lane": "fonte", "label": "app/fonts/*.woff2 + licenças + manifest" },
+    { "id": "layout", "lane": "consumidor", "label": "app/layout.tsx — next/font/local" },
+    { "id": "design", "lane": "consumidor", "label": "app/design/lib/fonts.ts — next/font/local" },
+    { "id": "gate", "lane": "distribuicao", "label": "fontes-locais.test.ts + build + E2E" },
+    { "id": "build", "lane": "distribuicao", "label": "Next build → .next/static/media → imagem" },
+    {
+      "id": "navegador",
+      "lane": "distribuicao",
+      "label": "Interface e mostruário com fontes da própria instalação"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "origem",
+      "to": "arquivos",
+      "label": "TTF → WOFF2, sem subset; conserva licenças"
+    },
+    { "id": "e2", "from": "arquivos", "to": "layout", "label": "Atkinson e IBM Plex Mono" },
+    { "id": "e3", "from": "arquivos", "to": "design", "label": "famílias e eixos do mostruário" },
+    { "id": "e4", "from": "layout", "to": "build", "label": "variáveis CSS do produto" },
+    { "id": "e5", "from": "design", "to": "build", "label": "variáveis CSS das variantes" },
+    {
+      "id": "e6",
+      "from": "arquivos",
+      "to": "gate",
+      "label": "verifica referências, WOFF2 e hashes"
+    },
+    { "id": "e7", "from": "gate", "to": "build", "label": "falha bloqueia integração/publicação" },
+    { "id": "e8", "from": "build", "to": "navegador", "label": "fontes locais com display swap" }
+  ]
+}

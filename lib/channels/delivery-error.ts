@@ -25,6 +25,24 @@ export class DeliveryRejectedError extends Error {
   }
 }
 
+/** Resposta superada antes da rede: descarte terminal, nunca autorização de retry. */
+export class OutboundSupersededError extends DeliveryRejectedError {
+  constructor() {
+    super('inbound_superseded', false, true);
+    this.name = 'OutboundSupersededError';
+  }
+}
+
+/** Aprovação ou etapa deixou de permitir o áudio; o agente pode seguir por texto. */
+export class OutboundAudioUnavailableError extends DeliveryRejectedError {
+  constructor(reason: 'audio_approval_revoked' | 'audio_stage_mismatch' | 'audio_already_used' | 'audio_text_preference') {
+    super(reason, false, true); this.name = 'OutboundAudioUnavailableError';
+  }
+}
+export class OutboundApprovalRevokedError extends OutboundAudioUnavailableError {
+  constructor() { super('audio_approval_revoked'); this.name = 'OutboundApprovalRevokedError'; }
+}
+
 /** Perda de propriedade não é falha da mensagem de outro executor. */
 export class OutboundLeaseLostError extends Error {
   constructor() { super('outbound_lease_lost'); this.name = 'OutboundLeaseLostError'; }

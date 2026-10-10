@@ -1832,3 +1832,47 @@ Atividade traduz a espera em português. Não há nova tela; a prova de UX e ban
 completos segue no CI existente, conforme decisão de ambiente registrada em
 `docs/specs/obra-subscription-lifecycle.md`. Transporte real entre servidores e
 contatos controlados continua sendo gate de ativação, sem clientes nesta prova.
+
+
+## Atendimento validado — fila e mídia (2026-10-10)
+
+Fonte e checklist: `docs/specs/atendimento-validado.md`. Jornada: Webhooks > Obra no Bolso identifica canal sem apelido; Conexões > Proteção de envio reavalia inbound retido somente no canal/workspace editado. Evento novo não coalesce em job represado; resposta ao assunto anterior é interrompida antes do envio. O agente envia imagem/vídeo aprovado uma vez, com legenda, pelo sink/ledger existentes. PGlite prova o SQL; `tests/invariants/inbound-retomada-e-midia.test.ts` prova o turno completo com Postgres efêmero e modelo/transporte sintéticos. Recebimento real do arquivo e consulta 96h continuam gates separados, sem adiantar relógio ou contatar clientes reais.
+
+Revisão R01/R02: rajada durante o turno bloqueia também ferramentas mutantes, inclusive chamadas paralelas no mesmo step. A lane só é liberada após a drenagem; recência é repetida antes do transporte de texto/mídia/template. Descarte termina linha preparada e ledger, sem retry automático. Cobertura em current-inbound-tools, inbound-retomada-e-midia e agent-media-storage.
+
+Revisão R03: sessão offline deixa resposta aguardando envio; o cliente envia outra mensagem antes do retry. Ao retomar, a resposta antiga preparada é marcada como dispensada e seu ledger recebe veto terminal antes de concluir a tarefa. A mesma reconciliação cobre nova inbound durante o modelo, sem alterar mensagens confirmadas/incertas nem outro owner/workspace. Provas em discard-superseded-outbound (PGlite) e inbound-retomada-e-midia (Postgres efêmero); nenhum envio real nessa validação.
+
+## Áudios por etapa em todos os workspaces (2026-10-10)
+
+Agentes > editar > Conversador > Áudios pré-gravados: anexar, ouvir, escolher
+Todas as etapas ou Etapas específicas de qualquer funil do workspace, aprovar,
+recarregar, editar vínculo, desativar e remover. Aplicável a vendas, atendimento
+e suporte, sem depender da integração Obra no Bolso. Catálogos privados por
+workspace/agente; opções de outro workspace não aparecem e IDs externos são
+recusados. Etapa arquivada permanece visível como indisponível para correção.
+
+Cobertura: `audios-pre-gravados.spec.ts` pela tela real com Supabase local;
+`approved-audio-api` e `audio-stage-eligibility` provam isolamento e regras;
+`agent-media-storage` veta mudança de etapa durante a assinatura do Storage;
+`inbound-retomada-e-midia` prova catálogo do turno com etapa permitida e não
+permitida. Conferência visual adicional dos componentes reais em Edge, API
+simulada, desktop/celular sem overflow; não substitui o E2E completo do CI.
+
+Achado na ampliação dos cenários de banco: a janela de copies da mesma sessão
+vazava entre casos e barrava a terceira repetição sintética por `mass_identical`.
+A fixture agora limpa somente `outbound_copies` da sua organização/sessão antes
+de cada caso; guardas do produto permanecem ligadas. Sem merge/implantação ou
+envio a contato real nesta prova.
+
+Decisão seguinte do usuário: Envios obrigatórios começam ligados no cadastro;
+opcionais ficam à escolha do agente. `conversation-audios` consulta o histórico
+durável e preserva preferência de texto; `required-audio` grava plano sob lease
+e invoca a mesma ferramenta antes do modelo. A recepção reserva contexto/áudio
+nas seqs 1/2, no máximo uma gravação por resposta. Reentrada em etapa, outro
+turno ou fila offline não repetem a gravação. Retirada da regra/etapa reconcilia
+somente intenções preparadas dessa dupla, preservando ACKs e a resposta normal.
+Testes no banco isolado: 21 passaram em inbound-retomada-e-midia/agent-config-cases.
+O modelo de teste escolhe somente texto e mesmo assim o áudio obrigatório sai;
+modos opcional, só texto, já enviado e limite insuficiente continuam em texto.
+E2E inclui obrigatório ligado por padrão e edição/reload para opcional. Visual
+com componentes reais confirma a explicação dos dois modos em desktop/celular.

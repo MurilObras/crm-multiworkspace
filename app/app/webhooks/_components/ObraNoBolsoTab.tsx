@@ -10,6 +10,7 @@ import { DEFAULT_ACTIVATION_MESSAGE, DEFAULT_REGISTRATION_MESSAGE, DEFAULT_USAGE
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
+import { channelLabel, type ChannelSession } from "@/hooks/channels/useChannelSessions";
 
 type Receipt = {
   id: string; external_event_id: string; product_user_id: string; occurred_at: string;
@@ -63,7 +64,7 @@ export function ObraNoBolsoTab() {
   const [outreach, setOutreach] = React.useState<NonNullable<State["outreach"]>>({ enabled: false,
     channel_session_id: null, recovery_pointer_id: null, registration_message: DEFAULT_REGISTRATION_MESSAGE,
     usage_message: DEFAULT_USAGE_MESSAGE, activation_message: DEFAULT_ACTIVATION_MESSAGE });
-  const [channels, setChannels] = React.useState<Array<{ id: string; display_name: string }>>([]);
+  const [channels, setChannels] = React.useState<ChannelSession[]>([]);
   const [flows, setFlows] = React.useState<Array<{ id: string; name: string; status: string }>>([]);
   const [secretOnce, setSecretOnce] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -95,7 +96,7 @@ export function ObraNoBolsoTab() {
     }).catch((error: Error) => toast.error(error.message));
     void api<Array<{ id: string; name: string }>>("/api/v1/pipelines")
       .then(setFunis).catch(() => toast.error(t("Funis indisponíveis.")));
-    void api<Array<{ id: string; display_name: string }>>("/api/v1/channel-sessions")
+    void api<ChannelSession[]>("/api/v1/channel-sessions")
       .then(setChannels).catch(() => toast.error(t("Números indisponíveis.")));
     void api<Array<{ id: string; name: string; status: string }>>("/api/v1/ai/followup-flows")
       .then(setFlows).catch(() => toast.error(t("Fluxos indisponíveis.")));
@@ -259,7 +260,7 @@ export function ObraNoBolsoTab() {
         <Select value={outreach.channel_session_id ?? "none"} onValueChange={value => setOutreach({ ...outreach, channel_session_id: value === "none" ? null : value })}>
           <SelectTrigger id="obra-message-channel"><SelectValue /></SelectTrigger><SelectContent>
             <SelectItem value="none">{t("Selecione o número conectado por QR code")}</SelectItem>
-            {channels.map(item => <SelectItem value={item.id} key={item.id}>{item.display_name}</SelectItem>)}
+            {channels.map(item => <SelectItem value={item.id} key={item.id}>{channelLabel(item, t)}</SelectItem>)}
           </SelectContent>
         </Select>
         <Label htmlFor="obra-recovery-flow">{t("Fluxo de recuperação")}</Label>

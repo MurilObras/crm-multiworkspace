@@ -3,13 +3,17 @@ import type { HandlerCtx } from '@/lib/api/handlers/types';
 import { ApiError } from '@/lib/api/types';
 import type { SendMessageInput as SinkInput } from '@/lib/schemas';
 import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
-import { OutboundLeaseLostError, type OutboundAttemptWrite } from '@/lib/channels/delivery-error';
+import { OutboundApprovalRevokedError, OutboundAudioUnavailableError, OutboundLeaseLostError, OutboundSupersededError, type OutboundAttemptWrite } from '@/lib/channels/delivery-error';
+import { z } from 'zod';
+import { assertAudioStillApproved } from '../../agent/approved-audios';
+import { assertConversationAudioAvailable } from '../../agent/conversation-audios';
 import type { Message } from '@/lib/types/messaging';
 import { cancelJob, type Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
 import type { SendMessageInput, SendOutcome } from './send-message';
 import { decideOutboundRecovery, type RecoveryMessage } from './outbound-recovery';
 import { guardObraFollowup } from '@/lib/obra-no-bolso/followup-guard';
+import { prepareAgentMedia } from './prepare-media';
 
 export interface OutboundAttemptOptions {
   actor?: HandlerCtx['actor'];
@@ -32,7 +36,7 @@ export async function executeOutboundAttempt(
          and status='running' and locked_by=$4 for update
      ) insert into send_ledger (organization_id,contact_id,job_id,seq,body_hash)
        select $2,$3,id,$5,$6 from owner on conflict (job_id,seq) do nothing returning id,status`,
-    [job, org, contact, owner, seq, hash(input.body)],
+    [job, org, contact, owner, seq, hash(input.media ? JSON.stringify({ body: input.body, media: input.media }) : input.body)],
   );
   let ledger = claim.rows[0];
   if (!ledger) {
@@ -128,16 +132,32 @@ export async function executeOutboundAttempt(
   if (outcome) return outcome;
 
   const persisted = (previous?.metadata?.outbound_attempt as { input?: SinkInput } | undefined)?.input;
-  const prepared: SinkInput = persisted ?? (options.prepare ? await options.prepare() : {
-    conversation_id: input.conversationId, body: input.body,
-    ...(input.template ? { type: 'template', template_name: input.template.name,
-      template_language: input.template.language, template_values: input.template.values } : { type: 'text' }),
-  });
+  const audioSource = persisted ? previous?.metadata?.approved_audio
+    : input.media?.type === 'audio' ? { agent_id: input.media.agent_id, audio_id: input.media.audio_id } : undefined;
+  const assertAudioApproved = async () => {
+    if (!audioSource) return;
+    const source = z.object({ agent_id: z.string().uuid(), audio_id: z.string().uuid() }).safeParse(audioSource);
+    if (!source.success) throw new OutboundApprovalRevokedError();
+    await assertAudioStillApproved(db, org, source.data.agent_id, source.data.audio_id, contact);
+    await assertConversationAudioAvailable(db, org, persisted?.conversation_id ?? input.conversationId,
+      source.data.agent_id, source.data.audio_id, previous?.id ?? key);
+  };
   const messageId = previous?.id ?? key;
   try {
+    await assertAudioApproved();
+    const prepared: SinkInput = persisted ?? (options.prepare ? await options.prepare() : {
+      conversation_id: input.conversationId, body: input.body,
+      ...(input.template ? { type: 'template', template_name: input.template.name,
+        template_language: input.template.language, template_values: input.template.values }
+        : input.media ? { type: input.media.type,
+          ...await prepareAgentMedia(cfg.supabase, input, key) }
+        : { type: 'text' }),
+    });
+    await assertAudioApproved();
+    await input.beforePersist?.();
     await sendMessageHandler(cfg.supabase, { organization_id: org, requestId: key,
       actor: options.actor ?? { type: 'ai_agent', id: cfg.agentActorId ?? 'agent-engine', role: 'manager' } }, {
-      ...prepared, metadata: { ...prepared.metadata, idempotency_key: key,
+      ...prepared, metadata: { ...prepared.metadata, ...(audioSource ? { approved_audio: audioSource } : {}), idempotency_key: key,
         outbound_attempt: { phase: 'prepared', input: { ...prepared, metadata: undefined } } },
     }, {
       messageId,
@@ -156,13 +176,16 @@ export async function executeOutboundAttempt(
            update send_ledger set crm_message_id=$4,body_hash=$5 where id=$6 and organization_id=$2
              and exists(select 1 from prepared) returning id`,
           [job, org, owner, messageId, hash(prepared.body ?? ''), key,
-            JSON.stringify({ idempotency_key: key, outbound_attempt: { phase: 'prepared', input: { ...prepared, metadata: undefined } } })],
+            JSON.stringify({ ...(audioSource ? { approved_audio: audioSource } : {}), idempotency_key: key, outbound_attempt: { phase: 'prepared', input: { ...prepared, metadata: undefined } } })],
         );
         if (!rows.length) throw new OutboundLeaseLostError();
       },
       beforeTransport: async () => {
         const obra = contact ? await guardObraFollowup(db, org, job, contact) : { allowed: true };
         if (!obra.allowed) throw new ApiError(403, 'forbidden', undefined, job, 'obra_followup_not_eligible');
+        // Depois da assinatura do Storage/pré-voo e antes do CAS que abre a rede.
+        await assertAudioApproved();
+        await input.beforePersist?.();
         const { rows } = await db.query<{ id: string }>(
           `with owner as materialized (select id from job_queue where id=$1 and organization_id=$2
              and status='running' and locked_by=$3 for update),
@@ -186,6 +209,19 @@ export async function executeOutboundAttempt(
     });
   } catch (error) {
     if (error instanceof OutboundLeaseLostError) throw error;
+    if (error instanceof OutboundSupersededError || error instanceof OutboundAudioUnavailableError) {
+      const reason = error instanceof OutboundAudioUnavailableError ? error.message : 'inbound_superseded';
+      const message = await readMessage();
+      const phase = (message?.metadata?.outbound_attempt as { phase?: string } | undefined)?.phase;
+      // Também encerra a linha de um retry que foi dispensado no beforePersist.
+      if (message && phase === 'prepared') {
+        await writeAttemptState(message.id, { expectedPhase: 'prepared', phase: 'rejected', retryable: false,
+          patch: { status: 'failed', error_code: reason,
+            error_message: error instanceof OutboundAudioUnavailableError ? 'Este áudio deixou de estar disponível para o atendimento antes do envio.' : 'Resposta dispensada porque chegou uma nova mensagem.' } });
+      }
+      await saveLedger('vetoed', message?.id ?? null, reason);
+      throw error; // O turno conserva sua lane até terminar o laço de tools.
+    }
     if (error instanceof ApiError && error.status === 403) {
       await saveLedger('vetoed', previous?.id ?? null, 'contact_blocked');
       return { kind: 'blocked', idempotencyKey: key };

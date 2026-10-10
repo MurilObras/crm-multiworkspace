@@ -271,6 +271,24 @@
       "type": "frontend",
       "label": "Alertas",
       "sublabel": "a Central (/app/ai/inbox)"
+    },
+    {
+      "id": "inboundtools",
+      "lane": "guardrails",
+      "col": 3,
+      "type": "security",
+      "label": "Tools da inbound atual",
+      "sublabel": "serializa nativas/MCP; drena antes de liberar lane",
+      "tag": "guardCurrentInboundTools"
+    },
+    {
+      "id": "discardoutbound",
+      "lane": "desfecho",
+      "col": 3,
+      "type": "backend",
+      "label": "Descarte do envio antigo",
+      "sublabel": "owner + CAS: messages/ledger terminais; Inbox e atividade explicam",
+      "tag": "discardSupersededOutbound"
     }
   ],
   "edges": [
@@ -303,10 +321,10 @@
       "variant": "dashed"
     },
     {
-      "id": "turn-toolbreaker",
-      "from": "turn",
+      "id": "inboundtools-toolbreaker",
+      "from": "inboundtools",
       "to": "toolbreaker",
-      "label": "tools do CRM",
+      "label": "tool ainda atual",
       "variant": "dashed",
       "fromSide": "bottom",
       "toSide": "right",
@@ -610,6 +628,34 @@
         692,
         1565
       ]
+    },
+    {
+      "id": "turn-inboundtools",
+      "from": "turn",
+      "to": "inboundtools",
+      "label": "inbound ancorada",
+      "variant": "security"
+    },
+    {
+      "id": "inboundtools-turn",
+      "from": "inboundtools",
+      "to": "turn",
+      "label": "stopWhen + drain antes de complete",
+      "variant": "dashed"
+    },
+    {
+      "id": "turn-discardoutbound",
+      "from": "turn",
+      "to": "discardoutbound",
+      "label": "inbound superada antes do modelo ou após drain",
+      "variant": "security"
+    },
+    {
+      "id": "discardoutbound-turn",
+      "from": "discardoutbound",
+      "to": "turn",
+      "label": "prepared sem rede → rejected/vetoed; só então complete",
+      "variant": "dashed"
     }
   ],
   "cards": [
@@ -661,6 +707,17 @@
         "O Operador NÃO tem aresta para o canal: 'send_message' não está no toolset dele, e a ponte troca a lista em UM ponto só (operator-turn.ts). É ausência, não regra de prompt — a única forma que não depende de o modelo obedecer",
         "A projeção (§4) NÃO se aplica ao Operador: ele precisa do dado cru para operar, e não tem canal por onde vazar. Projetar os dois seria cegar quem opera para proteger quem não fala",
         "O Operador NÃO decide qual unidade atende: isso é do Intent Router. Os dois eixos convivem"
+      ]
+    },
+    {
+      "dot": "blue",
+      "title": "Retomada de respostas e arquivos",
+      "items": [
+        "Conexões → Proteção de envio → PUT pacing → reavalia somente inbound retido por janela/cap do mesmo workspace/canal → fila → Before-send aplica novamente todas as regras.",
+        "Drain → debounce da mesma conversa/canal → atualiza mensagem âncora e chave do evento; jobs retidos não absorvem a rajada.",
+        "Turno IA → confere a última inbound antes do LLM e de cada envio → interrompe resposta ao assunto antigo; evento da nova mensagem preserva o próximo atendimento.",
+        "send_message → URL oficial exata → Before-send → ledger → preparo limitado → Storage privado → revalida conversa → sink/URL assinada → WhatsApp, uma vez por arquivo; opt-out e humano continuam soberanos.",
+        "Volta: auditoria da proteção registra quantidade/falha; ficha avisa retomada parcial; atividade send_vetoed explica interrupção na timeline do negócio sem conteúdo do cliente."
       ]
     }
   ]

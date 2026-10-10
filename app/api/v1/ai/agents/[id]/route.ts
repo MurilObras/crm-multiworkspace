@@ -182,17 +182,22 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     return ok(existing, { requestId });
   }
 
-  const { data: updated, error: updErr } = await admin
+  let updateQuery = admin
     .from("ai_agents")
     .update(update)
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", activeOrg.orgId);
+  // O editor de áudios também escreve config: não perder aprovação concorrente.
+  if (patch.config !== undefined) updateQuery = existing.config == null
+    ? updateQuery.is('config', null) : updateQuery.filter('config', 'eq', JSON.stringify(existing.config));
+  const { data: updated, error: updErr } = await updateQuery
     .select(AGENT_COLUMNS)
-    .single();
+    .maybeSingle();
 
-  if (updErr || !updated) {
+  if (updErr) {
     return fail("internal_error", "Erro ao atualizar agent.", 500, { requestId });
   }
+  if (!updated) return fail('state_conflict', 'Configuração alterada em outra aba. Atualize e tente novamente.', 409, { requestId });
 
   return ok(updated, { requestId });
 }

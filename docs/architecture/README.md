@@ -16,6 +16,7 @@ ser fonte sem ninguém decidir isso.
 
 | arquivo | escopo |
 |---|---|
+| `fontes-locais.architecture.json` | fontes versionadas → layouts → build/imagem → navegador; integridade e ausência de carregamento remoto no build |
 | `agent-turn.workflow.json` | os **dois** turnos do agente — Conversador (fala, 2 chamadas de modelo) e Operador (opera, sem canal). 24 peças, 33 arestas, 13 faixas. **É o único mapa que o archify renderiza** — ver o aviso abaixo |
 | `crm-vivo.architecture.json` | subsistema **CRM Vivo** — 24 peças, 44 arestas, 6 faixas |
 | `atualizacao-self-service.architecture.json` | botão de atualizar pela UI — `agent.sh`/`update.sh` (host) ↔ rota do agente ↔ tabelas de instância ↔ rodapé/tela |

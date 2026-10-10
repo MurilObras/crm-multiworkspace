@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Áudios pré-gravados aprovados",
+    "subtitle": "Todos os workspaces: assunto atual, condição na tela e etapa revalidada na mesma interação",
+    "output": "audios-pre-gravados.html"
+  },
+  "lanes": [
+    {
+      "id": "config",
+      "label": "Configuração"
+    },
+    {
+      "id": "turno",
+      "label": "Atendimento"
+    },
+    {
+      "id": "entrega",
+      "label": "Entrega e retorno"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "editor",
+      "lane": "config",
+      "label": "AgentForm → ApprovedAudios"
+    },
+    {
+      "id": "api",
+      "lane": "config",
+      "label": "API agents/:id/audios",
+      "sublabel": "RBAC, org da sessão, CAS e audit"
+    },
+    {
+      "id": "storage",
+      "lane": "config",
+      "label": "ffmpeg → Storage privado",
+      "sublabel": "Ogg/Opus imutável"
+    },
+    {
+      "id": "catalogo",
+      "lane": "turno",
+      "label": "ai_agents.config.approved_audios"
+    },
+    {
+      "id": "etapas",
+      "lane": "turno",
+      "label": "crm_pipelines → crm_stages → crm_leads",
+      "sublabel": "Org explícita, negócio atual sem empate, etapas ativas"
+    },
+    {
+      "id": "recepcao",
+      "lane": "turno",
+      "label": "requiredAudioPlan → job_queue.payload",
+      "sublabel": "Plano sob lease, intenções 1/2; teto físico separado, texto + áudio cabem em 2 envios"
+    },
+    {
+      "id": "historico",
+      "lane": "turno",
+      "label": "messages → conversation-audios",
+      "sublabel": "Preferência inclui transcrição tardia/corrigida, marcador da fonte e CAS; descarte pré-rede não encerra recepção; fila e incerteza não duplicam"
+    },
+    {
+      "id": "modelo",
+      "lane": "turno",
+      "label": "agent-config → catálogo no turno → send_message",
+      "sublabel": "Texto dividido agrupado no espaço restante; capacidade conferida antes de cada envio"
+    },
+    {
+      "id": "sink",
+      "lane": "entrega",
+      "label": "prepareAgentMedia → outbound-attempt",
+      "sublabel": "Aprovação fresca, inbound atual, lease e ledger"
+    },
+    {
+      "id": "canal",
+      "lane": "entrega",
+      "label": "Handler de mensagens → adapter do canal"
+    },
+    {
+      "id": "inbox",
+      "lane": "entrega",
+      "label": "Inbox: áudio, histórico e estado de entrega"
+    },
+    {
+      "id": "assunto",
+      "lane": "turno",
+      "label": "audio-rule → audio_intent → audio_rule_decision",
+      "sublabel": "Inbounds pendentes em ordem de sent_at/created_at/id, inclusive chegada tardia; fronteira confirmada de outro turno; decisão sob lease"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "editor",
+      "to": "api",
+      "label": "anexar, aprovar, ouvir e desativar"
+    },
+    {
+      "id": "e2",
+      "from": "api",
+      "to": "storage",
+      "label": "normalizar arquivo aprovado"
+    },
+    {
+      "id": "e3",
+      "from": "storage",
+      "to": "catalogo",
+      "label": "referência privada, sem URL assinada persistida"
+    },
+    {
+      "id": "e4",
+      "from": "api",
+      "to": "catalogo",
+      "label": "CAS da configuração operacional"
+    },
+    {
+      "id": "e5",
+      "from": "catalogo",
+      "to": "modelo",
+      "label": "IDs aprovados, título e finalidade"
+    },
+    {
+      "id": "e6",
+      "from": "modelo",
+      "to": "sink",
+      "label": "texto de contexto e áudio em intenções próprias"
+    },
+    {
+      "id": "e7",
+      "from": "catalogo",
+      "to": "sink",
+      "label": "revalidar aprovação e etapa antes da rede"
+    },
+    {
+      "id": "e8",
+      "from": "sink",
+      "to": "canal",
+      "label": "mesma fila, sem duplicar replay"
+    },
+    {
+      "id": "e9",
+      "from": "canal",
+      "to": "inbox",
+      "label": "arquivo e desfecho visíveis"
+    },
+    {
+      "id": "e10",
+      "from": "inbox",
+      "to": "editor",
+      "label": "humano avalia e retira gravação inadequada"
+    },
+    {
+      "id": "e11",
+      "from": "etapas",
+      "to": "api",
+      "label": "opções da tela e validação de vínculos por workspace"
+    },
+    {
+      "id": "e12",
+      "from": "etapas",
+      "to": "modelo",
+      "label": "filtrar catálogo disponível na etapa atual"
+    },
+    {
+      "id": "e13",
+      "from": "etapas",
+      "to": "sink",
+      "label": "mudança de etapa veta áudio preparado e permite continuar em texto"
+    },
+    {
+      "id": "e14",
+      "from": "catalogo",
+      "to": "recepcao",
+      "label": "modo obrigatório e condições cadastradas pela tela"
+    },
+    {
+      "id": "e15",
+      "from": "recepcao",
+      "to": "sink",
+      "label": "após resposta, invoca send_message na mesma inbound com etapa fresca"
+    },
+    {
+      "id": "e16",
+      "from": "historico",
+      "to": "modelo",
+      "label": "oferece somente opcionais não usados e permitidos"
+    },
+    {
+      "id": "e17",
+      "from": "historico",
+      "to": "recepcao",
+      "label": "não planeja nova cópia já enviada ou pendente"
+    },
+    {
+      "id": "e18",
+      "from": "historico",
+      "to": "sink",
+      "label": "revalida repetição e preferência imediatamente antes da rede"
+    },
+    {
+      "id": "e19",
+      "from": "recepcao",
+      "to": "modelo",
+      "label": "reserva de slots antes da resposta; resultado real no checkpoint"
+    },
+    {
+      "id": "e20",
+      "from": "catalogo",
+      "to": "assunto",
+      "label": "condição, exemplos e descrição fiel; primeira resposta verificada no histórico; rajada inicial não encerra recepção"
+    },
+    {
+      "id": "e21",
+      "from": "assunto",
+      "to": "recepcao",
+      "label": "no máximo uma regra pertinente; etapa não dispara sozinha"
+    },
+    {
+      "id": "e22",
+      "from": "modelo",
+      "to": "recepcao",
+      "label": "conclui resposta e avanço de etapa antes do áudio; sem nova pergunta"
+    }
+  ]
+}

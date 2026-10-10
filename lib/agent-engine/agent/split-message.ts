@@ -107,6 +107,8 @@ export interface BubbleOutcome {
 export interface SendInBubblesOpts<T extends BubbleOutcome = BubbleOutcome> {
   enabled: boolean;
   maxChars: number;
+  /** Espaço físico restante no turno. Junta o excedente, nunca corta conteúdo. */
+  maxBubbles?: number;
   send: (body: string) => Promise<T>;
   sleep: (ms: number) => Promise<void>;
   /** ms de jitter humano entre bolhas (só entre, não antes da 1ª). */
@@ -130,7 +132,13 @@ export async function sendInBubbles<T extends BubbleOutcome>(
   body: string,
   opts: SendInBubblesOpts<T>,
 ): Promise<T> {
-  const bubbles = opts.enabled ? splitIntoBubbles(body, opts.maxChars) : [body];
+  let bubbles = opts.enabled ? splitIntoBubbles(body, opts.maxChars) : [body];
+  if (opts.maxBubbles !== undefined && bubbles.length > opts.maxBubbles) {
+    const limit = Math.max(1, Math.floor(opts.maxBubbles));
+    bubbles = limit === 1 ? [body] : [
+      ...bubbles.slice(0, limit - 1), bubbles.slice(limit - 1).join('\n\n'),
+    ];
+  }
   if (bubbles.length === 0) return opts.send(body); // corpo vazio: deixa o canal decidir
   let last: T | undefined;
   for (let i = 0; i < bubbles.length; i++) {
