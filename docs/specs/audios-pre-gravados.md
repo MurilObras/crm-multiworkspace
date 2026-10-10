@@ -30,13 +30,18 @@ espera outra pergunta e não dispara só porque um cartão mudou de etapa.
    assinada persistida. Arquivo inválido falha antes da aprovação.
 4. Primeiro atendimento é a primeira resposta da conversa: mensagens iniciais
    agrupadas pelo debounce continuam no mesmo atendimento. Saídas do próprio
-   job não o transformam em atendimento posterior durante retry. Para
+   job não o transformam em atendimento posterior durante retry. Tentativas
+   failed/rejected, sem ID externo e com retryable=false, não contam como
+   atendimento: houve prova de rejeição anterior à rede. Confirmações, filas
+   pendentes e incertezas continuam impedindo nova recepção. Para
    assunto, o ponto `audio_intent` usa runModelCall com modelo, provider e
    credencial do agente, sujeito ao painel de provedores e ao orçamento normal.
    O assunto específico tem prioridade mesmo no primeiro contato; recepção é
    fallback quando nenhuma regra de assunto corresponde. É uma chamada auxiliar
    de IA, sem ferramenta mutante: recebe as inbounds ainda sem resposta até a
-   âncora atual (até 100 mensagens, em ordem), incluindo transcrições. A última
+   âncora atual (até 100 mensagens, em ordem), incluindo transcrições. A ordem
+   segue coalesce(sent_at,created_at), created_at e id, como a guarda de recência;
+   uma pergunta anterior recebida com atraso continua na interação. A última
    resposta confirmada de outro turno delimita essa interação; saídas deste job
    não alteram a fronteira durante retry. Complementos preservam a pergunta
    pendente; desistências e mudanças explícitas de assunto posteriores prevalecem.
@@ -70,9 +75,12 @@ espera outra pergunta e não dispara só porque um cartão mudou de etapa.
    fila pendente e resultado incerto bloqueiam outra cópia. Texto/áudio como
    preferência explícita persiste na inbound e pode ser alterado pelo cliente.
    Preferências de todas as inbounds agrupadas são reconciliadas em lotes de
-   até 100, inclusive no pré-voo, com marcador durável por mensagem e CAS do
-   corpo. A última preferência explícita por created_at/id prevalece; mensagens
-   neutras não a apagam. Queries e atualizações filtram org/conversa.
+   até 100, inclusive no pré-voo, com marcador durável da fonte examinada e CAS
+   do corpo e da transcrição. Transcrição tardia ou corrigida é reexaminada;
+   preferência derivada obsoleta é substituída. O marcador guarda somente o
+   fingerprint da fonte, sem copiar o texto para metadata. A última preferência
+   explícita segue a mesma ordem temporal da recência; mensagens neutras
+   posteriores não a apagam. Queries e atualizações filtram org/conversa.
    Recência, lease/CAS, opt-out, humano e limites do canal prevalecem. O último
    pré-voo revalida aprovação, etapa, preferência e repetição antes da rede.
 10. Retirar plano usa discardPreparedOutbound apenas nas sequências 1/2, sem
@@ -114,6 +122,14 @@ espera outra pergunta e não dispara só porque um cartão mudou de etapa.
     regras de assunto, histórico, etapa, fila, sink e revisão humana.
 
 ## Validação e limites
+
+- Segunda revisão (2026-10-10): corrigidas as três falhas de transcrição,
+  chegada fora de ordem e recepção após descarte. Regressões exercitam fonte
+  tardia/corrigida, CAS concorrente, preservação de metadata, isolamento e
+  confirmações/filas/incertezas. Os três comportamentos também passaram no
+  turno completo com PostgreSQL efêmero (44 testes em dois arquivos, incluindo
+  controles de limite). A suíte direcionada e os mapas passaram; E2E deve
+  validar novamente o commit destas correções.
 
 - Revisão final (2026-10-10): corrigidas as três regressões de limite, etapa e
   pergunta seguida de complemento. Os seis cenários originais da revisão passaram;

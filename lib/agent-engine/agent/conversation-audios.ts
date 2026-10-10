@@ -28,51 +28,46 @@ export function explicitAudioPreference(text: string): 'text' | 'audio' | null {
 export async function conversationAllowsAudio(db: Queryable, org: string, conversation: string): Promise<boolean> {
   // O debounce pode absorver a mensagem que contém a preferência. Reconciliar
   // todas as inbounds ainda não examinadas, inclusive no último pré-voo, evita
-  // depender de um turno separado para aquela mensagem. Lotes limitam memória;
-  // o marcador durável impede reprocessar o histórico a cada tentativa.
+  // depender de um turno separado para aquela mensagem. Lotes limitam memória.
+  // O marcador inclui a fonte examinada: uma transcrição tardia ou corrigida
+  // precisa passar pela mesma reconciliação. O CAS cobre corpo E derivado.
   for (;;) {
-    const { rows: pending } = await db.query<{ id: string; body: string | null }>(
-      `select id,body from messages where organization_id=$1 and conversation_id=$2
-        and direction='inbound' and metadata->>'agent_audio_preference_checked' is distinct from 'true'
-        order by created_at,id limit 100`, [org, conversation],
+    const { rows: pending } = await db.query<{ id: string; body: string | null; media_derived_text: string | null; source: string }>(
+      `select id,body,media_derived_text,md5(jsonb_build_array(body,media_derived_text)::text) as source
+        from messages where organization_id=$1 and conversation_id=$2 and direction='inbound'
+        and (metadata->>'agent_audio_preference_checked' is distinct from 'true'
+          or metadata->>'agent_audio_preference_source' is distinct from md5(jsonb_build_array(body,media_derived_text)::text))
+        order by coalesce(sent_at,created_at),created_at,id limit 100`, [org, conversation],
     );
     if (!pending.length) break;
     await db.query(
-      `update messages m set metadata=coalesce(m.metadata,'{}'::jsonb)
-        || jsonb_build_object('agent_audio_preference_checked',true)
+      `update messages m set metadata=(case when m.metadata ? 'agent_audio_preference_source'
+          then m.metadata - 'agent_audio_preference' else coalesce(m.metadata,'{}'::jsonb) end)
+        || jsonb_build_object('agent_audio_preference_checked',true,'agent_audio_preference_source',p.source)
         || case when p.preference in ('text','audio') then jsonb_build_object('agent_audio_preference',p.preference) else '{}'::jsonb end
-        from jsonb_to_recordset($3::jsonb) as p(id uuid,body text,preference text)
+        from jsonb_to_recordset($3::jsonb) as p(id uuid,source text,preference text)
         where m.organization_id=$1 and m.conversation_id=$2 and m.id=p.id and m.direction='inbound'
-          and m.body is not distinct from p.body
-          and m.metadata->>'agent_audio_preference_checked' is distinct from 'true'`,
-      [org, conversation, JSON.stringify(pending.map(m => ({ ...m, preference: explicitAudioPreference(m.body ?? '') })))],
+          and md5(jsonb_build_array(m.body,m.media_derived_text)::text)=p.source
+          and (m.metadata->>'agent_audio_preference_checked' is distinct from 'true'
+            or m.metadata->>'agent_audio_preference_source' is distinct from p.source)`,
+      [org, conversation, JSON.stringify(pending.map(m => ({ id: m.id, source: m.source,
+        preference: explicitAudioPreference([m.body, m.media_derived_text].filter(Boolean).join('\n')) })))],
     );
   }
   const { rows } = await db.query<{ preference: string }>(
     `select metadata->>'agent_audio_preference' as preference from messages
       where organization_id=$1 and conversation_id=$2 and direction='inbound'
         and metadata->>'agent_audio_preference' in ('text','audio')
-      order by created_at desc,id desc limit 1`, [org, conversation],
+      order by coalesce(sent_at,created_at) desc,created_at desc,id desc limit 1`, [org, conversation],
   );
   return rows[0]?.preference !== 'text';
 }
 
 export async function availableConversationAudios(
   db: Queryable, org: string, conversation: string, agent: string, job: string,
-  audios: ApprovedAudio[], inboundId: string | null,
+  audios: ApprovedAudio[], _inboundId: string | null,
 ): Promise<ApprovedAudio[]> {
   if (!audios.length) return audios;
-  const { rows: inbound } = await db.query<{ id: string; body: string | null }>(
-    `select id,body from messages where organization_id=$1 and conversation_id=$2
-      and direction='inbound' and ($3::uuid is null or id=$3)
-      order by created_at desc,id desc limit 1`, [org, conversation, inboundId],
-  );
-  const preference = explicitAudioPreference(inbound[0]?.body ?? '');
-  if (preference) await db.query(
-    `update messages set metadata=coalesce(metadata,'{}'::jsonb) || jsonb_build_object('agent_audio_preference',$4::text,'agent_audio_preference_checked',true)
-      where organization_id=$1 and conversation_id=$2 and id=$3 and direction='inbound'`,
-    [org, conversation, inbound[0]!.id, preference],
-  );
   if (!(await conversationAllowsAudio(db, org, conversation))) return [];
   const { rows } = await db.query<{ audio_id: string; job_id: string | null }>(
     `select m.metadata->'approved_audio'->>'audio_id' as audio_id,l.job_id

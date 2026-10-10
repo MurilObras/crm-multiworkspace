@@ -36,22 +36,22 @@ export async function pendingAudioSubject(
   if (!inbound) return '';
   const { rows } = await db.query<{ body: string | null; type: string; media_derived_text: string | null }>(
     `with anchor as (
-       select id,created_at from messages where organization_id=$1 and conversation_id=$2
+       select id,created_at,coalesce(sent_at,created_at) as message_at from messages where organization_id=$1 and conversation_id=$2
          and id=$4 and direction='inbound'
      ), boundary as (
-       select m.created_at,m.id from messages m left join send_ledger l
+       select m.created_at,m.id,coalesce(m.sent_at,m.created_at) as message_at from messages m left join send_ledger l
          on l.organization_id=m.organization_id and l.id::text=m.metadata->>'idempotency_key'
        where m.organization_id=$1 and m.conversation_id=$2 and m.direction='outbound'
          and (m.status in ('sent','delivered','read') or m.external_id is not null)
          and l.job_id is distinct from $3::uuid
-         and (m.created_at,m.id)<=(select created_at,id from anchor)
-       order by m.created_at desc,m.id desc limit 1
+         and (coalesce(m.sent_at,m.created_at),m.created_at,m.id)<=(select message_at,created_at,id from anchor)
+       order by coalesce(m.sent_at,m.created_at) desc,m.created_at desc,m.id desc limit 1
      ) select m.body,m.type,m.media_derived_text from messages m
        where m.organization_id=$1 and m.conversation_id=$2 and m.direction='inbound'
-         and (m.created_at,m.id)<=(select created_at,id from anchor)
+         and (coalesce(m.sent_at,m.created_at),m.created_at,m.id)<=(select message_at,created_at,id from anchor)
          and (not exists(select 1 from boundary)
-           or (m.created_at,m.id)>(select created_at,id from boundary))
-       order by m.created_at desc,m.id desc limit 100`,
+           or (coalesce(m.sent_at,m.created_at),m.created_at,m.id)>(select message_at,created_at,id from boundary))
+       order by coalesce(m.sent_at,m.created_at) desc,m.created_at desc,m.id desc limit 100`,
     [org, conversation, job, inbound],
   );
   return rows.reverse().map(m => m.media_derived_text
@@ -60,7 +60,9 @@ export async function pendingAudioSubject(
 
 /** Primeiro atendimento é a primeira resposta, não a primeira bolha inbound.
  * Uma rajada ainda sem resposta pertence ao mesmo primeiro atendimento.
- * As saídas do próprio job são desconsideradas para manter a decisão em retries. */
+ * As saídas do próprio job são desconsideradas para manter a decisão em retries.
+ * Rejeição terminal comprovadamente anterior à rede não é atendimento; saídas
+ * confirmadas, pendentes ou incertas continuam impedindo nova recepção. */
 export async function isFirstAudioContact(db: Queryable, org: string, conversation: string, job: string, inbound: string | null): Promise<boolean> {
   if (!inbound) return false;
   const { rows } = await db.query<{ first_contact: boolean }>(
@@ -70,6 +72,9 @@ export async function isFirstAudioContact(db: Queryable, org: string, conversati
        where m.organization_id=$1 and m.conversation_id=$2 and m.id<>anchor.id
          and m.created_at<=anchor.created_at
          and m.direction='outbound' and l.job_id is distinct from $3::uuid
+         and not coalesce(m.status='failed' and m.external_id is null
+           and m.metadata->'outbound_attempt'->>'phase'='rejected'
+           and m.metadata->'outbound_attempt'->>'retryable'='false',false)
      ) as first_contact from messages anchor
      where anchor.organization_id=$1 and anchor.conversation_id=$2 and anchor.id=$4 and anchor.direction='inbound'`,
     [org, conversation, job, inbound],

@@ -625,18 +625,20 @@ it.each(['reception-burst','text-preference-burst'])(
     }
   });
 
-it.each(['split-control', 'split-required', 'topic-control', 'topic-burst', 'stage-control', 'stage-outside', 'split-required-two', 'topic-answered'])(
+const AUDIO_REGRESSION_SCENARIOS = ['split-control', 'split-required', 'topic-control', 'topic-burst', 'stage-control', 'stage-outside',
+  'split-required-two', 'topic-answered', 'topic-delayed', 'voice-preference', 'reception-rejected'];
+it.each(AUDIO_REGRESSION_SCENARIOS)(
   'regressões de assunto, etapa e limite físico: %s', async scenario => {
     const agent = 'eeeeeeee-0000-4000-8000-000000000070';
     const audioId = 'eeeeeeee-0000-4000-8000-000000000072';
     const version = randomUUID();
     const split = scenario.startsWith('split');
     const required = scenario !== 'split-control';
-    const original = (await pool.query('select body,metadata from messages where id=$1', [MSG])).rows[0]!;
+    const original = (await pool.query('select body,metadata,type,media_derived_text from messages where id=$1', [MSG])).rows[0]!;
     const audio = { id: audioId, title: split ? 'Recepção' : 'Como funciona',
       use_when: split ? 'Apresentação de recepção no primeiro contato' : 'Explica o funcionamento do aplicativo',
       send_when: 'Quando perguntar como funciona. Não usar para apresentação pessoal.',
-      trigger_type: split ? 'first_contact' : 'topic', required, enabled: true,
+      trigger_type: split || scenario === 'reception-rejected' ? 'first_contact' : 'topic', required, enabled: true,
       mime: 'audio/ogg', size_bytes: 17, stage_ids: scenario.startsWith('stage') ? ['eeeeeeee-0000-4000-8000-000000000022'] : [],
       storage_path: `${ORG}/agent-audios/${agent}/${audioId}.ogg` };
     await pool.query(`insert into ai_agents(id,organization_id,name,system_prompt,kind,config)
@@ -645,19 +647,29 @@ it.each(['split-control', 'split-required', 'topic-control', 'topic-burst', 'sta
       [agent, ORG, JSON.stringify({approved_audios: required ? [audio] : []})]);
     await pool.query(`insert into ai_agent_versions(id,organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,max_steps,split_messages,split_max_chars)
       values($1,$2,$3,$6,'Responda ao cliente.','anthropic','claude-sonnet-4-6',$4,'published',12,$5,200)`,
-      [version, ORG, agent, SESSION, split, ['split-control','split-required','topic-control','topic-burst','stage-control','stage-outside','split-required-two','topic-answered'].indexOf(scenario)+100]);
+      [version, ORG, agent, SESSION, split, AUDIO_REGRESSION_SCENARIOS.indexOf(scenario)+100]);
     await pool.query('update ai_agents set published_version_id=$1 where id=$2', [version, agent]);
-    const customerBody = scenario === 'topic-burst' ? 'Sou pedreiro' : scenario === 'topic-answered' ? 'Qual o preço?' : split ? 'Olá' : 'Como funciona?';
+    const customerBody = scenario === 'topic-burst' || scenario === 'topic-delayed' ? 'Sou pedreiro'
+      : scenario === 'topic-answered' ? 'Qual o preço?' : split || scenario === 'reception-rejected' ? 'Olá' : 'Como funciona?';
     await pool.query('update messages set body=$1,metadata=\'{}\' where id=$2', [customerBody, MSG]);
-    if (scenario === 'topic-burst' || scenario === 'topic-answered') {
+    if (scenario === 'voice-preference') await pool.query(
+      "update messages set type='audio',body=null,media_derived_text='Prefiro apenas texto. Como funciona?' where id=$1",[MSG]);
+    if (scenario === 'topic-burst' || scenario === 'topic-answered' || scenario === 'topic-delayed') {
       await pool.query(`insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,created_at)
         select $1,organization_id,conversation_id,channel_session_id,contact_id,'text','inbound','delivered','Como funciona?','external_device',sent_at-interval '1 second',created_at-interval '1 second'
         from messages where id=$2`, [NEW_MSG, MSG]);
+      if (scenario === 'topic-delayed') await pool.query(
+        "update messages set created_at=(select created_at+interval '1 second' from messages where id=$1) where id=$2",[MSG,NEW_MSG]);
     }
     const previousReply = 'eeeeeeee-0000-4000-8000-000000000098';
     if (scenario === 'topic-answered') await pool.query(`insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,created_at)
       select $1,organization_id,conversation_id,channel_session_id,contact_id,'text','outbound','sent','Já expliquei o funcionamento','ai',sent_at-interval '0.5 second',created_at-interval '0.5 second'
       from messages where id=$2`,[previousReply,MSG]);
+    if (scenario === 'reception-rejected') await pool.query(`insert into messages
+      (id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,created_at,error_code,metadata)
+      select $1,organization_id,conversation_id,channel_session_id,contact_id,'text','outbound','failed','Resposta dispensada','ai',
+        sent_at-interval '0.5 second',created_at-interval '0.5 second','inbound_superseded',
+        '{"outbound_attempt":{"phase":"rejected","retryable":false}}'::jsonb from messages where id=$2`,[previousReply,MSG]);
     if (scenario === 'stage-control') await leadParaAtividade();
     let calls = 0;
     let classifierText: string | null = null;
@@ -684,10 +696,14 @@ it.each(['split-control', 'split-required', 'topic-control', 'topic-burst', 'sta
         expect(enviados.filter(e => !e.media).map(e => e.body).join('\n\n')).toBe(text);
         expect(enviados.map(e => e.seq)).toEqual(scenario === 'split-control' ? [1,2,3] : scenario === 'split-required-two' ? [3,2] : [3,4,2]);
       }
-      if (scenario === 'topic-burst') expect(classifierText).toBe('Como funciona?\n\nSou pedreiro');
+      if (scenario === 'topic-burst' || scenario === 'topic-delayed') expect(classifierText).toBe('Como funciona?\n\nSou pedreiro');
       if (scenario.startsWith('stage')) expect(enviados.filter(e => !e.media).map(e => e.body)).toEqual([text]);
       if (scenario === 'stage-outside') { expect(enviados.filter(e => !e.media)).toHaveLength(1); }
-      if (required && scenario !== 'stage-outside' && scenario !== 'topic-answered') expect(enviados.filter(e=>e.media?.type==='audio')).toHaveLength(1);
+      if (required && !['stage-outside','topic-answered','voice-preference'].includes(scenario)) expect(enviados.filter(e=>e.media?.type==='audio')).toHaveLength(1);
+      if (scenario === 'voice-preference') {
+        expect(enviados).toHaveLength(1);
+        expect(enviados[0]?.media).toBeUndefined();
+      }
       if (scenario === 'topic-answered') {
         expect(classifierText).toBe('Qual o preço?');
         expect(enviados).toHaveLength(1);
@@ -697,7 +713,8 @@ it.each(['split-control', 'split-required', 'topic-control', 'topic-burst', 'sta
       await pool.query('delete from messages where organization_id=$1 and id=$2', [ORG, previousReply]);
       await pool.query('delete from crm_leads where organization_id=$1 and id=$2', [ORG, LEAD]);
       await pool.query('delete from messages where organization_id=$1 and id=$2', [ORG, NEW_MSG]);
-      await pool.query('update messages set body=$1,metadata=$2 where id=$3', [original.body,original.metadata,MSG]);
+      await pool.query('update messages set body=$1,metadata=$2,type=$3,media_derived_text=$4 where id=$5',
+        [original.body,original.metadata,original.type,original.media_derived_text,MSG]);
       await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1', [agent]);
     }
   });

@@ -59,7 +59,7 @@
       "id": "historico",
       "lane": "turno",
       "label": "messages → conversation-audios",
-      "sublabel": "Uma gravação por conversa; preferência durável em todas as mensagens agrupadas; fila e incerteza não duplicam"
+      "sublabel": "Preferência inclui transcrição tardia/corrigida, marcador da fonte e CAS; descarte pré-rede não encerra recepção; fila e incerteza não duplicam"
     },
     {
       "id": "modelo",
@@ -87,7 +87,7 @@
       "id": "assunto",
       "lane": "turno",
       "label": "audio-rule → audio_intent → audio_rule_decision",
-      "sublabel": "Inbounds pendentes até a âncora, após a última resposta confirmada de outro turno; mesma credencial e decisão sob lease"
+      "sublabel": "Inbounds pendentes em ordem de sent_at/created_at/id, inclusive chegada tardia; fronteira confirmada de outro turno; decisão sob lease"
     }
   ],
   "edges": [

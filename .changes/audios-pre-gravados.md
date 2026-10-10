@@ -26,6 +26,10 @@ outra chave de IA. Agentes sem gravações seguem atendendo como antes.
 Mensagens iniciais agrupadas continuam elegíveis à recepção. Pedidos de texto
 nessas mensagens são respeitados mesmo quando uma pergunta posterior é atendida
 no mesmo turno; a preferência explícita mais recente prevalece.
+Pedidos feitos por áudio também são respeitados pela transcrição, mesmo se ela
+chegar depois ou for corrigida. Tentativas descartadas antes do envio não impedem
+a primeira recepção. A ordem das mensagens usa o horário de envio do canal para
+preservar perguntas que chegam com atraso.
 
 Perguntas seguidas de complementos rápidos continuam acionando o áudio do assunto,
 sem recuperar perguntas já respondidas. Se a etapa não permitir o áudio, o cliente
