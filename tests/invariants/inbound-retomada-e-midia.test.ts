@@ -224,8 +224,39 @@ function modeloDeEnvio(antes?: () => Promise<void>, media?: { type: string; url:
   };
 }
 
+const LEAD = "eeeeeeee-0000-4000-8000-000000000020";
+async function leadParaAtividade() {
+  await pool.query(
+    `insert into crm_pipelines (id,organization_id,name,slug,is_default)
+    values ('eeeeeeee-0000-4000-8000-000000000021',$1,'Teste','retomada',false) on conflict do nothing`,
+    [ORG],
+  );
+  await pool.query(
+    `insert into crm_stages (id,organization_id,pipeline_id,name,slug,position)
+    values ('eeeeeeee-0000-4000-8000-000000000022',$1,'eeeeeeee-0000-4000-8000-000000000021','Teste','teste',1000) on conflict do nothing`,
+    [ORG],
+  );
+  await pool.query(
+    `insert into crm_leads (id,organization_id,pipeline_id,stage_id,title,contact_id,status)
+    values ($1,$2,'eeeeeeee-0000-4000-8000-000000000021','eeeeeeee-0000-4000-8000-000000000022','Teste',$3,'open')`,
+    [LEAD, ORG, CONTACT],
+  );
+}
+async function conferirAtividade(phase: string) {
+  const { rows } = await pool.query(
+    `select reason,payload from crm_lead_activities
+    where organization_id=$1 and lead_id=$2 and type='send_vetoed'`,
+    [ORG, LEAD],
+  );
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.payload).toMatchObject({ reason_code: "inbound_superseded", phase });
+  expect(rows[0]?.reason).toContain("nova mensagem");
+  await pool.query("delete from crm_leads where organization_id=$1 and id=$2", [ORG, LEAD]);
+}
+
 describe("retomada de inbound no turno completo", () => {
   it("não chama modelo nem envia resposta ao assunto anterior", async () => {
+    await leadParaAtividade();
     await novaMensagem();
     let calls = 0;
     const model = modeloDeEnvio();
@@ -239,12 +270,15 @@ describe("retomada de inbound no turno completo", () => {
     ).toBeNull();
     expect(calls).toBe(0);
     expect(enviados).toHaveLength(0);
+    await conferirAtividade("before_model");
     await pool.query("delete from messages where organization_id=$1 and id=$2", [ORG, NEW_MSG]);
   });
   it("interrompe envio se uma nova mensagem chegar durante a geração", async () => {
+    await leadParaAtividade();
     const erro = await rodaTurno(montaHandler(modeloDeEnvio(novaMensagem)));
     expect(erro?.constructor.name).toBe("JobSettledError");
     expect(enviados).toHaveLength(0);
+    await conferirAtividade("before_send");
     const { rows } = await pool.query(
       "select status from job_queue where organization_id=$1 order by created_at desc limit 1",
       [ORG],

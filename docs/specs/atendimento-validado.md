@@ -54,9 +54,12 @@ continua bloqueada para impedir envio por fora dos guardrails.
 1. Entrada: eventos `ai_agent.dispatch_requested` e PUT autenticado `/ai/pacing`.
 2. Saída: job inbound atual, `runBeforeSend`, adapter e sink existente.
 3. Registro: `ai.pacing_knobs_updated` inclui quantidade reavaliada/falha;
-   log do run registra descarte/interrupção sem conteúdo ou telefone.
+   descarte/interrupção emite `send_vetoed` pelo barramento de atividades,
+   com motivo legível e fase, sem conteúdo ou telefone.
 4. Tela: ficha Proteção de envio confirma retomada ou avisa falha parcial;
-   retenções/execuções continuam nas telas já existentes.
+   descarte aparece na timeline do negócio (Inbox/Atividades). Se não houver
+   negócio aberto único, o emissor registra `agent.activity_unrouted` sem adivinhar
+   o destino; essa exceção conserva o diagnóstico nos logs/eventos, sem nova tela.
 5. Porta: Conexões > Proteção de envio; Webhooks > Obra no Bolso; hub IA > Execuções.
 6. Anti-morte: resposta nova não fica atrás do cap antigo; retenção passa novamente
    pelos gates. Se mensagem antiga for descartada, a nova inbound conserva seu evento/job.

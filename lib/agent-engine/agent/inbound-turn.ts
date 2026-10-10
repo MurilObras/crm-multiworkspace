@@ -1303,8 +1303,20 @@ async function executarTurnoDoAgente(
   const inboundStillCurrent = () => inboundAnchor === null
     ? Promise.resolve(true)
     : isCurrentInbound(pool, tenantId, input.conversationId, inboundAnchor);
+  const recordSuperseded = async (phase: 'before_model' | 'before_send'): Promise<void> => {
+    try {
+      await emitAgentActivityForContact({ pool, organizationId: tenantId, contactId: leadId,
+        type: 'send_vetoed', sourceModule: 'agent', sourceId: job.id,
+        reason: 'Resposta anterior dispensada porque chegou uma nova mensagem. O novo turno atende a conversa atual.',
+        payload: { reason_code: 'inbound_superseded', phase },
+      });
+    } catch {
+      runLog.error('falha ao registrar resposta substituída na atividade');
+    }
+  };
   if (!(await inboundStillCurrent())) {
     runLog.info('turno pulado — mensagem substituída por inbound mais recente');
+    await recordSuperseded('before_model');
     return;
   }
   // Revalida após o LLM/pacing e entre bolhas: outro assunto pode ter chegado.
@@ -1313,6 +1325,7 @@ async function executarTurnoDoAgente(
     if (supersededError !== null) throw supersededError;
     if (await inboundStillCurrent()) return;
     await completeJob(pool, job.id, ctx.workerId);
+    await recordSuperseded('before_send');
     runLog.info('envio interrompido — mensagem substituída por inbound mais recente');
     supersededError = new JobSettledError('turno substituído por inbound mais recente — envio interrompido');
     throw supersededError;
