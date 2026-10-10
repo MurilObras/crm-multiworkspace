@@ -129,8 +129,19 @@ describe('áudio privado aprovado pelo mesmo sink', () => {
     if (reason === 'disabled') a.enabled = false;
     await db.pool.query('update ai_agents set organization_id=$1,config=$2', [reason === 'other_org' ? CONV : ORG, JSON.stringify({ approved_audios: [a] })]);
     const args = audioInput(); if (reason === 'unknown_id') args.media.audio_id = CONV;
-    await expect(prepareAgentMedia(supabase, args, JOB)).rejects.toThrow('agent_media_prepare_failed');
+    await expect(prepareAgentMedia(supabase, args, JOB)).rejects.toThrow('audio_approval_revoked');
     expect(state.download).not.toHaveBeenCalled(); expect(state.upload).not.toHaveBeenCalled();
+  });
+  it.each([false, true])('revogação antes/durante download termina a intenção sem mensagem órfã (%s)', async during => {
+    if (during) state.download.mockImplementationOnce(async () => {
+      await db.pool.query("update ai_agents set config='{}'");
+      return { data: new Blob(['OggSOpusHead-test'], { type: 'audio/ogg' }), error: null };
+    });
+    else await db.pool.query("update ai_agents set config='{}'");
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+    await expect(sendTurnMessage(db.pool, { supabase }, audioInput())).rejects.toBeInstanceOf(OutboundApprovalRevokedError);
+    expect((await db.pool.query('select id from messages')).rows).toHaveLength(0);
+    expect((await db.pool.query('select status,last_error from send_ledger')).rows[0]).toMatchObject({ status: 'vetoed', last_error: 'audio_approval_revoked' });
   });
 });
 afterEach(() => {

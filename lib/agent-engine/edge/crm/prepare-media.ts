@@ -6,6 +6,7 @@ import { extFromMime, MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
 import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
 import type { SendMessageInput } from "./send-message";
 import { CrmTransportError } from "./mcp-client";
+import { OutboundApprovalRevokedError } from '@/lib/channels/delivery-error';
 import { AUDIO_MAX_BYTES, audioPathOwnedBy, readApprovedAudios } from '@/lib/ai/agents/approved-audios';
 
 /** A URL já foi aprovada no turno. O sink exige Storage privado, não media_url.
@@ -36,7 +37,8 @@ export async function prepareAgentMedia(
         .eq('id', media.agent_id).eq('organization_id', input.tenantId).is('archived_at', null).maybeSingle();
       const audio = readApprovedAudios(agent?.config).find(a => a.id === media.audio_id && a.enabled
         && audioPathOwnedBy(a, input.tenantId, media.agent_id));
-      if (agentError || !audio) throw new Error('agent_audio_not_approved');
+      if (agentError) throw new Error('agent_audio_lookup_failed');
+      if (!audio) throw new OutboundApprovalRevokedError();
       const { data: file, error: downloadError } = await supabase.storage.from('whatsapp-media').download(audio.storage_path);
       if (downloadError || !file || file.size > AUDIO_MAX_BYTES || file.size !== audio.size_bytes) throw new Error('agent_audio_download_failed');
       bytes = Buffer.from(await file.arrayBuffer());
@@ -86,7 +88,8 @@ export async function prepareAgentMedia(
       .upload(path, bytes, { contentType: mime, upsert: true });
     if (uploadError) throw new Error("agent_media_upload_failed");
     return { media_storage_path: path, media_mime: mime, media_size_bytes: size };
-  } catch {
+  } catch (error) {
+    if (error instanceof OutboundApprovalRevokedError) throw error;
     // Sem URL, credencial ou corpo externo no log/tool. A fila limita tentativas.
     throw new CrmTransportError("agent_media_prepare_failed");
   }

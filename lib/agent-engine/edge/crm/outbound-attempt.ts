@@ -139,16 +139,17 @@ export async function executeOutboundAttempt(
     if (!source.success) throw new OutboundApprovalRevokedError();
     await assertAudioStillApproved(db, org, source.data.agent_id, source.data.audio_id);
   };
-  const prepared: SinkInput = persisted ?? (options.prepare ? await options.prepare() : {
-    conversation_id: input.conversationId, body: input.body,
-    ...(input.template ? { type: 'template', template_name: input.template.name,
-      template_language: input.template.language, template_values: input.template.values }
-      : input.media ? { type: input.media.type,
-        ...await prepareAgentMedia(cfg.supabase, input, key) }
-      : { type: 'text' }),
-  });
   const messageId = previous?.id ?? key;
   try {
+    await assertAudioApproved();
+    const prepared: SinkInput = persisted ?? (options.prepare ? await options.prepare() : {
+      conversation_id: input.conversationId, body: input.body,
+      ...(input.template ? { type: 'template', template_name: input.template.name,
+        template_language: input.template.language, template_values: input.template.values }
+        : input.media ? { type: input.media.type,
+          ...await prepareAgentMedia(cfg.supabase, input, key) }
+        : { type: 'text' }),
+    });
     await assertAudioApproved();
     await input.beforePersist?.();
     await sendMessageHandler(cfg.supabase, { organization_id: org, requestId: key,
