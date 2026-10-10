@@ -30,7 +30,7 @@ export async function outboundPostgres() {
     create table automation_rule_runs(id uuid primary key,organization_id uuid);
     create table messages(id uuid primary key default gen_random_uuid(), organization_id uuid,
       conversation_id uuid, contact_id uuid, channel_session_id uuid, status text, external_id text,
-      type text, body text, direction text, metadata jsonb default '{}', ack int,
+      type text, body text, media_derived_text text, direction text, metadata jsonb default '{}', ack int,
       error_code text, error_message text, sent_via text, sent_by_user_id uuid, sent_at timestamptz,
       delivered_at timestamptz, read_at timestamptz, updated_at timestamptz default now(), created_at timestamptz default now(),
       reply_to_message_id uuid, media_url text, media_mime text, media_storage_path text, media_size_bytes bigint,

@@ -3,6 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import { sendInBubbles } from "@/lib/agent-engine/agent/split-message";
 
 describe("sendInBubbles", () => {
+  it.each([1, 2, 3])('cabe no espaço físico restante (%s), sem perder conteúdo', async maxBubbles => {
+    const parts = ['Primeira parte.', 'Segunda parte.', 'Terceira parte.'];
+    const body = parts.join('\n\n');
+    const send = vi.fn(async (_body: string) => ({ kind: 'sent', messageId: 'm' }));
+    await sendInBubbles(body, { enabled: true, maxChars: 18, maxBubbles,
+      send, sleep: async () => {}, jitter: () => 0 });
+    expect(send).toHaveBeenCalledTimes(maxBubbles);
+    expect(send.mock.calls.map(([text]) => text).join('\n\n')).toBe(body);
+  });
   it("split off → 1 envio com o corpo inteiro", async () => {
     const send = vi.fn(async () => ({ kind: "sent", messageId: "m" }));
     const sleep = vi.fn(async () => undefined);

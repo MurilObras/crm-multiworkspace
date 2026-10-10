@@ -52,7 +52,7 @@ export async function deliverRequiredAudio(args: {
     return { audio_id: audio.id, title: audio.title, content_description: audio.use_when, result };
   } finally {
     // Se a aprovação/etapa mudou, não reutilizar a seq de uma intenção antiga
-    // para outro texto. Teto conservador; nunca libera mais mensagens físicas.
+    // para outro texto. A identidade do ledger não é o contador de envios físicos.
     args.reserve();
   }
 }

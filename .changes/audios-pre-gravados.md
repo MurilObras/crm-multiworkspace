@@ -26,3 +26,8 @@ outra chave de IA. Agentes sem gravações seguem atendendo como antes.
 Mensagens iniciais agrupadas continuam elegíveis à recepção. Pedidos de texto
 nessas mensagens são respeitados mesmo quando uma pergunta posterior é atendida
 no mesmo turno; a preferência explícita mais recente prevalece.
+
+Perguntas seguidas de complementos rápidos continuam acionando o áudio do assunto,
+sem recuperar perguntas já respondidas. Se a etapa não permitir o áudio, o cliente
+recebe a resposta por texto mesmo com limite de dois envios. O teto conta texto,
+cada mensagem dividida e áudio; quando falta espaço, o texto é agrupado inteiro.

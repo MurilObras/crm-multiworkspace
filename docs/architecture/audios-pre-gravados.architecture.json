@@ -53,7 +53,7 @@
       "id": "recepcao",
       "lane": "turno",
       "label": "requiredAudioPlan → job_queue.payload",
-      "sublabel": "Obrigatório: plano sob lease, intenções 1/2, um áudio por resposta"
+      "sublabel": "Plano sob lease, intenções 1/2; teto físico separado, texto + áudio cabem em 2 envios"
     },
     {
       "id": "historico",
@@ -64,7 +64,8 @@
     {
       "id": "modelo",
       "lane": "turno",
-      "label": "agent-config → catálogo no turno → send_message"
+      "label": "agent-config → catálogo no turno → send_message",
+      "sublabel": "Texto dividido agrupado no espaço restante; capacidade conferida antes de cada envio"
     },
     {
       "id": "sink",
@@ -86,7 +87,7 @@
       "id": "assunto",
       "lane": "turno",
       "label": "audio-rule → audio_intent → audio_rule_decision",
-      "sublabel": "Primeiro atendimento ou assunto atual; mesma credencial; decisão inclusive null sob lease"
+      "sublabel": "Inbounds pendentes até a âncora, após a última resposta confirmada de outro turno; mesma credencial e decisão sob lease"
     }
   ],
   "edges": [

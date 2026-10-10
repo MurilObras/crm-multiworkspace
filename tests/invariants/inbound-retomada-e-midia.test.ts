@@ -34,6 +34,7 @@ const CONV = "eeeeeeee-0000-4000-8000-000000000004";
 const MSG = "eeeeeeee-0000-4000-8000-000000000005";
 
 interface EnvioCapturado {
+  seq?: number;
   body: string;
   media?: { type: string; url?: string; audio_id?: string; agent_id?: string };
 }
@@ -621,5 +622,82 @@ it.each(['reception-burst','text-preference-burst'])(
       await pool.query('delete from messages where organization_id=$1 and id=$2',[ORG,earlier]);
       await pool.query('delete from crm_leads where organization_id=$1 and id=$2',[ORG,LEAD]);
       await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1',[agent]);
+    }
+  });
+
+it.each(['split-control', 'split-required', 'topic-control', 'topic-burst', 'stage-control', 'stage-outside', 'split-required-two', 'topic-answered'])(
+  'regressões de assunto, etapa e limite físico: %s', async scenario => {
+    const agent = 'eeeeeeee-0000-4000-8000-000000000070';
+    const audioId = 'eeeeeeee-0000-4000-8000-000000000072';
+    const version = randomUUID();
+    const split = scenario.startsWith('split');
+    const required = scenario !== 'split-control';
+    const original = (await pool.query('select body,metadata from messages where id=$1', [MSG])).rows[0]!;
+    const audio = { id: audioId, title: split ? 'Recepção' : 'Como funciona',
+      use_when: split ? 'Apresentação de recepção no primeiro contato' : 'Explica o funcionamento do aplicativo',
+      send_when: 'Quando perguntar como funciona. Não usar para apresentação pessoal.',
+      trigger_type: split ? 'first_contact' : 'topic', required, enabled: true,
+      mime: 'audio/ogg', size_bytes: 17, stage_ids: scenario.startsWith('stage') ? ['eeeeeeee-0000-4000-8000-000000000022'] : [],
+      storage_path: `${ORG}/agent-audios/${agent}/${audioId}.ogg` };
+    await pool.query(`insert into ai_agents(id,organization_id,name,system_prompt,kind,config)
+      values($1,$2,'Agente de revisão','Gravações aprovadas','mcp_agent',$3)
+      on conflict(id) do update set config=excluded.config,archived_at=null`,
+      [agent, ORG, JSON.stringify({approved_audios: required ? [audio] : []})]);
+    await pool.query(`insert into ai_agent_versions(id,organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,max_steps,split_messages,split_max_chars)
+      values($1,$2,$3,$6,'Responda ao cliente.','anthropic','claude-sonnet-4-6',$4,'published',12,$5,200)`,
+      [version, ORG, agent, SESSION, split, ['split-control','split-required','topic-control','topic-burst','stage-control','stage-outside','split-required-two','topic-answered'].indexOf(scenario)+100]);
+    await pool.query('update ai_agents set published_version_id=$1 where id=$2', [version, agent]);
+    const customerBody = scenario === 'topic-burst' ? 'Sou pedreiro' : scenario === 'topic-answered' ? 'Qual o preço?' : split ? 'Olá' : 'Como funciona?';
+    await pool.query('update messages set body=$1,metadata=\'{}\' where id=$2', [customerBody, MSG]);
+    if (scenario === 'topic-burst' || scenario === 'topic-answered') {
+      await pool.query(`insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,created_at)
+        select $1,organization_id,conversation_id,channel_session_id,contact_id,'text','inbound','delivered','Como funciona?','external_device',sent_at-interval '1 second',created_at-interval '1 second'
+        from messages where id=$2`, [NEW_MSG, MSG]);
+    }
+    const previousReply = 'eeeeeeee-0000-4000-8000-000000000098';
+    if (scenario === 'topic-answered') await pool.query(`insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,created_at)
+      select $1,organization_id,conversation_id,channel_session_id,contact_id,'text','outbound','sent','Já expliquei o funcionamento','ai',sent_at-interval '0.5 second',created_at-interval '0.5 second'
+      from messages where id=$2`,[previousReply,MSG]);
+    if (scenario === 'stage-control') await leadParaAtividade();
+    let calls = 0;
+    let classifierText: string | null = null;
+    const text = split ? ['A'.repeat(180)+'.', 'B'.repeat(180)+'.', 'C'.repeat(180)+'.'].join('\n\n') : 'Vou explicar como funciona.';
+    try {
+      const error = await rodaTurno(montaHandler(async (opts: {prompt?: unknown}) => {
+        if (JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual')) {
+          const prompt = opts.prompt as Array<{role: string; content: Array<{type: string; text?: string}>}>;
+          const user = prompt.find(message => message.role === 'user');
+          const content = user?.content.find(part => part.type === 'text')?.text;
+          classifierText = content ? JSON.parse(content).mensagem_atual : '';
+          const match = classifierText?.includes('Como funciona?');
+          return { content: [{type:'text',text:JSON.stringify({audio_id:match ? audioId : null})}],
+            finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[] };
+        }
+        if (calls++ === 0) return {
+          content:[{type:'tool-call',toolCallId:'resposta-final',toolName:'send_message',input:JSON.stringify({body:text})}],
+          finishReason:{unified:'tool-calls',raw:undefined},usage:USO,warnings:[] };
+        return {content:[{type:'text',text:CHECKPOINT}],finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[]};
+      }, scenario.startsWith('stage') || scenario === 'split-required-two' ? 2 : 3));
+      expect(error).toBeNull();
+      if (split) {
+        expect(enviados.length).toBeLessThanOrEqual(3);
+        expect(enviados.filter(e => !e.media).map(e => e.body).join('\n\n')).toBe(text);
+        expect(enviados.map(e => e.seq)).toEqual(scenario === 'split-control' ? [1,2,3] : scenario === 'split-required-two' ? [3,2] : [3,4,2]);
+      }
+      if (scenario === 'topic-burst') expect(classifierText).toBe('Como funciona?\n\nSou pedreiro');
+      if (scenario.startsWith('stage')) expect(enviados.filter(e => !e.media).map(e => e.body)).toEqual([text]);
+      if (scenario === 'stage-outside') { expect(enviados.filter(e => !e.media)).toHaveLength(1); }
+      if (required && scenario !== 'stage-outside' && scenario !== 'topic-answered') expect(enviados.filter(e=>e.media?.type==='audio')).toHaveLength(1);
+      if (scenario === 'topic-answered') {
+        expect(classifierText).toBe('Qual o preço?');
+        expect(enviados).toHaveLength(1);
+        expect(enviados[0]?.media).toBeUndefined();
+      }
+    } finally {
+      await pool.query('delete from messages where organization_id=$1 and id=$2', [ORG, previousReply]);
+      await pool.query('delete from crm_leads where organization_id=$1 and id=$2', [ORG, LEAD]);
+      await pool.query('delete from messages where organization_id=$1 and id=$2', [ORG, NEW_MSG]);
+      await pool.query('update messages set body=$1,metadata=$2 where id=$3', [original.body,original.metadata,MSG]);
+      await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1', [agent]);
     }
   });

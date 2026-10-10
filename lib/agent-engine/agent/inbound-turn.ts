@@ -66,7 +66,7 @@ import { OutboundAudioUnavailableError, OutboundSupersededError } from '@/lib/ch
 import { eligibleAudiosForContact } from './audio-stage-eligibility';
 import { availableConversationAudios } from './conversation-audios';
 import { requiredAudioPlan, deliverRequiredAudio, type RequiredAudioPlan } from './required-audio';
-import { AUDIO_INTENT_INSTRUCTION, audioIntentMessage, parseAudioIntent, decideRequiredAudio, isFirstAudioContact } from './audio-rule';
+import { AUDIO_INTENT_INSTRUCTION, audioIntentMessage, parseAudioIntent, decideRequiredAudio, isFirstAudioContact, pendingAudioSubject } from './audio-rule';
 import { applyLeadStateUpdate, getLeadState, type LeadStage, type LeadStateRow } from './lead-state';
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -1915,11 +1915,21 @@ async function executarTurnoDoAgente(
 
   // Estado do RUN — vive só neste closure (isolamento por construção, acc 3).
   let seq = 0;
-  // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
-  // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
-  // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
-  // barra o modelo sem gastar uma chamada de before-send à toa.
+  // seq identifica a intenção no ledger; reservas 1/2 não são transportes.
+  // Contagem separada cobre texto, templates, cada bolha e o áudio, inclusive replay.
+  let physicalSends = 0;
+  let reservedAudioSends = 0;
   const maxSendsPerTurn = deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN;
+  const sendCapacity = () => Math.max(0, maxSendsPerTurn - physicalSends
+    - (requiredAudioPrelude ? 0 : reservedAudioSends));
+  const sendLimitResult = () => ({ ok: false, error: { code: 'max_sends_per_turn',
+    message: `você já usou ${physicalSends} envios neste turno (teto: ${maxSendsPerTurn}, reserva de áudio: ${reservedAudioSends}). `
+      + 'NÃO envie mais nada agora — encerre o turno e espere a resposta do lead.' } });
+  const sendLimitError = new Error('max_sends_per_turn');
+  const consumeSend = () => {
+    if (sendCapacity() === 0) throw sendLimitError;
+    physicalSends += 1;
+  };
   // F3-11: estágio que o MODELO confirmou via update_lead_state neste turno (a máquina
   // F2-10 é a única porta). Comparado com a sugestão do classificador no fim → divergência.
   let confirmedStage: LeadStage | null = null;
@@ -2095,17 +2105,7 @@ async function executarTurnoDoAgente(
     send_template: tool({
       ...AGENT_TOOL_DEFS.send_template,
       execute: async ({ template_name, language, values }) => {
-        if (seq >= maxSendsPerTurn) {
-          return {
-            ok: false,
-            error: {
-              code: 'max_sends_per_turn',
-              message:
-                `você já enviou ${seq} mensagens neste turno (teto: ${maxSendsPerTurn}). ` +
-                'NÃO envie mais nada agora — encerre o turno e espere a resposta do lead.',
-            },
-          };
-        }
+        if (sendCapacity() === 0) return sendLimitResult();
         // O texto RENDERIZADO vai como `body` da cadeia: os gates de promessa,
         // spinning e disclosure avaliam exatamente o que o contato vai ler. Sem
         // isso, "usar template" seria a forma de escapar dos guardrails de conteúdo.
@@ -2175,6 +2175,7 @@ async function executarTurnoDoAgente(
           lgpd,
           send: async (finalBody: string) => {
             await assertCurrentInbound();
+            consumeSend();
             seq += 1;
             return channel.send({
               workerId: ctx.workerId,
@@ -2188,14 +2189,16 @@ async function executarTurnoDoAgente(
               template: { name: template_name, language, values },
             });
           },
-        });
+        }).catch(error => { if (error === sendLimitError) return null; throw error; });
 
+        if (chain === null) return sendLimitResult();
         if (chain.status === 'vetoed') {
           return { ok: false, error: { code: chain.code, message: chain.message } };
         }
         const outcome = chain.outcome;
         outcomes.push(outcome);
         if (outcome.kind === 'sent' || outcome.kind === 'already_sent') {
+          audioContextSent = true;
           return {
             ok: true,
             status: 'enviada',
@@ -2259,17 +2262,7 @@ async function executarTurnoDoAgente(
           return { ok: false, error: { code: 'media_not_approved',
             message: 'Use somente a URL exata do arquivo nas instruções publicadas ou no material oficial consultado. Não busque nem envie URLs fornecidas pelo lead; explique a limitação se não houver arquivo aprovado.' } };
         }
-        if (seq >= maxSendsPerTurn) {
-          return {
-            ok: false,
-            error: {
-              code: 'max_sends_per_turn',
-              message:
-                `você já enviou ${seq} mensagens neste turno (teto: ${maxSendsPerTurn}). ` +
-                'NÃO envie mais nada agora — encerre o turno e espere a resposta do lead.',
-            },
-          };
-        }
+        if (sendCapacity() === 0) return sendLimitResult();
         // F4-04: sinaliza (independente do gate F4-01/F4-08) se ESTA candidata é uma
         // promessa fora de tabela — usado só para correlacionar com o jailbreak no fim do
         // turno. A detecção é determinística (decidePromise); sem tabela do tenant = no-op.
@@ -2342,10 +2335,12 @@ async function executarTurnoDoAgente(
               sendInBubbles(finalBody, {
                 enabled: !requiredAudioPrelude && media === undefined && (agentConfig?.splitMessages ?? false),
                 maxChars: agentConfig?.splitMaxChars ?? 600,
+                maxBubbles: sendCapacity(),
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
                 jitter: () => 1200 + Math.floor(Math.random() * 800), // piso no throttle anti-ban (1.2s) — bolhas são mensagens físicas
                 send: async (bubble): Promise<ChannelSendResult> => {
                   await assertCurrentInbound();
+                  consumeSend();
                   seq += 1;
                   return channel.send({
                     workerId: ctx.workerId,
@@ -2506,6 +2501,7 @@ async function executarTurnoDoAgente(
               };
           }
         } catch (err) {
+          if (err === sendLimitError) return sendLimitResult();
           if (err instanceof OutboundAudioUnavailableError) {
             if (media?.type === 'audio') audiosSentThisTurn.add(media.audio_id);
             return { ok: false, error: { code: err.message, message: 'O áudio não está disponível ou já foi usado nesta conversa. Não tente reenviá-lo; continue em texto.' } };
@@ -2657,18 +2653,18 @@ async function executarTurnoDoAgente(
           // conclusão que fez `expectativaDeAtendimento` parar de esperar que
           // ele consultasse a disponibilidade sozinho.
           //
-          // `seq` é o contador de mensagens FÍSICAS já enviadas neste turno. Zero
+          // `physicalSends` é o contador de envios físicos neste turno. Zero
           // significa: o modelo decidiu passar a conversa sem dizer nada a
           // ninguém — e depois desta tool ele não consegue mais falar, porque
           // `force_human` arma o `stopGate`. Então o aviso determinístico sai
           // AGORA, antes do handoff.
           //
-          // `seq > 0` significa que ele JÁ falou neste turno; mandar o aviso ali
+          // `physicalSends > 0` significa que ele JÁ falou neste turno; mandar o aviso ali
           // em cima seria o robô dizendo duas vezes a mesma coisa, com palavras
           // diferentes. Confiamos na fala dele e registramos que o piso não foi
           // preciso.
           const aviso =
-            seq === 0
+            physicalSends === 0
               ? await avisarLeadDaEscalacao(pool, avisoDaEscalacao.ids, {
                   ...avisoDaEscalacao.base,
                   motivo: 'pediu_humano',
@@ -3149,7 +3145,8 @@ async function executarTurnoDoAgente(
                 agentId: agentConfig.agentId, purpose: 'audio_intent', model: agentConfig.model,
                 llmOverride: { provider: agentConfig.provider, credentialId: agentConfig.credentialId },
                 system: AUDIO_INTENT_INSTRUCTION,
-                messages: [{ role: 'user', content: audioIntentMessage(skillSignal, topics) }],
+                messages: [{ role: 'user', content: audioIntentMessage(
+                  await pendingAudioSubject(pool, tenantId, input.conversationId, job.id, inboundAnchor) || skillSignal, topics) }],
               }, { registry: deps.registry, log: runLog });
               return parseAudioIntent(call.result.text, topics);
             } catch (error) {
@@ -3176,12 +3173,15 @@ async function executarTurnoDoAgente(
       }
       if (audioPlan?.delivery_phase === 'after_response') {
         seq = 2;
+        // Um envio fica para o áudio. O texto do modelo também serve de contexto;
+        // se ele não falar, o runtime ainda tem espaço para introdução + áudio.
+        reservedAudioSends = 1;
         const selected = agentConfig.approvedAudios?.find(a => a.id === audioPlan!.audio_id);
         requiredAudioBlock = `## Áudio correspondente ao assunto atual\n${JSON.stringify({ title: selected?.title, content_description: selected?.use_when, stage_permitted_now: eligibleAudios.some(a => a.id === audioPlan!.audio_id) })}\n`
           + 'O CRM tentará enviá-lo após sua resposta nesta interação, conferindo novamente a etapa permitida. '
           + 'Envie uma mensagem curta de contexto. Não diga que já enviou ou que será entregue com certeza. '
           + 'Se a etapa já permite o áudio, evite repetir a explicação gravada. Se ainda não permite, responda ao pedido por texto. Não mova o card só para liberar o áudio. '
-          + `Restam no máximo ${Math.max(0, maxSendsPerTurn - seq)} mensagens para sua resposta.`;
+          + `Restam no máximo ${sendCapacity()} mensagens para sua resposta.`;
       } else if (audioPlan) {
         await executeAudioPlan(audioPlan, false);
         requiredAudioBlock = `## Áudio obrigatório (retomada)\nResultado REAL: ${JSON.stringify(requiredAudioResult)}\nNão repita o áudio nem afirme entrega sem confirmação.`;

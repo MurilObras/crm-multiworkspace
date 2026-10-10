@@ -35,7 +35,12 @@ espera outra pergunta e não dispara só porque um cartão mudou de etapa.
    credencial do agente, sujeito ao painel de provedores e ao orçamento normal.
    O assunto específico tem prioridade mesmo no primeiro contato; recepção é
    fallback quando nenhuma regra de assunto corresponde. É uma chamada auxiliar
-   de IA, sem ferramenta mutante: recebe a inbound atual
+   de IA, sem ferramenta mutante: recebe as inbounds ainda sem resposta até a
+   âncora atual (até 100 mensagens, em ordem), incluindo transcrições. A última
+   resposta confirmada de outro turno delimita essa interação; saídas deste job
+   não alteram a fronteira durante retry. Complementos preservam a pergunta
+   pendente; desistências e mudanças explícitas de assunto posteriores prevalecem.
+   Recebe esse assunto
    e as regras aprovadas, aceita somente um ID aprovado ou null. Considera
    paráfrases e exclusões; saída inválida degrada para texto. Falha de chamada
    registra atividade; estouro de orçamento mantém o handoff existente.
@@ -71,9 +76,14 @@ espera outra pergunta e não dispara só porque um cartão mudou de etapa.
    Recência, lease/CAS, opt-out, humano e limites do canal prevalecem. O último
    pré-voo revalida aprovação, etapa, preferência e repetição antes da rede.
 10. Retirar plano usa discardPreparedOutbound apenas nas sequências 1/2, sem
-    apagar confirmação, incerteza ou resposta normal em seq >=3. O teto reserva
-    duas intenções conservadoramente; normalmente há texto + áudio, sem segunda
-    introdução. No máximo um obrigatório por resposta. Outros áudios só serão
+    apagar confirmação, incerteza ou resposta normal em seq >=3. Intenções 1/2
+    conservam a identidade do ledger e não consomem o teto físico por existirem.
+    A contagem de tentativas físicas é separada, incluindo templates e cada
+    bolha. Durante a resposta, um envio fica reservado ao áudio; texto confirmado
+    serve de contexto. O limite 2 permite texto + áudio, ou só texto quando a
+    etapa não permitir áudio. Texto dividido agrupa o excedente no espaço restante,
+    sem perder conteúdo; a última guarda confere capacidade antes de cada envio.
+    No máximo um obrigatório por resposta. Outros áudios só serão
     considerados se seu assunto aparecer em outra mensagem.
 11. Inbox permite anexar áudio pronto e ouvir antes de enviar. Sem legenda em
     áudio: contexto em texto é outra mensagem. Gravações removidas continuam
@@ -104,6 +114,14 @@ espera outra pergunta e não dispara só porque um cartão mudou de etapa.
     regras de assunto, histórico, etapa, fila, sink e revisão humana.
 
 ## Validação e limites
+
+- Revisão final (2026-10-10): corrigidas as três regressões de limite, etapa e
+  pergunta seguida de complemento. Os seis cenários originais da revisão passaram;
+  com as regressões incorporadas e os controles de teto, 47 testes passaram em
+  PostgreSQL efêmero (três arquivos). 204 testes direcionados em 16 arquivos,
+  typecheck e lint dos arquivos alterados passaram. A contagem inclui controle
+  de texto inteiro, limite 2 com áudio e exclusão de pergunta já respondida.
+  O E2E completo precisa rodar novamente no commit destas correções.
 
 - Revisão de rajadas (2026-10-10): os dois casos que falhavam passaram após
   a correção, tanto com SQL embarcado quanto no turno completo em PostgreSQL

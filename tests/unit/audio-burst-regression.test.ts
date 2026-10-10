@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import { outboundPostgres, ORG, CONTACT, CONV, JOB, SESSION } from '../helpers/outbound-postgres';
-import { isFirstAudioContact, decideRequiredAudio } from '@/lib/agent-engine/agent/audio-rule';
+import { isFirstAudioContact, decideRequiredAudio, pendingAudioSubject, AUDIO_INTENT_INSTRUCTION } from '@/lib/agent-engine/agent/audio-rule';
 import { coalesceInboundDebounce } from '@/lib/agent-engine/queue/inbound-pending';
 import { availableConversationAudios, conversationAllowsAudio, assertConversationAudioAvailable } from '@/lib/agent-engine/agent/conversation-audios';
 import { readApprovedAudios } from '@/lib/ai/agents/approved-audios';
@@ -92,4 +92,33 @@ it.each(['workspace','conversation'])('não importa nem modifica preferência de
     values($1,$2,$3,'inbound','Prefiro apenas texto')`,[LAST,scope === 'workspace' ? AGENT : ORG,scope === 'conversation' ? AGENT : CONV]);
   expect(await conversationAllowsAudio(db.pool,ORG,CONV)).toBe(true);
   expect((await db.pool.query('select metadata from messages where id=$1',[LAST])).rows[0]?.metadata).toEqual({});
+});
+
+it('assunto inclui pergunta e complemento até a âncora, sem mensagens posteriores', async () => {
+  await db.pool.query("update messages set body='Como funciona?' where id=$1", [FIRST]);
+  await db.pool.query(`insert into messages(id,organization_id,conversation_id,direction,body,created_at)
+    values($1,$2,$3,'inbound','Sou pedreiro',now()),($4,$2,$3,'inbound','Agora outra pergunta',now()+interval '1 second')`,
+  [LAST,ORG,CONV,EVENT]);
+  expect(await pendingAudioSubject(db.pool,ORG,CONV,JOB,LAST)).toBe('Como funciona?\n\nSou pedreiro');
+  expect(AUDIO_INTENT_INSTRUCTION).toContain('mudança explícita de assunto posterior prevalece');
+});
+
+it.each(['sent','queued','own-job'])('fronteira de assunto considera resposta confirmada de outro turno: %s', async behavior => {
+  await db.pool.query("update messages set body='Pergunta antiga' where id=$1", [FIRST]);
+  if (behavior === 'own-job') await db.pool.query('insert into send_ledger(id,organization_id,job_id,seq) values($1,$2,$3,3)',[EVENT,ORG,JOB]);
+  await db.pool.query(`insert into messages(id,organization_id,conversation_id,direction,status,body,created_at,metadata)
+    values($1,$2,$3,'outbound',$4,'Resposta antiga',now()-interval '1 second',$5)`,
+  [EVENT,ORG,CONV,behavior === 'queued' ? 'queued' : 'sent',JSON.stringify(behavior === 'own-job' ? {idempotency_key:EVENT} : {})]);
+  await db.pool.query(`insert into messages(id,organization_id,conversation_id,direction,body,created_at)
+    values($1,$2,$3,'inbound','Qual o preço?',now())`,[LAST,ORG,CONV]);
+  expect(await pendingAudioSubject(db.pool,ORG,CONV,JOB,LAST)).toBe(
+    behavior === 'sent' ? 'Qual o preço?' : 'Pergunta antiga\n\nQual o preço?');
+});
+
+it('inclui transcrição de mídia e não recupera assunto de outro workspace/conversa', async () => {
+  await db.pool.query("update messages set body=null,type='audio',media_derived_text='Como funciona?' where id=$1",[FIRST]);
+  expect(await pendingAudioSubject(db.pool,ORG,CONV,JOB,FIRST)).toContain('Conteúdo: Como funciona?');
+  expect(await pendingAudioSubject(db.pool,AGENT,CONV,JOB,FIRST)).toBe('');
+  expect(await pendingAudioSubject(db.pool,ORG,AGENT,JOB,FIRST)).toBe('');
+  expect(await pendingAudioSubject(db.pool,ORG,CONV,JOB,null)).toBe('');
 });
