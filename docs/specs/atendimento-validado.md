@@ -127,3 +127,36 @@ intenções, idempotência, crash pré-persistência, confirmação/incerteza e 
 `inbound-retomada-e-midia.test.ts` reproduz reschedule/reclaim após sessão offline,
 com nova inbound antes ou durante o modelo, usando o Postgres efêmero oficial.
 Sem nova tela, configuração, schema ou envio a cliente real.
+
+## Correção do build E2E — fontes locais
+
+A parte 1 do run `38051912943` falhou antes dos testes: Next.js 16.3.3/Turbopack
+não interpretou a URL da IBM Plex Sans recebida do Google Fonts. A parte 2
+passou. O diagnóstico foi reproduzido isoladamente com uma resposta sintética
+do formato alternativo de URL descrito no bug upstream vercel/next.js#99114;
+o log do CI trunca a URL, portanto não preserva a resposta HTTP original.
+
+`app/layout.tsx` e `app/design/lib/fonts.ts` passam a usar `next/font/local`.
+`app/fonts/` contém as mesmas famílias, pesos declarados, eixos variáveis,
+glifos completos, licenças e manifest com origem fixada e hashes. Nenhum script
+de instalação/build baixa fontes. São 11 arquivos WOFF2 para nove famílias;
+Atkinson e IBM Plex Mono compartilham os arquivos entre layout e mostruário.
+Não há alteração de provider de IA, banco, webhook ou envio de mensagens.
+
+Living System Checklist deste ajuste:
+
+1. Entrada: fontes de `google/fonts`, revisão fixada no manifest, aquisição manual.
+2. Saída: módulos dos layouts → `.next/static/media` → imagem → navegador.
+3. Registro: manifest/licenças; resultado do build e checks do GitHub Actions.
+4. Tela: tipografia existente da interface e do mostruário `/design`.
+5. Porta: navegação existente; nenhuma tela nova.
+6. Anti-morte: arquivos acompanham o código; build não espera serviço de fontes.
+7. Configuração: declarações estáticas dos layouts; sem novo controle de workspace.
+8. Continuidade IA↔humano: não se aplica ao empacotamento de fontes, sem mudança no atendimento.
+9. Retorno: `fontes-locais.test.ts` reprova import remoto, arquivo ausente/corrompido
+   ou hash divergente; build/E2E continuam obrigatórios antes da integração.
+10. Mapa: `fontes-locais.architecture.json`, com origem, consumidores e distribuição.
+
+Provas: integridade das fontes e cobertura de português verificadas na aquisição;
+teste de regressão e checks existentes. Aprovação do E2E do commit anterior não
+é aprovação deste ajuste: a nova execução completa precisa terminar antes do merge.

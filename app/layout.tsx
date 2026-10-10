@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Atkinson_Hyperlegible, IBM_Plex_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { headers } from "next/headers";
 import { Toaster } from "sonner";
 import { coresDaBarraDoNavegador } from "@/lib/branding/barra-do-navegador";
@@ -25,16 +25,20 @@ import { Providers } from "./providers";
 import { PublicEnvScript } from "./public-env-script";
 import "./globals.css";
 
-const atkinson = Atkinson_Hyperlegible({
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "700"],
+const atkinson = localFont({
+  src: [
+    { path: "./fonts/atkinson-regular.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/atkinson-bold.woff2", weight: "700", style: "normal" },
+  ],
   display: "swap",
   variable: "--font-atkinson",
 });
 
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "500"],
+const plexMono = localFont({
+  src: [
+    { path: "./fonts/ibm-plex-mono-regular.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/ibm-plex-mono-medium.woff2", weight: "500", style: "normal" },
+  ],
   display: "swap",
   variable: "--font-mono",
 });
