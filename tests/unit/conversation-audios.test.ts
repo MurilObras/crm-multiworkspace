@@ -58,13 +58,19 @@ it('pedido de texto persiste entre turnos, e autorização explícita posterior 
   await expect(assertConversationAudioAvailable(db.pool, ORG, CONV, AGENT, AUDIO, AGENT)).rejects.toMatchObject({ message: 'audio_text_preference' });
   await db.pool.query("update messages set body='Pode me enviar áudio agora' where id=$1", [OTHER]);
   expect(await available(OTHER, OTHER)).toEqual(audios);
+  await db.pool.query("update messages set body='Prefiro áudio, não texto' where id=$1", [OTHER]);
+  expect(await available(OTHER, OTHER)).toEqual(audios);
 });
-it.each(['Não quero áudio', 'Não pode enviar áudio', 'Sem áudio, por favor', 'No me envíe audio', 'Only text please', 'Please do not send voice messages'])('identifica preferência explícita: %s', text => {
+it.each(['Não quero áudio', 'Não pode enviar áudio', 'Não manda áudio', 'Não envia áudio', 'Quero texto, não áudio', 'Sem áudio, por favor', 'No me envíe audio', 'Only text please', 'Please do not send voice messages'])('identifica preferência explícita: %s', text => {
   expect(explicitAudioPreference(text)).toBe('text');
 });
 it('pergunta sobre áudio não cria preferência nem bloqueio', () => {
   expect(explicitAudioPreference('Você envia áudio?')).toBeNull();
   expect(explicitAudioPreference('Como uso o aplicativo?')).toBeNull();
+  expect(explicitAudioPreference('Você só envia áudio ou texto?')).toBeNull();
+});
+it.each(['Prefiro áudio, não texto', 'Prefiro áudios a texto', 'Não quero texto, manda áudio', 'Não quero só texto, quero áudio', 'Quero áudio', 'Só áudio, por favor'])('pedido de áudio não vira preferência durável por texto: %s', text => {
+  expect(explicitAudioPreference(text)).toBe('audio');
 });
 async function job() { return (await db.pool.query<JobRow>('select * from job_queue where id=$1', [JOB])).rows[0]!; }
 it('plano obrigatório persiste sob lease e não muda no retry', async () => {

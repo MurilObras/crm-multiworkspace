@@ -10,10 +10,17 @@ const HELD = `(m.external_id is not null or m.status in ('sent','delivered','rea
 
 export function explicitAudioPreference(text: string): 'text' | 'audio' | null {
   const s = text.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
-  if (/\b(?:nao|no|don't|do not)\s+(?:me\s+)?(?:quero|quiero|gosto de|pode|mande|mandes|mandar|envie|enviar|use|send|want)[^.!?\n]{0,35}(?:audio|voice)/.test(s)
-    || /\b(?:prefiro|prefiero|prefer|somente|apenas|so|solo|only)\b[^.!?\n]{0,25}(?:texto|text|escrito|written)/.test(s)
-    || /\b(?:sem|sin|no)\s+(?:audio|voice)/.test(s)) return 'text';
-  if (/\b(?:pode|puede|puedes|quero|quiero|please|you can)\s+(?:me\s+)?(?:mandar|enviar|ouvir|escuchar|send)[^.!?\n]{0,25}(?:audio|voice)/.test(s)) return 'audio';
+  // Negação não atravessa outra oração nem troca o objeto ("não quero texto,
+  // manda áudio"). Preferência exige o meio logo depois, não qualquer menção.
+  const negativeAudio = [...s.matchAll(/\b(?:nao|no|don't|do not)\s+(?:me\s+)?(?:quero|quiero|gosto de|pode|manda|mande|mandes|mandar|envia|envie|enviar|use|send|want)[^.!?,;\n]{0,35}(?:audio|voice)/g)]
+    .some(match => !/\b(?:texto|text|escrito|written)\b/.test(match[0]));
+  const affirmative = s.replace(/\b(?:nao|no|don't|do not)\s+(?:quero|quiero|prefiro|prefiero|prefer)\b[^.!?,;\n]*/g, '');
+  if (negativeAudio
+    || /\b(?:prefiro|prefiero|prefer|quero|quiero|somente|apenas|so|solo|only)\s+(?:(?:receber|receive|to|communicate|in|por|em|via|somente|apenas|so|solo|only|mensagens|mensagem|messages|de|o|el|the)\s+){0,4}(?:texto|text|escrito|written)\b/.test(affirmative)
+    || /\b(?:sem|sin|nao|no)\s+(?:audio|voice)/.test(s)) return 'text';
+  if (/\b(?:pode|puede|puedes|quero|quiero|please|you can)\s+(?:me\s+)?(?:mandar|enviar|ouvir|escuchar|send)[^.!?,;\n]{0,25}(?:audio|voice)/.test(s)
+    || /\b(?:prefiro|prefiero|prefer|quero|quiero|somente|apenas|so|solo|only)\s+(?:(?:receber|receive|to|ouvir|hear|escuchar|o|el|the)\s+){0,3}(?:audios?|voice)\b/.test(affirmative)
+    || /(?:^|[.!?,;\n]\s*)(?:manda|mande|envia|envie|send)\s+(?:me\s+)?(?:um\s+|un\s+|a\s+)?(?:audios?|voice)\b/.test(s)) return 'audio';
   return null;
 }
 

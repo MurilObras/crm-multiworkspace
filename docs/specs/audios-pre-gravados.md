@@ -108,6 +108,9 @@ Sem arquivo real fornecido, validar com gravação sintética em ambiente isolad
   organização da sessão, papel, CAS concorrente, leitura e edição de metadados.
 - Sink com PostgreSQL embarcado: aprovação fresca antes da rede, isolamento,
   origem preservada no retry offline, descarte por inbound nova e replay único.
+  Preferência explícita distingue pedidos de só texto de pedidos de áudio,
+  inclusive “prefiro áudio, não texto”; perguntas sobre os meios disponíveis
+  não gravam bloqueio. Uma autorização posterior substitui a preferência anterior.
 - Postgres efêmero oficial: turno completo recebe catálogo sem caminho privado,
   exige contexto em texto, recusa ID inventado/repetição e retoma em texto após
   retirada de aprovação. Também preserva os cenários anteriores de fila.
