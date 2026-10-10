@@ -22,7 +22,9 @@ Foto/vídeo usa URL real aprovada nas instruções/base, nunca arquivo inventado
 O preparo verifica posse da conversa, destino público, tipo e tamanho (50 MB),
 recusa redirects e guarda o arquivo sob o prefixo do workspace/conversa.
 O sink assina esse objeto; apenas `media_url` não seleciona seu ramo de mídia.
-O replay persistido conserva objeto/identidade. A conversa é reavaliada após o
+O objeto inclui o hash do conteúdo para que preparo atrasado não substitua
+o arquivo de outra tentativa. O replay persistido conserva objeto/identidade.
+A conversa é reavaliada após o
 download para evitar resposta superada durante o preparo. A proteção de DNS
 reutiliza a política de webhooks, inclusive a janela residual de rebinding
 documentada em `outbound-ip.ts`; não declara conexão fixada por IP.

@@ -10,7 +10,7 @@ import { outboundPostgres, ORG, CONTACT, JOB, CONV } from "../helpers/outbound-p
 
 const state = vi.hoisted(() => ({
   dns: vi.fn(async () => {}),
-  upload: vi.fn(async () => ({ error: null })),
+  upload: vi.fn(async (..._args: unknown[]) => ({ error: null })),
   sign: vi.fn(async () => ({
     data: { signedUrl: "https://signed.example/official.mp4" },
     error: null,
@@ -118,6 +118,19 @@ describe("arquivo oficial pelo Storage e pelo sink real", () => {
 });
 
 describe("preparo limitado e isolado", () => {
+  it("preparo atrasado não sobrescreve conteúdo diferente da mesma intenção", async () => {
+    const first = await prepareAgentMedia(supabase, input(), JOB);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response("updated-video", { headers: { "content-type": "video/mp4" } }),
+      ),
+    );
+    const second = await prepareAgentMedia(supabase, input(), JOB);
+    expect(second.media_storage_path).not.toBe(first.media_storage_path);
+    expect(state.upload.mock.calls[0]?.[0]).toBe(first.media_storage_path);
+    expect(state.upload.mock.calls[1]?.[0]).toBe(second.media_storage_path);
+  });
   it("recusa conversa de outro workspace antes de rede/Storage", async () => {
     await expect(prepareAgentMedia(supabase, { ...input(), tenantId: CONV }, JOB)).rejects.toThrow(
       "agent_media_prepare_failed",
