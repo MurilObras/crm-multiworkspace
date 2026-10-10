@@ -40,6 +40,7 @@ import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 // applySendOutcome é disposição de FILA (cancel/reschedule + cache de opt-out), não
 // egress de canal — o envio em si vai pelo adapter (ChannelAdapter). Ver F2-25.
 import { applySendOutcome } from '../edge/crm/send-message';
+import { discardSupersededOutbound } from '../edge/crm/discard-superseded-outbound';
 import {
   LlmBudgetExceededError,
   runModelCall,
@@ -1317,6 +1318,10 @@ async function executarTurnoDoAgente(
     }
   };
   if (!(await inboundStillCurrent())) {
+    await discardSupersededOutbound(pool, {
+      organizationId: tenantId, contactId: leadId, conversationId: input.conversationId,
+      jobId: job.id, workerId: ctx.workerId,
+    });
     runLog.info('turno pulado — mensagem substituída por inbound mais recente');
     await recordSuperseded('before_model');
     return;
@@ -2912,6 +2917,10 @@ async function executarTurnoDoAgente(
     // o SDK iniciou no mesmo step. Nenhuma tool posterior atravessa o wrapper.
     await execution.drain();
     await mcpCleanup?.();
+    await discardSupersededOutbound(pool, {
+      organizationId: tenantId, contactId: leadId, conversationId: input.conversationId,
+      jobId: job.id, workerId: ctx.workerId,
+    });
     await completeJob(pool, job.id, ctx.workerId);
     throw new JobSettledError('turno substituído por inbound mais recente — envio interrompido');
   };

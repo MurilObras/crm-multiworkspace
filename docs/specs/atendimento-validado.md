@@ -106,3 +106,24 @@ preservado e job concluído. `agent-media-storage.test.ts` cobre texto, imagem,
 vídeo e template, descarte terminal antes da rede e ausência de reenvio.
 A atividade send_vetoed e a linha failed explicam o descarte nas telas existentes.
 Sem nova configuração, credencial, migration ou ativação de disparos.
+
+## Correção da revisão R03 — retry offline superado
+
+Uma resposta já persistida como `queued` pode ter seu retry dispensado antes do
+modelo quando chega outra inbound. `discardSupersededOutbound` reconcilia as
+intenções do job tanto nessa saída antecipada quanto após a drenagem das tools.
+O mesmo statement bloqueia a linha do job pelo owner/workspace/contato/conversa
+e cancela somente mensagens `prepared`, sem `external_id`, em `queued`/`failed`:
+mensagem `failed/rejected`, `retryable=false`, ledger `vetoed`, motivo
+`inbound_superseded`. Uma intenção `requested` sem mensagem também é encerrada.
+As identidades e o snapshot do envio são preservados. Confirmações, fases
+`started`/`uncertain`, estados legados sem prova e outro owner não são alterados.
+Só depois da reconciliação o chamador conclui o job; se ela falhar, não libera
+silenciosamente a tarefa como concluída. A atividade `send_vetoed` continua na
+timeline e a mensagem terminal deixa de aparecer aguardando envio no Inbox.
+
+Prova: `discard-superseded-outbound.test.ts` cobre SQL real em PGlite, múltiplas
+intenções, idempotência, crash pré-persistência, confirmação/incerteza e escopos.
+`inbound-retomada-e-midia.test.ts` reproduz reschedule/reclaim após sessão offline,
+com nova inbound antes ou durante o modelo, usando o Postgres efêmero oficial.
+Sem nova tela, configuração, schema ou envio a cliente real.

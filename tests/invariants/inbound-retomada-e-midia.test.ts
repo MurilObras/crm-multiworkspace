@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 import pg from "pg";
 
 import type * as InboundTurn from "@/lib/agent-engine/agent/inbound-turn";
@@ -357,6 +358,61 @@ it.each([false, true])(
           )
         ).rows[0]?.status,
       ).toBe("done");
+    } finally {
+      await pool.query("delete from messages where organization_id=$1 and id=$2", [ORG, NEW_MSG]);
+    }
+  },
+);
+
+it.each([false, true])(
+  "encerra envio retido por sessão offline antes de concluir inbound superada (durante modelo: %s)",
+  async (duringModel) => {
+    const workerId = "retry-offline-superado";
+    const messageId = randomUUID(); // Protocolo real: messages.id = send_ledger.id.
+    await pool.query("update job_queue set status='done' where status='pending'");
+    const { job } = await m.queue.enqueueJob(pool, ORG, {
+      kind: "inbound_turn", leadId: CONTACT,
+      payload: { conversation_id: CONV, contact_id: CONTACT,
+        channel_session_id: SESSION, inbound_message_id: MSG, crm_event_id: randomUUID() },
+      maxAttempts: 3,
+    });
+    const [claimed] = await m.queue.claimJobs(pool, { workerId, maxConcurrency: 1 });
+    expect(claimed?.id).toBe(job.id);
+    await pool.query(`insert into messages
+      (id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,metadata)
+      values ($1,$2,$3,$4,$5,'text','outbound','queued','Resposta antiga','ai',now(),$6::jsonb)`,
+      [messageId, ORG, CONV, SESSION, CONTACT, JSON.stringify({
+        idempotency_key: messageId, queued_reason: "channel_session_not_working",
+        outbound_attempt: { phase: "prepared", input: { conversation_id: CONV, type: "text", body: "Resposta antiga" } },
+      })]);
+    await pool.query(`insert into send_ledger
+      (id,organization_id,contact_id,job_id,seq,body_hash,status,crm_message_id)
+      values ($1,$2,$3,$4,1,'fixture-hash','queued',$1)`, [messageId, ORG, CONTACT, job.id]);
+    await m.queue.rescheduleJob(pool, job.id, workerId, {
+      delayMs: 0, reason: "sessão do canal fora (resposta queued) — reagendado sem consumir attempts",
+    });
+    try {
+      if (!duringModel) await novaMensagem();
+      const [retry] = await m.queue.claimJobs(pool, { workerId, maxConcurrency: 1 });
+      expect(retry?.id).toBe(job.id);
+      let calls = 0;
+      const model = modeloDeEnvio(novaMensagem);
+      const handler = montaHandler(async () => { calls++; return model({}); });
+      if (duringModel) {
+        await expect(handler(retry!, pool, { workerId })).rejects.toMatchObject({ name: "job_settled" });
+      } else {
+        await handler(retry!, pool, { workerId });
+        await m.queue.completeJob(pool, job.id, workerId);
+      }
+      expect(calls).toBe(duringModel ? 1 : 0);
+      expect(enviados).toHaveLength(0);
+      const state = (await pool.query(`select j.status job_status,m.status message_status,
+        m.error_code,m.metadata->'outbound_attempt' attempt,l.status ledger_status,l.last_error
+        from job_queue j join send_ledger l on l.job_id=j.id
+        join messages m on m.id=l.crm_message_id where j.id=$1`, [job.id])).rows[0];
+      expect(state).toMatchObject({ job_status: "done", message_status: "failed", ledger_status: "vetoed",
+        error_code: "inbound_superseded", last_error: "inbound_superseded",
+        attempt: { phase: "rejected", retryable: false, input: { body: "Resposta antiga" } } });
     } finally {
       await pool.query("delete from messages where organization_id=$1 and id=$2", [ORG, NEW_MSG]);
     }

@@ -280,6 +280,15 @@
       "label": "Tools da inbound atual",
       "sublabel": "serializa nativas/MCP; drena antes de liberar lane",
       "tag": "guardCurrentInboundTools"
+    },
+    {
+      "id": "discardoutbound",
+      "lane": "desfecho",
+      "col": 3,
+      "type": "backend",
+      "label": "Descarte do envio antigo",
+      "sublabel": "owner + CAS: messages/ledger terminais; Inbox e atividade explicam",
+      "tag": "discardSupersededOutbound"
     }
   ],
   "edges": [
@@ -632,6 +641,20 @@
       "from": "inboundtools",
       "to": "turn",
       "label": "stopWhen + drain antes de complete",
+      "variant": "dashed"
+    },
+    {
+      "id": "turn-discardoutbound",
+      "from": "turn",
+      "to": "discardoutbound",
+      "label": "inbound superada antes do modelo ou após drain",
+      "variant": "security"
+    },
+    {
+      "id": "discardoutbound-turn",
+      "from": "discardoutbound",
+      "to": "turn",
+      "label": "prepared sem rede → rejected/vetoed; só então complete",
       "variant": "dashed"
     }
   ],
