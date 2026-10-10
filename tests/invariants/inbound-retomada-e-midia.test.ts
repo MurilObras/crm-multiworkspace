@@ -186,6 +186,7 @@ beforeEach(async () => {
   resultadosVistos = [];
   // Cada cenário é independente; repetir a fixture não é uma campanha real.
   await pool.query('delete from outbound_copies where organization_id=$1 and channel_session_id=$2', [ORG, SESSION]);
+  await pool.query('delete from pacing_ledger where organization_id=$1 and channel_session_id=$2', [ORG, SESSION]);
 });
 
 async function novaMensagem() {
@@ -268,7 +269,7 @@ describe("retomada de inbound no turno completo", () => {
     const original = (await pool.query('select body,metadata from messages where id=$1', [MSG])).rows[0]!;
     await leadParaAtividade();
     const audio = { id: audioId, title: 'Recepção aprovada', use_when: 'Apresentação de recepção no primeiro contato',
-      mime: 'audio/ogg', size_bytes: 17, enabled: true, required: behavior !== 'optional',
+      mime: 'audio/ogg', size_bytes: 17, enabled: true, required: behavior !== 'optional', trigger_type: 'first_contact',
       storage_path: `${ORG}/agent-audios/${agent}/${audioId}.ogg`, stage_ids: ['eeeeeeee-0000-4000-8000-000000000022'] };
     await pool.query(`insert into ai_agents(id,organization_id,name,system_prompt,kind,config)
       values($1,$2,'Agente de áudio','Atende com gravações aprovadas','mcp_agent',$3)
@@ -286,9 +287,10 @@ describe("retomada de inbound no turno completo", () => {
       expect(enviados.filter(e => e.media?.type === 'audio')).toHaveLength(behavior === 'required' ? 1 : 0);
       if (behavior === 'limited') expect(JSON.stringify(resultadosVistos)).toContain('Áudio obrigatório pendente');
       if (behavior === 'required') {
-        expect(enviados[0]?.body).toBe('Vou te enviar uma breve orientação em áudio.');
+        expect(enviados[0]?.body).toBe('Veja a demonstração oficial.');
+        expect(enviados).toHaveLength(2);
         expect(enviados[1]?.media).toMatchObject({ type: 'audio', audio_id: audioId });
-        expect(JSON.stringify(resultadosVistos)).toContain('Recepção com áudio obrigatório');
+        expect(JSON.stringify(resultadosVistos)).toContain('Áudio correspondente ao assunto atual');
         await persistCapture(); // O seam de captura substitui o transporte, não o histórico durável.
         expect(await rodaTurno(montaHandler(modeloDeEnvio(), 4))).toBeNull();
         expect(enviados.filter(e => e.media?.type === 'audio')).toHaveLength(1);
@@ -300,6 +302,68 @@ describe("retomada de inbound no turno completo", () => {
       await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1', [agent]);
     }
   });
+  it.each(['topic', 'paraphrase', 'price', 'invalid', 'advance', 'outside', 'human', 'revoked', 'superseded'])(
+    'áudio na mesma pergunta, sem depender de outra inbound: %s', async behavior => {
+      const agent = 'eeeeeeee-0000-4000-8000-000000000070';
+      const version = 'eeeeeeee-0000-4000-8000-000000000071';
+      const audioId = 'eeeeeeee-0000-4000-8000-000000000072';
+      const stage = 'eeeeeeee-0000-4000-8000-000000000022';
+      const other = 'eeeeeeee-0000-4000-8000-000000000073';
+      const original = (await pool.query('select body,metadata from messages where id=$1', [MSG])).rows[0]!;
+      await leadParaAtividade();
+      await pool.query(`insert into crm_stages(id,organization_id,pipeline_id,name,slug,position)
+        values($1,$2,'eeeeeeee-0000-4000-8000-000000000021','Antes da demonstração','antes-audio',2000) on conflict do nothing`, [other, ORG]);
+      if (behavior === 'advance' || behavior === 'outside') await pool.query('update crm_leads set stage_id=$1 where organization_id=$2 and id=$3', [other, ORG, LEAD]);
+      const audio = { id: audioId, title: 'Como funciona', use_when: 'Explica o funcionamento do serviço',
+        send_when: 'Quando perguntar como funciona ou o que pode fazer. Não usar para preço.', trigger_type: 'topic',
+        mime: 'audio/ogg', size_bytes: 17, enabled: true, required: true,
+        storage_path: `${ORG}/agent-audios/${agent}/${audioId}.ogg`, stage_ids: [stage] };
+      await pool.query(`insert into ai_agents(id,organization_id,name,system_prompt,kind,config)
+        values($1,$2,'Agente de áudio','Atende com gravações aprovadas','mcp_agent',$3)
+        on conflict(id) do update set config=excluded.config,archived_at=null`, [agent, ORG, JSON.stringify({ approved_audios: [audio] })]);
+      await pool.query(`insert into ai_agent_versions(id,organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,max_steps)
+        values($1,$2,$3,1,'Responda ao pedido atual.','anthropic','claude-sonnet-4-6',$4,'published',12) on conflict do nothing`, [version, ORG, agent, SESSION]);
+      await pool.query('update ai_agents set published_version_id=$1 where id=$2', [version, agent]);
+      await pool.query('update messages set body=$1 where id=$2', [behavior === 'price' ? 'Qual o preço?' : behavior === 'paraphrase' ? 'O que consigo fazer nesse serviço?' : 'Como funciona?', MSG]);
+      let classifications = 0;
+      const main = modeloDeEnvio(async () => {
+        if (behavior === 'advance') await pool.query('update crm_leads set stage_id=$1 where organization_id=$2 and id=$3', [stage, ORG, LEAD]);
+        if (behavior === 'revoked') await pool.query("update ai_agents set config=jsonb_set(config,'{approved_audios,0,enabled}','false') where organization_id=$1 and id=$2", [ORG, agent]);
+      });
+      try {
+        const error = await rodaTurno(montaHandler(async (opts: { prompt?: unknown }) => {
+          if (JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual')) {
+            classifications++;
+            const text = behavior === 'invalid' ? 'não sei' : JSON.stringify({ audio_id: behavior === 'price' ? null : audioId });
+            return { content: [{ type: 'text', text }], finishReason: { unified: 'stop', raw: undefined }, usage: USO, warnings: [] };
+          }
+          const result = await main(opts);
+          if (result.finishReason.unified === 'stop') {
+            // APÓS o contexto e antes do áudio, sem corrida na fixture.
+            if (behavior === 'human') await pool.query('update contacts set force_human=true where organization_id=$1 and id=$2', [ORG, CONTACT]);
+            if (behavior === 'superseded') await novaMensagem();
+          }
+          return result;
+        }, 3));
+        if (behavior === 'superseded') expect(error?.constructor.name).toBe('JobSettledError');
+        else expect(error).toBeNull();
+        expect(classifications).toBe(1);
+        const expected = ['topic', 'paraphrase', 'advance'].includes(behavior);
+        expect(enviados.filter(e => e.media?.type === 'audio')).toHaveLength(expected ? 1 : 0);
+        expect(enviados[0]?.media).toBeUndefined();
+        if (expected) {
+          expect(enviados).toHaveLength(2);
+          expect(enviados[1]?.media?.audio_id).toBe(audioId);
+          expect(JSON.stringify(resultadosVistos)).toContain('Resultado REAL do áudio obrigatório');
+        }
+      } finally {
+        await pool.query('update contacts set force_human=false where organization_id=$1 and id=$2', [ORG, CONTACT]);
+        await pool.query('update messages set body=$1,metadata=$2 where id=$3', [original.body, original.metadata, MSG]);
+        await pool.query('delete from messages where organization_id=$1 and id=$2', [ORG, NEW_MSG]);
+        await pool.query('delete from crm_leads where organization_id=$1 and id=$2', [ORG, LEAD]);
+        await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1', [agent]);
+      }
+    });
   it.each([
     { revoked: false, binding: 'all' }, { revoked: true, binding: 'all' },
     { revoked: false, binding: 'matching' }, { revoked: true, binding: 'matching' },

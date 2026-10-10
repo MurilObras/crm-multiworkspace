@@ -73,7 +73,7 @@ beforeEach(async () => {
 });
 
 describe('áudio privado aprovado pelo mesmo sink', () => {
-  it('recepção obrigatória retoma a mesma intenção após desconexão, sem repetir contexto nem áudio', async () => {
+  it.each([false, true])('áudio obrigatório retoma a mesma intenção após desconexão (após resposta: %s)', async afterResponse => {
     const audios = readApprovedAudios({ approved_audios: [{ ...approvedAudio(), required: true }] });
     await db.pool.query('update ai_agents set config=$1', [JSON.stringify({ approved_audios: audios })]);
     await db.pool.query("update job_queue set payload=payload || jsonb_build_object('conversation_id',$1::text)", [CONV]);
@@ -84,15 +84,16 @@ describe('áudio privado aprovado pelo mesmo sink', () => {
     }).mockResolvedValue({ externalId: 'voice-once' });
     await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
     const job = async () => (await db.pool.query<JobRow>('select * from job_queue where id=$1', [JOB])).rows[0]!;
-    const plan = (await requiredAudioPlan(db.pool, await job(), 'media-test', AUDIO_AGENT, audios, 3))!;
+    const plan = (await requiredAudioPlan(db.pool, await job(), 'media-test', AUDIO_AGENT, audios, 3, afterResponse ? 'after_response' : undefined))!;
     let sequence = 0;
     const invoke: Parameters<typeof deliverRequiredAudio>[0]['invoke'] = async args => {
       const result = await sendTurnMessage(db.pool, { supabase }, { ...audioInput(), seq: ++sequence, body: args.body,
         media: args.media ? { ...args.media, agent_id: AUDIO_AGENT } : undefined });
       return { ok: true, status: result.kind === 'sent' || result.kind === 'already_sent' ? 'enviada' : 'aceita_aguardando_canal' };
     };
-    const reserve = () => { sequence = Math.max(sequence, 2); };
-    await deliverRequiredAudio({ plan, agent: AUDIO_AGENT, audios, invoke, reserve, discard: async () => {} });
+    const reserve = () => { sequence = Math.max(sequence, afterResponse ? 3 : 2); };
+    if (afterResponse) { sequence = 2; await invoke({ body: 'Contexto da resposta atual.' }); sequence = 1; }
+    await deliverRequiredAudio({ plan, agent: AUDIO_AGENT, audios, invoke, reserve, contextAlreadySent: afterResponse, discard: async () => {} });
     expect(transport).toHaveBeenCalledOnce();
     expect((await db.pool.query('select status from messages where type=\'audio\'')).rows[0]?.status).toBe('queued');
     await rescheduleJob(db.pool, JOB, 'media-test', { delayMs: 0, reason: 'fixture offline' });
@@ -100,8 +101,10 @@ describe('áudio privado aprovado pelo mesmo sink', () => {
     await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
     expect(await requiredAudioPlan(db.pool, await job(), 'media-test', AUDIO_AGENT, audios, 3)).toEqual(plan);
     sequence = 0;
-    await deliverRequiredAudio({ plan, agent: AUDIO_AGENT, audios, invoke, reserve, discard: async () => {} });
+    if (afterResponse) { sequence = 2; await invoke({ body: 'Contexto da resposta atual.' }); sequence = 1; }
+    await deliverRequiredAudio({ plan, agent: AUDIO_AGENT, audios, invoke, reserve, contextAlreadySent: afterResponse, discard: async () => {} });
     expect(transport).toHaveBeenCalledTimes(2);
+    expect((await db.pool.query('select seq from send_ledger order by seq')).rows.map(r => r.seq)).toEqual(afterResponse ? [2,3] : [1,2]);
     expect((await db.pool.query('select status from messages')).rows.map(r => r.status)).toEqual(['sent','sent']);
     expect((await db.pool.query('select status from send_ledger')).rows.map(r => r.status)).toEqual(['accepted','accepted']);
   });

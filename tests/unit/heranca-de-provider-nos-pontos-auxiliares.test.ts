@@ -71,6 +71,7 @@ const entrada = (over: Partial<EntradaDaDecisao> = {}): EntradaDaDecisao => ({
  */
 const PONTOS_AUXILIARES = [
   "stage_classifier",
+  "audio_intent",
   "jailbreak_detect",
   "promise_semantic",
   "compaction",
@@ -175,7 +176,7 @@ function registrySpiao() {
 }
 
 describe("o seam instancia o modelo do agente, não o do padrão da org", () => {
-  it("reproduz o turno que morria na VPS e prova que ele passa", async () => {
+  it.each(["stage_classifier", "audio_intent"])("%s: instancia a chave e o modelo do agente", async purpose => {
     const { registry, chamadas } = registrySpiao();
 
     const r = await runModelCall(
@@ -183,7 +184,7 @@ describe("o seam instancia o modelo do agente, não o do padrão da org", () => 
       { anthropicApiKey: "chave-anthropic", openaiApiKey: "chave-openai", cacheTtl: "1h" as const },
       {
         tenantId: "11111111-1111-4111-8111-111111111111",
-        purpose: "stage_classifier",
+        purpose,
         // Exatamente o que `auxModelArgs` monta com o knob de env vazio.
         model: "gpt-5.6-luna",
         llmOverride: { provider: "openai", credentialId: null },

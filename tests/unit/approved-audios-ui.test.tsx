@@ -12,7 +12,7 @@ beforeEach(() => {
   entries = []; calls = [];
   vi.stubGlobal('fetch', vi.fn(async (_url: string, options?: RequestInit) => {
     const method = options?.method ?? 'GET'; calls.push({ method, body: options?.body });
-    if (method === 'POST') entries = [{ id: 'audio-1', title: 'Apresentação', use_when: 'Quando perguntar sobre o aplicativo', enabled: true, required: (options!.body as FormData).get('required') === 'true', stage_ids: JSON.parse((options!.body as FormData).get('stage_ids') as string), preview_url: 'https://signed.example/a.ogg' }];
+    if (method === 'POST') entries = [{ id: 'audio-1', title: 'Apresentação', use_when: 'Quando perguntar sobre o aplicativo', enabled: true, trigger_type: (options!.body as FormData).get('trigger_type'), send_when: (options!.body as FormData).get('send_when'), required: (options!.body as FormData).get('required') === 'true', stage_ids: JSON.parse((options!.body as FormData).get('stage_ids') as string), preview_url: 'https://signed.example/a.ogg' }];
     if (method === 'PATCH') entries = (entries as Record<string, unknown>[]).map(a => ({ ...a, ...JSON.parse(options!.body as string) }));
     return new Response(JSON.stringify({ data: method === 'GET' ? entries : { saved: true }, meta: { stage_options: [stage] } }));
   }));
@@ -25,6 +25,7 @@ it('seleciona etapa de suporte no cadastro e altera para todas as etapas pela te
   await user.upload(screen.getByLabelText('Gravação'), new File(['audio'], 'apresentacao.mp3', { type: 'audio/mpeg' }));
   await user.type(screen.getByLabelText('Título do áudio'), 'Apresentação');
   await user.type(screen.getByLabelText('Conteúdo e finalidade do áudio'), 'Quando precisar de orientação');
+  await user.type(screen.getByLabelText('Condição e exemplos de perguntas'), 'Quando pedir como funciona o serviço');
   await user.selectOptions(screen.getByLabelText('Onde este áudio pode ser usado'), 'selected');
   await user.click(screen.getByRole('button', { name: 'Aprovar áudio para o agente' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Selecione pelo menos uma etapa');
@@ -54,11 +55,14 @@ it('anexa, ouve antes de aprovar, salva e permite retirar a aprovação', async 
   expect(screen.getByLabelText('Ouvir gravação antes de aprovar')).toHaveAttribute('src', 'blob:test');
   await user.type(screen.getByLabelText('Título do áudio'), 'Apresentação');
   await user.type(screen.getByLabelText('Conteúdo e finalidade do áudio'), 'Quando perguntar sobre o aplicativo');
+  await user.type(screen.getByLabelText('Condição e exemplos de perguntas'), 'Quando pedir como funciona o serviço');
   await user.click(screen.getByRole('button', { name: 'Aprovar áudio para o agente' }));
   await screen.findByText('Apresentação');
   const body = calls.find(c => c.method === 'POST')!.body as FormData;
   expect(body.get('title')).toBe('Apresentação'); expect(body.get('file')).toBeInstanceOf(File);
   expect(body.get('required')).toBe('true');
+  expect(body.get('trigger_type')).toBe('topic');
+  expect(body.get('send_when')).toBe('Quando pedir como funciona o serviço');
   expect(screen.getByLabelText('Ouvir: Apresentação')).toHaveAttribute('src', 'https://signed.example/a.ogg');
   await user.click(screen.getByRole('switch', { name: 'Ativar áudio: Apresentação' }));
   await screen.findByText('Desativado');
@@ -78,4 +82,32 @@ it('preview de áudio no inbox permite ouvir e não promete legenda', async () =
   expect(screen.queryByLabelText('Legenda')).toBeNull();
   await userEvent.click(screen.getByRole('button', { name: /^Enviar$/ }));
   await waitFor(() => expect(send).toHaveBeenCalledWith(''));
+});
+
+it('permite recepção no primeiro contato sem condição de assunto e conserva após editar', async () => {
+  const user = userEvent.setup(); const view = render(<ApprovedAudios agentId="agent-1" readOnly={false} />);
+  await screen.findByText('Nenhum áudio aprovado. O atendimento continua em texto.');
+  await user.upload(screen.getByLabelText('Gravação'), new File(['audio'], 'recepcao.mp3', { type: 'audio/mpeg' }));
+  await user.type(screen.getByLabelText('Título do áudio'), 'Recepção');
+  await user.type(screen.getByLabelText('Conteúdo e finalidade do áudio'), 'Apresentação da equipe de atendimento');
+  await user.selectOptions(screen.getByLabelText('Quando enviar este áudio'), 'first_contact');
+  expect(screen.queryByLabelText('Condição e exemplos de perguntas')).toBeNull();
+  await user.click(screen.getByRole('button', { name: 'Aprovar áudio para o agente' }));
+  await waitFor(() => expect(calls.some(c => c.method === 'POST')).toBe(true));
+  const data = calls.find(c => c.method === 'POST')!.body as FormData;
+  expect(data.get('trigger_type')).toBe('first_contact');
+  view.unmount(); render(<ApprovedAudios agentId="agent-1" readOnly={false} />);
+  await screen.findByRole('button', { name: 'Editar áudio' });
+  await user.click(screen.getByRole('button', { name: 'Editar áudio' }));
+  expect(screen.getAllByLabelText('Quando enviar este áudio')[0]).toHaveValue('first_contact');
+});
+it('não aprova uma regra por assunto sem descrever quando enviar', async () => {
+  const user = userEvent.setup(); render(<ApprovedAudios agentId="agent-1" readOnly={false} />);
+  await screen.findByText('Nenhum áudio aprovado. O atendimento continua em texto.');
+  await user.upload(screen.getByLabelText('Gravação'), new File(['audio'], 'a.mp3', { type: 'audio/mpeg' }));
+  await user.type(screen.getByLabelText('Título do áudio'), 'Explicação');
+  await user.type(screen.getByLabelText('Conteúdo e finalidade do áudio'), 'Explicação gravada sobre o serviço');
+  await user.click(screen.getByRole('button', { name: 'Aprovar áudio para o agente' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Descreva a condição de envio');
+  expect(calls.some(c => c.method === 'POST')).toBe(false);
 });

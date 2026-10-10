@@ -11,6 +11,7 @@ import { AUDIO_ACCEPT, AUDIO_MAX_BYTES, audioDescriptionSchema, type AudioPrevie
 import { useT } from '@/hooks/i18n/useT';
 import { AudioStagePicker } from './AudioStagePicker';
 import { AudioDeliveryMode } from './AudioDeliveryMode';
+import { AudioRuleSettings } from './AudioRuleSettings';
 
 /** Configuração operacional: aprovação não depende de republicar o prompt. */
 export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnly: boolean }) {
@@ -24,6 +25,10 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
   const [editRestricted, setEditRestricted] = useState(false);
   const [required, setRequired] = useState(true);
   const [editRequired, setEditRequired] = useState(false);
+  const [trigger, setTrigger] = useState<'first_contact' | 'topic'>('topic');
+  const [sendWhen, setSendWhen] = useState('');
+  const [editTrigger, setEditTrigger] = useState<'first_contact' | 'topic'>('topic');
+  const [editSendWhen, setEditSendWhen] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -70,7 +75,7 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
         ...(body instanceof FormData ? { body } : { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }) });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error?.message ?? 'Não foi possível salvar o áudio.');
-      if (method === 'POST') { setFile(null); setTitle(''); setUseWhen(''); setStageIds([]); setRestricted(false); setRequired(true); setFileKey(k => k + 1); }
+      if (method === 'POST') { setFile(null); setTitle(''); setUseWhen(''); setStageIds([]); setRestricted(false); setRequired(true); setTrigger('topic'); setSendWhen(''); setFileKey(k => k + 1); }
       setEditing(null);
       setNotice(t('Alteração salva. Vale para os próximos turnos deste agente.'));
       setLoading(true); await load();
@@ -80,18 +85,21 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
 
   function approve() {
     if (restricted && !stageIds.length) { setError(t('Selecione pelo menos uma etapa ou escolha Todas as etapas.')); return; }
-    const description = audioDescriptionSchema.safeParse({ title, use_when: useWhen, stage_ids: restricted ? stageIds : [], required });
+    if (trigger === 'topic' && sendWhen.trim().length < 10) { setError(t('Descreva a condição de envio e exemplos (mínimo 10 caracteres).')); return; }
+    const description = audioDescriptionSchema.safeParse({ title, use_when: useWhen, stage_ids: restricted ? stageIds : [], required, trigger_type: trigger, send_when: sendWhen });
     if (!file || !description.success) { setError(t('Escolha uma gravação, informe um título e descreva quando usar (mínimo 10 caracteres).')); return; }
     if (file.size > AUDIO_MAX_BYTES || !file.size) { setError(t('Escolha um áudio válido de até 16 MB.')); return; }
     const form = new FormData();
     form.set('file', file); form.set('title', description.data.title); form.set('use_when', description.data.use_when);
     form.set('stage_ids', JSON.stringify(description.data.stage_ids));
     form.set('required', String(description.data.required));
+    form.set('trigger_type', description.data.trigger_type); form.set('send_when', description.data.send_when);
     void mutate('POST', form);
   }
   function saveDescription(id: string) {
     if (editRestricted && !editStageIds.length) { setError(t('Selecione pelo menos uma etapa ou escolha Todas as etapas.')); return; }
-    void mutate('PATCH', { audio_id: id, title: editTitle, use_when: editWhen, stage_ids: editRestricted ? editStageIds : [], required: editRequired });
+    if (editTrigger === 'topic' && editSendWhen.trim().length < 10) { setError(t('Descreva a condição de envio e exemplos (mínimo 10 caracteres).')); return; }
+    void mutate('PATCH', { audio_id: id, title: editTitle, use_when: editWhen, stage_ids: editRestricted ? editStageIds : [], required: editRequired, trigger_type: editTrigger, send_when: editSendWhen });
   }
   const disabled = readOnly || busy || loading;
   return <Card className="space-y-4 p-4" data-testid="approved-audios">
@@ -113,6 +121,8 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
       </div>
       <p className="whitespace-pre-wrap text-xs text-muted-foreground">{audio.use_when}</p>
       <p className="text-xs font-medium">{audio.required ? t('Envio obrigatório') : t('Envio opcional')}</p>
+      <p className="text-xs text-muted-foreground">{t('Quando enviar este áudio')}: {audio.trigger_type === 'first_contact'
+        ? t('No primeiro atendimento da conversa') : (audio.send_when || audio.use_when)}</p>
       <p className="text-xs text-muted-foreground">{t('Etapas permitidas')}: {audio.stage_ids?.length
         ? audio.stage_ids.map(id => { const s = stages.find(s => s.id === id); return s ? `${s.pipeline_name} › ${s.name}` : t('Etapa indisponível'); }).join(', ')
         : t('Todas as etapas')}</p>
@@ -121,7 +131,8 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
         <Input id={`${uid}-edit-title`} value={editTitle} maxLength={120} onChange={e => setEditTitle(e.target.value)} disabled={disabled} />
         <Label htmlFor={`${uid}-edit-when`}>{t('Editar conteúdo e finalidade')}</Label>
         <Textarea id={`${uid}-edit-when`} value={editWhen} maxLength={1000} onChange={e => setEditWhen(e.target.value)} disabled={disabled} />
-        <p className="text-xs text-muted-foreground">{t('Descreva o que está gravado. No modo opcional, informe também em quais situações o agente deve escolher o áudio.')}</p>
+        <p className="text-xs text-muted-foreground">{t('Descreva o que está gravado. Configure separadamente a condição que determina quando enviar.')}</p>
+        <AudioRuleSettings trigger={editTrigger} condition={editSendWhen} disabled={disabled} onTrigger={setEditTrigger} onCondition={setEditSendWhen} />
         <AudioStagePicker options={stages} ids={editStageIds} restricted={editRestricted} disabled={disabled} onChange={setEditStageIds} onRestricted={setEditRestricted} />
         <AudioDeliveryMode required={editRequired} disabled={disabled} onChange={setEditRequired} />
         <Button type="button" size="sm" disabled={disabled} onClick={() => saveDescription(audio.id)}>{t('Salvar áudio')}</Button>
@@ -130,7 +141,7 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
       {audio.preview_url ? <audio controls preload="none" src={audio.preview_url} className="w-full" aria-label={`${t('Ouvir')}: ${audio.title}`} />
         : <p className="text-xs text-destructive">{t('Prévia indisponível. Atualize a lista e tente novamente.')}</p>}
       {!readOnly && <div className="flex gap-2"><Button type="button" variant="outline" size="sm" disabled={disabled}
-        onClick={() => { setEditing(audio.id); setEditTitle(audio.title); setEditWhen(audio.use_when); setEditStageIds(audio.stage_ids ?? []); setEditRestricted(!!audio.stage_ids?.length); setEditRequired(audio.required ?? false); }}>{t('Editar áudio')}</Button>
+        onClick={() => { setEditing(audio.id); setEditTitle(audio.title); setEditWhen(audio.use_when); setEditStageIds(audio.stage_ids ?? []); setEditRestricted(!!audio.stage_ids?.length); setEditRequired(audio.required ?? false); setEditTrigger(audio.trigger_type ?? 'topic'); setEditSendWhen(audio.send_when || audio.use_when); }}>{t('Editar áudio')}</Button>
         <Button type="button" variant="ghost" size="sm" disabled={disabled}
           onClick={() => void mutate('DELETE', { audio_id: audio.id })}>{t('Remover áudio')}</Button></div>}
     </div>)}
@@ -145,7 +156,8 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
       <div className="space-y-1"><Label htmlFor={`${uid}-when`}>{t('Conteúdo e finalidade do áudio')}</Label>
         <Textarea id={`${uid}-when`} value={useWhen} maxLength={1000} disabled={disabled} onChange={e => setUseWhen(e.target.value)}
           placeholder={t('Ex.: quando o cliente pedir uma demonstração ou orientações de suporte. Descreva o conteúdo da gravação.')} />
-        <p className="text-xs text-muted-foreground">{t('Descreva o que está gravado. No modo opcional, informe também em quais situações o agente deve escolher o áudio.')}</p></div>
+        <p className="text-xs text-muted-foreground">{t('Descreva o que está gravado. Configure separadamente a condição que determina quando enviar.')}</p></div>
+      <AudioRuleSettings trigger={trigger} condition={sendWhen} disabled={disabled} onTrigger={setTrigger} onCondition={setSendWhen} />
       <AudioStagePicker options={stages} ids={stageIds} restricted={restricted} disabled={disabled} onChange={setStageIds} onRestricted={setRestricted} />
       <AudioDeliveryMode required={required} disabled={disabled} onChange={setRequired} />
       <Button type="button" disabled={disabled || !file} onClick={approve}>{busy ? t('Preparando áudio…') : t('Aprovar áudio para o agente')}</Button>

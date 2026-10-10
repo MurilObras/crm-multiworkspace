@@ -238,6 +238,16 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     registraEm: "llm_calls",
   },
   {
+    id: "audio_intent",
+    rotulo: "Identificar o assunto para áudio",
+    oQueFaz: "Confere se a mensagem atual corresponde a uma regra de áudio obrigatório configurada na tela.",
+    papel: "entender",
+    exige: {},
+    emissor: "lib/agent-engine/agent/inbound-turn.ts",
+    sintomaDeFalha: "O atendimento segue por texto quando não é possível identificar a condição do áudio.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "stage_classifier",
     rotulo: "Identificar a etapa do lead",
     oQueFaz:

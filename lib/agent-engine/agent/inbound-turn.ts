@@ -60,12 +60,13 @@ import { buildNativeMediaParts } from './media-parts';
 import { enqueueJob, rescheduleJob, completeJob, type JobRow, type Queryable } from '../queue/queue';
 import { isCurrentInbound } from '../queue/inbound-pending';
 import { collectApprovedMediaUrls } from './approved-media';
-import { renderApprovedAudios } from '@/lib/ai/agents/approved-audios';
+import { readApprovedAudios, renderApprovedAudios } from '@/lib/ai/agents/approved-audios';
 import { guardCurrentInboundTools } from './current-inbound-tools';
 import { OutboundAudioUnavailableError, OutboundSupersededError } from '@/lib/channels/delivery-error';
 import { eligibleAudiosForContact } from './audio-stage-eligibility';
 import { availableConversationAudios } from './conversation-audios';
-import { requiredAudioPlan, deliverRequiredAudio } from './required-audio';
+import { requiredAudioPlan, deliverRequiredAudio, type RequiredAudioPlan } from './required-audio';
+import { AUDIO_INTENT_INSTRUCTION, audioIntentMessage, parseAudioIntent, decideRequiredAudio, isFirstAudioContact } from './audio-rule';
 import { applyLeadStateUpdate, getLeadState, type LeadStage, type LeadStateRow } from './lead-state';
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -1672,9 +1673,21 @@ async function executarTurnoDoAgente(
   // tools publicadas — ver comentário de `AGENDA_SYSTEM_BLOCK`. `TRANSPARENCIA_SYSTEM_BLOCK`
   // não depende de nenhuma feature — todo agente publicado o recebe.
   const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK];
-  const stageAudios = await eligibleAudiosForContact(pool, tenantId, leadId, agentConfig?.approvedAudios ?? []);
-  const eligibleAudios = agentConfig ? await availableConversationAudios(pool, tenantId, input.conversationId,
-    agentConfig.agentId, job.id, stageAudios, inboundAnchor) : [];
+  const firstAudioContact = job.kind === 'inbound_turn'
+    && (agentConfig?.approvedAudios ?? []).some(a => a.enabled && a.trigger_type === 'first_contact')
+    && await isFirstAudioContact(pool, tenantId,
+    input.conversationId, job.id, inboundAnchor);
+  const freshAudios = async () => {
+    if (!agentConfig) return [];
+    const { rows } = await pool.query<{ config: unknown }>(
+      'select config from ai_agents where organization_id=$1 and id=$2 and archived_at is null',
+      [tenantId, agentConfig.agentId]);
+    const catalog = readApprovedAudios(rows[0]?.config).filter(a => a.enabled
+      && (a.trigger_type !== 'first_contact' || firstAudioContact));
+    return availableConversationAudios(pool, tenantId, input.conversationId, agentConfig.agentId,
+      job.id, await eligibleAudiosForContact(pool, tenantId, leadId, catalog), inboundAnchor);
+  };
+  const eligibleAudios = await freshAudios();
   const audioBlock = renderApprovedAudios(eligibleAudios);
   if (audioBlock) blocosResidentes.push(audioBlock);
   if (agentConfig !== null && agentConfig.casesEnabled) blocosResidentes.push(CASES_SYSTEM_BLOCK);
@@ -2234,7 +2247,8 @@ async function executarTurnoDoAgente(
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
       execute: async ({ body: requestedBody, media }) => {
-        const audio = media?.type === 'audio' ? eligibleAudios.find(a => a.id === media.audio_id && a.enabled) : undefined;
+        const audio = media?.type === 'audio' ? (await freshAudios()).find(a => a.id === media.audio_id && a.enabled) : undefined;
+        if (audio?.required && !requiredAudioPrelude) return { ok: false, error: { code: 'audio_managed_by_rule', message: 'O CRM cuida do áudio obrigatório correspondente ao assunto após sua resposta. Não o envie por conta própria.' } };
         if (media?.type === 'audio' && !audio) return { ok: false, error: { code: 'audio_not_approved', message: 'Escolha somente um áudio do catálogo aprovado deste agente ou responda em texto.' } };
         if (media?.type === 'audio' && (!audioContextSent || audiosSentThisTurn.has(media.audio_id))) {
           return { ok: false, error: { code: 'audio_not_ready', message: 'Envie primeiro uma mensagem curta de texto com o contexto. Não repita gravação neste turno.' } };
@@ -2560,7 +2574,8 @@ async function executarTurnoDoAgente(
           // F3-11: o estágio que o modelo confirmou (a máquina F2-10 gravou) — base da
           // comparação com a sugestão do classificador no fechamento do run.
           confirmedStage = update.state.stage;
-          return { ok: true, status: 'estado_atualizado', stage: update.state.stage, message: update.message };
+          return { ok: true, status: 'estado_atualizado', stage: update.state.stage, message: update.message,
+            approved_audio_catalog: renderApprovedAudios(await freshAudios()) };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
@@ -2883,6 +2898,14 @@ async function executarTurnoDoAgente(
                 return executeOriginal(...args);
               }) as typeof mcpTool.execute,
             };
+          } else if (name === 'crm_move_lead_stage' && typeof mcpTool.execute === 'function') {
+            const executeOriginal = mcpTool.execute.bind(mcpTool);
+            rawTools[name] = { ...mcpTool, execute: (async (...args: Parameters<typeof executeOriginal>) => {
+              const result = await executeOriginal(...args);
+              const catalog = renderApprovedAudios(await freshAudios());
+              return result && typeof result === 'object' ? { ...result, approved_audio_catalog: catalog }
+                : { result, approved_audio_catalog: catalog };
+            }) as typeof mcpTool.execute };
           } else {
             rawTools[name] = mcpTool;
           }
@@ -3059,36 +3082,38 @@ async function executarTurnoDoAgente(
   // reusa `openingTextOnly` e é onde nasce o `prazo` ISO da declaração.
   const agoraBlock = renderAgora(clock(), fusoDaOrg);
   let requiredAudioBlock = '';
-  if (agentConfig) {
+  let audioPlan: RequiredAudioPlan | null = null;
+  let requiredAudioResult: unknown;
+  const discardAudioPlan = () => discardPreparedOutbound(pool, { organizationId: tenantId, contactId: leadId,
+    conversationId: input.conversationId, jobId: job.id, workerId: ctx.workerId },
+  { code: 'required_audio_no_longer_eligible', maxSequence: 2 });
+  const executeAudioPlan = async (plan: RequiredAudioPlan, afterResponse: boolean) => {
+    const execute = tools.send_message?.execute;
+    if (!execute || !agentConfig) throw new Error('required_audio_send_tool_missing');
+    const highWater = seq;
+    // A reserva antecede o LLM: resposta normal usa seq >=3; áudio conserva seq 2
+    // inclusive se a sessão cair. Contexto já confirmado dispensa seq 1.
+    if (afterResponse) seq = audioContextSent ? 1 : 0;
+    let invocation = 0;
     try {
-      const plan = await requiredAudioPlan(pool, job, ctx.workerId, agentConfig.agentId, eligibleAudios, maxSendsPerTurn);
-      if (plan) {
-        const execute = tools.send_message?.execute;
-        if (!execute) throw new Error('required_audio_send_tool_missing');
-        let invocation = 0;
-        const result = await deliverRequiredAudio({ plan, agent: agentConfig.agentId, audios: eligibleAudios,
-          invoke: async args => {
-            requiredAudioPrelude = true;
-            try { return await execute(args, { toolCallId: `required-audio-${job.id}-${++invocation}`, messages: [], context: undefined }); }
-            finally { requiredAudioPrelude = false; }
-          },
-          reserve: () => { seq = Math.max(seq, 2); },
-          discard: () => discardPreparedOutbound(pool, { organizationId: tenantId, contactId: leadId,
-            conversationId: input.conversationId, jobId: job.id, workerId: ctx.workerId },
-          { code: 'required_audio_no_longer_eligible', maxSequence: 2 }),
-        });
-        requiredAudioBlock = `## Recepção com áudio obrigatório\nResultado REAL da ferramenta send_message: ${JSON.stringify(result)}\n`
-          + 'Não repita esta gravação nem diga que foi entregue se o resultado não confirmou o envio. Se o envio foi confirmado, use a descrição para evitar repetir em texto o que o áudio já apresentou. '
-          + `Duas intenções já estão reservadas neste turno; restam no máximo ${Math.max(0, maxSendsPerTurn - seq)} mensagens. Continue atendendo o pedido do cliente.`;
-        runLog.info('plano de áudio obrigatório executado', { audio_id: plan.audio_id, messages_reserved: 2 });
-      } else if (job.kind === 'inbound_turn' && maxSendsPerTurn < 2 && eligibleAudios.some(a => a.required)) {
-        requiredAudioBlock = '## Áudio obrigatório pendente\nO limite de mensagens deste agente não permite texto de contexto e áudio no mesmo turno. Responda por texto; não diga que enviou áudio.';
+      const current = await isLeadInHandoff(pool, tenantId, leadId) ? [] : await freshAudios();
+      requiredAudioResult = await deliverRequiredAudio({ plan, agent: agentConfig.agentId, audios: current,
+        contextAlreadySent: afterResponse && audioContextSent,
+        invoke: async args => {
+          requiredAudioPrelude = true;
+          try { return await execute(args, { toolCallId: `required-audio-${job.id}-${++invocation}`, messages: [], context: undefined }); }
+          finally { requiredAudioPrelude = false; }
+        },
+        reserve: () => { seq = Math.max(highWater, seq, 2); }, discard: discardAudioPlan,
+      });
+      if ((requiredAudioResult as { status?: string })?.status === 'dispensado') {
         await emitAgentActivityForContact({ pool, organizationId: tenantId, contactId: leadId,
           type: 'send_vetoed', sourceModule: 'agent', sourceId: job.id,
-          reason: 'Áudio obrigatório pendente: o limite do agente precisa permitir o texto de contexto e o áudio.',
-          payload: { reason_code: 'required_audio_message_limit' },
-        }).catch(() => runLog.warn('não foi possível registrar áudio obrigatório pendente'));
+          reason: 'Áudio obrigatório dispensado: condição de etapa, aprovação, preferência ou atendimento humano mudou. Atendimento segue por texto.',
+          payload: { reason_code: 'required_audio_no_longer_eligible' },
+        });
       }
+      runLog.info('plano de áudio obrigatório executado', { audio_id: plan.audio_id, after_response: afterResponse });
       if (supersededError !== null) await settleSuperseded();
       if (runError !== null) throw runError;
       if (outcomes.some(o => o.kind === 'failed')) throw new Error('áudio obrigatório com envio falho — recuperação pela fila');
@@ -3099,10 +3124,69 @@ async function executarTurnoDoAgente(
         await applySendOutcome(pool, deferred.kind === 'queued' ? { ...deferred, crmMessageId: deferred.messageId } : deferred,
           { jobId: job.id, workerId: ctx.workerId, tenantId, leadId },
           { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs });
-        throw new JobSettledError('recepção com áudio aguardando canal ou vetada — job reconciliado');
+        throw new JobSettledError('áudio aguardando canal ou vetado — job reconciliado');
       }
     } catch (error) {
       if (error instanceof JobSettledError) throw error;
+      if (supersededError !== null) await settleSuperseded();
+      await execution.drain();
+      await mcpCleanup?.();
+      throw error;
+    }
+  };
+  if (agentConfig && job.kind === 'inbound_turn') {
+    try {
+      // Plano legado continua usando as intenções originais, sem reclassificar no retry.
+      if (job.payload.required_audio_plan !== undefined) {
+        audioPlan = await requiredAudioPlan(pool, job, ctx.workerId, agentConfig.agentId, [], maxSendsPerTurn);
+      } else {
+        const candidates = await availableConversationAudios(pool, tenantId, input.conversationId,
+          agentConfig.agentId, job.id, agentConfig.approvedAudios ?? [], inboundAnchor);
+        const selected = await decideRequiredAudio({ db: pool, job, worker: ctx.workerId, agent: agentConfig.agentId,
+          audios: candidates, firstContact: firstAudioContact, classify: async topics => {
+            try {
+              const call = await runModelCall(pool, deps.llmCfg, { tenantId, leadId, jobId: job.id,
+                agentId: agentConfig.agentId, purpose: 'audio_intent', model: agentConfig.model,
+                llmOverride: { provider: agentConfig.provider, credentialId: agentConfig.credentialId },
+                system: AUDIO_INTENT_INSTRUCTION,
+                messages: [{ role: 'user', content: audioIntentMessage(skillSignal, topics) }],
+              }, { registry: deps.registry, log: runLog });
+              return parseAudioIntent(call.result.text, topics);
+            } catch (error) {
+              if (error instanceof LlmBudgetExceededError) throw error;
+              runLog.warn('classificação de áudio indisponível — atendimento segue por texto');
+              await emitAgentActivityForContact({ pool, organizationId: tenantId, contactId: leadId,
+                type: 'send_vetoed', sourceModule: 'agent', sourceId: job.id,
+                reason: 'Não foi possível identificar a condição do áudio. Atendimento segue por texto.',
+                payload: { reason_code: 'audio_intent_unavailable' },
+              });
+              return null;
+            }
+          } });
+        audioPlan = await requiredAudioPlan(pool, job, ctx.workerId, agentConfig.agentId,
+          candidates.filter(a => a.id === selected), maxSendsPerTurn, 'after_response');
+        if (selected && !audioPlan) {
+          requiredAudioBlock = '## Áudio obrigatório pendente\nO limite não permite texto de contexto e áudio. Responda por texto e não afirme envio.';
+          await emitAgentActivityForContact({ pool, organizationId: tenantId, contactId: leadId,
+            type: 'send_vetoed', sourceModule: 'agent', sourceId: job.id,
+            reason: 'Áudio obrigatório pendente: o limite do agente precisa permitir o texto de contexto e o áudio.',
+            payload: { reason_code: 'required_audio_message_limit' },
+          });
+        }
+      }
+      if (audioPlan?.delivery_phase === 'after_response') {
+        seq = 2;
+        const selected = agentConfig.approvedAudios?.find(a => a.id === audioPlan!.audio_id);
+        requiredAudioBlock = `## Áudio correspondente ao assunto atual\n${JSON.stringify({ title: selected?.title, content_description: selected?.use_when, stage_permitted_now: eligibleAudios.some(a => a.id === audioPlan!.audio_id) })}\n`
+          + 'O CRM tentará enviá-lo após sua resposta nesta interação, conferindo novamente a etapa permitida. '
+          + 'Envie uma mensagem curta de contexto. Não diga que já enviou ou que será entregue com certeza. '
+          + 'Se a etapa já permite o áudio, evite repetir a explicação gravada. Se ainda não permite, responda ao pedido por texto. Não mova o card só para liberar o áudio. '
+          + `Restam no máximo ${Math.max(0, maxSendsPerTurn - seq)} mensagens para sua resposta.`;
+      } else if (audioPlan) {
+        await executeAudioPlan(audioPlan, false);
+        requiredAudioBlock = `## Áudio obrigatório (retomada)\nResultado REAL: ${JSON.stringify(requiredAudioResult)}\nNão repita o áudio nem afirme entrega sem confirmação.`;
+      }
+    } catch (error) {
       if (supersededError !== null) await settleSuperseded();
       await execution.drain();
       await mcpCleanup?.();
@@ -3205,6 +3289,12 @@ async function executarTurnoDoAgente(
     throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
   }
 
+  // Mesmo inbound, depois das ferramentas que podem avançar a etapa. Nunca
+  // continua áudio enquanto uma resposta está queued ou falhou.
+  if (audioPlan?.delivery_phase === 'after_response' && !outcomes.some(o => o.kind === 'queued' || o.kind === 'blocked')) {
+    await executeAudioPlan(audioPlan, true);
+  }
+
   // F3-10: poda os tool results antigos da fita do run ANTES de reenviá-los no fechamento
   // (é onde a fita inteira é re-serializada num prompt) — o conteúdo durável já foi para
   // lead_notes pelo flush (F3-07), então o stub não perde nada recuperável. Opera SÓ no
@@ -3241,6 +3331,7 @@ async function executarTurnoDoAgente(
         // fez seu trabalho na 1ª chamada e não precisa ir de novo.
         ...openingTextOnly,
         ...responseMessages,
+        ...(requiredAudioResult === undefined ? [] : [{ role: 'user' as const, content: `Resultado REAL do áudio obrigatório: ${JSON.stringify(requiredAudioResult)}. Registre somente o que foi confirmado.` }]),
         { role: 'user', content: CHECKPOINT_INSTRUCTION },
       ],
     },

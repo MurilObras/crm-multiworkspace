@@ -4,9 +4,12 @@ export const AUDIO_MAX_BYTES = 16 * 1024 * 1024;
 export const AUDIO_MAX_FILES = 20;
 export const AUDIO_ACCEPT = '.mp3,.m4a,.aac,.ogg,.opus,.wav,.webm';
 export const audioStageIdsSchema = z.array(z.string().uuid()).max(100);
+export const audioTriggerSchema = z.enum(['first_contact', 'topic']);
 export const audioDescriptionSchema = z.object({
   title: z.string().trim().min(2).max(120),
   use_when: z.string().trim().min(10).max(1000),
+  trigger_type: audioTriggerSchema.default('topic'),
+  send_when: z.string().trim().max(1000).default(''),
   stage_ids: audioStageIdsSchema.default([]),
   // Catálogos antigos não passam a disparar automaticamente após atualizar.
   required: z.boolean().default(false),
@@ -37,8 +40,9 @@ export function audioPathOwnedBy(audio: ApprovedAudio, org: string, agent: strin
 export function renderApprovedAudios(audios: ApprovedAudio[]): string {
   const active = audios.filter(a => a.enabled && !a.required);
   if (!active.length) return '';
-  return `ÁUDIOS PRÉ-GRAVADOS APROVADOS\n${JSON.stringify(active.map(a => ({ id: a.id, titulo: a.title, quando_usar: a.use_when })))}\n`
+  return `ÁUDIOS PRÉ-GRAVADOS APROVADOS\n${JSON.stringify(active.map(a => ({ id: a.id, titulo: a.title, conteudo: a.use_when, quando_usar: a.send_when || a.use_when })))}\n`
     + 'Você pode escolher uma destas gravações quando for útil ao atendimento. Não invente o conteúdo. '
+    + 'Use a pergunta atual e a condição descrita; a etapa sozinha não é motivo para enviar. Não mova um negócio só para liberar áudio. '
     + 'Respeite pedidos de resposta em texto. Cada gravação é enviada no máximo uma vez por conversa. '
     + 'Envie primeiro uma mensagem curta de contexto com send_message SEM media. Depois envie '
     + 'send_message com media={type:"audio",audio_id:"ID aprovado"}; body é somente o título para o histórico, '

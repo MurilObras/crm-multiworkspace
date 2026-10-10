@@ -152,3 +152,20 @@ it('erro de conversão no inbox não guarda original incompatível; vídeo mant�
   expect((await res.json()).data).toMatchObject({ media_mime: 'video/webm', media_size_bytes: 3, kind: 'video' });
   expect(state.normalize).toHaveBeenCalledOnce();
 });
+
+it('persiste assunto/condição e preserva a regra ao editar somente o título', async () => {
+  const data = form(); data.set('trigger_type', 'topic'); data.set('send_when', 'Quando perguntar como funciona, exceto preço.');
+  expect((await POST(request('POST', data), ctx)).status).toBe(200);
+  const audio = (await (await GET(request('GET'), ctx)).json()).data[0];
+  expect(audio).toMatchObject({ trigger_type: 'topic', send_when: 'Quando perguntar como funciona, exceto preço.' });
+  expect((await PATCH(request('PATCH', { audio_id: audio.id, title: 'Funcionamento' }), ctx)).status).toBe(200);
+  expect((await (await GET(request('GET'), ctx)).json()).data[0]).toMatchObject({ trigger_type: 'topic', send_when: audio.send_when });
+  expect((await PATCH(request('PATCH', { audio_id: audio.id, trigger_type: 'first_contact' }), ctx)).status).toBe(200);
+  expect((await (await GET(request('GET'), ctx)).json()).data[0]).toMatchObject({ trigger_type: 'first_contact', send_when: audio.send_when });
+});
+it.each(['invalid_trigger', 'condition_too_long'])('recusa regra malformada %s antes do Storage', async reason => {
+  const data = form();
+  data.set(reason === 'invalid_trigger' ? 'trigger_type' : 'send_when', reason === 'invalid_trigger' ? 'stage_entry' : 'a'.repeat(1001));
+  expect((await POST(request('POST', data), ctx)).status).toBe(422);
+  expect(state.upload).not.toHaveBeenCalled(); expect(state.normalize).not.toHaveBeenCalled();
+});

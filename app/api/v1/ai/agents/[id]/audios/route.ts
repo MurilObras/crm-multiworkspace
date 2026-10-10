@@ -6,7 +6,7 @@ import { audit } from '@/lib/audit';
 import { requireRole } from '@/lib/auth/require-role';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logger } from '@/lib/logger';
-import { AUDIO_MAX_BYTES, AUDIO_MAX_FILES, audioDescriptionSchema, audioStageIdsSchema, audioPathOwnedBy,
+import { AUDIO_MAX_BYTES, AUDIO_MAX_FILES, audioDescriptionSchema, audioStageIdsSchema, audioTriggerSchema, audioPathOwnedBy,
   readApprovedAudios, type ApprovedAudio } from '@/lib/ai/agents/approved-audios';
 import { normalizePrerecordedAudio, prerecordedAudioFormat } from '@/lib/messaging/media/prerecorded-audio';
 import { loadAudioStageOptions } from '@/lib/ai/agents/audio-stage-options';
@@ -15,8 +15,9 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 type Context = { params: Promise<{ id: string }> };
 const editSchema = audioDescriptionSchema.partial().extend({ audio_id: z.string().uuid(), enabled: z.boolean().optional(),
-  stage_ids: audioStageIdsSchema.optional(), required: z.boolean().optional() })
-  .strict().refine(v => v.enabled !== undefined || v.title !== undefined || v.use_when !== undefined || v.stage_ids !== undefined || v.required !== undefined);
+  stage_ids: audioStageIdsSchema.optional(), required: z.boolean().optional(),
+  trigger_type: audioTriggerSchema.optional(), send_when: z.string().trim().max(1000).optional() })
+  .strict().refine(v => v.enabled !== undefined || v.title !== undefined || v.use_when !== undefined || v.stage_ids !== undefined || v.required !== undefined || v.trigger_type !== undefined || v.send_when !== undefined);
 const removeSchema = z.object({ audio_id: z.string().uuid() }).strict();
 
 async function handle(req: NextRequest, ctx: Context, mode: 'read' | 'add' | 'edit' | 'remove'): Promise<Response> {
@@ -59,7 +60,7 @@ async function handle(req: NextRequest, ctx: Context, mode: 'read' | 'add' | 'ed
     const required = form?.get('required') ?? 'true';
     if (required !== 'true' && required !== 'false') return fail('validation_failed', 'Modo de envio inválido.', 422, { requestId });
     const description = audioDescriptionSchema.safeParse({ title: form?.get('title'), use_when: form?.get('use_when'),
-      stage_ids: stageIds, required: required === 'true' });
+      stage_ids: stageIds, required: required === 'true', trigger_type: form?.get('trigger_type') ?? 'topic', send_when: form?.get('send_when') ?? '' });
     if (!(file instanceof File) || !description.success || !file.size) {
       return fail('validation_failed', 'Informe arquivo, título e quando o agente deve usar a gravação.', 422, { requestId });
     }
@@ -98,6 +99,8 @@ async function handle(req: NextRequest, ctx: Context, mode: 'read' | 'add' | 'ed
         ...(edit?.title !== undefined ? { title: edit.title } : {}),
         ...(edit?.use_when !== undefined ? { use_when: edit.use_when } : {}),
         ...(edit?.required !== undefined ? { required: edit.required } : {}),
+        ...(edit?.trigger_type !== undefined ? { trigger_type: edit.trigger_type } : {}),
+        ...(edit?.send_when !== undefined ? { send_when: edit.send_when } : {}),
         ...(edit?.stage_ids !== undefined ? { stage_ids: edit.stage_ids } : {}) } : a);
   }
   // CAS sobre o JSON lido: duas abas nunca sobrescrevem silenciosamente o catálogo.

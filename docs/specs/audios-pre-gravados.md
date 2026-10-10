@@ -1,136 +1,122 @@
-# Áudios pré-gravados — implementação no PR #23
+# Áudios pré-gravados — PR #23
 
-Autorizado: anexar gravações na tela do agente, aprová-las e permitir ao Paulo
-escolher uma quando útil, com contexto curto enviado em texto separado. Sem
-síntese de voz, nova credencial de IA, merge ou publicação nesta etapa.
+## Escopo confirmado
 
-Ampliação autorizada: recurso geral do CRM, em todos os workspaces, para agentes
-de vendas, atendimento ou suporte. Cada gravação pode valer em todas as etapas
-ou em etapas específicas dos funis do workspace, selecionadas na própria tela.
-Arquivo e regras continuam isolados por workspace/agente.
+Recurso geral do CRM: biblioteca por agente em todos os workspaces, inclusive
+vendas, atendimento e suporte. O administrador anexa, ouve, descreve, aprova,
+edita, ativa, desativa e remove gravações pelas telas. Sem TTS, nova chave de
+IA, migration, merge ou implantação nesta etapa.
 
-Decisão do usuário (2026-10-10): switch "Envio obrigatório", ligado por padrão
-para novas gravações. Desligado = escolha contextual do agente. Ligado = CRM
-envia na primeira resposta elegível ao cliente, dentro das etapas selecionadas,
-sem depender de escolha do modelo. Não é disparo proativo ao mover cartão.
-Uma gravação nunca é repetida na mesma conversa, inclusive entre turnos,
-reentradas na etapa e retries. No máximo um áudio obrigatório por resposta;
-outras gravações obrigatórias elegíveis aguardam próximas respostas. Pedidos
-de só texto, humano, opt-out, recência, lease e limites de envio prevalecem.
-Gravações antigas sem esse campo continuam opcionais; o cadastro novo inicia
-obrigatório. O operador pode alterar o modo na tela sem reenviar o arquivo.
+Decisão confirmada pelo usuário em 2026-10-10: o assunto da mensagem atual
+é que determina o momento do áudio. A etapa apenas restringe onde pode ser
+usado. Se a pergunta for “como funciona?”, o áudio correspondente sai nessa
+mesma interação, inclusive quando a etapa avançar durante a resposta. Não
+espera outra pergunta e não dispara só porque um cartão mudou de etapa.
 
-Plano adicional: `required` no catálogo existente, POST padrão true e leitura
-legada false. Persistir o plano de recepção no payload do job sob lease antes
-de qualquer envio, reservando suas duas intenções (contexto e áudio) no replay.
-Invocar a mesma ferramenta send_message com todos os guardrails, antes da
-decisão do modelo; expor o resultado verdadeiro no contexto do turno. Registrar
-preferência de texto nos metadados da inbound e consultar o histórico durável
-de messages/approved_audio por conversa. Deduplicação revalidada no último
-pré-voo: confirmação, fila pendente ou resultado incerto nunca autorizam outra
-tentativa. Tentativa terminal comprovadamente sem transporte pode ser retomada
-como nova intenção após a causa cessar. Sem migration, nova credencial ou merge.
+## Plano de implementação e comportamento
 
-Plano da ampliação: `stage_ids` opcional no schema central do catálogo existente;
-API valida etapas ativas da organização e expõe opções de seleção; formulário
-permite criar/editar vínculos; turno filtra o catálogo pelo negócio atual do
-contato e revalida imediatamente antes da rede. Sem negócio identificável ou
-com empate, áudio vinculado não é elegível. Preferir negócio aberto mais recente
-(resolvedor existente); se não houver aberto, usar o encerrado mais recente sem
-empate, permitindo áudios em etapas ganhas/perdidas. Etapas/funis arquivados não
-liberam gravações. Arquivos anteriores sem `stage_ids` valem em qualquer etapa.
-Validar isolamento entre workspaces, etapa inválida/arquivada, mudança durante
-preparação, persistência dos vínculos pela tela e regressão da biblioteca.
-
-## Plano
-
-1. Biblioteca por agente no `ai_agents.config.approved_audios`, configuração
-   operacional como os knobs de RAG existentes. Não altera schema nem versões.
-   Upload/ativação/desativação têm efeito no próximo turno, explicitado na tela.
-2. API autenticada: leitura manager+, escrita admin, organização da sessão,
-   arquivo privado e imutável; atualização por CAS do JSON completo para evitar
-   perda de alterações concorrentes. Duplicação começa sem áudios aprovados.
-3. Converter MP3/M4A/AAC/OGG/WAV/WebM para Ogg/Opus no upload (ffmpeg já acompanha
-   a imagem do app). Arquivo inválido/conversão indisponível falha visivelmente,
-   sem cadastrar algo que o canal não consegue enviar. Teto 16 MiB/arquivo e
-   20 gravações/agente, limites de recurso, não regras comerciais.
-4. Modelo recebe somente ID/título/quando usar dos opcionais. `send_message` aceita ID de áudio,
-   nunca caminho privado ou URL do lead. Aprovação revalidada na preparação e
-   imediatamente antes do transporte. Copiar para o Storage da conversa e usar
-   o mesmo ledger, lease, guardrails e veto de inbound obsoleto já existentes.
-5. Inbox: anexar áudio pronto, ouvir antes de enviar e não oferecer legenda
-   para áudio. Texto de contexto é mensagem própria, com as guardas normais.
-6. Validar upload, isolamento, CAS, revogação, transporte/replay e fluxo visual;
-   integrar testes ao CI. Arquivo de teste não vai para contatos reais.
+1. Configuração operacional em `ai_agents.config.approved_audios`, com schema
+   central. Campos `trigger_type` (first_contact/topic), `send_when` (condição
+   e exemplos), `stage_ids` e `required`. Novo cadastro começa topic/obrigatório;
+   o operador pode escolher primeiro atendimento para recepção. Legado sem
+   campos de regra usa topic e a descrição use_when como condição; required
+   ausente continua false. Alterações valem nos próximos turnos sem republicar.
+2. API manager+ para ler e admin para escrever, org da sessão, audit de mutação,
+   CAS do JSON completo, etapas ativas do próprio workspace. Edição parcial não
+   reseta modo, condição ou etapas. Vínculo arquivado aparece como indisponível
+   e pode ser retirado. Duplicação do agente exige aprovação própria de áudio.
+3. MP3/M4A/AAC/OGG/WAV/WebM viram Ogg/Opus com ffmpeg já existente. Até 16 MiB
+   por arquivo e 20 gravações por agente. Storage privado imutável, sem URL
+   assinada persistida. Arquivo inválido falha antes da aprovação.
+4. Primeiro atendimento é verificado no histórico durável da conversa. Para
+   assunto, o ponto `audio_intent` usa runModelCall com modelo, provider e
+   credencial do agente, sujeito ao painel de provedores e ao orçamento normal.
+   É uma chamada auxiliar de IA, sem ferramenta mutante: recebe a inbound atual
+   e as regras aprovadas, aceita somente um ID aprovado ou null. Considera
+   paráfrases e exclusões; saída inválida degrada para texto. Falha de chamada
+   registra atividade; estouro de orçamento mantém o handoff existente.
+5. `audio_rule_decision`, inclusive null, persiste no job sob lease ANTES de
+   envios. Não reclassifica durante retry nem introduz reserva nova em um job
+   antigo que já usou o ledger. `required_audio_plan` conserva ID, agente e fase
+   after_response, com intenções 1/2 reservadas. Planos legados conservam suas
+   intenções anteriores para recuperação, sem mudar a chave de um envio pendente.
+6. O modelo responde e pode atualizar o funil pelos critérios comerciais já
+   existentes. Não deve mover cartão só para liberar áudio. O catálogo opcional
+   se atualiza no retorno de update_lead_state/crm_move_lead_stage e a ferramenta
+   de envio consulta a etapa fresca. Se o Operador cuidar da movimentação depois
+   do turno, isso não conta como etapa já alcançada nesta resposta: selecione
+   também as etapas em que a pergunta pode surgir, ou Todas as etapas.
+7. Depois do modelo, ainda na mesma inbound e antes do checkpoint, o runtime
+   reconsulta humano, catálogo, aprovação, etapa e histórico. Texto já confirmado
+   é reutilizado como contexto; sem texto, envia uma introdução própria. Resposta
+   queued/falha não é seguida de áudio adiantado. Áudio requerido só é invocado
+   pelo runtime, evitando que o modelo burle a condição. Resultado real entra
+   no fechamento; nunca afirmar entrega sem confirmação.
+8. Etapa resolve o negócio aberto mais recente sem empate, ou o encerrado mais
+   recente sem empate quando não há aberto. Sem negócio inequívoco, só áudios
+   sem vínculo ficam disponíveis. Funil/etapa arquivados não liberam arquivo.
+   Se a etapa permitida não for alcançada, o áudio é dispensado com atividade;
+   o atendimento segue em texto, sem promessa de entrega futura fora de contexto.
+9. Mesma gravação cadastrada no máximo uma vez por conversa. Histórico enviado,
+   fila pendente e resultado incerto bloqueiam outra cópia. Texto/áudio como
+   preferência explícita persiste na inbound e pode ser alterado pelo cliente.
+   Recência, lease/CAS, opt-out, humano e limites do canal prevalecem. O último
+   pré-voo revalida aprovação, etapa, preferência e repetição antes da rede.
+10. Retirar plano usa discardPreparedOutbound apenas nas sequências 1/2, sem
+    apagar confirmação, incerteza ou resposta normal em seq >=3. O teto reserva
+    duas intenções conservadoramente; normalmente há texto + áudio, sem segunda
+    introdução. No máximo um obrigatório por resposta. Outros áudios só serão
+    considerados se seu assunto aparecer em outra mensagem.
+11. Inbox permite anexar áudio pronto e ouvir antes de enviar. Sem legenda em
+    áudio: contexto em texto é outra mensagem. Gravações removidas continuam
+    privadas no Storage para preservar tentativas em andamento.
 
 ## Living System Checklist
 
-1. Entrada: administrador na edição do agente aprova arquivo e finalidade.
-2. Saída: catálogo do turno → send_message → prepareAgentMedia → sink existente.
-3. Registro: audit ai_agent.updated nas alterações; ledger/messages no envio.
-4. Tela: biblioteca no AgentForm e áudio/status na timeline existente do inbox.
-5. Porta: Agentes → editar → Conversador; Inbox → Anexar → Áudio pré-gravado.
-6. Anti-morte: fila existente recupera falhas anteriores à rede; resultado
-   incerto não autoriza duplicação. Sem áudio aprovado, conversa segue em texto.
-7. Configuração: cadastro, prévia, ativação, envio obrigatório/opcional e seleção de etapas na biblioteca;
-   opções da própria organização no GET (meta.stage_options); IDs de outro
-   workspace ou de etapas/funis arquivados recusados na escrita. Vínculo cuja
-   etapa foi arquivada fica visível como indisponível e pode ser removido.
-8. Continuidade: áudio fica na mesma conversa disponível ao humano; atendimento
-   humano e retomada da IA seguem os gates existentes.
-9. Retorno: falha volta à ferramenta e ao estado da mensagem; administrador pode
-   ouvir/desativar gravação inadequada, retirada dos turnos seguintes. Não há
-   autoedição de áudio. `eligibleAudiosForContact` filtra o catálogo no turno;
-   `assertAudioStillApproved` revalida aprovação e etapa antes do transporte.
-   Veto por etapa encerra mensagem/ledger e retorna instrução de seguir por texto.
-   `requiredAudioPlan` grava o plano no job sob lease; `deliverRequiredAudio`
-   invoca send_message antes do modelo com contexto sem split e reserva duas
-   intenções estáveis. Retry retoma a mesma dupla. Retirada do plano usa o CAS
-   de `discardPreparedOutbound` só nas sequências 1 e 2, preservando confirmações,
-   incertezas e respostas normais. Catálogo e último pré-voo consultam o histórico
-   durável; pending/confirmed/uncertain bloqueiam outra cópia. Preferência de texto
-   fica em metadata.agent_audio_preference da inbound e vale para turnos seguintes.
-   Limite menor que duas mensagens gera atividade visível de áudio obrigatório
-   pendente; nunca se ultrapassa o limite. Configuração não dispara mensagem só
-   por movimentar cartão nem interfere em follow-ups determinísticos existentes.
-   Gravações removidas não são apagadas imediatamente do
-   Storage para preservar tentativas em andamento; permanecem privadas.
-10. Mapa: audios-pre-gravados.architecture.json conecta editor, catálogo e sink.
+1. Entrada: Agentes → editar → Conversador → Áudios pré-gravados; administrador
+   aprova arquivo e configura “Quando enviar”, condição/exemplos, etapas e modo.
+2. Saída: audio-rule → requiredAudioPlan → send_message → prepareAgentMedia →
+   outbound-attempt → handler existente → adapter do canal.
+3. Registro: api_audit_log nas edições; llm_calls no classificador; job_queue
+   guarda decisão/plano; ledger/messages guardam tentativa e resultado. Vetos
+   por inelegibilidade/limite/falha de classificação aparecem em atividades.
+4. Tela: biblioteca e prévia no editor; mensagem/status no Inbox; ponto auxiliar
+   na configuração de provedores e execuções existentes.
+5. Porta: Agentes na navegação; biblioteca na aba Conversador. Inbox → Anexar →
+   Áudio pré-gravado. Não cria tela isolada sem entrada.
+6. Anti-morte: fila existente recupera envio anterior à rede com o mesmo ledger.
+   Incerteza nunca autoriza duplicação; sem áudio elegível, atendimento por texto.
+7. Configuração: upload, reprodução, descrição, primeiro atendimento/assunto,
+   condição/exemplos, todas/algumas etapas, obrigatório/opcional e ativação na tela.
+8. Continuidade IA↔humano: handoff existente prevalece; conversa e gravações ficam
+   no Inbox para quem assumir. O agente não reassume por causa de uma regra de áudio.
+9. Retorno: resultado real no checkpoint e estado da mensagem; administrador
+   ouve, corrige regra ou retira gravação inadequada. Não há autoedição de conteúdo.
+10. Mapa: docs/architecture/audios-pre-gravados.architecture.json conecta telas,
+    regras de assunto, histórico, etapa, fila, sink e revisão humana.
 
-Limites: aprovação humana não transcreve nem verifica o conteúdo comercial da
-gravação. Informe uma descrição fiel. Não enviar áudio quando o cliente pedir
-texto; não repetir a mesma gravação cadastrada já enviada na conversa.
-Sem arquivo real fornecido, validar com gravação sintética em ambiente isolado.
+## Validação e limites
 
-## Evidências e limites da validação
+- 306 testes direcionados em 15 arquivos passaram: regras/decisão persistida,
+  legado, lease/workspace, histórico, upload/CAS, componentes, sink/replay,
+  descarte, idiomas, mapas e herança de modelo/chave. Replay offline também
+  conserva seq 3 do texto e seq 2 do áudio sem repetir nenhuma mensagem. Typecheck completo e lint sem erros passaram (315 avisos existentes).
+- 30 testes de turno/configuração passaram no Postgres efêmero oficial, incluindo
+  pergunta atual, paráfrase, preço incompatível, saída inválida, avanço de etapa,
+  fora de etapa, aprovação retirada, humano e nova inbound entre texto e áudio.
+  O modelo e o transporte desses testes são sintéticos; não medem a precisão de
+  um modelo comercial nem a entrega real no WhatsApp.
+- Componentes reais conferidos em Edge/Playwright com API simulada: condição e
+  modo persistidos, edição/reload para primeiro atendimento, reprodução e layouts
+  desktop/celular sem erros de página ou overflow. Evidência fora do repositório.
+- A spec E2E audios-pre-gravados.spec.ts usa Supabase local real para upload,
+  reprodução do Storage, condição, vínculos, edição do gatilho, reload e remoção.
+  Incluída na parte 1 do CI; o novo commit precisa de CI verde antes de merge.
+- Conversão real dos seis formatos e nova decodificação já passaram em contêiner
+  isolado sem rede na etapa anterior deste PR; arquivo inválido foi rejeitado.
 
-- Testes unitários do upload manual/catálogo: normalização antes de guardar,
-  organização da sessão, papel, CAS concorrente, leitura e edição de metadados.
-- Sink com PostgreSQL embarcado: aprovação fresca antes da rede, isolamento,
-  origem preservada no retry offline, descarte por inbound nova e replay único.
-  Preferência explícita distingue pedidos de só texto de pedidos de áudio,
-  inclusive “prefiro áudio, não texto”; perguntas sobre os meios disponíveis
-  não gravam bloqueio. Uma autorização posterior substitui a preferência anterior.
-- Postgres efêmero oficial: turno completo recebe catálogo sem caminho privado,
-  exige contexto em texto, recusa ID inventado/repetição e retoma em texto após
-  retirada de aprovação. Também preserva os cenários anteriores de fila.
-  Ampliação por etapas e modo obrigatório: 21 testes de turno/configuração
-  passaram no banco isolado, incluindo envio sem escolha do modelo, modo
-  opcional, texto, histórico já enviado, limite de mensagens e novo turno.
-  Áudio fora da etapa não é oferecido ao modelo; mudança de etapa
-  durante a assinatura do arquivo veta o transporte e encerra a tentativa.
-- Conversão REAL com ffmpeg da imagem existente: WAV, MP3, M4A, AAC, OGG e WebM
-  gerados sinteticamente → Ogg/Opus → nova decodificação bem-sucedida. Arquivo
-  inválido rejeitado. Contêiner de teste sem rede; nenhum serviço reiniciado.
-- Edge/Playwright: componentes reais com API simulada, aprovação/edição/
-  desativação/reload, reprodução, file picker do Inbox e preview sem legenda;
-  desktop e celular sem erro de página nem overflow horizontal. Isto verifica
-  a interface, não substitui a spec E2E contra Supabase local.
-- `audios-pre-gravados.spec.ts` faz upload pela tela real, reprodução do arquivo
-  retornado do Storage, vínculo de etapa, edição para todas as etapas,
-  recarregamento, modo obrigatório padrão/alteração persistente para opcional,
-  desativação persistente e remoção; incluída na parte 1 do CI.
-  O novo commit precisa de CI verde antes do merge.
-
-Sem merge, implantação, áudio de cliente ou envio real de WhatsApp nesta etapa.
-Para uso comercial, o operador deverá anexar e aprovar suas gravações reais.
+Aprovação humana não transcreve nem verifica conteúdo comercial: descreva
+fielmente a gravação. A seleção de assunto é semântica e precisa de calibração
+com exemplos reais. A proteção de repetição vale para o ID da gravação cadastrada,
+não para arquivos duplicados cadastrados separadamente. Nenhum áudio comercial
+foi fornecido; nenhum envio real, merge ou implantação foi feito nesta etapa.

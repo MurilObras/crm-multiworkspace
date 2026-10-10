@@ -40,6 +40,7 @@ test('aprovar gravação → ouvir → recarregar → desativar → remover pela
   await library.getByLabel('Gravação').setInputFiles({ name: 'teste-isolado.wav', mimeType: 'audio/wav', buffer: wav() });
   await library.getByLabel('Título do áudio').fill('E2E gravação aprovada');
   await library.getByLabel('Conteúdo e finalidade do áudio').fill('Somente em testes isolados. Gravação sintética de validação, sem mensagem comercial.');
+  await library.getByLabel('Condição e exemplos de perguntas').fill('Quando perguntar como funciona o serviço, sem incluir preço.');
   await library.getByLabel('Onde este áudio pode ser usado').selectOption('selected');
   await library.getByRole('checkbox', { name: `${stage.pipeline_name} › ${stage.name}`, exact: true }).check();
   const upload = page.waitForResponse(r => r.url().endsWith(`/agents/${agent}/audios`) && r.request().method() === 'POST');
@@ -60,7 +61,9 @@ test('aprovar gravação → ouvir → recarregar → desativar → remover pela
   await page.reload();
   await page.getByTestId('papel-conversa').click();
   await expect(library.getByText(`Etapas permitidas: ${stage.pipeline_name} › ${stage.name}`, { exact: true })).toBeVisible();
+  await expect(library.getByText('Quando enviar este áudio: Quando perguntar como funciona o serviço, sem incluir preço.', { exact: true })).toBeVisible();
   await library.getByRole('button', { name: 'Editar áudio' }).click();
+  await library.getByLabel('Quando enviar este áudio').first().selectOption('first_contact');
   await library.getByLabel('Onde este áudio pode ser usado').first().selectOption('all');
   await expect(library.getByRole('switch', { name: 'Envio obrigatório', exact: true }).first()).toBeChecked();
   await library.getByRole('switch', { name: 'Envio obrigatório', exact: true }).first().click();
@@ -70,6 +73,10 @@ test('aprovar gravação → ouvir → recarregar → desativar → remover pela
   await page.reload(); await page.getByTestId('papel-conversa').click();
   await expect(library.getByText('Etapas permitidas: Todas as etapas', { exact: true })).toBeVisible();
   await expect(library.getByText('Envio opcional', { exact: true })).toBeVisible();
+  await expect(library.getByText('Quando enviar este áudio: No primeiro atendimento da conversa', { exact: true })).toBeVisible();
+  await library.getByRole('button', { name: 'Editar áudio' }).click();
+  await expect(library.getByLabel('Quando enviar este áudio').first()).toHaveValue('first_contact');
+  await library.getByRole('button', { name: 'Cancelar edição' }).click();
   const toggle = library.getByRole('switch', { name: 'Ativar áudio: E2E gravação aprovada' });
   await expect(toggle).toBeChecked(); await toggle.click(); await expect(toggle).not.toBeChecked();
   await page.reload(); await page.getByTestId('papel-conversa').click();

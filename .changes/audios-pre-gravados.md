@@ -8,8 +8,12 @@ Na edição do agente, anexe uma gravação, ouça, descreva quando usar e aprov
 Disponível em todos os workspaces para vendas, atendimento e suporte. Escolha
 na tela se cada áudio vale em todas as etapas ou apenas nas etapas selecionadas
 dos funis do workspace. O botão Envio obrigatório começa ligado no cadastro:
-o CRM envia na primeira resposta elegível, com um texto curto de contexto.
-Desligado, o agente escolhe quando for útil. Cada gravação cadastrada sai no
+configure se o áudio é de primeiro atendimento ou corresponde a um assunto,
+com condição e exemplos de perguntas. Obrigatório significa enviar quando
+essa condição ocorrer, na mesma interação e dentro das etapas permitidas.
+A etapa sozinha não dispara o áudio. Desligado, o agente escolhe quando útil.
+Se a etapa avançar durante a resposta, ela é conferida novamente antes do áudio,
+sem esperar o cliente repetir a pergunta. Um texto curto confirmado dá contexto. Cada gravação cadastrada sai no
 máximo uma vez por conversa, inclusive entre turnos e retomadas após desconexão.
 No máximo um obrigatório por resposta; pedidos de só texto, humano e limites
 do canal prevalecem. Gravações antigas mantêm o modo opcional. Mudança de etapa

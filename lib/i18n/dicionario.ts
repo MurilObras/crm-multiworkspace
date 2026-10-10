@@ -7078,6 +7078,19 @@ export const DICIONARIO: Traducoes = {
   "Etapa indisponível. Remova este vínculo e selecione uma etapa ativa.": { es: "Etapa no disponible. Elimine este vínculo y seleccione una etapa activa." },
   "Ex.: apresentação do serviço": { es: "Ej.: presentación del servicio" },
   "Ex.: quando o cliente pedir uma demonstração ou orientações de suporte. Descreva o conteúdo da gravação.": { es: "Ej.: cuando el cliente pida una demostración u orientación de soporte. Describa el contenido de la grabación." },
+  "Quando enviar este áudio": { es: "Cuándo enviar este audio" },
+  "Quando surgir o assunto correspondente": { es: "Cuando surja el tema correspondiente" },
+  "No primeiro atendimento da conversa": { es: "En la primera atención de la conversación" },
+  "Condição e exemplos de perguntas": { es: "Condición y ejemplos de preguntas" },
+  "Ex.: quando pedir como funciona o serviço. Exemplos: como funciona? O que consigo fazer? Não usar para dúvidas de preço.": { es: "Ej.: cuando pregunte cómo funciona el servicio. Ejemplos: ¿cómo funciona? ¿Qué puedo hacer? No usar para preguntas sobre precios." },
+  "O assunto da mensagem atual determina o momento. As etapas apenas restringem onde usar. Se o agente avançar a etapa nesta interação, ela será conferida novamente antes do envio. Não é preciso o cliente repetir a pergunta.": { es: "El tema del mensaje actual determina el momento. Las etapas solo limitan dónde usarlo. Si el agente avanza de etapa en esta interacción, se comprobará nuevamente antes del envío. El cliente no necesita repetir la pregunta." },
+  "Selecione também as etapas em que essa pergunta pode surgir. Se nenhuma etapa permitida for alcançada nesta interação, o atendimento segue por texto; o áudio não fica esperando outra pergunta.": { es: "Seleccione también las etapas en las que puede surgir esa pregunta. Si no se alcanza una etapa permitida en esta interacción, la atención continúa por texto; el audio no queda esperando otra pregunta." },
+  "Descreva a condição de envio e exemplos (mínimo 10 caracteres).": { es: "Describa la condición de envío y ejemplos (mínimo 10 caracteres)." },
+  "Descreva o que está gravado. Configure separadamente a condição que determina quando enviar.": { es: "Describa lo que está grabado. Configure por separado la condición que determina cuándo enviarlo." },
+  "Ligado: quando a condição configurada for identificada, o CRM envia o áudio nessa mesma interação, dentro das etapas permitidas. Estar na etapa não basta.": { es: "Activado: cuando se identifique la condición configurada, el CRM envía el audio en esa misma interacción, dentro de las etapas permitidas. Estar en la etapa no basta." },
+  "Desligado: o agente pode escolher este áudio quando a condição for pertinente, ou responder apenas por texto.": { es: "Desactivado: el agente puede elegir este audio cuando la condición sea pertinente, o responder solo por texto." },
+  "Cada gravação é enviada no máximo uma vez por conversa. No máximo um áudio obrigatório por resposta; outros áudios só serão considerados quando surgir o assunto correspondente. Pedidos de só texto, atendimento humano e limites de envio são respeitados.": { es: "Cada grabación se envía como máximo una vez por conversación. Como máximo un audio obligatorio por respuesta; otros audios solo se consideran cuando surja el tema correspondiente. Se respetan las solicitudes de solo texto, atención humana y límites de envío." },
+
 };
 
 /**
