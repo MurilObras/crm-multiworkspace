@@ -31,7 +31,9 @@ espera outra pergunta e não dispara só porque um cartão mudou de etapa.
 4. Primeiro atendimento é verificado no histórico durável da conversa. Para
    assunto, o ponto `audio_intent` usa runModelCall com modelo, provider e
    credencial do agente, sujeito ao painel de provedores e ao orçamento normal.
-   É uma chamada auxiliar de IA, sem ferramenta mutante: recebe a inbound atual
+   O assunto específico tem prioridade mesmo no primeiro contato; recepção é
+   fallback quando nenhuma regra de assunto corresponde. É uma chamada auxiliar
+   de IA, sem ferramenta mutante: recebe a inbound atual
    e as regras aprovadas, aceita somente um ID aprovado ou null. Considera
    paráfrases e exclusões; saída inválida degrada para texto. Falha de chamada
    registra atividade; estouro de orçamento mantém o handoff existente.
@@ -97,7 +99,7 @@ espera outra pergunta e não dispara só porque um cartão mudou de etapa.
 
 ## Validação e limites
 
-- 306 testes direcionados em 15 arquivos passaram: regras/decisão persistida,
+- 307 testes direcionados em 15 arquivos passaram: regras/decisão persistida,
   legado, lease/workspace, histórico, upload/CAS, componentes, sink/replay,
   descarte, idiomas, mapas e herança de modelo/chave. Replay offline também
   conserva seq 3 do texto e seq 2 do áudio sem repetir nenhuma mensagem. Typecheck completo e lint sem erros passaram (315 avisos existentes).

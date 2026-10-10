@@ -58,7 +58,10 @@ export async function decideRequiredAudio(args: {
   const required = args.audios.filter(a => a.enabled && a.required);
   const greeting = args.firstContact ? required.find(a => a.trigger_type === 'first_contact') : undefined;
   const topics = required.filter(a => a.trigger_type === 'topic');
-  const selected = prior.length ? null : greeting?.id ?? (topics.length ? await args.classify(topics) : null);
+  // A primeira mensagem pode já trazer uma pergunta específica: o áudio que
+  // responde a ela tem prioridade. Recepção é fallback, não adia essa resposta.
+  const matched = prior.length || !topics.length ? null : await args.classify(topics);
+  const selected = prior.length ? null : matched ?? greeting?.id ?? null;
   const decision = { agent_id: args.agent, audio_id: required.some(a => a.id === selected) ? selected : null };
   const { rows } = await args.db.query<{ decision: unknown }>(
     `update job_queue set payload=coalesce(payload,'{}'::jsonb) || jsonb_build_object(

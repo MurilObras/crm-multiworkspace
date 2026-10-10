@@ -65,6 +65,15 @@ it('recepção só corresponde ao primeiro atendimento, sem chamada auxiliar des
   await db.pool.query("update job_queue set payload='{}'");
   expect(await decide(classify, true, greeting)).toBe(AUDIO); expect(classify).not.toHaveBeenCalled();
 });
+it('pergunta específica no primeiro contato recebe seu áudio; recepção é fallback sem assunto', async () => {
+  const greeting = { ...audios[0]!, id: OTHER, trigger_type: 'first_contact' as const };
+  const catalog = [greeting, ...audios];
+  expect(await decide(async candidates => {
+    expect(candidates.map(a => a.id)).toEqual([AUDIO]); return AUDIO;
+  }, true, catalog)).toBe(AUDIO);
+  await db.pool.query("update job_queue set payload='{}'");
+  expect(await decide(async () => null, true, catalog)).toBe(OTHER);
+});
 it('primeiro contato vem do histórico da conversa, isolado e estável no retry', async () => {
   await db.pool.query(`insert into messages(id,organization_id,conversation_id,contact_id,direction,created_at)
     values($1,$2,$3,$4,'inbound','2026-01-02')`, [MESSAGE, ORG, CONV, CONTACT]);
