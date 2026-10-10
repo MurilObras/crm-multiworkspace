@@ -24,6 +24,7 @@ import type {
 import { CrmTransportError, type CrmEdgeConfig } from '../crm/mcp-client';
 import { sendTurnMessage, SendToolError } from '../crm/send-message';
 import { SESSION_HEALTHY_STATUS } from '../crm/session-watchdog';
+import { formatWhatsAppText } from './whatsapp-text';
 
 /** id do canal da v1 — o único adapter (WAHA através do sink do CRM). */
 export const WAHA_VIA_CRM_CHANNEL = 'waha_via_crm';
@@ -42,7 +43,10 @@ export class WahaChannelAdapter implements ChannelAdapter {
 
   async send(input: ChannelSendInput): Promise<ChannelSendResult> {
     try {
-      const outcome = await sendTurnMessage(this.db, this.crmCfg, input);
+      const outcome = await sendTurnMessage(this.db, this.crmCfg, {
+        ...input,
+        body: input.template ? input.body : formatWhatsAppText(input.body),
+      });
       switch (outcome.kind) {
         case 'sent':
           return { kind: 'sent', idempotencyKey: outcome.idempotencyKey, messageId: outcome.crmMessageId };

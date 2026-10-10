@@ -66,6 +66,8 @@ export interface SendMessageInput {
   seq: number;
   conversationId: string;
   body: string;
+  media?: { type: 'image' | 'video'; url: string; mimeType?: string };
+  beforePersist?: () => Promise<void>;
   /**
    * Presente = envio de TEMPLATE. O `body` continua sendo o texto RENDERIZADO — é
    * ele que entra no hash de idempotência e é ele que os gates de conteúdo avaliaram.

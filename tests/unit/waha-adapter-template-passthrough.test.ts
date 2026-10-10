@@ -68,6 +68,17 @@ beforeEach(() => {
 });
 
 describe("WahaChannelAdapter — o template não pode cair no caminho", () => {
+  it("repassa um arquivo com legenda formatada sem alterar URL, tipo ou sequência", async () => {
+    const media = { type: "video" as const, url: "https://example.test/intro.mp4", mimeType: "video/mp4" };
+    await adapter().send(envio({ body: "**Demonstração**", media }));
+    expect(sendTurnMessage).toHaveBeenCalledOnce();
+    expect(sendTurnMessage.mock.calls[0]?.[2]).toMatchObject({ body: "*Demonstração*", media, seq: 1 });
+  });
+
+  it("não altera a formatação do corpo de template aprovado", async () => {
+    await adapter().send(envio({ template: TEMPLATE, body: "**Texto aprovado**" }));
+    expect(sendTurnMessage.mock.calls[0]?.[2]).toMatchObject({ body: "**Texto aprovado**", template: TEMPLATE });
+  });
   it("repassa o template ao sink, com nome, idioma e valores intactos", async () => {
     await adapter().send(envio({ template: TEMPLATE }));
 

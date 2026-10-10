@@ -14,6 +14,9 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { recheckPacingHeldInbound } from "@/lib/agent-engine/queue/inbound-pending";
+import { logger } from "@/lib/logger";
 import {
   pacingKnobsUpdateSchema,
   knobsView,
@@ -185,13 +188,24 @@ export async function PUT(req: NextRequest): Promise<Response> {
     }
   }
 
+  let recheckedInbound = 0;
+  let recheckWarning: string | null = null;
+  try {
+    recheckedInbound = await recheckPacingHeldInbound(getRequestPool(), org.orgId, channel_session_id);
+  } catch {
+    // A proteção foi salva; falha na retomada não pode aparecer como sucesso completo.
+    recheckWarning = "Proteção salva, mas não foi possível reavaliar as respostas retidas. Salve novamente ou confira a fila de execuções.";
+    logger.error("pacing: falha ao reavaliar respostas retidas", { organization_id: org.orgId, channel_session_id, requestId });
+  }
+
   await audit({
     action: "ai.pacing_knobs_updated",
     actorUserId: authUser.id,
     organizationId: org.orgId,
     resourceType: "channel_knobs",
     resourceId: channel_session_id,
-    metadata: { ...knobFields, daily_message_limit: daily_message_limit ?? null },
+    metadata: { ...knobFields, daily_message_limit: daily_message_limit ?? null,
+      rechecked_inbound: recheckedInbound, recheck_failed: recheckWarning !== null },
   });
 
   const { data: savedRow } = await admin
@@ -201,7 +215,8 @@ export async function PUT(req: NextRequest): Promise<Response> {
     .eq("channel_session_id", channel_session_id)
     .maybeSingle();
   return ok(
-    { channel_session_id, ...knobsView((savedRow as unknown as ChannelKnobsRow) ?? null) },
+    { channel_session_id, ...knobsView((savedRow as unknown as ChannelKnobsRow) ?? null),
+      rechecked_inbound: recheckedInbound, recheck_warning: recheckWarning },
     { requestId },
   );
 }

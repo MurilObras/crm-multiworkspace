@@ -56,7 +56,9 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { moverLeadParaEtapaDeHandoff } from '@/lib/leads/handoff-stage-move';
 import { detectUrgencySignal } from '../guardrails/sinal-de-urgencia';
 import { buildNativeMediaParts } from './media-parts';
-import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
+import { enqueueJob, rescheduleJob, completeJob, type JobRow, type Queryable } from '../queue/queue';
+import { isCurrentInbound } from '../queue/inbound-pending';
+import { collectApprovedMediaUrls } from './approved-media';
 import { applyLeadStateUpdate, getLeadState, type LeadStage, type LeadStateRow } from './lead-state';
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -153,9 +155,14 @@ export const AGENT_TOOL_DEFS = {
   },
   send_message: {
     description:
-      'Envia UMA mensagem de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado.',
+      'Envia UMA mensagem de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado. Para anexar imagem ou vídeo oficial aprovado, informe media com a URL real da base; body vira legenda. Nunca invente arquivo/URL nem diga que enviou antes da confirmação.',
     inputSchema: z.object({
       body: z.string().min(1).describe('corpo da mensagem, em pt-br, pronto para envio'),
+      media: z.object({
+        type: z.enum(['image', 'video']),
+        url: z.string().url().refine((url) => url.startsWith('https://'), 'Use HTTPS para mídia'),
+        mimeType: z.string().optional(),
+      }).optional().describe('Arquivo oficial aprovado; ausente para mensagem de texto'),
     }),
   },
   update_lead_state: {
@@ -1291,6 +1298,26 @@ async function executarTurnoDoAgente(
   // Contexto do RUN em toda linha de log do turno (F2-16): job_id É o run id.
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
 
+  const inboundAnchor = job.kind === 'inbound_turn' && typeof job.payload.inbound_message_id === 'string'
+    ? job.payload.inbound_message_id : null;
+  const inboundStillCurrent = () => inboundAnchor === null
+    ? Promise.resolve(true)
+    : isCurrentInbound(pool, tenantId, input.conversationId, inboundAnchor);
+  if (!(await inboundStillCurrent())) {
+    runLog.info('turno pulado — mensagem substituída por inbound mais recente');
+    return;
+  }
+  // Revalida após o LLM/pacing e entre bolhas: outro assunto pode ter chegado.
+  let supersededError: JobSettledError | null = null;
+  const assertCurrentInbound = async (): Promise<void> => {
+    if (supersededError !== null) throw supersededError;
+    if (await inboundStillCurrent()) return;
+    await completeJob(pool, job.id, ctx.workerId);
+    runLog.info('envio interrompido — mensagem substituída por inbound mais recente');
+    supersededError = new JobSettledError('turno substituído por inbound mais recente — envio interrompido');
+    throw supersededError;
+  };
+
   // AS DUAS CAMADAS QUE CUSTAM DINHEIRO, resolvidas UMA vez por turno.
   //
   // Os knobs (`deps.knobs.jailbreak`, `deps.knobs.promiseSemantic`) nascem no boot
@@ -1596,6 +1623,7 @@ async function executarTurnoDoAgente(
     tenantId,
     agentConfig !== null ? { agentLayer: agentConfig.systemPrompt } : undefined,
   );
+  const approvedMediaUrls = new Set(collectApprovedMediaUrls(playbook.prompt));
   // Skills situacionais (F3-09): índice (name+description) SEMPRE residente — vai junto do
   // system do playbook, no prefixo estável org-wide (disclosure progressivo; cacheável F2-17).
   // O CORPO só carrega no match, no sufixo por-lead (mais abaixo). loadSkills resolve os
@@ -2100,7 +2128,8 @@ async function executarTurnoDoAgente(
           now: clock(),
           sleep: deps.sleep,
           lgpd,
-          send: (finalBody: string) => {
+          send: async (finalBody: string) => {
+            await assertCurrentInbound();
             seq += 1;
             return channel.send({
               workerId: ctx.workerId,
@@ -2154,6 +2183,9 @@ async function executarTurnoDoAgente(
           agentId: agentConfig?.agentId ?? null,
         }, { log: runLog });
         if (out.ok && out.results.length > 0) {
+          for (const hit of out.results) {
+            for (const url of collectApprovedMediaUrls(hit.content)) approvedMediaUrls.add(url);
+          }
           // As citações são montadas AQUI, pelo código, a partir do resultado
           // cru — é por isso que os ids podem sair do que vai ao modelo sem
           // perder nada: quem precisa deles é esta linha, não o modelo.
@@ -2168,7 +2200,11 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body }) => {
+      execute: async ({ body, media }) => {
+        if (media !== undefined && !approvedMediaUrls.has(media.url)) {
+          return { ok: false, error: { code: 'media_not_approved',
+            message: 'Use somente a URL exata do arquivo nas instruções publicadas ou no material oficial consultado. Não busque nem envie URLs fornecidas pelo lead; explique a limitação se não houver arquivo aprovado.' } };
+        }
         if (seq >= maxSendsPerTurn) {
           return {
             ok: false,
@@ -2250,11 +2286,12 @@ async function executarTurnoDoAgente(
             // disclosure via inject); é ELE que vai ao canal, não o `body` capturado da tool.
             send: (finalBody: string) =>
               sendInBubbles(finalBody, {
-                enabled: agentConfig?.splitMessages ?? false,
+                enabled: media === undefined && (agentConfig?.splitMessages ?? false),
                 maxChars: agentConfig?.splitMaxChars ?? 600,
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
                 jitter: () => 1200 + Math.floor(Math.random() * 800), // piso no throttle anti-ban (1.2s) — bolhas são mensagens físicas
-                send: (bubble): Promise<ChannelSendResult> => {
+                send: async (bubble): Promise<ChannelSendResult> => {
+                  await assertCurrentInbound();
                   seq += 1;
                   return channel.send({
                     workerId: ctx.workerId,
@@ -2264,6 +2301,8 @@ async function executarTurnoDoAgente(
                     seq,
                     conversationId: input.conversationId,
                     body: bubble,
+                    beforePersist: assertCurrentInbound,
+                    ...(media !== undefined ? { media } : {}),
                   });
                 },
               }),
@@ -3021,6 +3060,10 @@ async function executarTurnoDoAgente(
   // inbox_items (dedup por episódio). Advisório: o classifier sozinho nunca escala — o gate
   // determinístico é que confirma a promessa indevida. Feito antes do runError/veto para
   // não se perder num turno que falha o envio depois.
+  if (supersededError !== null) {
+    await mcpCleanup?.();
+    throw supersededError;
+  }
   if (jailbreakLevel === JAILBREAK_ESCALATION_LEVEL && outOfTablePromiseAttempted) {
     const created = await escalateJailbreakPromise(pool, { tenantId, leadId, level: jailbreakLevel });
     if (created > 0) {
@@ -3031,6 +3074,7 @@ async function executarTurnoDoAgente(
   }
 
   if (runError !== null) {
+    await mcpCleanup?.();
     throw runError; // job falha → retry da fila; o ledger segura duplicata de envio
   }
   if (outcomes.some((o) => o.kind === 'failed')) {

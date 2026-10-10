@@ -1832,3 +1832,8 @@ Atividade traduz a espera em português. Não há nova tela; a prova de UX e ban
 completos segue no CI existente, conforme decisão de ambiente registrada em
 `docs/specs/obra-subscription-lifecycle.md`. Transporte real entre servidores e
 contatos controlados continua sendo gate de ativação, sem clientes nesta prova.
+
+
+## Atendimento validado — fila e mídia (2026-10-10)
+
+Fonte e checklist: `docs/specs/atendimento-validado.md`. Jornada: Webhooks > Obra no Bolso identifica canal sem apelido; Conexões > Proteção de envio reavalia inbound retido somente no canal/workspace editado. Evento novo não coalesce em job represado; resposta ao assunto anterior é interrompida antes do envio. O agente envia imagem/vídeo aprovado uma vez, com legenda, pelo sink/ledger existentes. PGlite prova o SQL; `tests/invariants/inbound-retomada-e-midia.test.ts` prova o turno completo com Postgres efêmero e modelo/transporte sintéticos. Recebimento real do arquivo e consulta 96h continuam gates separados, sem adiantar relógio ou contatar clientes reais.

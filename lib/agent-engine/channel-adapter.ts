@@ -23,6 +23,10 @@ export interface ChannelSendInput {
   /** referência da conversa no canal (conversation_id do CRM na v1) */
   conversationId: string;
   body: string;
+  /** Mídia opcional, enviada uma vez com o corpo como legenda. */
+  media?: { type: 'image' | 'video'; url: string; mimeType?: string };
+  /** Revalida a conversa após preparar arquivo, antes de persistir a saída. */
+  beforePersist?: () => Promise<void>;
   /**
    * Presente = este envio é um TEMPLATE aprovado, não texto livre.
    *

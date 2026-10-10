@@ -662,6 +662,17 @@
         "A projeção (§4) NÃO se aplica ao Operador: ele precisa do dado cru para operar, e não tem canal por onde vazar. Projetar os dois seria cegar quem opera para proteger quem não fala",
         "O Operador NÃO decide qual unidade atende: isso é do Intent Router. Os dois eixos convivem"
       ]
+    },
+    {
+      "dot": "blue",
+      "title": "Retomada de respostas e arquivos",
+      "items": [
+        "Conexões → Proteção de envio → PUT pacing → reavalia somente inbound retido por janela/cap do mesmo workspace/canal → fila → Before-send aplica novamente todas as regras.",
+        "Drain → debounce da mesma conversa/canal → atualiza mensagem âncora e chave do evento; jobs retidos não absorvem a rajada.",
+        "Turno IA → confere a última inbound antes do LLM e de cada envio → interrompe resposta ao assunto antigo; evento da nova mensagem preserva o próximo atendimento.",
+        "send_message → URL oficial exata → Before-send → ledger → preparo limitado → Storage privado → revalida conversa → sink/URL assinada → WhatsApp, uma vez por arquivo; opt-out e humano continuam soberanos.",
+        "Volta: auditoria da proteção registra quantidade/falha; ficha avisa retomada parcial; log do run explica interrupção sem conteúdo do cliente."
+      ]
     }
   ]
 }

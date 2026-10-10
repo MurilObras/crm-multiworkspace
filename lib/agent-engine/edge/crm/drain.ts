@@ -17,6 +17,7 @@ import type pg from 'pg';
 
 import type { Logger } from '../../obs/logger';
 import { enqueueJob } from '../../queue/queue';
+import { coalesceInboundDebounce } from '../../queue/inbound-pending';
 import { TIPOS_DERIVAVEIS, DERIVACAO_TERMINADA } from '@/lib/messaging/media/derivable';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -366,20 +367,17 @@ async function processEvent(
     });
   }
 
-  // Coalescência: já existe job PENDING futuro deste contato → esta mensagem
-  // entra de carona (o turno lê o histórico completo). Evento vira done.
+  // Só o debounce original pode absorver a rajada, atualizando sua âncora.
   if (knobs.debounceMs > 0) {
-    const { rows: pendingRows } = await pool.query<{ id: string }>(
-      `select id from job_queue
-       where organization_id = $1 and contact_id = $2
-         and kind = 'inbound_turn' and status = 'pending' and run_after > now()
-       limit 1`,
-      [event.organization_id, p.contact_id],
-    );
-    if (pendingRows[0]) {
+    const pendingId = await coalesceInboundDebounce(pool, {
+      organizationId: event.organization_id, contactId: p.contact_id,
+      conversationId: p.conversation_id, channelSessionId: p.channel_session_id,
+      messageId: p.inbound_message_id, eventId: event.id, debounceMs: knobs.debounceMs,
+    });
+    if (pendingId) {
       log.info('drain: rajada coalescida em job pendente', {
         event_id: event.id,
-        job_id: pendingRows[0].id,
+        job_id: pendingId,
       });
       return 'processado';
     }

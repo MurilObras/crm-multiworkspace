@@ -10,6 +10,7 @@ import type { CrmEdgeConfig } from './mcp-client';
 import type { SendMessageInput, SendOutcome } from './send-message';
 import { decideOutboundRecovery, type RecoveryMessage } from './outbound-recovery';
 import { guardObraFollowup } from '@/lib/obra-no-bolso/followup-guard';
+import { prepareAgentMedia } from './prepare-media';
 
 export interface OutboundAttemptOptions {
   actor?: HandlerCtx['actor'];
@@ -32,7 +33,7 @@ export async function executeOutboundAttempt(
          and status='running' and locked_by=$4 for update
      ) insert into send_ledger (organization_id,contact_id,job_id,seq,body_hash)
        select $2,$3,id,$5,$6 from owner on conflict (job_id,seq) do nothing returning id,status`,
-    [job, org, contact, owner, seq, hash(input.body)],
+    [job, org, contact, owner, seq, hash(input.media ? JSON.stringify({ body: input.body, media: input.media }) : input.body)],
   );
   let ledger = claim.rows[0];
   if (!ledger) {
@@ -131,9 +132,13 @@ export async function executeOutboundAttempt(
   const prepared: SinkInput = persisted ?? (options.prepare ? await options.prepare() : {
     conversation_id: input.conversationId, body: input.body,
     ...(input.template ? { type: 'template', template_name: input.template.name,
-      template_language: input.template.language, template_values: input.template.values } : { type: 'text' }),
+      template_language: input.template.language, template_values: input.template.values }
+      : input.media ? { type: input.media.type,
+        ...await prepareAgentMedia(cfg.supabase, input, key) }
+      : { type: 'text' }),
   });
   const messageId = previous?.id ?? key;
+  await input.beforePersist?.();
   try {
     await sendMessageHandler(cfg.supabase, { organization_id: org, requestId: key,
       actor: options.actor ?? { type: 'ai_agent', id: cfg.agentActorId ?? 'agent-engine', role: 'manager' } }, {

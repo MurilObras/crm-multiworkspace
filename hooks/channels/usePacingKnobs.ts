@@ -49,7 +49,9 @@ export function usePacingKnobs(enabled = true) {
 export function useUpdatePacingKnobs() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: PacingKnobsUpdate) => apiClient.put("/api/v1/ai/pacing", body),
+    mutationFn: (body: PacingKnobsUpdate) => apiClient.put<{
+      data: { rechecked_inbound: number; recheck_warning: string | null };
+    }>("/api/v1/ai/pacing", body),
     onSettled: () => qc.invalidateQueries({ queryKey: ["pacing-knobs"] }),
   });
 }

@@ -7016,6 +7016,12 @@ export const DICIONARIO: Traducoes = {
   "A lista mostra só os mais recentes.": { es: "La lista muestra solo los más recientes." },
   "No período houve": { es: "En el período hubo" },
   "acontecimentos.": { es: "sucesos." },
+  "Proteção de envio atualizada. Respostas retidas serão reavaliadas pelas regras atuais.": {
+    es: "Protección de envío actualizada. Las respuestas retenidas se volverán a evaluar con las reglas actuales.",
+  },
+  "Proteção salva, mas não foi possível reavaliar as respostas retidas. Salve novamente ou confira a fila de execuções.": {
+    es: "Protección guardada, pero no se pudieron volver a evaluar las respuestas retenidas. Guarde de nuevo o revise la cola de ejecuciones.",
+  },
 };
 
 /**

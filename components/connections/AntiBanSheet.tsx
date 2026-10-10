@@ -93,7 +93,7 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
 
   const handleSave = async () => {
     try {
-      await update.mutateAsync({
+      const saved = await update.mutateAsync({
         channel_session_id: item.channel_session.id,
         window_start_hour: intOrNull(form.window_start_hour),
         window_end_hour: intOrNull(form.window_end_hour),
@@ -117,7 +117,8 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
             : new Date(`${form.numero_em_uso_desde}T12:00:00.000Z`).toISOString(),
         skip_warmup: form.pular_aquecimento,
       });
-      toast.success(t("Proteção de envio atualizada."));
+      if (saved.data.recheck_warning) toast.warning(t(saved.data.recheck_warning));
+      else toast.success(t("Proteção de envio atualizada. Respostas retidas serão reavaliadas pelas regras atuais."));
       onClose();
     } catch (err) {
       toast.error(err instanceof ApiError ? t(err.message) : t("Não foi possível salvar."));
