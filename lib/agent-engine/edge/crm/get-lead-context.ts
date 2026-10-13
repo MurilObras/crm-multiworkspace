@@ -1,3 +1,4 @@
+import { MESSAGE_ORDER_DESC } from '@/lib/messaging/message-order';
 /**
  * Tool consolidada `get_lead_context` pós-fusão: o payload CURADO (contato +
  * últimas N mensagens) agora vem de LEITURA DIRETA das tabelas canônicas do CRM
@@ -233,7 +234,7 @@ export async function getLeadContext(
            from messages
            where organization_id = $1 and conversation_id = $2
              and direction in ('inbound', 'outbound')
-           order by sent_at desc, id desc
+           order by ${MESSAGE_ORDER_DESC}
            limit $3`,
           [input.tenantId, conversationId, knobs.historyLimit],
         )
@@ -252,7 +253,7 @@ export async function getLeadContext(
     false,
   );
 
-  const context = fitToBudget(
+  const context = fitLeadContextToBudget(
     {
       // ⚠️ `lead_id` aqui é, e sempre foi, o id do CONTATO (ver o comentário da
       // consulta acima e `inbound-turn.ts:1121`). O nome mente, e o modelo
@@ -288,7 +289,7 @@ export async function getLeadContext(
  *   2. restando uma única mensagem que ainda estoura, o corpo é cortado ao meio
  *      repetidamente até caber. Nunca erro fatal.
  */
-function fitToBudget(
+export function fitLeadContextToBudget(
   base: Omit<LeadContext, 'messages'>,
   history: HistoryRow[],
   maxTokens: number,
@@ -354,4 +355,4 @@ export function frameMediaBody(type: string, caption: string | null, derived: st
 }
 
 /** @internal exposto p/ teste — não usar fora de testes. */
-export const __test_fitToBudget = fitToBudget;
+export const __test_fitToBudget = fitLeadContextToBudget;

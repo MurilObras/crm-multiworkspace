@@ -12,15 +12,17 @@ import { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { testConversation } from "@/lib/agent-engine/agent/test-conversation";
+import { loadAgentConfigForTest } from "@/lib/agent-engine/agent/agent-config";
 import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
-vi.mock("@/lib/ai/runtime/agent", () => ({
-  runAgent: vi.fn(async () => {
-    throw new Error("AI_GATEWAY_API_KEY ausente");
-  }),
+vi.mock('@/lib/agent-engine/db/request-pool', () => ({ getRequestPool: vi.fn(() => ({})) }));
+vi.mock('@/lib/agent-engine/agent/agent-config', () => ({ loadAgentConfigForTest: vi.fn(async () => ({ agentId: 'agent' })) }));
+vi.mock('@/lib/agent-engine/agent/test-conversation', () => ({
+  testConversation: vi.fn(async () => { throw new Error('provider_failed SECRET_NAO_EXIBIR'); }),
 }));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
@@ -64,7 +66,7 @@ function stubAdmin() {
         insert: () => ({
           select: () => ({ single: async () => ({ data: { id: "run-1" }, error: null }) }),
         }),
-        update: () => ({ eq: async () => ({ error: null }) }),
+        update: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
       };
     },
   };
@@ -72,6 +74,8 @@ function stubAdmin() {
 
 describe("POST .../versions/:vid/test — runtime real", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(testConversation).mockRejectedValue(new Error("provider_failed SECRET_NAO_EXIBIR"));
     const user: AuthUser = {
       id: USER,
       email: "a@example.com",
@@ -89,6 +93,32 @@ describe("POST .../versions/:vid/test — runtime real", () => {
     vi.mocked(createAdminClient).mockReturnValue(stubAdmin() as never);
   });
 
+  it('usa org autenticada, versão escolhida e histórico simulado no Conversador', async () => {
+    vi.mocked(testConversation).mockResolvedValue({ status: 'completed', final_text: 'Resposta', messages: ['Resposta'], tool_calls: [],
+      tokens_in: 1, tokens_out: 1, cost_cents: 0, latency_ms: 1, runtime: 'conversation_engine', limitations: [], gates: [],
+    });
+    const { POST } = await import('./route');
+    const history = [{ direction: 'outbound', body: 'Pergunta anterior' }];
+    const response = await POST(new NextRequest('http://localhost/x', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sample_message: 'Resposta atual', sample_history: history }),
+    }), { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
+    expect(response.status).toBe(200);
+    expect(loadAgentConfigForTest).toHaveBeenCalledWith(expect.anything(), ORG, AGENT, VERSION);
+    expect(testConversation).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({
+      organizationId: ORG, message: 'Resposta atual', history,
+    }));
+    expect((await response.json()).data).toMatchObject({ stub: false, messages: ['Resposta'], runtime: 'conversation_engine' });
+  });
+
+  it('recusa tentativa de escolher workspace pelo body', async () => {
+    const { POST } = await import('./route');
+    const response = await POST(new NextRequest('http://localhost/x', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sample_message: 'oi', organization_id: 'outra-org' }),
+    }), { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
+    expect(response.status).toBe(422);
+    expect(testConversation).not.toHaveBeenCalled();
+  });
+
   it("falha do runtime vira mensagem legível, não 500 mudo", async () => {
     const { POST } = await import("./route");
     const req = new NextRequest("http://localhost/x", {
@@ -102,6 +132,7 @@ describe("POST .../versions/:vid/test — runtime real", () => {
 
     expect(res.status).toBe(500);
     expect(body.error?.message).toContain("Não consegui executar o agente");
-    expect(body.error?.message).toContain("AI_GATEWAY_API_KEY ausente");
+    expect(body.error?.message).toContain("credenciais de IA");
+    expect(body.error?.message).not.toContain("SECRET_NAO_EXIBIR");
   });
 });

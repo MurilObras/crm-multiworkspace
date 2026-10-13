@@ -195,6 +195,7 @@ export const publishSchema = z.object({ version_id: UUID }).strict();
 export const testRunSchema = z
   .object({
     sample_message: z.string().trim().min(1).max(4000),
+    sample_history: z.array(z.object({ direction: z.enum(['inbound', 'outbound']), body: z.string().trim().min(1).max(4000) }).strict()).max(40).optional(),
     sample_contact: z
       .object({
         name: z.string().trim().min(1).max(120).optional(),

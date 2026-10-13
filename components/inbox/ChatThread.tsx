@@ -1,4 +1,5 @@
 "use client";
+import { compareMessages } from "@/lib/messaging/message-order";
 
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
@@ -37,7 +38,10 @@ export function mergeThreadItems(messages: Message[], notes: Note[]): ThreadItem
   ];
   // Sort estável (Array#sort é estável no V8/Node): empate mantém a ordem de
   // inserção acima — mensagens antes de notas no mesmo instante.
-  items.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+  items.sort((a, b) => {
+    if (a.kind === "message" && b.kind === "message") return compareMessages(a.data, b.data);
+    return new Date(a.ts).getTime() - new Date(b.ts).getTime();
+  });
   return items;
 }
 

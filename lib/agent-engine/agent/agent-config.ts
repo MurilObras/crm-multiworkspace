@@ -270,3 +270,14 @@ export function matchesHandoffKeyword(signal: string, keywords: readonly string[
   const lower = signal.toLowerCase();
   return keywords.some((k) => lower.includes(k));
 }
+
+/** Ensaio pode escolher rascunho. Mesmo mapeamento e escopo do loader publicado. */
+export async function loadAgentConfigForTest(db: pg.Pool, organizationId: string, agentId: string, versionId: string): Promise<PublishedAgentConfig | null> {
+  const { rows } = await db.query<Row>(
+    `select ${SELECT_AGENT_CONFIG_COLUMNS}
+     from ai_agents a join ai_agent_versions v on v.agent_id = a.id and v.organization_id = a.organization_id
+     where a.organization_id = $1 and a.id = $2 and v.id = $3 and a.archived_at is null`,
+    [organizationId, agentId, versionId],
+  );
+  return rows[0] ? mapAgentConfigRow(rows[0]) : null;
+}

@@ -66,9 +66,11 @@ export async function decidirParaOSeam(
   entrada: EntradaDoSeam,
   deps: { log?: { warn: (msg: string, meta?: Record<string, unknown>) => void } } = {},
 ): Promise<DecisaoDeBinding> {
+  // Ensaio contabiliza separado, mas NUNCA escolhe outro modelo/endpoint.
+  const purposeDeConfiguracao = entrada.purpose === 'agent_test' ? 'agent_turn' : entrada.purpose;
   let binding: LinhaDeBinding | null = null;
   try {
-    binding = await carregarBinding(db, entrada.organizationId, entrada.purpose);
+    binding = await carregarBinding(db, entrada.organizationId, purposeDeConfiguracao);
   } catch (err) {
     // Segue o caminho de antes desta frente — indisponibilidade da tabela não
     // pode virar cliente sem resposta.
@@ -88,7 +90,7 @@ export async function decidirParaOSeam(
   }
 
   return decidirBinding({
-    pontoId: entrada.purpose,
+    pontoId: purposeDeConfiguracao,
     binding,
     agentePublicado: entrada.overrideDoAgente,
     // Quando o override do agente está presente, o modelo do call site É o do

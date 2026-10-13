@@ -17,6 +17,8 @@
   ],
   "mainPath": ["leadstate", "atividades", "slot", "decisao", "fila", "leads"],
   "nodes": [
+    { "id": "ensaio", "lane": "humano", "col": 1, "type": "frontend", "label": "Teste do Conversador", "sublabel": "cliente fictício · contexto contínuo · sem efeitos" },
+    { "id": "conversationmodel", "lane": "agente", "col": 1, "type": "service", "label": "conversation-model", "sublabel": "instruções e seam comuns ao worker e ensaio" },
     { "id": "card", "lane": "humano", "col": 3, "type": "frontend", "label": "Card do Kanban", "sublabel": "5 elementos · altura constante" },
     { "id": "slot", "lane": "humano", "col": 2, "type": "frontend", "label": "O slot (faixa ③)", "sublabel": "aguardando > esfriando > normal" },
     { "id": "dossie", "lane": "humano", "col": 4, "type": "frontend", "label": "Dossiê (Sheet)", "sublabel": "cabeçalho > timeline > campos" },
@@ -48,6 +50,9 @@
     { "id": "inbox", "lane": "fora", "col": 4, "type": "frontend", "label": "agent_inbox_items", "sublabel": "demanda sem dono não mora no Kanban" }
   ],
   "edges": [
+    { "id": "ensaio-modelo", "from": "ensaio", "to": "conversationmodel", "label": "mesmo playbook, memória geral e skills" },
+    { "id": "ritual-modelo", "from": "ritual", "to": "conversationmodel", "label": "chamada canônica do Conversador" },
+    { "id": "modelo-ensaio", "from": "conversationmodel", "to": "ensaio", "label": "bolhas e vetos; ações apenas propostas" },
     { "id": "e1", "from": "ritual", "to": "leadstate", "label": "escreve estágio e next_action" },
     { "id": "e2", "from": "ritual", "to": "checkpoints", "label": "grava o turno" },
     { "id": "e3", "from": "ritual", "to": "traces", "label": "registra portões e veto" },

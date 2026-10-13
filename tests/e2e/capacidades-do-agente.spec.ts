@@ -392,3 +392,38 @@ test.describe("Olhar o agente funcionando", () => {
     await painel.screenshot({ path: path.join(EVIDENCIA, "w1-uso-das-capacidades.png") });
   });
 });
+
+
+test('ensaio comercial mantém contexto, mostra bolhas e permite recomeçar pela tela', async ({ page }) => {
+  await entrarComoAdmin(page);
+  await abrirConfiguracao(page);
+  await page.getByRole('tab', { name: 'Teste', exact: true }).click();
+  let previous: unknown;
+  let rounds = 0;
+  // Prova de UI. A chamada do modelo e os gates são exercitados nos testes isolados;
+  // esta intercepção NÃO se apresenta como prova de provider/WhatsApp.
+  await page.route('**/api/v1/ai/agents/*/versions/*/test', async route => {
+    previous = route.request().postDataJSON();
+    rounds++;
+    await route.fulfill({ json: { data: { run_id: 'ensaio', status: 'completed', runtime: 'conversation_engine',
+      messages: rounds === 1 ? ['Você tem uma obra ou várias?', 'E quem acompanha com você?'] : ['Vamos focar nessas duas obras.'],
+      final_text: 'Resposta simulada para a prova de interface', tool_calls: [],
+    } } });
+  });
+  await page.getByLabel('Mensagem do cliente (sample)').fill('Quero organizar minhas obras.');
+  await page.getByRole('button', { name: 'Executar teste', exact: true }).click();
+  await expect(page.getByTestId('test-message-bubbles').locator('p')).toHaveCount(2);
+  await page.getByLabel('Mensagem do cliente (sample)').fill('São duas obras, comigo e meu sócio.');
+  await page.getByRole('button', { name: 'Executar teste', exact: true }).click();
+  await expect(page.getByTestId('test-message-bubbles')).toContainText('Vamos focar nessas duas obras.');
+  expect(previous).toMatchObject({ sample_history: [
+    { direction: 'inbound', body: 'Quero organizar minhas obras.' },
+    { direction: 'outbound', body: 'Você tem uma obra ou várias?' },
+    { direction: 'outbound', body: 'E quem acompanha com você?' },
+  ] });
+  fs.mkdirSync(path.join(process.cwd(), '.superpowers/evidence'), { recursive: true });
+  await page.screenshot({ path: '.superpowers/evidence/teste-conversador-contexto.png', fullPage: true });
+  await page.getByRole('button', { name: 'Nova conversa de teste', exact: true }).click();
+  await expect(page.getByTestId('test-conversation-history')).not.toContainText('Quero organizar minhas obras.');
+  await expect(page.getByLabel('Mensagem do cliente (sample)')).toHaveValue('');
+});

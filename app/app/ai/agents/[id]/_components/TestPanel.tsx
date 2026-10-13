@@ -41,13 +41,18 @@ interface TestResponse {
     tool_calls?: unknown;
     tokens_in?: number;
     tokens_out?: number;
-    cost_cents?: number;
+    cost_cents?: number | null;
     latency_ms?: number;
     would_send_to?: { session?: string | null; chat_id?: string | null };
     stub?: boolean;
+    messages?: string[];
+    runtime?: string;
+    limitations?: Array<{ gate: string; porque: string }>;
+    gates?: Array<{ gate: string; pass: boolean; code?: string }>;
     /** Ver lib/ai/agents/avaliar-resposta-de-teste.ts. */
     guardrails?: {
       passou: boolean;
+      semResposta?: boolean;
       categorias: string[];
       termos: string[];
       naoAvaliados: Array<{ gate: string; porque: string }>;
@@ -55,20 +60,12 @@ interface TestResponse {
   };
 }
 
-/**
- * O que as verificações disseram sobre a resposta — e o que elas NÃO puderam
- * dizer.
- *
- * Antes disto, o teste mostrava a resposta e mais nada: nenhum gate a examinava
- * (o runtime desta tela não importa a cadeia), então o usuário publicava achando
- * que tinha visto o comportamento real. Mostrar "não verificado" em voz alta é o
- * conserto — silêncio que parece aprovação foi o defeito.
- */
+/** Texto aprovado e limites explícitos. O ensaio não confirma efeitos externos. */
 function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]> }) {
   const t = useT();
   return (
     <div className="space-y-2" data-testid="teste-verificacoes">
-      {g.passou ? (
+      {g.semResposta ? (<p className="text-xs text-muted-foreground">{t("Não houve resposta final para avaliar neste ensaio.")}</p>) : g.passou ? (
         <p
           data-testid="teste-vazamento-limpo"
           className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs"
@@ -118,7 +115,7 @@ function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]
         </ul>
         <p className="mt-2">
           {t(
-            "Estas só acontecem numa conversa real, com um cliente de verdade do outro lado. Para ver a lista inteira do que é conferido — e o que cada verificação protege — abra a aba",
+            "As verificações omitidas e as ações simuladas não comprovam o atendimento completo. Para ver as proteções do envio real, abra a aba",
           )}{" "}
           <span className="font-medium text-foreground">{t("Confere antes de enviar")}</span>.
         </p>
@@ -127,7 +124,11 @@ function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]
   );
 }
 
-export function TestPanel({ agent, draft, published, readOnly }: Props) {
+export function TestPanel(props: Props) {
+  return <ConversationTestPanel key={`${props.agent.id}:${(props.draft ?? props.published)?.id ?? 'none'}`} {...props} />;
+}
+
+function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
   const t = useT();
   const target = draft ?? published;
   const qc = useQueryClient();
@@ -135,6 +136,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
   const [message, setMessage] = React.useState("");
   const [contactName, setContactName] = React.useState("");
   const [contactPhone, setContactPhone] = React.useState("");
+  const [history, setHistory] = React.useState<Array<{ direction: 'inbound' | 'outbound'; body: string }>>([]);
   const [pending, setPending] = React.useState(false);
   const [result, setResult] = React.useState<TestResponse["data"] | null>(null);
 
@@ -160,7 +162,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
     setPending(true);
     setResult(null);
     try {
-      const body: Record<string, unknown> = { sample_message: message.trim() };
+      const body: Record<string, unknown> = { sample_message: message.trim(), sample_history: history };
       if (contactName.trim() || contactPhone.trim()) {
         body.sample_contact = {
           ...(contactName.trim() ? { name: contactName.trim() } : {}),
@@ -172,6 +174,10 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
         body,
       );
       setResult(res.data);
+      if (!res.data.stub && res.data.status === 'completed') {
+        const replies = (res.data.messages ?? []).map(body => ({ direction: 'outbound' as const, body }));
+        setHistory(previous => [...previous, { direction: 'inbound' as const, body: message.trim() }, ...replies].slice(-40));
+      }
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });
       toast.success(t("Teste executado."));
     } catch (err) {
@@ -205,8 +211,14 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
             {t("⚠ Modo teste consome créditos do provider.")}
           </p>
           <p className="mt-1 text-muted-foreground">
-            {t("Nenhuma mensagem é enviada via WhatsApp. O run é registrado como dry-run.")}
+            {t("O teste usa o contexto e a chamada de IA do Conversador, com conhecimento, skills e memória do workspace. Nenhuma mensagem é enviada e nenhuma ação é executada no CRM.")}
           </p>
+        </div>
+
+        <div className="space-y-2 rounded-md border p-3 text-xs" data-testid="test-conversation-history">
+          <p>{t("Cliente fictício. O histórico desta simulação continua entre os testes; não usa dados nem memória individual de contatos reais.")}</p>
+          {history.map((m, i) => <p key={i} className="whitespace-pre-wrap"><strong>{m.direction === 'inbound' ? t("Cliente: ") : t("Agente: ")}</strong>{m.body}</p>)}
+          <Button variant="outline" size="sm" disabled={pending || readOnly || !history.length} onClick={() => { setHistory([]); setResult(null); setMessage(''); }}>{t("Nova conversa de teste")}</Button>
         </div>
 
         <div className="space-y-2">
@@ -268,7 +280,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
           <>
             {result.stub ? (
               <p className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs text-muted-foreground">
-                {t("Stub: o runtime real é entregue na S-13.08. O trace abaixo é simulado.")}
+                {t("Modo de demonstração: o modelo não foi chamado. O resultado abaixo é fabricado para testar a tela.")}
               </p>
             ) : null}
 
@@ -281,12 +293,17 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
                 {(result.tokens_in ?? 0).toLocaleString()} /{" "}
                 {(result.tokens_out ?? 0).toLocaleString()}
               </Cell>
-              <Cell label={t("Custo (cents)")}>{result.cost_cents ?? 0}</Cell>
+              <Cell label={t("Custo (cents)")}>{result.cost_cents ?? "—"}</Cell>
             </div>
 
+            {result.runtime ? <p className="text-xs" data-testid="test-runtime">{t("Ensaio do Conversador. Consulte abaixo o que foi simulado e o que exige WhatsApp real.")}</p> : null}
+            {result.status === 'aborted' ? <p className="text-xs text-destructive">{t("Nenhuma mensagem foi aprovada para envio nesta simulação. Confira as tentativas e os vetos abaixo.")}</p> : null}
+            {result.status === 'handoff' ? <p className="text-xs">{t("O pedido interromperia o atendimento automático. Nenhum encaminhamento real foi feito.")}</p> : null}
+            {result.messages?.length ? <div data-testid="test-message-bubbles" className="space-y-2">{result.messages.map((text, i) => <p key={i} className="whitespace-pre-wrap rounded-md border p-2 text-sm">{text}</p>)}</div> : null}
+            {result.gates?.length ? <details className="text-xs"><summary>{t("Verificações realizadas neste ensaio")}</summary>{result.gates.map((g, i) => <p key={i}>{g.gate}: {g.pass ? t("passou") : g.code}</p>)}</details> : null}
             <RunTrace
               toolCalls={result.tool_calls}
-              finalText={result.final_text ?? null}
+              finalText={result.messages?.length ? null : result.final_text ?? null}
               emptyMessage={t("Sem tool calls (resposta direta do LLM).")}
             />
 

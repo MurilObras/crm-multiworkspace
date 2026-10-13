@@ -4,7 +4,7 @@
  *
  * ═══ O DEFEITO (medido em 2026-08-05) ═══
  *
- * `/api/v1/ai/agents/[id]/versions/[vid]/test` chama `runAgent` de
+ * Historicamente, `/api/v1/ai/agents/[id]/versions/[vid]/test` chamava `runAgent` de
  * `lib/ai/runtime/agent.ts`, marcado `@deprecated`, que **não importa
  * `runBeforeSend`**. A cadeia inteira de guardrails vive no processo do worker e
  * está ausente do build do app Next — provado por três medições com controle
@@ -23,7 +23,9 @@
  * produziria um veredito **inventado** — pior que veredito nenhum, porque teria
  * a aparência de prova.
  *
- * Então esta camada avalia o que é decidível **só com o texto**, e devolve a
+ * A rota atual usa testConversation, compartilhando instruções e seam com o
+ * Conversador. Este helper continua disponível para stubs e análise estática.
+ * Ele avalia o que é decidível **só com o texto**, e devolve a
  * lista explícita do que ficou de fora. A tela mostra as duas coisas. Um "não
  * avaliado" visível é informação; um silêncio que parece aprovação é o defeito
  * que estamos consertando.

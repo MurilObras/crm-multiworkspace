@@ -2,7 +2,7 @@
  * POST /api/v1/ai/agents/:id/versions/:vid/test (admin)
  *
  * Spec 10 §4.4. Cria ai_agent_runs com is_dry_run=true e executa o runtime
- * real (S-13.08) via `callInternalRuntime` → `runAgent`. Esse é o default.
+ * do Conversador via `callInternalRuntime` → `testConversation`. Efeitos são simulados.
  *
  * INTERNAL_AGENT_RUN_STUB=true troca a execução por um trace fabricado —
  * serve para exercitar o render da UI sem gastar token, e NÃO é o default:
@@ -114,16 +114,20 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     try {
       resultPayload = await callInternalRuntime({
         runId: runRow.id,
+        agentId: id,
+        history: parsed.data.sample_history,
         orgId: activeOrg.orgId,
         versionId: vid,
         sampleMessage: parsed.data.sample_message,
         sampleContact: parsed.data.sample_contact,
       });
     } catch (err) {
-      const detalhe = err instanceof Error ? err.message : String(err);
+      void err;
+      await admin.from('ai_agent_runs').update({ status: 'failed', completed_at: new Date().toISOString() })
+        .eq('id', runRow.id).eq('organization_id', activeOrg.orgId);
       return fail(
         "internal_error",
-        `Não consegui executar o agente: ${detalhe}. Confira as credenciais de IA da organização.`,
+        "Não consegui executar o agente. Confira as credenciais de IA e a conexão com o banco da instalação.",
         500,
         { requestId },
       );
@@ -216,31 +220,32 @@ async function runStubbedTest(args: StubArgs): Promise<Record<string, unknown>> 
 
 async function callInternalRuntime(args: {
   runId: string;
+  agentId: string;
   orgId: string;
   versionId: string;
   sampleMessage: string;
   sampleContact?: { name?: string; phone?: string };
+  history?: Array<{ direction: 'inbound' | 'outbound'; body: string }>;
 }): Promise<Record<string, unknown>> {
-  // S-13.08 wires the real runtime. We invoke `runAgent` in-process to avoid
-  // a fetch loopback (no cold-start, no INTERNAL_SECRET required in dev).
-  // The run row is already in is_dry_run=true mode so the runtime bypasses
-  // WAHA dispatch + outbound message insert.
-  const { runAgent } = await import("@/lib/ai/runtime/agent");
-  const result = await runAgent({
-    runId: args.runId,
-    override: {
-      sampleMessage: args.sampleMessage,
-      sampleContact: args.sampleContact,
-    },
+  const { getRequestPool } = await import('@/lib/agent-engine/db/request-pool');
+  const { loadAgentConfigForTest } = await import('@/lib/agent-engine/agent/agent-config');
+  const { testConversation } = await import('@/lib/agent-engine/agent/test-conversation');
+  const { llmEdgeConfigFromEnv } = await import('@/lib/agent-engine/edge/llm/run-model-call');
+  const pool = getRequestPool();
+  const agent = await loadAgentConfigForTest(pool, args.orgId, args.agentId, args.versionId);
+  if (!agent) throw new Error('agent_version_not_found');
+  const result = await testConversation(pool, llmEdgeConfigFromEnv(env), {
+    organizationId: args.orgId, agent, message: args.sampleMessage,
+    contact: args.sampleContact, history: args.history,
   });
-  // O runtime desta rota é o `@deprecated`, e ele NÃO importa `runBeforeSend` —
-  // a cadeia de guardrails vive no processo do worker e está ausente do build do
-  // app. Sem a linha abaixo, o botão "Testar" mostra uma resposta que nenhum
-  // gate examinou, e o self-hoster publica achando que viu o comportamento real.
-  //
-  // A avaliação cobre o que é decidível só com o texto e DECLARA o resto (ver
-  // lib/ai/agents/avaliar-resposta-de-teste.ts): fabricar o estado do turno para
-  // rodar a cadeia toda daria um veredito inventado, que é pior do que um
-  // "não avaliado" visível.
-  return { ...result, stub: false, guardrails: avaliarRespostaDeTeste(result.final_text) };
+  const { error } = await createAdminClient().from('ai_agent_runs').update({
+    status: result.status, tool_calls: result.tool_calls, tokens_in: result.tokens_in,
+    tokens_out: result.tokens_out, cost_cents: result.cost_cents, latency_ms: result.latency_ms,
+    steps_count: result.tool_calls.length, completed_at: new Date().toISOString(),
+  }).eq('id', args.runId).eq('organization_id', args.orgId);
+  if (error) throw new Error('test_run_persist_failed');
+  const guardrails = avaliarRespostaDeTeste(result.final_text);
+  return { ...result, run_id: args.runId, stub: false,
+    guardrails: { ...guardrails, passou: Boolean(result.final_text.trim()) && guardrails.passou, semResposta: !result.final_text.trim(), naoAvaliados: result.limitations },
+  };
 }
