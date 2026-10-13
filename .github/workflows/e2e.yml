@@ -845,6 +845,20 @@ jobs:
           # ver o comentário do passo de build: vazio NÃO desliga.
           SENTRY_DSN: "off"
 
+      # A revisão visual também precisa alcançar os casos que PASSARAM. Estas
+      # capturas usam somente as fixtures do E2E, nunca conversas de produção.
+      - name: Guardar capturas de ordem e ensaio do agente
+        if: ${{ always() && matrix.parte == 2 }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidencias-ordem-ensaio-parte-${{ matrix.parte }}
+          include-hidden-files: true
+          path: |
+            .superpowers/evidence/teste-conversador-contexto.png
+            .superpowers/evidence/inbox-quem-manda/ordem-temporal-apos-recarga.png
+          if-no-files-found: ignore
+          retention-days: 7
+
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
