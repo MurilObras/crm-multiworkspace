@@ -232,7 +232,11 @@ export async function testConversation(
     const gateContext: GateContext = {
       now,
       body: parsed.body,
-      provider: "waha",
+      // O ensaio avalia só conteúdo e não possui canal. Se um gate passar a
+      // depender do transporte, falhe explicitamente em vez de inventar um.
+      get provider(): never {
+        throw new Error("test_transport_unavailable");
+      },
       optedOut: false,
       pacing: {
         knobs: PACING_DEFAULTS,

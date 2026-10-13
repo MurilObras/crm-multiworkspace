@@ -166,6 +166,9 @@ describe("ensaio do Conversador sem efeitos reais", () => {
     expect(result.final_text).not.toContain("TEXTO QUE");
     expect(result.tool_calls[0]?.tool_name).toBe("send_message");
     expect(result.gates.some((g) => g.gate === "internal_vocabulary" && g.pass)).toBe(true);
+    expect(result.gates.map((g) => g.gate)).toEqual([
+      "promise", "case_promise", "internal_vocabulary", "agenda_stall", "disclosure",
+    ]);
   });
 
   it("consulta conhecimento só nas fontes do agente e não chama handlers MCP", async () => {
