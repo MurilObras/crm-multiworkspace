@@ -140,6 +140,9 @@ export const PONTOS_DO_AGENTE_PUBLICADO: ReadonlySet<string> = new Set([
  * sai daqui no mesmo commit.
  */
 export const PONTOS_QUE_HERDAM_DO_AGENTE: ReadonlySet<string> = new Set([
+  // Ensaio herda a versão escolhida (inclusive rascunho). O seam usa o mesmo
+  // binding de agent_turn, enquanto custo/telemetria permanecem agent_test.
+  "agent_test",
   "stage_classifier",
   "audio_intent",
   "jailbreak_detect",

@@ -174,6 +174,17 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     registraEm: "llm_calls",
   },
   {
+    id: "agent_test",
+    rotulo: "Ensaiar o atendimento",
+    oQueFaz: "Testa a conversa sem enviar mensagens, usando a mesma configuração de Responder o cliente e a versão escolhida do agente.",
+    papel: "atender",
+    exige: { tools: true },
+    emissor: "lib/agent-engine/agent/test-conversation.ts",
+    sintomaDeFalha: "A tela de testes não gera uma resposta aprovada para o cenário informado.",
+    fixo: { razao: "Herda o ponto Responder o cliente e a versão escolhida do agente; não tem configuração independente." },
+    registraEm: "llm_calls",
+  },
+  {
     id: "operator_turn",
     rotulo: "Trabalhar o funil",
     oQueFaz:

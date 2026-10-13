@@ -1,3 +1,5 @@
+import { loadConversationInstructions, runConversationModel } from './conversation-model';
+import { MESSAGE_ORDER_DESC } from '@/lib/messaging/message-order';
 /**
  * Loop do agente v0 — handler do job `inbound_turn` (F2-09; blueprint 8.8).
  *
@@ -92,11 +94,9 @@ import {
   renderStageHint,
   type StageClassifierKnobs,
 } from './stage-classifier';
-import { loadPlaybook } from './playbook';
 import { DECLARACAO_INSTRUCTION, declaracaoDoTurnoSchema, promessasEmAberto, type DeclaracaoDoTurno } from './declaracao';
 import { projetarContexto, projetarRetornoDeTool, turnoProjeta, type ContextoProjetado } from './projecao';
 import { capacidadesEntreguesAoOperador, catalogoEntregueAoOperador } from './entrega-de-capacidade';
-import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
 import { matchesHandoffKeyword } from './agent-config';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
@@ -115,11 +115,9 @@ import { buildMcpTurnTools } from '../edge/crm/mcp-tools';
 import { cancelPendingCronsForLead } from '../cron/scheduler';
 import {
   latestInboundSignal,
-  loadSkills,
   matchSkills,
   recordSkillMissCandidates,
   renderMatchedSkillBodies,
-  renderSkillIndex,
 } from './skills';
 import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
@@ -598,7 +596,7 @@ async function resumoDoCheckpointDuravel(
  * cacheável junto do índice de skills quando `casesEnabled`, pra não sumir em
  * conversa longa (ao contrário do índice de skills, este bloco não some).
  */
-const CASES_SYSTEM_BLOCK =
+export const CASES_SYSTEM_BLOCK =
   '## Casos para um humano de retaguarda\n' +
   'Quando você NÃO conseguir resolver o pedido do lead sozinho (liberar acesso, corrigir algo num ' +
   'sistema, uma decisão que exige uma pessoa), use a tool open_human_case — você CONTINUA conversando ' +
@@ -624,7 +622,7 @@ const CASES_SYSTEM_BLOCK =
  * FORMA (identificador técnico), não sentença comum em português — então a única
  * cura possível aqui é instrução, não filtro.
  */
-const TRANSPARENCIA_SYSTEM_BLOCK =
+export const TRANSPARENCIA_SYSTEM_BLOCK =
   '## Nunca narre problema interno ao lead\n' +
   'Em QUALQUER mensagem — abrindo caso ou não — NUNCA diga ao lead que "houve um problema/erro no ' +
   'sistema", "falha na confirmação", "erro técnico" ou qualquer variação que admita que algo deu errado ' +
@@ -673,7 +671,7 @@ const TRANSPARENCIA_SYSTEM_BLOCK =
  * pra essas outras decisões (aprovar desconto, exceção de política etc.),
  * porque este parágrafo só fala de checar/marcar horário.
  */
-const AGENDA_SYSTEM_BLOCK =
+export const AGENDA_SYSTEM_BLOCK =
   '## Agenda — nunca confirme sem checar\n' +
   'Você só pode dizer a um lead que um horário/consulta/visita está confirmado DEPOIS de chamar ' +
   'crm_book_appointment (ou crm_reschedule_appointment, para remarcação) e ver o retorno confirmando o ' +
@@ -1516,7 +1514,7 @@ async function executarTurnoDoAgente(
       const { rows: sigRows } = await pool.query<{ body: string | null }>(
         `select body from messages
          where organization_id = $1 and conversation_id = $2 and direction = 'inbound'
-         order by sent_at desc, id desc limit 1`,
+         order by ${MESSAGE_ORDER_DESC} limit 1`,
         [tenantId, input.conversationId],
       );
       routingSignal = sigRows[0]?.body ?? null;
@@ -1643,30 +1641,13 @@ async function executarTurnoDoAgente(
   // Ritual de abertura: playbook por ponteiro + checkpoint + contexto curado.
   // Com agente publicado, o system_prompt DELE é a camada tenant (platform de
   // compliance continua à frente, sempre).
-  const playbook = await loadPlaybook(
-    pool,
-    tenantId,
-    agentConfig !== null ? { agentLayer: agentConfig.systemPrompt } : undefined,
+  const { playbook, skills, systemWithMemory } = await loadConversationInstructions(
+    pool, tenantId, agentConfig?.systemPrompt,
   );
   const approvedMediaUrls = new Set(collectApprovedMediaUrls(playbook.prompt));
   let audioContextSent = false;
   let requiredAudioPrelude = false;
   const audiosSentThisTurn = new Set<string>();
-  // Skills situacionais (F3-09): índice (name+description) SEMPRE residente — vai junto do
-  // system do playbook, no prefixo estável org-wide (disclosure progressivo; cacheável F2-17).
-  // O CORPO só carrega no match, no sufixo por-lead (mais abaixo). loadSkills resolve os
-  // ponteiros a cada run: trocar/rollback de skill = mover o ponteiro, sem restart.
-  const skills = await loadSkills(pool, tenantId);
-  const skillIndex = renderSkillIndex(skills);
-  // Fase 1 (harness): memória geral da org — prefixo estável, resolvida a cada
-  // turno como o playbook (publicar ⇒ próximo turno vale). composeSystemPrompt já
-  // encaixa playbook + memória + índice de skills no prefixo cacheável.
-  const orgMemory = await loadOrgMemory(pool, tenantId);
-  const systemWithMemory = composeSystemPrompt({
-    playbookPrompt: playbook.prompt,
-    orgMemoryBlock: renderOrgMemory(orgMemory),
-    skillIndex,
-  });
   // Spec 15 §5.2: bloco das tools de caso SEMPRE residente (não invalida o prefixo
   // cacheável — mesmo espírito do índice de skills) quando a tela habilita. O bloco da
   // Agenda segue o mesmo padrão, condicionado a `crm_book_appointment` estar entre as
@@ -3227,7 +3208,7 @@ async function executarTurnoDoAgente(
   // isso são as que estouram primeiro.
   let turn: Awaited<ReturnType<typeof runModelCall>>;
   try {
-    turn = await runModelCall(
+    turn = await runConversationModel(
       pool,
       deps.llmCfg,
       {

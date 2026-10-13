@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 /**
  * QUEM MANDA NESTA CONVERSA — provado pela tela, como o atendente faz.
  *
@@ -287,4 +288,42 @@ test.describe("Inbox — quem manda nesta conversa", () => {
       timeout: 30_000,
     });
   });
+  test('mensagens no mesmo segundo respeitam chegada e cursor, inclusive após recarga', async ({ page }) => {
+    await login(page, creds.users.manager!.email, creds.password);
+    const { data: conversation, error: convError } = await admin.from('conversations')
+      .select('channel_session_id').eq('organization_id', creds.org_id).eq('id', conversaId).single();
+    if (convError) throw convError;
+    const ids = [randomUUID(), randomUUID(), randomUUID()].sort().reverse();
+    const sentAt = new Date().toISOString().replace(/\.\d{3}Z$/, '.000Z');
+    const texts = ['Escolha inicial de plano anual', 'Corrigindo: quero plano mensal', 'Mensal é a escolha final'];
+    const { error } = await admin.from('messages').insert(ids.map((id, i) => ({ id,
+      organization_id: creds.org_id, conversation_id: conversaId, contact_id: contatoId,
+      channel_session_id: conversation.channel_session_id, direction: 'inbound', type: 'text', status: 'sent',
+      body: texts[i], sent_at: sentAt, created_at: new Date(Date.parse(sentAt) + i + 1).toISOString(),
+    })));
+    if (error) throw error;
+    await page.goto(`/app/inbox/${conversaId}`);
+    await expect(page.getByText(texts[2]!, { exact: true })).toBeVisible({ timeout: 30_000 });
+    const checkOrder = async () => {
+      const ordered = await page.locator('p').allTextContents();
+      for (const text of texts) expect(ordered).toContain(text);
+      expect(ordered.indexOf(texts[0]!)).toBeLessThan(ordered.indexOf(texts[1]!));
+      expect(ordered.indexOf(texts[1]!)).toBeLessThan(ordered.indexOf(texts[2]!));
+    };
+    await checkOrder();
+    // PostgREST real: cursor novo deve alcançar o UUID MAIOR da mensagem anterior.
+    const firstResponse = await page.request.get(`/api/v1/conversations/${conversaId}/messages?limit=2`);
+    expect(firstResponse.ok()).toBe(true);
+    const first = await firstResponse.json();
+    expect(first.data.map((m: { id: string }) => m.id)).toEqual([ids[1], ids[2]]);
+    const nextResponse = await page.request.get(`/api/v1/conversations/${conversaId}/messages?limit=2&cursor=${encodeURIComponent(first.meta.cursor)}`);
+    expect(nextResponse.ok()).toBe(true);
+    const next = await nextResponse.json();
+    expect(next.data.map((m: { id: string }) => m.id)).toContain(ids[0]);
+    await page.reload();
+    await expect(page.getByText(texts[2]!, { exact: true })).toBeVisible({ timeout: 30_000 });
+    await checkOrder();
+    await captura(page, 'ordem-temporal-apos-recarga');
+  });
+
 });

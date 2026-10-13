@@ -7091,6 +7091,20 @@ export const DICIONARIO: Traducoes = {
   "Desligado: o agente pode escolher este áudio quando a condição for pertinente, ou responder apenas por texto.": { es: "Desactivado: el agente puede elegir este audio cuando la condición sea pertinente, o responder solo por texto." },
   "Cada gravação é enviada no máximo uma vez por conversa. No máximo um áudio obrigatório por resposta; outros áudios só serão considerados quando surgir o assunto correspondente. Pedidos de só texto, atendimento humano e limites de envio são respeitados.": { es: "Cada grabación se envía como máximo una vez por conversación. Como máximo un audio obligatorio por respuesta; otros audios solo se consideran cuando surja el tema correspondiente. Se respetan las solicitudes de solo texto, atención humana y límites de envío." },
 
+  "O teste usa o contexto e a chamada de IA do Conversador, com conhecimento, skills e memória do workspace. Nenhuma mensagem é enviada e nenhuma ação é executada no CRM.": { es: "La prueba usa el contexto y la llamada de IA del Conversador, con conocimiento, skills y memoria del espacio de trabajo. No se envía ningún mensaje ni se ejecuta ninguna acción en el CRM." },
+  "Cliente fictício. O histórico desta simulação continua entre os testes; não usa dados nem memória individual de contatos reais.": { es: "Cliente ficticio. El historial de esta simulación continúa entre las pruebas; no usa datos ni memoria individual de contactos reales." },
+  "Cliente: ": { es: "Cliente: " },
+  "Agente: ": { es: "Agente: " },
+  "Nova conversa de teste": { es: "Nueva conversación de prueba" },
+  "Ensaio do Conversador. Consulte abaixo o que foi simulado e o que exige WhatsApp real.": { es: "Simulación del Conversador. Consulte abajo lo que se simuló y lo que requiere WhatsApp real." },
+  "O turno não foi concluído nesta simulação. Confira as mensagens aprovadas, as tentativas e os vetos abaixo.": { es: "El turno no se completó en esta simulación. Revise los mensajes aprobados, los intentos y los bloqueos abajo." },
+  "O pedido interromperia o atendimento automático. Nenhum encaminhamento real foi feito.": { es: "La solicitud interrumpiría la atención automática. No se realizó ninguna derivación real." },
+  "Verificações realizadas neste ensaio": { es: "Verificaciones realizadas en esta simulación" },
+  "passou": { es: "aprobado" },
+  "Modo de demonstração: o modelo não foi chamado. O resultado abaixo é fabricado para testar a tela.": { es: "Modo de demostración: no se llamó al modelo. El resultado de abajo es ficticio para probar la pantalla." },
+  "As verificações omitidas e as ações simuladas não comprovam o atendimento completo. Para ver as proteções do envio real, abra a aba": { es: "Las verificaciones omitidas y las acciones simuladas no comprueban la atención completa. Para ver las protecciones del envío real, abra la pestaña" },
+
+  "Não houve resposta final para avaliar neste ensaio.": { es: "No hubo una respuesta final para evaluar en esta simulación." },
 };
 
 /**

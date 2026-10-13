@@ -1,4 +1,5 @@
 "use client";
+import { compareMessageTimes } from "@/lib/messaging/message-order";
 
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
@@ -35,9 +36,17 @@ export function mergeThreadItems(messages: Message[], notes: Note[]): ThreadItem
     ...messages.map((data): ThreadItem => ({ kind: "message", ts: data.sent_at, data })),
     ...notes.map((data): ThreadItem => ({ kind: "note", ts: data.created_at, data })),
   ];
-  // Sort estável (Array#sort é estável no V8/Node): empate mantém a ordem de
-  // inserção acima — mensagens antes de notas no mesmo instante.
-  items.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+  // A mesma régua para mensagens E notas evita um comparador não transitivo.
+  // Em empate completo de tempos, mensagens precedem notas; UUID vem por último.
+  items.sort((a, b) => {
+    const byTime = compareMessageTimes(
+      { id: a.data.id, sent_at: a.ts, created_at: a.data.created_at },
+      { id: b.data.id, sent_at: b.ts, created_at: b.data.created_at },
+    );
+    if (byTime) return byTime;
+    if (a.kind !== b.kind) return a.kind === "message" ? -1 : 1;
+    return a.data.id.localeCompare(b.data.id);
+  });
   return items;
 }
 

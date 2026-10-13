@@ -1,3 +1,4 @@
+import { z } from 'zod';
 /**
  * Core handlers para messages (list + send).
  *
@@ -140,22 +141,20 @@ function actorAuditPayload(actor: Actor): {
 // list
 // ---------------------------------------------------------------------------
 
-interface MsgCursorPayload {
-  sent_at: string;
-  id: string;
-}
-
+const cursorSchema = z.object({
+  sent_at: z.string().datetime({ offset: true }),
+  created_at: z.string().datetime({ offset: true }).optional(),
+  id: z.string().uuid(),
+});
+type MsgCursorPayload = z.infer<typeof cursorSchema>;
 function encodeMsgCursor(p: MsgCursorPayload): string {
   return Buffer.from(JSON.stringify(p), "utf8").toString("base64url");
 }
 function decodeMsgCursor(raw: string): MsgCursorPayload | null {
   try {
-    const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as MsgCursorPayload;
-    if (typeof parsed.id !== "string" || typeof parsed.sent_at !== "string") return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+    const parsed = cursorSchema.safeParse(JSON.parse(Buffer.from(raw, "base64url").toString("utf8")));
+    return parsed.success ? parsed.data : null;
+  } catch { return null; }
 }
 
 export interface ListMessagesResult {
@@ -193,6 +192,7 @@ export async function listMessagesHandler(
     .eq("conversation_id", conversationId)
     .eq("organization_id", ctx.organization_id)
     .order("sent_at", { ascending: false })
+    .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(q.limit + 1);
 
@@ -201,7 +201,18 @@ export async function listMessagesHandler(
     if (!c) {
       throw new ApiError(400, "invalid_cursor", undefined, ctx.requestId, "Cursor inválido.");
     }
-    query = query.or(`sent_at.lt.${c.sent_at},and(sent_at.eq.${c.sent_at},id.lt.${c.id})`);
+    // Cursor antigo: descubra o desempate da âncora dentro da MESMA conversa/org.
+    // Não use UUID como cronologia nem reinicie silenciosamente a paginação.
+    let createdAt = c.created_at;
+    if (!createdAt) {
+      const { data: anchor, error: anchorError } = await supabase.from("messages")
+        .select("created_at").eq("organization_id", ctx.organization_id)
+        .eq("conversation_id", conversationId).eq("id", c.id).eq("sent_at", c.sent_at).maybeSingle();
+      if (anchorError) throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Erro ao ler cursor.");
+      if (!anchor) throw new ApiError(400, "invalid_cursor", undefined, ctx.requestId, "Cursor inválido.");
+      createdAt = anchor.created_at as string;
+    }
+    query = query.or(`sent_at.lt.${c.sent_at},and(sent_at.eq.${c.sent_at},created_at.lt.${createdAt}),and(sent_at.eq.${c.sent_at},created_at.eq.${createdAt},id.lt.${c.id})`);
   }
 
   const { data, error } = await query;
@@ -217,7 +228,7 @@ export async function listMessagesHandler(
   // sai o cursor, porque a próxima página é a que vem ANTES no tempo.
   const oldest = page[page.length - 1];
   const cursor =
-    hasMore && oldest ? encodeMsgCursor({ sent_at: oldest.sent_at, id: oldest.id }) : null;
+    hasMore && oldest ? encodeMsgCursor({ sent_at: oldest.sent_at, created_at: oldest.created_at, id: oldest.id }) : null;
 
   // A RESPOSTA continua cronológica (antigo → novo), igual a antes: o consumidor
   // renderiza de cima para baixo sem mudar nada. O que mudou foi QUAIS mensagens

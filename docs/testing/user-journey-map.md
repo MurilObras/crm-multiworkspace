@@ -1876,3 +1876,34 @@ O modelo de teste escolhe somente texto e mesmo assim o áudio obrigatório sai;
 modos opcional, só texto, já enviado e limite insuficiente continuam em texto.
 E2E inclui obrigatório ligado por padrão e edição/reload para opcional. Visual
 com componentes reais confirma a explicação dos dois modos em desktop/celular.
+
+
+### Ordem temporal e ensaio do Conversador — 2026-10-13
+
+- [P1] Mensagens com `sent_at` igual: Inbox, fila, contexto e sinal do roteador
+  devem usar `created_at` antes do UUID. Cursores antigos continuam pela âncora
+  dentro da conversa/workspace; cursor malformado é rejeitado.
+- [P1] Configurador testa duas interações, vê as bolhas e reinicia a conversa.
+  Mudança de agente/versão elimina contexto anterior. Teste chama o seam do
+  Conversador e usa playbook, memória geral, skills e RAG autorizado.
+- Limite deliberado: cliente fictício; nenhuma execução de handler MCP, envio,
+  alteração de memória individual, etapa, agenda ou chamado. Não afirmar que o
+  ensaio prova roteamento, classificadores, áudio obrigatório, fila ou entrega.
+- Regressões isoladas em `message-order`, `message-order-pagination`,
+  `test-conversation` e `test-panel-conversation`. Casos de tela adicionados às
+  jornadas existentes de capacidades do agente e comando do Inbox.
+- Sem schema novo, sem mudança de configurações de qualquer workspace.
+
+Living System Checklist: entrada = mensagem/histórico simulado ou histórico do
+Inbox; saída = bolhas/vetos na aba Teste e mensagens ordenadas; registro =
+`ai_agent_runs` (dry-run), `llm_calls` com propósito `agent_test` e auditoria de
+execução; porta = aba Teste já existente; encerramento = completed/aborted/handoff
+ou failed, com tentativa de encerrar o registro em falhas e aviso estruturado se
+o próprio banco impedir esse encerramento; laço de retorno = veto
+real de conteúdo volta ao modelo para reescrever e é mostrado ao configurador.
+Não há nó novo de produto: reutiliza Conversador, conhecimento, skills e memória.
+
+Revisão adicional: a simulação serializa ferramentas como o turno inbound,
+respeita o limite físico de envio e o tamanho real de cada mensagem (4096).
+Histórico preserva mensagens parciais de turnos abortados; a tela não os apresenta
+como sucesso completo. Notas e mensagens usam um comparador transitivo no Inbox.

@@ -11,6 +11,7 @@ import { z } from "zod";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools/catalog";
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
 import { IDS_DE_PROVEDOR } from "@/lib/ai/pontos/provedores";
+import { sendMessageSchema } from "@/lib/schemas/messaging";
 
 /**
  * Derivado de `lib/ai/pontos/provedores.ts` (a lista única desde a 0127). Como
@@ -195,6 +196,7 @@ export const publishSchema = z.object({ version_id: UUID }).strict();
 export const testRunSchema = z
   .object({
     sample_message: z.string().trim().min(1).max(4000),
+    sample_history: z.array(z.object({ direction: z.enum(['inbound', 'outbound']), body: sendMessageSchema.shape.body.unwrap().trim().min(1) }).strict()).max(40).optional(),
     sample_contact: z
       .object({
         name: z.string().trim().min(1).max(120).optional(),
