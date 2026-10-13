@@ -1,120 +1,184 @@
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * RESPONDER "EM CIMA" DE UMA MENSAGEM — pela tela, como o atendente faz.
- *
- * O canal intermediado aceita citação (`replyTo`, recebendo o `wamid`), e o
- * WhatsApp mostra a resposta pendurada na original. Todo o caminho novo é
- * VISUAL — escolher a mensagem, ver a faixa, cancelar, enviar — e nada disso é
- * alcançável por teste de unidade: eles provam que a função existe, não que dá
- * para clicá-la.
- *
- * ─── O que este arquivo cobre, e por que cada caso ──────────────────────────
- *
- * 1. o botão APARECE (é `opacity-0` até o hover; um `hidden` teria feito o
- *    layout pular, e um seletor que só olha o DOM passaria mesmo invisível);
- * 2. escolher mostra a faixa com o trecho citado;
- * 3. o `×` desfaz — sem saída, quem clica por engano fica preso citando;
- * 4. trocar de conversa LIMPA a citação. Este é o caso que mais importa: sem
- *    ele, a resposta sairia citando a mensagem de OUTRO cliente.
- *
- * Não cobre o que sai na rede: se o `replyTo` chegou ao provider é assunto do
- * adapter, e o teste de tela não deve fingir que mede isso.
+ * Responder citando: dados próprios, sem depender da ordem de outras specs.
+ * Só escreve no Supabase LOCAL validado pelo runner. Não envia WhatsApp.
+ * Selecionar, cancelar e trocar de conversa são feitos pela interface real.
  */
-
 interface E2ECreds {
   password: string;
+  org_id: string;
   users: Record<string, { id: string; email: string; role: string }>;
 }
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
-const creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as E2ECreds;
-const EVIDENCE = path.join(process.cwd(), ".superpowers/evidence");
+const EVIDENCE = path.join(process.cwd(), ".superpowers/evidence/responder-citando");
+const channelId = randomUUID();
+const runId = randomUUID().slice(0, 8);
+const conversations = ["A", "B"].map((letter) => ({
+  id: randomUUID(),
+  contactId: randomUUID(),
+  messageId: randomUUID(),
+  name: `Citação ${letter} ${runId}`,
+  body: `Mensagem da conversa ${letter} para citar.`,
+}));
 
-/**
- * Login simples — e por isso o usuário é o `agent`, nunca o `admin`.
- *
- * `admin` tem MFA obrigatório (doutrina de Auth), então o login dele para em
- * `/login/mfa` e este `waitForURL` nunca resolve. O repo tem um helper próprio
- * para esse caso (`helpers/login-admin.ts`), e ele existe justamente porque a
- * armadilha já pegou gente antes. As demais specs de inbox usam `agent`, que
- * tem o acesso que estes casos precisam.
- */
-async function login(page: Page, email: string): Promise<void> {
+let creds: E2ECreds;
+let admin: SupabaseClient | undefined;
+
+async function login(page: Page): Promise<void> {
   await page.goto("/login");
-  await page.locator("#email").fill(email);
+  await page.locator("#email").fill(creds.users.agent!.email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await page.waitForURL(/\/app(\/|$)/, { timeout: 60_000 });
 }
 
-/**
- * Abre o inbox e entra numa conversa que TENHA mensagens.
- *
- * Devolve `false` quando o ambiente não tem nenhuma — e o caso é pulado em vez
- * de falhar. Um teste que exige dado semeado por outra spec quebra por ordem de
- * execução, não por defeito, e ensina a ignorar o vermelho.
- */
-async function abrirConversaComMensagens(page: Page): Promise<boolean> {
-  await page.goto("/app/inbox?filter=all");
-  const bolhas = page.locator("[class*='rounded-2xl']");
-  const primeira = page.locator("li, [role='listitem']").first();
-  if (await primeira.count()) await primeira.click();
-  await expect(bolhas.first())
-    .toBeVisible({ timeout: 8000 })
-    .catch(() => undefined);
-  return (await bolhas.count()) > 0;
+async function selectConversation(page: Page, index: number) {
+  const conversation = conversations[index]!;
+  const button = page.locator(`button[data-conversation-id="${conversation.id}"]`);
+  await expect(button).toBeVisible({ timeout: 30_000 });
+  await button.click();
+  await expect(button).toHaveAttribute("aria-current", "true");
+  const bubble = page.locator("div.group").filter({
+    has: page.getByText(conversation.body, { exact: true }),
+  });
+  await expect(bubble).toHaveCount(1, { timeout: 30_000 });
+  await expect(bubble).toBeVisible();
+  return { conversation, bubble };
+}
+
+async function quoteMessage(page: Page, index: number) {
+  const { conversation, bubble } = await selectConversation(page, index);
+  await bubble.hover();
+  const reply = bubble.getByRole("button", { name: "Responder a esta mensagem", exact: true });
+  await expect(reply).toBeVisible();
+  await expect(reply).toHaveCSS("opacity", "1");
+  await reply.click();
+  const cancel = page.getByRole("button", { name: "Cancelar resposta", exact: true });
+  await expect(cancel).toBeVisible();
+  await expect(cancel.locator("..")).toContainText(conversation.body);
+  return cancel;
 }
 
 test.describe("responder citando", () => {
-  test("o botão de responder revela a faixa, e o × a desfaz", async ({ page }) => {
-    await login(page, creds.users.agent!.email);
-    const temMensagens = await abrirConversaComMensagens(page);
-    test.skip(!temMensagens, "ambiente sem conversa com mensagens — nada a citar");
+  test.describe.configure({ timeout: 120_000 });
 
-    const responder = page.getByRole("button", { name: /Responder a esta mensagem/i }).first();
+  test.beforeAll(async () => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    // Sem fallback para .env.local: uma execução manual não pode semear produção.
+    if (!url || !key || !["127.0.0.1", "localhost", "[::1]"].includes(new URL(url).hostname)) {
+      throw new Error("Este teste exige Supabase local e ambiente E2E explícito.");
+    }
+    creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as E2ECreds;
+    if (!creds.org_id || !creds.users.agent?.id) throw new Error("Credenciais E2E incompletas.");
+    admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+    fs.mkdirSync(EVIDENCE, { recursive: true });
 
-    // O botão vive em `opacity-0` até o hover. `toBeVisible` do Playwright
-    // considera opacidade 0 como visível, então o hover é o que prova de
-    // verdade que ele é alcançável — e o clique, que é clicável.
-    await page.locator("[class*='rounded-2xl']").first().hover();
-    await expect(responder).toBeVisible();
-    await responder.click();
-
-    // A faixa aparece acima do campo, com o botão de cancelar.
-    const cancelar = page.getByRole("button", { name: /Cancelar resposta/i });
-    await expect(cancelar).toBeVisible();
-    await page.screenshot({
-      path: path.join(EVIDENCE, "responder-citando-faixa.png"),
-      fullPage: false,
+    const { error: channelError } = await admin.from("channel_sessions").insert({
+      id: channelId,
+      organization_id: creds.org_id,
+      waha_session_name: `e2e-citacao-${runId}`,
+      webhook_secret_encrypted: "e2e",
+      status: "WORKING",
     });
+    if (channelError) throw new Error(`Preparar canal de teste: ${channelError.message}`);
+    for (const conversation of conversations) {
+      const now = new Date().toISOString();
+      const phone = `+5511${parseInt(conversation.contactId.slice(0, 8), 16).toString().padStart(10, "0")}`;
+      const { error: contactError } = await admin.from("contacts").insert({
+        id: conversation.contactId,
+        organization_id: creds.org_id,
+        display_name: conversation.name,
+        phone_number: phone,
+      });
+      if (contactError) throw new Error(`Preparar contato de teste: ${contactError.message}`);
+      const { error: conversationError } = await admin.from("conversations").insert({
+        id: conversation.id,
+        organization_id: creds.org_id,
+        contact_id: conversation.contactId,
+        channel_session_id: channelId,
+        status: "claimed",
+        assigned_to_user_id: creds.users.agent!.id,
+        assigned_at: now,
+        bot_silenced_until: "infinity",
+        last_message_at: now,
+        last_inbound_at: now,
+        last_message_preview: conversation.body,
+      });
+      if (conversationError)
+        throw new Error(`Preparar conversa de teste: ${conversationError.message}`);
+      const { error: messageError } = await admin.from("messages").insert({
+        id: conversation.messageId,
+        organization_id: creds.org_id,
+        conversation_id: conversation.id,
+        contact_id: conversation.contactId,
+        channel_session_id: channelId,
+        direction: "inbound",
+        type: "text",
+        status: "delivered",
+        body: conversation.body,
+        sent_at: now,
+      });
+      if (messageError) throw new Error(`Preparar mensagem de teste: ${messageError.message}`);
+    }
+  });
 
-    await cancelar.click();
-    await expect(cancelar).toHaveCount(0);
+  test.afterAll(async () => {
+    if (!admin) return;
+    // Apaga somente os UUIDs criados por ESTA execução, dentro da mesma org.
+    for (const [table, ids] of [
+      ["conversations", conversations.map((c) => c.id)],
+      ["contacts", conversations.map((c) => c.contactId)],
+      ["channel_sessions", [channelId]],
+    ] as const) {
+      const { error } = await admin
+        .from(table)
+        .delete()
+        .eq("organization_id", creds.org_id)
+        .in("id", [...ids]);
+      if (error) throw new Error(`Limpar ${table} de teste: ${error.message}`);
+    }
+  });
+
+  test("o botão de responder revela a faixa, e o × a desfaz", async ({ page }) => {
+    await login(page);
+    await page.goto("/app/inbox?filter=mine");
+    const cancel = await quoteMessage(page, 0);
+    await page.screenshot({ path: path.join(EVIDENCE, "faixa.png"), fullPage: true });
+    await cancel.click();
+    await expect(cancel).toHaveCount(0);
+    await expect(page.getByPlaceholder("Escreva uma mensagem…")).toBeVisible();
+    await page.screenshot({ path: path.join(EVIDENCE, "cancelada.png"), fullPage: true });
   });
 
   test("trocar de conversa LIMPA a citação", async ({ page }) => {
-    // Sem isto a resposta sairia citando a mensagem de outro cliente — o pior
-    // desfecho possível desta feature, e invisível até acontecer com alguém.
-    await login(page, creds.users.agent!.email);
-    const temMensagens = await abrirConversaComMensagens(page);
-    test.skip(!temMensagens, "ambiente sem conversa com mensagens");
+    await login(page);
+    await page.goto("/app/inbox?filter=mine");
+    const cancel = await quoteMessage(page, 0);
+    const documentMarker = randomUUID();
+    await page.evaluate((marker) => {
+      document.documentElement.dataset.quoteDocument = marker;
+    }, documentMarker);
+    const urlBeforeSwitch = page.url();
 
-    await page.locator("[class*='rounded-2xl']").first().hover();
-    const responder = page.getByRole("button", { name: /Responder a esta mensagem/i }).first();
-    await responder.click();
-    await expect(page.getByRole("button", { name: /Cancelar resposta/i })).toBeVisible();
+    // Clique real na B, sem page.goto/reload: o estado da A precisa ser limpo
+    // pelo mesmo caminho que o atendente usa, não pelo descarte da página.
+    await selectConversation(page, 1);
+    await expect(page.locator("html")).toHaveAttribute("data-quote-document", documentMarker);
+    expect(page.url()).toBe(urlBeforeSwitch);
+    await expect(cancel).toHaveCount(0);
+    await page.screenshot({ path: path.join(EVIDENCE, "troca.png"), fullPage: true });
 
-    // Volta para a lista e entra em OUTRA conversa.
-    await page.goto("/app/inbox?filter=all");
-    await page.waitForTimeout(1200);
-
-    await expect(
-      page.getByRole("button", { name: /Cancelar resposta/i }),
-      "a citação sobreviveu à troca de conversa",
-    ).toHaveCount(0);
+    const cancelInB = await quoteMessage(page, 1);
+    await expect(cancelInB.locator("..")).not.toContainText(conversations[0]!.body);
+    await cancelInB.click();
+    await expect(cancelInB).toHaveCount(0);
   });
 });
