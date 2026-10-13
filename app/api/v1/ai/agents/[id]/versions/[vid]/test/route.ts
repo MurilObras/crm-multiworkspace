@@ -20,6 +20,7 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 import { env } from "@/lib/env";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -97,21 +98,21 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   let resultPayload: Record<string, unknown>;
 
-  if (env.INTERNAL_AGENT_RUN_STUB) {
-    resultPayload = await runStubbedTest({
-      runId: runRow.id,
-      orgId: activeOrg.orgId,
-      versionId: vid,
-      sampleMessage: parsed.data.sample_message,
-      sampleContact: parsed.data.sample_contact,
-      version,
-      startedAt,
-    });
-  } else {
-    // Runtime real (S-13.08). Falha aqui é o caso comum de instalação nova —
-    // credencial de IA ausente. Um 500 cru mandaria a pessoa pro log do
-    // servidor; devolvemos o porquê legível na própria tela.
-    try {
+  try {
+    if (env.INTERNAL_AGENT_RUN_STUB) {
+      resultPayload = await runStubbedTest({
+        runId: runRow.id,
+        orgId: activeOrg.orgId,
+        versionId: vid,
+        sampleMessage: parsed.data.sample_message,
+        sampleContact: parsed.data.sample_contact,
+        version,
+        startedAt,
+      });
+    } else {
+      // Runtime real (S-13.08). Falha aqui é o caso comum de instalação nova —
+      // credencial de IA ausente. Um 500 cru mandaria a pessoa pro log do
+      // servidor; devolvemos o porquê legível na própria tela.
       resultPayload = await callInternalRuntime({
         runId: runRow.id,
         agentId: id,
@@ -121,17 +122,26 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
         sampleMessage: parsed.data.sample_message,
         sampleContact: parsed.data.sample_contact,
       });
-    } catch (err) {
-      void err;
-      await admin.from('ai_agent_runs').update({ status: 'failed', completed_at: new Date().toISOString() })
-        .eq('id', runRow.id).eq('organization_id', activeOrg.orgId);
-      return fail(
-        "internal_error",
-        "Não consegui executar o agente. Confira as credenciais de IA e a conexão com o banco da instalação.",
-        500,
-        { requestId },
-      );
     }
+  } catch {
+    // O banco pode ser a causa da falha. Tentar encerrar o registro não pode
+    // substituir a resposta amigável por outra exceção, nem expor o provider.
+    try {
+      const { error } = await admin
+        .from("ai_agent_runs")
+        .update({ status: "failed", completed_at: new Date().toISOString() })
+        .eq("id", runRow.id)
+        .eq("organization_id", activeOrg.orgId);
+      if (error) logger.warn("agent_test_failed_run_persist", { requestId, runId: runRow.id });
+    } catch {
+      logger.warn("agent_test_failed_run_persist", { requestId, runId: runRow.id });
+    }
+    return fail(
+      "internal_error",
+      "Não consegui executar o agente. Confira as credenciais de IA e a conexão com o banco da instalação.",
+      500,
+      { requestId },
+    );
   }
 
   void audit({
@@ -173,7 +183,10 @@ async function runStubbedTest(args: StubArgs): Promise<Record<string, unknown>> 
       step: 1,
       tool_name: "(stub)",
       args: { sample_message: args.sampleMessage },
-      result: { ok: true, note: "INTERNAL_AGENT_RUN_STUB=true — runtime real chega na S-13.08." },
+      result: {
+        ok: true,
+        note: "INTERNAL_AGENT_RUN_STUB=true — execução demonstrativa, sem chamar o modelo.",
+      },
       started_at: args.startedAt.toISOString(),
       ended_at: finishedAt.toISOString(),
     },
@@ -182,7 +195,7 @@ async function runStubbedTest(args: StubArgs): Promise<Record<string, unknown>> 
   const finalText = `[STUB] Resposta simulada para "${args.sampleMessage.slice(0, 80)}".`;
 
   const admin = createAdminClient();
-  await admin
+  const { error } = await admin
     .from("ai_agent_runs")
     .update({
       status: "completed",
@@ -196,6 +209,7 @@ async function runStubbedTest(args: StubArgs): Promise<Record<string, unknown>> 
     })
     .eq("id", args.runId)
     .eq("organization_id", args.orgId);
+  if (error) throw new Error("test_run_persist_failed");
 
   return {
     run_id: args.runId,
@@ -225,27 +239,47 @@ async function callInternalRuntime(args: {
   versionId: string;
   sampleMessage: string;
   sampleContact?: { name?: string; phone?: string };
-  history?: Array<{ direction: 'inbound' | 'outbound'; body: string }>;
+  history?: Array<{ direction: "inbound" | "outbound"; body: string }>;
 }): Promise<Record<string, unknown>> {
-  const { getRequestPool } = await import('@/lib/agent-engine/db/request-pool');
-  const { loadAgentConfigForTest } = await import('@/lib/agent-engine/agent/agent-config');
-  const { testConversation } = await import('@/lib/agent-engine/agent/test-conversation');
-  const { llmEdgeConfigFromEnv } = await import('@/lib/agent-engine/edge/llm/run-model-call');
+  const { getRequestPool } = await import("@/lib/agent-engine/db/request-pool");
+  const { loadAgentConfigForTest } = await import("@/lib/agent-engine/agent/agent-config");
+  const { testConversation } = await import("@/lib/agent-engine/agent/test-conversation");
+  const { llmEdgeConfigFromEnv } = await import("@/lib/agent-engine/edge/llm/run-model-call");
   const pool = getRequestPool();
   const agent = await loadAgentConfigForTest(pool, args.orgId, args.agentId, args.versionId);
-  if (!agent) throw new Error('agent_version_not_found');
+  if (!agent) throw new Error("agent_version_not_found");
   const result = await testConversation(pool, llmEdgeConfigFromEnv(env), {
-    organizationId: args.orgId, agent, message: args.sampleMessage,
-    contact: args.sampleContact, history: args.history,
+    organizationId: args.orgId,
+    agent,
+    message: args.sampleMessage,
+    contact: args.sampleContact,
+    history: args.history,
   });
-  const { error } = await createAdminClient().from('ai_agent_runs').update({
-    status: result.status, tool_calls: result.tool_calls, tokens_in: result.tokens_in,
-    tokens_out: result.tokens_out, cost_cents: result.cost_cents, latency_ms: result.latency_ms,
-    steps_count: result.tool_calls.length, completed_at: new Date().toISOString(),
-  }).eq('id', args.runId).eq('organization_id', args.orgId);
-  if (error) throw new Error('test_run_persist_failed');
+  const { error } = await createAdminClient()
+    .from("ai_agent_runs")
+    .update({
+      status: result.status,
+      tool_calls: result.tool_calls,
+      tokens_in: result.tokens_in,
+      tokens_out: result.tokens_out,
+      cost_cents: result.cost_cents,
+      latency_ms: result.latency_ms,
+      steps_count: result.tool_calls.length,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", args.runId)
+    .eq("organization_id", args.orgId);
+  if (error) throw new Error("test_run_persist_failed");
   const guardrails = avaliarRespostaDeTeste(result.final_text);
-  return { ...result, run_id: args.runId, stub: false,
-    guardrails: { ...guardrails, passou: Boolean(result.final_text.trim()) && guardrails.passou, semResposta: !result.final_text.trim(), naoAvaliados: result.limitations },
+  return {
+    ...result,
+    run_id: args.runId,
+    stub: false,
+    guardrails: {
+      ...guardrails,
+      passou: Boolean(result.final_text.trim()) && guardrails.passou,
+      semResposta: !result.final_text.trim(),
+      naoAvaliados: result.limitations,
+    },
   };
 }

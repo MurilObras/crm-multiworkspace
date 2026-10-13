@@ -395,6 +395,7 @@ test.describe("Olhar o agente funcionando", () => {
 
 
 test('ensaio comercial mantém contexto, mostra bolhas e permite recomeçar pela tela', async ({ page }) => {
+  test.setTimeout(240_000); // Mesmo orçamento de login/render das jornadas deste painel.
   await entrarComoAdmin(page);
   await abrirConfiguracao(page);
   await page.getByRole('tab', { name: 'Teste', exact: true }).click();

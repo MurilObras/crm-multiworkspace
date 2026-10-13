@@ -25,6 +25,27 @@ const props = {
 
 beforeEach(() => vi.clearAllMocks());
 
+it("preserva a mensagem do cliente e respostas parciais quando o turno é abortado", async () => {
+  vi.mocked(apiClient.post).mockResolvedValue({
+    data: {
+      status: "aborted",
+      messages: ["Parte aprovada"],
+      runtime: "conversation_engine",
+    },
+  });
+  render(<TestPanel {...props} />);
+  fireEvent.change(screen.getByLabelText("Mensagem do cliente (sample)"), {
+    target: { value: "Meu pedido" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Executar teste" }));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Nova conversa de teste" })).toBeEnabled(),
+  );
+  expect(screen.getByTestId("test-conversation-history")).toHaveTextContent("Meu pedido");
+  expect(screen.getByTestId("test-conversation-history")).toHaveTextContent("Parte aprovada");
+  expect(screen.getByText(/O turno não foi concluído/)).toBeVisible();
+});
+
 it("continua o histórico simulado e Nova conversa elimina contexto anterior", async () => {
   vi.mocked(apiClient.post).mockResolvedValue({
     data: {

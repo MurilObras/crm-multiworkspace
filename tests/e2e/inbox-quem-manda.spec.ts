@@ -306,6 +306,7 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     await expect(page.getByText(texts[2]!, { exact: true })).toBeVisible({ timeout: 30_000 });
     const checkOrder = async () => {
       const ordered = await page.locator('p').allTextContents();
+      for (const text of texts) expect(ordered).toContain(text);
       expect(ordered.indexOf(texts[0]!)).toBeLessThan(ordered.indexOf(texts[1]!));
       expect(ordered.indexOf(texts[1]!)).toBeLessThan(ordered.indexOf(texts[2]!));
     };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compareMessages } from "./message-order";
 import { mergeThreadItems } from "@/components/inbox/ChatThread";
-import type { Message } from "@/lib/types/messaging";
+import type { Message, Note } from "@/lib/types/messaging";
 
 const sent_at = "2026-10-13T14:16:00Z";
 const first = {
@@ -44,5 +44,18 @@ describe("ordem de mensagens com horário igual", () => {
     expect(
       compareMessages({ ...first, created_at: correction.created_at }, correction),
     ).toBeGreaterThan(0);
+  });
+  it("notas com o mesmo instante não tornam a ordenação dependente da entrada", () => {
+    const note = { id: "note", created_at: sent_at } as Note;
+    for (const messages of [
+      [correction, first],
+      [first, correction],
+    ]) {
+      expect(mergeThreadItems(messages as Message[], [note]).map((i) => i.data.id)).toEqual([
+        note.id,
+        first.id,
+        correction.id,
+      ]);
+    }
   });
 });

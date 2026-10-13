@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testConversation } from "./test-conversation";
 import { loadConversationInstructions, runConversationModel } from "./conversation-model";
 import { searchKnowledge } from "./search-knowledge";
 import { getToolByName } from "@/lib/mcp/tools";
 import type { PublishedAgentConfig } from "./agent-config";
+import { testRunSchema } from "@/lib/ai/agents/validation";
 
 vi.mock("./conversation-model", () => ({
   loadConversationInstructions: vi.fn(),
@@ -50,9 +51,11 @@ const config = {
 } as PublishedAgentConfig;
 const pool = {} as never;
 const options = { toolCallId: "test", messages: [], context: undefined };
+afterEach(() => vi.unstubAllEnvs());
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("MAX_SENDS_PER_TURN", "3");
   vi.mocked(loadConversationInstructions).mockResolvedValue({
     playbook: { prompt: "plataforma + Paulo", versionIds: {} },
     systemWithMemory: "plataforma + Paulo + memória do workspace",
@@ -70,6 +73,65 @@ beforeEach(() => {
 });
 
 describe("ensaio do Conversador sem efeitos reais", () => {
+  it("tools paralelas conservam grupos de bolhas e o limite físico do turno", async () => {
+    vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
+      const send = (body: string) => input.tools!.send_message!.execute!({ body }, options);
+      const outcomes = await Promise.all([
+        send("Primeira mensagem. Segunda mensagem."),
+        send("Terceira mensagem. Quarta mensagem."),
+        send("Quinta mensagem."),
+      ]);
+      expect(outcomes[2]).toMatchObject({ ok: false, error: { code: "turn_send_limit" } });
+      return { usage: { inputTokens: 1, outputTokens: 1 }, costCents: 0, latencyMs: 1 } as never;
+    });
+    const result = await testConversation(
+      pool,
+      {},
+      {
+        organizationId: "org",
+        agent: { ...config, splitMaxChars: 22 },
+        message: "Me explica",
+      },
+    );
+    expect(result.messages).toEqual([
+      "Primeira mensagem.",
+      "Segunda mensagem.",
+      "Terceira mensagem. Quarta mensagem.",
+    ]);
+  });
+
+  it("não aprova bolha atômica maior que o contrato real de envio", async () => {
+    vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
+      const outcome = await input.tools!.send_message!.execute!(
+        { body: "a".repeat(4097) },
+        options,
+      );
+      expect(outcome).toMatchObject({ ok: false, error: { code: "invalid_message_body" } });
+      return { usage: { inputTokens: 1, outputTokens: 1 }, costCents: 0, latencyMs: 1 } as never;
+    });
+    const result = await testConversation(
+      pool,
+      {},
+      { organizationId: "org", agent: config, message: "Oi" },
+    );
+    expect(result.status).toBe("aborted");
+    expect(result.messages).toEqual([]);
+  });
+
+  it("histórico aceita a mensagem máxima válida do CRM, sem travar a próxima rodada", () => {
+    expect(
+      testRunSchema.safeParse({
+        sample_message: "Continue",
+        sample_history: [{ direction: "outbound", body: "a".repeat(4096) }],
+      }).success,
+    ).toBe(true);
+    expect(
+      testRunSchema.safeParse({
+        sample_message: "Continue",
+        sample_history: [{ direction: "outbound", body: "a".repeat(4097) }],
+      }).success,
+    ).toBe(false);
+  });
   it("usa contexto, skill, modelo/credencial e envia só pelas tools; texto solto é descartado", async () => {
     vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
       expect(input.system).toContain("memória do workspace");

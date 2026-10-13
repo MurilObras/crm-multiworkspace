@@ -65,7 +65,11 @@ function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]
   const t = useT();
   return (
     <div className="space-y-2" data-testid="teste-verificacoes">
-      {g.semResposta ? (<p className="text-xs text-muted-foreground">{t("Não houve resposta final para avaliar neste ensaio.")}</p>) : g.passou ? (
+      {g.semResposta ? (
+        <p className="text-xs text-muted-foreground">
+          {t("Não houve resposta final para avaliar neste ensaio.")}
+        </p>
+      ) : g.passou ? (
         <p
           data-testid="teste-vazamento-limpo"
           className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs"
@@ -125,7 +129,12 @@ function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]
 }
 
 export function TestPanel(props: Props) {
-  return <ConversationTestPanel key={`${props.agent.id}:${(props.draft ?? props.published)?.id ?? 'none'}`} {...props} />;
+  return (
+    <ConversationTestPanel
+      key={`${props.agent.id}:${(props.draft ?? props.published)?.id ?? "none"}`}
+      {...props}
+    />
+  );
 }
 
 function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
@@ -136,7 +145,9 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
   const [message, setMessage] = React.useState("");
   const [contactName, setContactName] = React.useState("");
   const [contactPhone, setContactPhone] = React.useState("");
-  const [history, setHistory] = React.useState<Array<{ direction: 'inbound' | 'outbound'; body: string }>>([]);
+  const [history, setHistory] = React.useState<
+    Array<{ direction: "inbound" | "outbound"; body: string }>
+  >([]);
   const [pending, setPending] = React.useState(false);
   const [result, setResult] = React.useState<TestResponse["data"] | null>(null);
 
@@ -162,7 +173,10 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
     setPending(true);
     setResult(null);
     try {
-      const body: Record<string, unknown> = { sample_message: message.trim(), sample_history: history };
+      const body: Record<string, unknown> = {
+        sample_message: message.trim(),
+        sample_history: history,
+      };
       if (contactName.trim() || contactPhone.trim()) {
         body.sample_contact = {
           ...(contactName.trim() ? { name: contactName.trim() } : {}),
@@ -174,9 +188,16 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
         body,
       );
       setResult(res.data);
-      if (!res.data.stub && res.data.status === 'completed') {
-        const replies = (res.data.messages ?? []).map(body => ({ direction: 'outbound' as const, body }));
-        setHistory(previous => [...previous, { direction: 'inbound' as const, body: message.trim() }, ...replies].slice(-40));
+      if (!res.data.stub) {
+        const replies = (res.data.messages ?? []).map((body) => ({
+          direction: "outbound" as const,
+          body,
+        }));
+        setHistory((previous) =>
+          [...previous, { direction: "inbound" as const, body: message.trim() }, ...replies].slice(
+            -40,
+          ),
+        );
       }
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });
       toast.success(t("Teste executado."));
@@ -195,7 +216,7 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="flex flex-col gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             {t("Versão alvo")}
           </p>
           <div className="flex items-center gap-2 text-sm">
@@ -211,14 +232,39 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
             {t("⚠ Modo teste consome créditos do provider.")}
           </p>
           <p className="mt-1 text-muted-foreground">
-            {t("O teste usa o contexto e a chamada de IA do Conversador, com conhecimento, skills e memória do workspace. Nenhuma mensagem é enviada e nenhuma ação é executada no CRM.")}
+            {t(
+              "O teste usa o contexto e a chamada de IA do Conversador, com conhecimento, skills e memória do workspace. Nenhuma mensagem é enviada e nenhuma ação é executada no CRM.",
+            )}
           </p>
         </div>
 
-        <div className="space-y-2 rounded-md border p-3 text-xs" data-testid="test-conversation-history">
-          <p>{t("Cliente fictício. O histórico desta simulação continua entre os testes; não usa dados nem memória individual de contatos reais.")}</p>
-          {history.map((m, i) => <p key={i} className="whitespace-pre-wrap"><strong>{m.direction === 'inbound' ? t("Cliente: ") : t("Agente: ")}</strong>{m.body}</p>)}
-          <Button variant="outline" size="sm" disabled={pending || readOnly || !history.length} onClick={() => { setHistory([]); setResult(null); setMessage(''); }}>{t("Nova conversa de teste")}</Button>
+        <div
+          className="space-y-2 rounded-md border p-3 text-xs"
+          data-testid="test-conversation-history"
+        >
+          <p>
+            {t(
+              "Cliente fictício. O histórico desta simulação continua entre os testes; não usa dados nem memória individual de contatos reais.",
+            )}
+          </p>
+          {history.map((m, i) => (
+            <p key={i} className="whitespace-pre-wrap">
+              <strong>{m.direction === "inbound" ? t("Cliente: ") : t("Agente: ")}</strong>
+              {m.body}
+            </p>
+          ))}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending || readOnly || !history.length}
+            onClick={() => {
+              setHistory([]);
+              setResult(null);
+              setMessage("");
+            }}
+          >
+            {t("Nova conversa de teste")}
+          </Button>
         </div>
 
         <div className="space-y-2">
@@ -262,14 +308,12 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
       </div>
 
       <div className="flex flex-col gap-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
           {t("Resultado")}
         </p>
 
         {!result && !pending ? (
-          <p className="text-sm text-muted-foreground">
-            {t("Nenhum teste executado ainda.")}
-          </p>
+          <p className="text-sm text-muted-foreground">{t("Nenhum teste executado ainda.")}</p>
         ) : null}
 
         {pending ? (
@@ -280,7 +324,9 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
           <>
             {result.stub ? (
               <p className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs text-muted-foreground">
-                {t("Modo de demonstração: o modelo não foi chamado. O resultado abaixo é fabricado para testar a tela.")}
+                {t(
+                  "Modo de demonstração: o modelo não foi chamado. O resultado abaixo é fabricado para testar a tela.",
+                )}
               </p>
             ) : null}
 
@@ -296,14 +342,49 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
               <Cell label={t("Custo (cents)")}>{result.cost_cents ?? "—"}</Cell>
             </div>
 
-            {result.runtime ? <p className="text-xs" data-testid="test-runtime">{t("Ensaio do Conversador. Consulte abaixo o que foi simulado e o que exige WhatsApp real.")}</p> : null}
-            {result.status === 'aborted' ? <p className="text-xs text-destructive">{t("Nenhuma mensagem foi aprovada para envio nesta simulação. Confira as tentativas e os vetos abaixo.")}</p> : null}
-            {result.status === 'handoff' ? <p className="text-xs">{t("O pedido interromperia o atendimento automático. Nenhum encaminhamento real foi feito.")}</p> : null}
-            {result.messages?.length ? <div data-testid="test-message-bubbles" className="space-y-2">{result.messages.map((text, i) => <p key={i} className="whitespace-pre-wrap rounded-md border p-2 text-sm">{text}</p>)}</div> : null}
-            {result.gates?.length ? <details className="text-xs"><summary>{t("Verificações realizadas neste ensaio")}</summary>{result.gates.map((g, i) => <p key={i}>{g.gate}: {g.pass ? t("passou") : g.code}</p>)}</details> : null}
+            {result.runtime ? (
+              <p className="text-xs" data-testid="test-runtime">
+                {t(
+                  "Ensaio do Conversador. Consulte abaixo o que foi simulado e o que exige WhatsApp real.",
+                )}
+              </p>
+            ) : null}
+            {result.status === "aborted" ? (
+              <p className="text-xs text-destructive">
+                {t(
+                  "O turno não foi concluído nesta simulação. Confira as mensagens aprovadas, as tentativas e os vetos abaixo.",
+                )}
+              </p>
+            ) : null}
+            {result.status === "handoff" ? (
+              <p className="text-xs">
+                {t(
+                  "O pedido interromperia o atendimento automático. Nenhum encaminhamento real foi feito.",
+                )}
+              </p>
+            ) : null}
+            {result.messages?.length ? (
+              <div data-testid="test-message-bubbles" className="space-y-2">
+                {result.messages.map((text, i) => (
+                  <p key={i} className="rounded-md border p-2 text-sm whitespace-pre-wrap">
+                    {text}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            {result.gates?.length ? (
+              <details className="text-xs">
+                <summary>{t("Verificações realizadas neste ensaio")}</summary>
+                {result.gates.map((g, i) => (
+                  <p key={i}>
+                    {g.gate}: {g.pass ? t("passou") : g.code}
+                  </p>
+                ))}
+              </details>
+            ) : null}
             <RunTrace
               toolCalls={result.tool_calls}
-              finalText={result.messages?.length ? null : result.final_text ?? null}
+              finalText={result.messages?.length ? null : (result.final_text ?? null)}
               emptyMessage={t("Sem tool calls (resposta direta do LLM).")}
             />
 
@@ -318,7 +399,7 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="rounded-md border border-border/60 px-2 py-1">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</p>
       <p className="font-mono">{children}</p>
     </div>
   );

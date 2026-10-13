@@ -7097,7 +7097,7 @@ export const DICIONARIO: Traducoes = {
   "Agente: ": { es: "Agente: " },
   "Nova conversa de teste": { es: "Nueva conversación de prueba" },
   "Ensaio do Conversador. Consulte abaixo o que foi simulado e o que exige WhatsApp real.": { es: "Simulación del Conversador. Consulte abajo lo que se simuló y lo que requiere WhatsApp real." },
-  "Nenhuma mensagem foi aprovada para envio nesta simulação. Confira as tentativas e os vetos abaixo.": { es: "No se aprobó ningún mensaje para envío en esta simulación. Revise los intentos y los bloqueos abajo." },
+  "O turno não foi concluído nesta simulação. Confira as mensagens aprovadas, as tentativas e os vetos abaixo.": { es: "El turno no se completó en esta simulación. Revise los mensajes aprobados, los intentos y los bloqueos abajo." },
   "O pedido interromperia o atendimento automático. Nenhum encaminhamento real foi feito.": { es: "La solicitud interrumpiría la atención automática. No se realizó ninguna derivación real." },
   "Verificações realizadas neste ensaio": { es: "Verificaciones realizadas en esta simulación" },
   "passou": { es: "aprobado" },

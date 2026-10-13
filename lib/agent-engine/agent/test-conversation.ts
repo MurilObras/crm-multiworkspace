@@ -36,6 +36,8 @@ import { loadDisclosureTemplate } from "../guardrails/disclosure/template";
 import { PACING_DEFAULTS } from "../pacing/defaults";
 import { SPINNING_DEFAULTS } from "../spinning/defaults";
 import { sendInBubbles } from "./split-message";
+import { sendMessageSchema } from "@/lib/schemas/messaging";
+import { guardCurrentInboundTools } from "./current-inbound-tools";
 import { fusoDaOrganizacao } from "./fuso-da-org";
 import { renderAgora } from "@/lib/tempo/agora";
 import type { LeadContext } from "../edge/crm/get-lead-context";
@@ -91,13 +93,20 @@ export const TEST_LIMITATIONS = [
 export interface TestConversationResult {
   final_text: string;
   messages: string[];
-  tool_calls: Array<{ step: number; tool_name: string; args: unknown; result: unknown; started_at: string; ended_at: string }>;
-  status: 'completed' | 'aborted' | 'handoff';
+  tool_calls: Array<{
+    step: number;
+    tool_name: string;
+    args: unknown;
+    result: unknown;
+    started_at: string;
+    ended_at: string;
+  }>;
+  status: "completed" | "aborted" | "handoff";
   tokens_in: number;
   tokens_out: number;
   cost_cents: number | null;
   latency_ms: number;
-  runtime: 'conversation_engine';
+  runtime: "conversation_engine";
   limitations: ReadonlyArray<{ gate: string; porque: string }>;
   gates: Array<{ gate: string; pass: boolean; code?: string }>;
 }
@@ -175,6 +184,7 @@ export async function testConversation(
   const agendaCalled = false;
   const gateTrace: Array<{ gate: string; pass: boolean; code?: string }> = [];
   let sendCount = 0;
+  let bodyRejected = false;
   const maxSends = z.coerce
     .number()
     .int()
@@ -260,18 +270,31 @@ export async function testConversation(
         return { ok: false, error: { code: verdict.code, message: verdict.reason } };
       if (verdict.amendBody) gateContext.body = verdict.amendBody;
     }
-    await sendInBubbles(gateContext.body, {
+    const outcome = await sendInBubbles(gateContext.body, {
       enabled: agent.splitMessages,
       maxChars: agent.splitMaxChars,
       maxBubbles: maxSends - sendCount,
       sleep: async () => {},
       jitter: () => 0,
       send: async (body) => {
+        if (!body.trim() || !sendMessageSchema.shape.body.safeParse(body).success) {
+          bodyRejected = true;
+          return { kind: "failed" };
+        }
         messages.push(body);
         sendCount++;
         return { kind: "sent" };
       },
     });
+    if (outcome.kind === "failed")
+      return {
+        ok: false,
+        error: {
+          code: "invalid_message_body",
+          message:
+            "A bolha excede o tamanho permitido pelo CRM ou está vazia. Reescreva sem cortar informação.",
+        },
+      };
     return { ok: true, simulated: true, status: "preview_only" };
   };
   const add = (
@@ -375,28 +398,38 @@ export async function testConversation(
       gates: gateTrace,
     };
   }
-  const call = await runConversationModel(
-    pool,
-    llm,
-    {
-      tenantId,
-      agentId: agent.agentId,
-      purpose: 'agent_test',
-      system,
-      messages: [{ role: "user", content: opening }],
-      tools,
-      maxSteps: agent.maxSteps,
-      model: agent.model,
-      llmOverride: { provider: agent.provider, credentialId: agent.credentialId },
-    },
-    deps,
-  );
+  // O SDK pode chamar tools em paralelo. Preserve a fila local usada no worker
+  // para não intercalar bolhas nem ultrapassar o limite físico do turno.
+  const execution = guardCurrentInboundTools(tools, async () => {});
+  let call;
+  try {
+    call = await runConversationModel(
+      pool,
+      llm,
+      {
+        tenantId,
+        agentId: agent.agentId,
+        // O inventário estático do repositório reconhece este literal com aspas simples.
+        // prettier-ignore
+        purpose: 'agent_test',
+        system,
+        messages: [{ role: "user", content: opening }],
+        tools: execution.tools,
+        maxSteps: agent.maxSteps,
+        model: agent.model,
+        llmOverride: { provider: agent.provider, credentialId: agent.credentialId },
+      },
+      deps,
+    );
+  } finally {
+    await execution.drain();
+  }
   // Igual ao worker: texto fora de send_message NÃO vira resposta ao cliente.
   return {
     final_text: messages.join("\n\n"),
     messages,
     tool_calls: trace,
-    status: messages.length ? "completed" : "aborted",
+    status: messages.length && !bodyRejected ? "completed" : "aborted",
     tokens_in: call.usage.inputTokens,
     tokens_out: call.usage.outputTokens,
     cost_cents: call.costCents,

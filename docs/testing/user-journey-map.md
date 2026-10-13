@@ -1898,6 +1898,12 @@ Living System Checklist: entrada = mensagem/histórico simulado ou histórico do
 Inbox; saída = bolhas/vetos na aba Teste e mensagens ordenadas; registro =
 `ai_agent_runs` (dry-run), `llm_calls` com propósito `agent_test` e auditoria de
 execução; porta = aba Teste já existente; encerramento = completed/aborted/handoff
-ou failed, sem run permanentemente running por exceção; laço de retorno = veto
+ou failed, com tentativa de encerrar o registro em falhas e aviso estruturado se
+o próprio banco impedir esse encerramento; laço de retorno = veto
 real de conteúdo volta ao modelo para reescrever e é mostrado ao configurador.
 Não há nó novo de produto: reutiliza Conversador, conhecimento, skills e memória.
+
+Revisão adicional: a simulação serializa ferramentas como o turno inbound,
+respeita o limite físico de envio e o tamanho real de cada mensagem (4096).
+Histórico preserva mensagens parciais de turnos abortados; a tela não os apresenta
+como sucesso completo. Notas e mensagens usam um comparador transitivo no Inbox.
