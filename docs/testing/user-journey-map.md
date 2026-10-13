@@ -1907,3 +1907,21 @@ Revisão adicional: a simulação serializa ferramentas como o turno inbound,
 respeita o limite físico de envio e o tamanho real de cada mensagem (4096).
 Histórico preserva mensagens parciais de turnos abortados; a tela não os apresenta
 como sucesso completo. Notas e mensagens usam um comparador transitivo no Inbox.
+
+### Resposta citada sem depender de outras specs — 2026-10-13
+
+`inbox-responder-citando.spec.ts` prepara um canal, dois contatos/conversas e
+mensagens próprias no Supabase local. As conversas pertencem ao atendente usado
+no login, aparecem em Minhas e são selecionadas pelo botão com o UUID exato.
+Ausência de dados ou falha de preparação reprova; não há salto automático.
+
+Os dois casos conferem a faixa com o conteúdo certo, cancelamento e troca real
+da conversa A para B sem recarregar a página. Um marcador no documento e a URL
+comprovam que a limpeza não foi causada por navegação completa. Na B é possível
+citar sua própria mensagem, sem carregar a da A. O teste remove apenas os UUIDs
+que criou, com filtro de organização, e recusa ambientes remotos.
+
+CI executa a spec isolada e depois junto da parte 1 completa. Capturas de faixa,
+cancelamento e troca são exigidas na rodada isolada e disponibilizadas no
+artefato `evidencias-responder-citando` para inspeção visual. Isso valida a tela;
+entrega de citação pelo transporte continua coberta pelos testes dos adapters.
