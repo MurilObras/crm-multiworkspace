@@ -1,4 +1,3 @@
-import { MESSAGE_ORDER_DESC } from '@/lib/messaging/message-order';
 import type { Queryable } from "./queue";
 
 /** Só junta rajadas da MESMA conversa/canal, ainda no debounce original.
@@ -30,7 +29,7 @@ export async function coalesceInboundDebounce(
      ) and organization_id = $1 and status = 'pending'
        and $5::text = (select id::text from messages
          where organization_id = $1 and conversation_id = $3::uuid and direction = 'inbound'
-         order by ${MESSAGE_ORDER_DESC} limit 1)
+         order by coalesce(sent_at, created_at) desc, created_at desc, id desc limit 1)
      returning id`,
     [
       input.organizationId,
@@ -74,7 +73,7 @@ export async function isCurrentInbound(
   const { rows } = await db.query<{ id: string }>(
     `select id from messages where organization_id = $1 and conversation_id = $2
        and direction = 'inbound'
-     order by ${MESSAGE_ORDER_DESC} limit 1`,
+     order by coalesce(sent_at, created_at) desc, created_at desc, id desc limit 1`,
     [organizationId, conversationId],
   );
   return rows[0]?.id === messageId;

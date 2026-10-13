@@ -1,4 +1,3 @@
-import { MESSAGE_ORDER_DESC } from '@/lib/messaging/message-order';
 /**
  * Drain pós-fusão: consome `ai_agent.dispatch_requested` do event_log (MESMO
  * banco — a role vendaval_drain e o transporte cross-banco morreram) e enfileira
@@ -274,7 +273,7 @@ async function processEvent(
   // `created_at`, disparando um turno para CADA mensagem antiga — a IA
   // respondendo conversa de dias atrás. Vira done, sem job, sem gasto.
   //
-  // R7: o desempate. A ordem antiga `sent_at desc, id desc` caía no `id` — uuid
+  // R7: o desempate. `order by sent_at desc, id desc` cai no `id` — uuid
   // aleatório, não cronológico — sempre que dois inbound compartilham `sent_at`
   // (relógio do provider repetido, ou duas mensagens na mesma janela sem
   // timestamp). "A última" saía por sorteio e podia eleger a ANTIGA, disparando
@@ -285,7 +284,7 @@ async function processEvent(
   const { rows: ultimaInbound } = await pool.query<{ id: string }>(
     `select id from messages
      where organization_id = $1 and conversation_id = $2 and direction = 'inbound'
-     order by ${MESSAGE_ORDER_DESC}
+     order by coalesce(sent_at, created_at) desc, created_at desc, id desc
      limit 1`,
     [event.organization_id, p.conversation_id],
   );
