@@ -13,6 +13,7 @@ export const audioDescriptionSchema = z.object({
   stage_ids: audioStageIdsSchema.default([]),
   // Catálogos antigos não passam a disparar automaticamente após atualizar.
   required: z.boolean().default(false),
+  allow_requested_repeat: z.boolean().optional(),
 }).strict();
 export const approvedAudioSchema = audioDescriptionSchema.extend({
   id: z.string().uuid(),
@@ -20,6 +21,8 @@ export const approvedAudioSchema = audioDescriptionSchema.extend({
   mime: z.literal('audio/ogg'),
   size_bytes: z.number().int().positive().max(AUDIO_MAX_BYTES),
   enabled: z.boolean(),
+  content_sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  storage_sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
 }).strict();
 export type ApprovedAudio = z.infer<typeof approvedAudioSchema>;
 export type AudioPreview = ApprovedAudio & { preview_url: string | null };

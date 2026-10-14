@@ -169,3 +169,38 @@ it.each(['invalid_trigger', 'condition_too_long'])('recusa regra malformada %s a
   expect((await POST(request('POST', data), ctx)).status).toBe(422);
   expect(state.upload).not.toHaveBeenCalled(); expect(state.normalize).not.toHaveBeenCalled();
 });
+
+function mediaRequest(method: string, body?: Record<string,unknown>) {
+  return new NextRequest(`http://localhost/api/v1/ai/agents/${AGENT}/media`,{method,
+    ...(body ? {body:JSON.stringify(body),headers:{'Content-Type':'application/json'}} : {})});
+}
+it('rota antiga só lista áudio e sua edição não apaga foto do catálogo canônico',async () => {
+  const audio=await add(); const stored=(await db.pool.query('select config from ai_agents')).rows[0]!.config;
+  const photoId='10000000-0000-4000-8000-000000000075';
+  const photo={...stored.approved_media[0],id:photoId,type:'image',mime:'image/png',storage_path:`${ORG}/agent-media/${AGENT}/${photoId}.png`};
+  await db.pool.query('update ai_agents set config=$1',[JSON.stringify({...stored,approved_media:[stored.approved_media[0],photo]})]);
+  expect((await (await GET(mediaRequest('GET'),ctx)).json()).data).toHaveLength(2);
+  expect((await (await GET(request('GET'),ctx)).json()).data).toHaveLength(1);
+  expect((await PATCH(request('PATCH',{audio_id:audio.id,title:'Áudio editado'}),ctx)).status).toBe(200);
+  expect((await (await GET(mediaRequest('GET'),ctx)).json()).data).toHaveLength(2);
+  expect((await PATCH(mediaRequest('PATCH',{audio_id:photoId,allow_requested_repeat:true}),ctx)).status).toBe(200);
+  const updated=(await (await GET(mediaRequest('GET'),ctx)).json()).data;
+  expect(updated.find((m:{id:string})=>m.id===photoId).allow_requested_repeat).toBe(true);
+  expect((await PATCH(request('PATCH',{audio_id:photoId,enabled:false}),ctx)).status).toBe(404);
+});
+it('permissão de reenvio persiste no canônico e não quebra projeção antiga',async () => {
+  const audio=await add();
+  expect((await PATCH(mediaRequest('PATCH',{audio_id:audio.id,allow_requested_repeat:true}),ctx)).status).toBe(200);
+  const stored=(await db.pool.query('select config from ai_agents')).rows[0]!.config;
+  expect(stored.approved_media[0].allow_requested_repeat).toBe(true);
+  expect(stored.approved_audios[0]).not.toHaveProperty('allow_requested_repeat');
+  expect(stored.approved_audios[0]).not.toHaveProperty('storage_sha256');
+  expect(state.upload).toHaveBeenCalledOnce();
+});
+it('modo de reenvio malformado e catálogo inválido nunca sobrescrevem aprovação',async () => {
+  const data=form(); data.set('allow_requested_repeat','yes');
+  expect((await POST(request('POST',data),ctx)).status).toBe(422);
+  await db.pool.query(`update ai_agents set config='{"approved_media":{"invalid":true}}'`);
+  expect((await POST(request('POST',form()),ctx)).status).toBe(409);
+  expect(state.upload).not.toHaveBeenCalled();
+});

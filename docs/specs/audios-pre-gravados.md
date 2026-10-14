@@ -1,5 +1,10 @@
 # Áudios pré-gravados — PR #23
 
+> Contrato ampliado nesta branch em [Mídias aprovadas](midias-aprovadas.md):
+> foto/vídeo, catálogo canônico e opção de reenvio explícito. As seções de
+> validação abaixo registram o histórico do PR23; não são resultado de testes
+> da ampliação atual, cuja execução foi adiada pelo usuário.
+
 ## Escopo confirmado
 
 Recurso geral do CRM: biblioteca por agente em todos os workspaces, inclusive

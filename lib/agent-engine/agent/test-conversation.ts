@@ -27,7 +27,7 @@ import {
   capacidadesEntreguesAoOperador,
   catalogoEntregueAoOperador,
 } from "./entrega-de-capacidade";
-import { renderApprovedAudios } from "@/lib/ai/agents/approved-audios";
+import { renderApprovedMedia } from "@/lib/ai/agents/approved-media";
 import { collectApprovedMediaUrls } from "./approved-media";
 import { projetarContexto, projetarRetornoDeTool } from "./projecao";
 import { BEFORE_SEND_GATES, type GateContext } from "../guardrails/before-send";
@@ -216,8 +216,8 @@ export async function testConversation(
     if (media) {
       const approved =
         media.type === "audio"
-          ? audios.some((a) => a.id === media.audio_id && a.enabled)
-          : mediaUrls.has(media.url);
+          ? audios.some((a) => a.id === media.audio_id && a.enabled && !('type' in a))
+          : 'media_id' in media ? audios.some(a => a.id === media.media_id && a.enabled && 'type' in a && a.type === media.type) : mediaUrls.has(media.url);
       return {
         ok: false,
         simulated: true,
@@ -367,7 +367,7 @@ export async function testConversation(
   const system = [
     systemWithMemory,
     TRANSPARENCIA_SYSTEM_BLOCK,
-    renderApprovedAudios(audios),
+    renderApprovedMedia(audios),
     agent.casesEnabled ? CASES_SYSTEM_BLOCK : "",
     agent.toolIds.includes("crm_book_appointment") ? AGENDA_SYSTEM_BLOCK : "",
   ]

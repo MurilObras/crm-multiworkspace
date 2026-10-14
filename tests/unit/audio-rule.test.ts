@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeAll, beforeEach, afterAll, expect, it, vi } from 'vitest';
 import { outboundPostgres, ORG, CONTACT, CONV, JOB } from '../helpers/outbound-postgres';
-import { readApprovedAudios } from '@/lib/ai/agents/approved-audios';
+import { readApprovedMedia as readApprovedAudios } from '@/lib/ai/agents/approved-media';
 import { audioIntentMessage, parseAudioIntent, decideRequiredAudio, isFirstAudioContact } from '@/lib/agent-engine/agent/audio-rule';
 import { requiredAudioPlan, deliverRequiredAudio } from '@/lib/agent-engine/agent/required-audio';
 import type { JobRow } from '@/lib/agent-engine/queue/queue';

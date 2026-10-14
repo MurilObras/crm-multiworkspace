@@ -11,7 +11,7 @@ export function AudioRuleSettings({ trigger, condition, disabled, onTrigger, onC
 }) {
   const t = useT(); const id = useId();
   return <div className="space-y-2 rounded-md border p-3">
-    <Label htmlFor={`${id}-trigger`}>{t('Quando enviar este áudio')}</Label>
+    <Label htmlFor={`${id}-trigger`}>{t('Quando enviar esta mídia')}</Label>
     <select id={`${id}-trigger`} className="h-9 w-full rounded-md border bg-background px-3 text-sm" disabled={disabled}
       value={trigger} onChange={e => onTrigger(e.target.value as 'first_contact' | 'topic')}>
       <option value="topic">{t('Quando surgir o assunto correspondente')}</option>
@@ -24,6 +24,6 @@ export function AudioRuleSettings({ trigger, condition, disabled, onTrigger, onC
         placeholder={t('Ex.: quando pedir como funciona o serviço. Exemplos: como funciona? O que consigo fazer? Não usar para dúvidas de preço.')} />
     </>}
     <p className="text-xs text-muted-foreground">{t('O assunto da mensagem atual determina o momento. As etapas apenas restringem onde usar. Se o agente avançar a etapa nesta interação, ela será conferida novamente antes do envio. Não é preciso o cliente repetir a pergunta.')}</p>
-    <p className="text-xs text-muted-foreground">{t('Selecione também as etapas em que essa pergunta pode surgir. Se nenhuma etapa permitida for alcançada nesta interação, o atendimento segue por texto; o áudio não fica esperando outra pergunta.')}</p>
+    <p className="text-xs text-muted-foreground">{t('Selecione também as etapas em que essa pergunta pode surgir. Se nenhuma etapa permitida for alcançada nesta interação, o atendimento segue por texto; a mídia não fica esperando outra pergunta.')}</p>
   </div>;
 }
