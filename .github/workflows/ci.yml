@@ -94,6 +94,9 @@ jobs:
             pnpm test:db tests/invariants/kiwify-update-continuation.test.ts
           done
 
+      - name: Regressão isolada de inbound e mídias aprovadas
+        run: pnpm test:db tests/invariants/inbound-retomada-e-midia.test.ts
+
       - name: RLS isolation + governance invariants
         run: pnpm test:db
 
