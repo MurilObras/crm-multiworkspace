@@ -8,9 +8,10 @@ restringe disponibilidade. Primeira utilização não exige que o cliente peça
 o formato. Repetir o assunto recebe texto. Reenvio exige pedido explícito e
 opção habilitada. Sem aviso de gravação prévia ou promessa antecipada de envio.
 
-Esta etapa implementa e revisa código. Testes funcionais, banco, E2E, CI,
-merge e publicação estão adiados por instrução do usuário. Revisão estática
-não substitui esses testes nem prova entrega real. PR20 não faz parte do escopo.
+Implementação e revisão estática concluídas. Em 14/10/2026, o usuário autorizou
+a execução dos testes funcionais, banco, E2E e CI. Merge e publicação continuam
+adiados. Revisão estática não substitui esses testes nem prova entrega real.
+PR20 não faz parte do escopo.
 
 ## Contrato
 
@@ -97,4 +98,5 @@ trabalhos separados; esta branch não declara essas correções implementadas.
   adaptados; a cobertura anterior de URLs foi preservada em arquivo separado.
 
 Checagens estáticas são registradas no commit desta etapa. A execução da suíte
-e a prova visual continuam pendentes; não usar esta revisão como aprovação de deploy.
+e a prova visual devem ser registradas separadamente; não usar esta revisão
+como aprovação de deploy.

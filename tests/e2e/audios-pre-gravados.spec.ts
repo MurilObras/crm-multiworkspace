@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { mkdir } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
 import { loginComoAdmin, lerCreds } from './helpers/login-admin';
 
@@ -57,7 +58,8 @@ test('aprovar gravação → ouvir → recarregar → desativar → remover pela
       audio.load();
     });
   });
-  await info.attach('biblioteca-de-audios', { body: await library.screenshot(), contentType: 'image/png' });
+  await mkdir('.superpowers/evidence/midias-aprovadas', { recursive: true });
+  await info.attach('biblioteca-de-audios', { body: await library.screenshot({ path: '.superpowers/evidence/midias-aprovadas/audio.png' }), contentType: 'image/png' });
   await page.reload();
   await page.getByTestId('papel-conversa').click();
   await expect(library.getByText(`Etapas permitidas: ${stage.pipeline_name} › ${stage.name}`, { exact: true })).toBeVisible();
@@ -129,7 +131,8 @@ for (const kind of ['image','video'] as const) {
     await item.getByRole('button',{name:'Editar mídia',exact:true}).click();
     await expect(library.getByRole('switch',{name:'Permitir reenvio a pedido explícito'}).first()).not.toBeChecked();
     await library.getByRole('button',{name:'Cancelar edição'}).click();
-    await info.attach(`midia-${kind}`,{body:await item.screenshot(),contentType:'image/png'});
+    await mkdir('.superpowers/evidence/midias-aprovadas', { recursive: true });
+    await info.attach(`midia-${kind}`,{body:await item.screenshot({path:`.superpowers/evidence/midias-aprovadas/${kind}.png`}),contentType:'image/png'});
     await item.getByRole('button',{name:'Remover mídia',exact:true}).click();
     await expect(library.getByText(title,{exact:true})).toHaveCount(0);
   });

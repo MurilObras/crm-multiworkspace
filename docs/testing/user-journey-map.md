@@ -1925,3 +1925,18 @@ CI executa a spec isolada e depois junto da parte 1 completa. Capturas de faixa,
 cancelamento e troca são exigidas na rodada isolada e disponibilizadas no
 artefato `evidencias-responder-citando` para inspeção visual. Isso valida a tela;
 entrega de citação pelo transporte continua coberta pelos testes dos adapters.
+
+### Mídias aprovadas e reenvio explícito — 2026-10-14
+
+- [P1] Administrador aprova áudio, foto PNG e vídeo MP4 sintéticos no editor,
+  confere a prévia decodificada, edita a regra de reenvio, recarrega e remove.
+- `audios-pre-gravados.spec.ts` usa Supabase local e nenhum WhatsApp real.
+  O CI executa os três casos isolados antes da parte 2 completa e exige as
+  capturas `audio.png`, `image.png` e `video.png`, disponibilizadas no artefato
+  `evidencias-midias-aprovadas` inclusive quando a execução passa.
+- Reenvio por pedido explícito, mesma inbound, tentativas pendentes/incertas,
+  preferência por texto, fingerprint, catálogo legado e isolamento de
+  workspace/conversa têm regressões unitárias. A prova de tela não substitui
+  os testes do sink nem a homologação posterior de entrega pelo WhatsApp.
+- Execução e inspeção visual em andamento; esta entrada descreve o contrato
+  de validação e não declara sucesso antecipadamente.
