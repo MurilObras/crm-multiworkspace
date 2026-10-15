@@ -32,7 +32,7 @@ import { MESSAGE_ORDER_DESC } from '@/lib/messaging/message-order';
 import type pg from 'pg';
 import { z } from 'zod';
 import { auxModelArgs, type AuxModelArgs } from './aux-model-args';
-import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
+import type { ChannelAdapter, ChannelSendResult, ChannelSendInput } from '../channel-adapter';
 
 import { withFields, type Logger } from '../obs/logger';
 import { getLeadContext, type LeadContext, type LeadContextResult } from '../edge/crm/get-lead-context';
@@ -62,7 +62,7 @@ import { buildNativeMediaParts } from './media-parts';
 import { enqueueJob, rescheduleJob, completeJob, type JobRow, type Queryable } from '../queue/queue';
 import { isCurrentInbound } from '../queue/inbound-pending';
 import { collectApprovedMediaUrls } from './approved-media';
-import { readApprovedAudios, renderApprovedAudios } from '@/lib/ai/agents/approved-audios';
+import { readApprovedMedia, renderApprovedMedia } from '@/lib/ai/agents/approved-media';
 import { guardCurrentInboundTools } from './current-inbound-tools';
 import { OutboundAudioUnavailableError, OutboundSupersededError } from '@/lib/channels/delivery-error';
 import { eligibleAudiosForContact } from './audio-stage-eligibility';
@@ -161,14 +161,15 @@ export const AGENT_TOOL_DEFS = {
   },
   send_message: {
     description:
-      'Envia UMA mensagem de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado. Para imagem/vídeo aprovado, media leva a URL real da base e body vira legenda. Para áudio pré-gravado, use media com type audio e audio_id aprovado; body é título no histórico, sem legenda. Envie o contexto curto em outra chamada de texto ANTES do áudio. Nunca invente arquivo/URL nem diga que enviou antes da confirmação.',
+      'Envia UMA mensagem de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead. Para foto/vídeo do catálogo, use type image/video e media_id aprovado. URL exata da base continua disponível para arquivos legados. Áudio usa type audio e audio_id aprovado, sem legenda. Envie contexto curto em outra chamada de texto antes da mídia do catálogo, sem anunciar envio futuro. Não invente arquivo/URL nem confirme antes do resultado real.',
     inputSchema: z.object({
       body: z.string().min(1).describe('corpo da mensagem, em pt-br, pronto para envio'),
       media: z.union([z.object({
         type: z.enum(['image', 'video']),
         url: z.string().url().refine((url) => url.startsWith('https://'), 'Use HTTPS para mídia'),
         mimeType: z.string().optional(),
-      }).strict(), z.object({ type: z.literal('audio'), audio_id: z.string().uuid() }).strict()])
+      }).strict(), z.object({ type: z.literal('audio'), audio_id: z.string().uuid() }).strict(),
+      z.object({ type: z.enum(['image', 'video']), media_id: z.string().uuid() }).strict()])
         .optional().describe('Arquivo oficial aprovado; ausente para mensagem de texto'),
     }),
   },
@@ -1663,13 +1664,12 @@ async function executarTurnoDoAgente(
     const { rows } = await pool.query<{ config: unknown }>(
       'select config from ai_agents where organization_id=$1 and id=$2 and archived_at is null',
       [tenantId, agentConfig.agentId]);
-    const catalog = readApprovedAudios(rows[0]?.config).filter(a => a.enabled
-      && (a.trigger_type !== 'first_contact' || firstAudioContact));
+    const catalog = readApprovedMedia(rows[0]?.config).filter(a => a.enabled);
     return availableConversationAudios(pool, tenantId, input.conversationId, agentConfig.agentId,
-      job.id, await eligibleAudiosForContact(pool, tenantId, leadId, catalog), inboundAnchor);
+      job.id, await eligibleAudiosForContact(pool, tenantId, leadId, catalog), inboundAnchor, firstAudioContact);
   };
   const eligibleAudios = await freshAudios();
-  const audioBlock = renderApprovedAudios(eligibleAudios);
+  const audioBlock = renderApprovedMedia(eligibleAudios);
   if (audioBlock) blocosResidentes.push(audioBlock);
   if (agentConfig !== null && agentConfig.casesEnabled) blocosResidentes.push(CASES_SYSTEM_BLOCK);
   if (agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment')) {
@@ -2231,15 +2231,19 @@ async function executarTurnoDoAgente(
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
       execute: async ({ body: requestedBody, media }) => {
-        const audio = media?.type === 'audio' ? (await freshAudios()).find(a => a.id === media.audio_id && a.enabled) : undefined;
-        if (audio?.required && !requiredAudioPrelude) return { ok: false, error: { code: 'audio_managed_by_rule', message: 'O CRM cuida do áudio obrigatório correspondente ao assunto após sua resposta. Não o envie por conta própria.' } };
-        if (media?.type === 'audio' && !audio) return { ok: false, error: { code: 'audio_not_approved', message: 'Escolha somente um áudio do catálogo aprovado deste agente ou responda em texto.' } };
-        if (media?.type === 'audio' && (!audioContextSent || audiosSentThisTurn.has(media.audio_id))) {
-          return { ok: false, error: { code: 'audio_not_ready', message: 'Envie primeiro uma mensagem curta de texto com o contexto. Não repita gravação neste turno.' } };
+        const approvedId = media && ('audio_id' in media ? media.audio_id : 'media_id' in media ? media.media_id : undefined);
+        const audio = approvedId ? (await freshAudios()).find(a => a.id === approvedId && a.enabled
+          && ('type' in a ? a.type : 'audio') === media?.type) : undefined;
+        if (audio?.required && !requiredAudioPrelude) return { ok: false, error: { code: 'audio_managed_by_rule', message: 'O CRM cuida da mídia obrigatória correspondente ao assunto após sua resposta. Não a envie por conta própria.' } };
+        if (approvedId && !audio) return { ok: false, error: { code: 'audio_not_approved', message: 'Escolha somente uma mídia disponível do catálogo aprovado deste agente ou responda em texto.' } };
+        if (approvedId && (!audioContextSent || audiosSentThisTurn.has(approvedId))) {
+          return { ok: false, error: { code: 'audio_not_ready', message: 'Envie primeiro uma mensagem curta de texto com o contexto. Não repita a mídia neste turno.' } };
         }
         const body = audio?.title ?? requestedBody;
-        const outboundMedia = media?.type === 'audio' ? { ...media, agent_id: agentConfig!.agentId } : media;
-        if (media !== undefined && media.type !== 'audio' && !approvedMediaUrls.has(media.url)) {
+        const outboundMedia: ChannelSendInput['media'] = !media ? undefined : media.type === 'audio'
+          ? { ...media, agent_id: agentConfig!.agentId }
+          : 'media_id' in media ? { ...media, agent_id: agentConfig!.agentId } : media;
+        if (media !== undefined && 'url' in media && !approvedMediaUrls.has(media.url)) {
           return { ok: false, error: { code: 'media_not_approved',
             message: 'Use somente a URL exata do arquivo nas instruções publicadas ou no material oficial consultado. Não busque nem envie URLs fornecidas pelo lead; explique a limitação se não houver arquivo aprovado.' } };
         }
@@ -2443,7 +2447,7 @@ async function executarTurnoDoAgente(
             case 'sent':
             case 'already_sent':
               if (media === undefined) audioContextSent = true;
-              if (media?.type === 'audio') audiosSentThisTurn.add(media.audio_id);
+              if (approvedId) audiosSentThisTurn.add(approvedId);
               return { ok: true, status: 'enviada', message_id: outcome.messageId };
             case 'queued':
               return {
@@ -2484,7 +2488,7 @@ async function executarTurnoDoAgente(
         } catch (err) {
           if (err === sendLimitError) return sendLimitResult();
           if (err instanceof OutboundAudioUnavailableError) {
-            if (media?.type === 'audio') audiosSentThisTurn.add(media.audio_id);
+            if (approvedId) audiosSentThisTurn.add(approvedId);
             return { ok: false, error: { code: err.message, message: 'O áudio não está disponível ou já foi usado nesta conversa. Não tente reenviá-lo; continue em texto.' } };
           }
           // bug de programação no adapter: ensina o modelo a encerrar E derruba o job.
@@ -2552,7 +2556,7 @@ async function executarTurnoDoAgente(
           // comparação com a sugestão do classificador no fechamento do run.
           confirmedStage = update.state.stage;
           return { ok: true, status: 'estado_atualizado', stage: update.state.stage, message: update.message,
-            approved_audio_catalog: renderApprovedAudios(await freshAudios()) };
+            approved_audio_catalog: renderApprovedMedia(await freshAudios()) };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
@@ -2879,7 +2883,7 @@ async function executarTurnoDoAgente(
             const executeOriginal = mcpTool.execute.bind(mcpTool);
             rawTools[name] = { ...mcpTool, execute: (async (...args: Parameters<typeof executeOriginal>) => {
               const result = await executeOriginal(...args);
-              const catalog = renderApprovedAudios(await freshAudios());
+              const catalog = renderApprovedMedia(await freshAudios());
               return result && typeof result === 'object' ? { ...result, approved_audio_catalog: catalog }
                 : { result, approved_audio_catalog: catalog };
             }) as typeof mcpTool.execute };
@@ -3086,7 +3090,7 @@ async function executarTurnoDoAgente(
       if ((requiredAudioResult as { status?: string })?.status === 'dispensado') {
         await emitAgentActivityForContact({ pool, organizationId: tenantId, contactId: leadId,
           type: 'send_vetoed', sourceModule: 'agent', sourceId: job.id,
-          reason: 'Áudio obrigatório dispensado: condição de etapa, aprovação, preferência ou atendimento humano mudou. Atendimento segue por texto.',
+          reason: 'Mídia obrigatória dispensada: condição de etapa, aprovação, preferência ou atendimento humano mudou. Atendimento segue por texto.',
           payload: { reason_code: 'required_audio_no_longer_eligible' },
         });
       }
@@ -3118,7 +3122,7 @@ async function executarTurnoDoAgente(
         audioPlan = await requiredAudioPlan(pool, job, ctx.workerId, agentConfig.agentId, [], maxSendsPerTurn);
       } else {
         const candidates = await availableConversationAudios(pool, tenantId, input.conversationId,
-          agentConfig.agentId, job.id, agentConfig.approvedAudios ?? [], inboundAnchor);
+          agentConfig.agentId, job.id, agentConfig.approvedAudios ?? [], inboundAnchor, firstAudioContact);
         const selected = await decideRequiredAudio({ db: pool, job, worker: ctx.workerId, agent: agentConfig.agentId,
           audios: candidates, firstContact: firstAudioContact, classify: async topics => {
             try {
@@ -3144,10 +3148,10 @@ async function executarTurnoDoAgente(
         audioPlan = await requiredAudioPlan(pool, job, ctx.workerId, agentConfig.agentId,
           candidates.filter(a => a.id === selected), maxSendsPerTurn, 'after_response');
         if (selected && !audioPlan) {
-          requiredAudioBlock = '## Áudio obrigatório pendente\nO limite não permite texto de contexto e áudio. Responda por texto e não afirme envio.';
+          requiredAudioBlock = '## Mídia obrigatória pendente\nO limite não permite texto de contexto e mídia. Responda por texto e não afirme envio.';
           await emitAgentActivityForContact({ pool, organizationId: tenantId, contactId: leadId,
             type: 'send_vetoed', sourceModule: 'agent', sourceId: job.id,
-            reason: 'Áudio obrigatório pendente: o limite do agente precisa permitir o texto de contexto e o áudio.',
+            reason: 'Mídia obrigatória pendente: o limite do agente precisa permitir o texto de contexto e o áudio.',
             payload: { reason_code: 'required_audio_message_limit' },
           });
         }
@@ -3158,14 +3162,14 @@ async function executarTurnoDoAgente(
         // se ele não falar, o runtime ainda tem espaço para introdução + áudio.
         reservedAudioSends = 1;
         const selected = agentConfig.approvedAudios?.find(a => a.id === audioPlan!.audio_id);
-        requiredAudioBlock = `## Áudio correspondente ao assunto atual\n${JSON.stringify({ title: selected?.title, content_description: selected?.use_when, stage_permitted_now: eligibleAudios.some(a => a.id === audioPlan!.audio_id) })}\n`
+        requiredAudioBlock = `## Mídia correspondente ao assunto atual\n${JSON.stringify({ title: selected?.title, type: selected && ('type' in selected ? selected.type : 'audio'), content_description: selected?.use_when, stage_permitted_now: eligibleAudios.some(a => a.id === audioPlan!.audio_id) })}\n`
           + 'O CRM tentará enviá-lo após sua resposta nesta interação, conferindo novamente a etapa permitida. '
           + 'Envie uma mensagem curta de contexto. Não diga que já enviou ou que será entregue com certeza. '
-          + 'Se a etapa já permite o áudio, evite repetir a explicação gravada. Se ainda não permite, responda ao pedido por texto. Não mova o card só para liberar o áudio. '
+          + 'Se a etapa já permite a mídia, evite repetir o conteúdo aprovado. Se ainda não permite, responda ao pedido por texto. Não mova o card só para liberar a mídia. '
           + `Restam no máximo ${sendCapacity()} mensagens para sua resposta.`;
       } else if (audioPlan) {
         await executeAudioPlan(audioPlan, false);
-        requiredAudioBlock = `## Áudio obrigatório (retomada)\nResultado REAL: ${JSON.stringify(requiredAudioResult)}\nNão repita o áudio nem afirme entrega sem confirmação.`;
+        requiredAudioBlock = `## Mídia obrigatória (retomada)\nResultado REAL: ${JSON.stringify(requiredAudioResult)}\nNão repita a mídia nem afirme entrega sem confirmação.`;
       }
     } catch (error) {
       if (supersededError !== null) await settleSuperseded();

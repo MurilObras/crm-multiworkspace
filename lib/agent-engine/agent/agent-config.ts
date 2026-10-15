@@ -14,7 +14,7 @@
  *     de fallback: playbook por ponteiro + settings.llm da org + knobs de env).
  */
 import type pg from 'pg';
-import { audioPathOwnedBy, readApprovedAudios, type ApprovedAudio } from '@/lib/ai/agents/approved-audios';
+import { mediaPathOwnedBy, readApprovedMedia, type ApprovedMedia as ApprovedAudio } from '@/lib/ai/agents/approved-media';
 
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
 
@@ -169,7 +169,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     agentId: r.agent_id,
     versionId: r.version_id,
     agentName: r.agent_name,
-    approvedAudios: readApprovedAudios(r.config).filter(a => a.enabled && audioPathOwnedBy(a, r.organization_id, r.agent_id)),
+    approvedAudios: readApprovedMedia(r.config).filter(a => a.enabled && mediaPathOwnedBy(a, r.organization_id, r.agent_id)),
     systemPrompt: r.system_prompt,
     provider: r.provider,
     model: r.model,

@@ -25,6 +25,7 @@ export interface ChannelSendInput {
   body: string;
   /** Imagem/vídeo com legenda; áudio usa referência aprovada e não tem legenda. */
   media?: { type: 'image' | 'video'; url: string; mimeType?: string }
+    | { type: 'image' | 'video'; media_id: string; agent_id: string }
     | { type: 'audio'; audio_id: string; agent_id: string };
   /** Revalida após preparar arquivo e novamente no último pré-voo antes da rede. */
   beforePersist?: () => Promise<void>;

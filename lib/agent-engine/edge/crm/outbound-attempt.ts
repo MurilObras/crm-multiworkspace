@@ -6,7 +6,7 @@ import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
 import { OutboundApprovalRevokedError, OutboundAudioUnavailableError, OutboundLeaseLostError, OutboundSupersededError, type OutboundAttemptWrite } from '@/lib/channels/delivery-error';
 import { z } from 'zod';
 import { assertAudioStillApproved } from '../../agent/approved-audios';
-import { assertConversationAudioAvailable } from '../../agent/conversation-audios';
+import { assertConversationAudioAvailable, assertRawMediaNotPreviouslyManaged } from '../../agent/conversation-audios';
 import type { Message } from '@/lib/types/messaging';
 import { cancelJob, type Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
@@ -132,16 +132,27 @@ export async function executeOutboundAttempt(
   if (outcome) return outcome;
 
   const persisted = (previous?.metadata?.outbound_attempt as { input?: SinkInput } | undefined)?.input;
-  const audioSource = persisted ? previous?.metadata?.approved_audio
-    : input.media?.type === 'audio' ? { agent_id: input.media.agent_id, audio_id: input.media.audio_id } : undefined;
+  let audioSource = persisted ? previous?.metadata?.approved_media ?? previous?.metadata?.approved_audio
+    : input.media && 'agent_id' in input.media ? { agent_id: input.media.agent_id,
+      audio_id: 'audio_id' in input.media ? input.media.audio_id : input.media.media_id, media_type: input.media.type } : undefined;
   const assertAudioApproved = async () => {
     if (!audioSource) return;
     const source = z.object({ agent_id: z.string().uuid(), audio_id: z.string().uuid() }).safeParse(audioSource);
     if (!source.success) throw new OutboundApprovalRevokedError();
-    await assertAudioStillApproved(db, org, source.data.agent_id, source.data.audio_id, contact);
+    const approved = await assertAudioStillApproved(db, org, source.data.agent_id, source.data.audio_id, contact);
+    const kind = 'type' in approved ? approved.type : 'audio';
+    const originalKind = (audioSource as { media_type?: string }).media_type ?? 'audio';
+    if (kind !== originalKind) throw new OutboundApprovalRevokedError();
+    const { rows: requests } = await db.query<{ inbound: string | null }>(
+      `select payload->>'inbound_message_id' as inbound from job_queue where organization_id=$1 and id=$2
+       and kind='inbound_turn' and payload->>'conversation_id'=$3`, [org,job,input.conversationId]);
+    audioSource = { ...source.data, media_id: source.data.audio_id, media_type: kind,
+      fingerprint: approved.content_sha256 ?? null, request_inbound_id: requests[0]?.inbound ?? null };
     await assertConversationAudioAvailable(db, org, persisted?.conversation_id ?? input.conversationId,
-      source.data.agent_id, source.data.audio_id, previous?.id ?? key);
+      source.data.agent_id, source.data.audio_id, previous?.id ?? key, job, approved);
   };
+  const approvalMetadata = () => audioSource ? { approved_media: audioSource,
+    ...((audioSource as { media_type?: string }).media_type === 'audio' ? { approved_audio: audioSource } : {}) } : {};
   const messageId = previous?.id ?? key;
   try {
     await assertAudioApproved();
@@ -153,11 +164,19 @@ export async function executeOutboundAttempt(
           ...await prepareAgentMedia(cfg.supabase, input, key) }
         : { type: 'text' }),
     });
+    const rawFingerprint = prepared.metadata?.agent_media_fingerprint ?? previous?.metadata?.agent_media_fingerprint;
+    const assertRawMedia = async () => {
+      if (!audioSource && typeof rawFingerprint === 'string' && /^[a-f0-9]{64}$/.test(rawFingerprint))
+        await assertRawMediaNotPreviouslyManaged(db,org,input.conversationId,rawFingerprint,messageId);
+    };
     await assertAudioApproved();
+    await assertRawMedia();
     await input.beforePersist?.();
     await sendMessageHandler(cfg.supabase, { organization_id: org, requestId: key,
       actor: options.actor ?? { type: 'ai_agent', id: cfg.agentActorId ?? 'agent-engine', role: 'manager' } }, {
-      ...prepared, metadata: { ...prepared.metadata, ...(audioSource ? { approved_audio: audioSource } : {}), idempotency_key: key,
+      ...prepared, metadata: { ...prepared.metadata,
+        ...(typeof rawFingerprint === 'string' ? { agent_media_fingerprint: rawFingerprint } : {}),
+        ...approvalMetadata(), idempotency_key: key,
         outbound_attempt: { phase: 'prepared', input: { ...prepared, metadata: undefined } } },
     }, {
       messageId,
@@ -176,7 +195,7 @@ export async function executeOutboundAttempt(
            update send_ledger set crm_message_id=$4,body_hash=$5 where id=$6 and organization_id=$2
              and exists(select 1 from prepared) returning id`,
           [job, org, owner, messageId, hash(prepared.body ?? ''), key,
-            JSON.stringify({ ...(audioSource ? { approved_audio: audioSource } : {}), idempotency_key: key, outbound_attempt: { phase: 'prepared', input: { ...prepared, metadata: undefined } } })],
+            JSON.stringify({ ...approvalMetadata(), idempotency_key: key, outbound_attempt: { phase: 'prepared', input: { ...prepared, metadata: undefined } } })],
         );
         if (!rows.length) throw new OutboundLeaseLostError();
       },
@@ -185,6 +204,7 @@ export async function executeOutboundAttempt(
         if (!obra.allowed) throw new ApiError(403, 'forbidden', undefined, job, 'obra_followup_not_eligible');
         // Depois da assinatura do Storage/pré-voo e antes do CAS que abre a rede.
         await assertAudioApproved();
+        await assertRawMedia();
         await input.beforePersist?.();
         const { rows } = await db.query<{ id: string }>(
           `with owner as materialized (select id from job_queue where id=$1 and organization_id=$2
@@ -217,7 +237,7 @@ export async function executeOutboundAttempt(
       if (message && phase === 'prepared') {
         await writeAttemptState(message.id, { expectedPhase: 'prepared', phase: 'rejected', retryable: false,
           patch: { status: 'failed', error_code: reason,
-            error_message: error instanceof OutboundAudioUnavailableError ? 'Este áudio deixou de estar disponível para o atendimento antes do envio.' : 'Resposta dispensada porque chegou uma nova mensagem.' } });
+            error_message: error instanceof OutboundAudioUnavailableError ? 'Esta mídia deixou de estar disponível para o atendimento antes do envio.' : 'Resposta dispensada porque chegou uma nova mensagem.' } });
       }
       await saveLedger('vetoed', message?.id ?? null, reason);
       throw error; // O turno conserva sua lane até terminar o laço de tools.

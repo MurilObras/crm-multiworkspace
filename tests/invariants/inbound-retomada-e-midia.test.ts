@@ -286,12 +286,12 @@ describe("retomada de inbound no turno completo", () => {
       if (behavior === 'used') await persistCapture();
       expect(await rodaTurno(montaHandler(modeloDeEnvio(), behavior === 'limited' ? 1 : 4))).toBeNull();
       expect(enviados.filter(e => e.media?.type === 'audio')).toHaveLength(behavior === 'required' ? 1 : 0);
-      if (behavior === 'limited') expect(JSON.stringify(resultadosVistos)).toContain('Áudio obrigatório pendente');
+      if (behavior === 'limited') expect(JSON.stringify(resultadosVistos)).toContain('Mídia obrigatória pendente');
       if (behavior === 'required') {
         expect(enviados[0]?.body).toBe('Veja a demonstração oficial.');
         expect(enviados).toHaveLength(2);
         expect(enviados[1]?.media).toMatchObject({ type: 'audio', audio_id: audioId });
-        expect(JSON.stringify(resultadosVistos)).toContain('Áudio correspondente ao assunto atual');
+        expect(JSON.stringify(resultadosVistos)).toContain('Mídia correspondente ao assunto atual');
         await persistCapture(); // O seam de captura substitui o transporte, não o histórico durável.
         expect(await rodaTurno(montaHandler(modeloDeEnvio(), 4))).toBeNull();
         expect(enviados.filter(e => e.media?.type === 'audio')).toHaveLength(1);
@@ -415,8 +415,8 @@ describe("retomada de inbound no turno completo", () => {
       if (!outside) expect(observed).toContain('audio_not_ready');
       expect(observed).toContain('audio_not_approved');
       if (revoked) expect(observed).toContain('audio_approval_revoked');
-      if (outside) expect(observed).not.toContain('ÁUDIOS PRÉ-GRAVADOS APROVADOS');
-      else expect(observed).toContain('ÁUDIOS PRÉ-GRAVADOS APROVADOS');
+      if (outside) expect(observed).not.toContain('MÍDIAS APROVADAS DISPONÍVEIS');
+      else expect(observed).toContain('MÍDIAS APROVADAS DISPONÍVEIS');
       expect(observed).not.toContain(audio.storage_path);
     } finally {
       await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1', [agent]);

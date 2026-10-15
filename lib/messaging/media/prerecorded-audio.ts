@@ -16,7 +16,7 @@ export function prerecordedAudioFormat(mime: string): string | null {
   return FORMATS[mime.split(';')[0]!.trim().toLowerCase()] ?? null;
 }
 
-async function convert(args: string[], cwd: string): Promise<void> {
+export async function convert(args: string[], cwd: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn('ffmpeg', args, { cwd, windowsHide: true, stdio: 'ignore' });
     const timer = setTimeout(() => child.kill('SIGKILL'), 30_000);

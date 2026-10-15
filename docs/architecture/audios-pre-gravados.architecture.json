@@ -2,8 +2,8 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Áudios pré-gravados aprovados",
-    "subtitle": "Todos os workspaces: assunto atual, condição na tela e etapa revalidada na mesma interação",
+    "title": "Mídias aprovadas: áudio, foto e vídeo",
+    "subtitle": "Todos os workspaces: assunto, etapa, entrega e reenvio explícito por conversa",
     "output": "audios-pre-gravados.html"
   },
   "lanes": [
@@ -29,19 +29,20 @@
     {
       "id": "api",
       "lane": "config",
-      "label": "API agents/:id/audios",
+      "label": "API agents/:id/media (+ /audios legado)",
       "sublabel": "RBAC, org da sessão, CAS e audit"
     },
     {
       "id": "storage",
       "lane": "config",
       "label": "ffmpeg → Storage privado",
-      "sublabel": "Ogg/Opus imutável"
+      "sublabel": "Ogg/Opus, JPG/PNG e MP4 privados; conteúdo validado, fingerprint e integridade"
     },
     {
       "id": "catalogo",
       "lane": "turno",
-      "label": "ai_agents.config.approved_audios"
+      "label": "ai_agents.config.approved_media",
+      "sublabel": "Canônico; projeção approved_audios para compatibilidade, CAS único"
     },
     {
       "id": "etapas",
@@ -59,7 +60,7 @@
       "id": "historico",
       "lane": "turno",
       "label": "messages → conversation-audios",
-      "sublabel": "Preferência inclui transcrição tardia/corrigida, marcador da fonte e CAS; descarte pré-rede não encerra recepção; fila e incerteza não duplicam"
+      "sublabel": "Preferências duráveis; fingerprint entre agentes; reenvio só a pedido, uma vez por inbound; pendência/incerteza bloqueiam"
     },
     {
       "id": "modelo",
@@ -81,7 +82,7 @@
     {
       "id": "inbox",
       "lane": "entrega",
-      "label": "Inbox: áudio, histórico e estado de entrega"
+      "label": "Inbox: mídias e estado de entrega"
     },
     {
       "id": "assunto",

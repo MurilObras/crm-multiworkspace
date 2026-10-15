@@ -7,7 +7,7 @@ import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
 import type { SendMessageInput } from "./send-message";
 import { CrmTransportError } from "./mcp-client";
 import { OutboundApprovalRevokedError } from '@/lib/channels/delivery-error';
-import { AUDIO_MAX_BYTES, audioPathOwnedBy, readApprovedAudios } from '@/lib/ai/agents/approved-audios';
+import { MEDIA_MAX_BYTES, mediaKind, mediaPathOwnedBy, readApprovedMedia } from '@/lib/ai/agents/approved-media';
 
 /** A URL já foi aprovada no turno. O sink exige Storage privado, não media_url.
  * Intenção e conteúdo fixam o objeto; replay persistido nem baixa de novo.
@@ -18,7 +18,7 @@ export async function prepareAgentMedia(
   supabase: SupabaseClient,
   input: SendMessageInput,
   intentId: string,
-): Promise<{ media_storage_path: string; media_mime: string; media_size_bytes: number }> {
+): Promise<{ media_storage_path: string; media_mime: string; media_size_bytes: number; metadata?: Record<string, unknown> }> {
   const media = input.media;
   if (!media) throw new Error("agent_media_missing");
   try {
@@ -32,16 +32,19 @@ export async function prepareAgentMedia(
     let bytes: Buffer;
     let mime: string;
     let size: number;
-    if (media.type === 'audio') {
+    if ('agent_id' in media) {
       const { data: agent, error: agentError } = await supabase.from('ai_agents').select('config')
         .eq('id', media.agent_id).eq('organization_id', input.tenantId).is('archived_at', null).maybeSingle();
-      const audio = readApprovedAudios(agent?.config).find(a => a.id === media.audio_id && a.enabled
-        && audioPathOwnedBy(a, input.tenantId, media.agent_id));
+      const mediaId = 'audio_id' in media ? media.audio_id : media.media_id;
+      const audio = readApprovedMedia(agent?.config).find(a => a.id === mediaId && a.enabled
+        && mediaKind(a) === media.type && mediaPathOwnedBy(a, input.tenantId, media.agent_id));
       if (agentError) throw new Error('agent_audio_lookup_failed');
       if (!audio) throw new OutboundApprovalRevokedError();
       const { data: file, error: downloadError } = await supabase.storage.from('whatsapp-media').download(audio.storage_path);
-      if (downloadError || !file || file.size > AUDIO_MAX_BYTES || file.size !== audio.size_bytes) throw new Error('agent_audio_download_failed');
+      if (downloadError || !file || file.size > MEDIA_MAX_BYTES || file.size !== audio.size_bytes) throw new Error('agent_audio_download_failed');
       bytes = Buffer.from(await file.arrayBuffer());
+      if (audio.storage_sha256 && createHash('sha256').update(bytes).digest('hex') !== audio.storage_sha256)
+        throw new OutboundApprovalRevokedError();
       mime = audio.mime;
       size = bytes.length;
     } else {
@@ -87,7 +90,8 @@ export async function prepareAgentMedia(
       .from("whatsapp-media")
       .upload(path, bytes, { contentType: mime, upsert: true });
     if (uploadError) throw new Error("agent_media_upload_failed");
-    return { media_storage_path: path, media_mime: mime, media_size_bytes: size };
+    return { media_storage_path: path, media_mime: mime, media_size_bytes: size,
+      ...(!('agent_id' in media) ? { metadata: { agent_media_fingerprint: createHash('sha256').update(bytes).digest('hex') } } : {}) };
   } catch (error) {
     if (error instanceof OutboundApprovalRevokedError) throw error;
     // Sem URL, credencial ou corpo externo no log/tool. A fila limita tentativas.

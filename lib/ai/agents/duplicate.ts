@@ -135,6 +135,7 @@ export async function duplicateAgentWithVersion(
   // Aprovação é específica do agente; uma cópia não herda autorização de envio.
   const copiedConfig = { ...(src.config as Record<string, unknown> ?? {}) };
   delete copiedConfig.approved_audios;
+  delete copiedConfig.approved_media;
   const isMcp = src.kind === "mcp_agent";
   const srcVersion = isMcp ? await pickSourceVersion(admin, orgId, agentId) : null;
 

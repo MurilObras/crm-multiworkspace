@@ -837,6 +837,12 @@ jobs:
             done
           fi
           if [ "${{ matrix.parte }}" = "2" ]; then
+            # Prova isolada dos três formatos antes da bateria completa, no
+            # Supabase local e sem envio a contatos reais.
+            pnpm exec playwright test tests/e2e/audios-pre-gravados.spec.ts --workers=1 --reporter=list
+            for formato in audio image video; do
+              test -s ".superpowers/evidence/midias-aprovadas/${formato}.png"
+            done
             pnpm exec playwright test tests/e2e/agenda-ocupacao-do-google-na-grade.spec.ts --workers=1 --reporter=list
             # Mesmas rotas, GoTrue, banco e servidor da parte completa. Roda
             # primeiro para diagnosticar a perda HTTP no formulário sem esperar
@@ -875,6 +881,16 @@ jobs:
             .superpowers/evidence/teste-conversador-contexto.png
             .superpowers/evidence/inbox-quem-manda/ordem-temporal-apos-recarga.png
           if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Guardar capturas de mídias aprovadas
+        if: ${{ always() && matrix.parte == 2 }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidencias-midias-aprovadas
+          include-hidden-files: true
+          path: .superpowers/evidence/midias-aprovadas/*.png
+          if-no-files-found: warn
           retention-days: 7
 
       - uses: actions/upload-artifact@v7

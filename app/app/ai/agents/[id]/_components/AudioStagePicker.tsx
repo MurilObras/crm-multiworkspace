@@ -13,13 +13,13 @@ export function AudioStagePicker({ options, ids, restricted, disabled, onChange,
   const uid = useId();
   const missing = ids.filter(id => !options.some(s => s.id === id));
   return <div className="space-y-2">
-    <Label htmlFor={`${uid}-scope`}>{t('Onde este áudio pode ser usado')}</Label>
+    <Label htmlFor={`${uid}-scope`}>{t('Onde esta mídia pode ser usada')}</Label>
     <select id={`${uid}-scope`} className="h-9 w-full rounded-md border bg-background px-3 text-sm" disabled={disabled}
       value={restricted ? 'selected' : 'all'} onChange={e => onRestricted(e.target.value === 'selected')}>
       <option value="all">{t('Todas as etapas')}</option>
       <option value="selected">{t('Etapas específicas')}</option>
     </select>
-    <p className="text-xs text-muted-foreground">{t('Escolha etapas de qualquer funil deste workspace, inclusive atendimento e suporte. O modo de envio define se o áudio é obrigatório ou opcional nessas etapas.')}</p>
+    <p className="text-xs text-muted-foreground">{t('Escolha etapas de qualquer funil deste workspace, inclusive atendimento e suporte. O modo de envio define se a mídia é obrigatória ou opcional nessas etapas.')}</p>
     {restricted && <fieldset disabled={disabled} className="max-h-44 space-y-2 overflow-y-auto rounded-md border p-3">
       <legend className="px-1 text-xs">{t('Etapas permitidas')}</legend>
       {!options.length && <p className="text-xs">{t('Nenhuma etapa ativa disponível. Configure os funis ou atualize a lista.')}</p>}

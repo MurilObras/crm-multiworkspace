@@ -1,5 +1,5 @@
 import type { Queryable } from '../queue/queue';
-import type { ApprovedAudio } from '@/lib/ai/agents/approved-audios';
+import type { ApprovedMedia as ApprovedAudio } from '@/lib/ai/agents/approved-media';
 import { resolveActiveLeadForContact, type LeadCandidate } from '@/lib/leads/active-lead';
 
 /** Funil real, não a máquina genérica lead_state; empates nunca liberam áudio. */
