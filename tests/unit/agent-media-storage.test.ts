@@ -5,6 +5,7 @@ import { prepareAgentMedia } from "@/lib/agent-engine/edge/crm/prepare-media";
 import { sendTurnMessage } from "@/lib/agent-engine/edge/crm/send-message";
 import { claimJobs, completeJob, rescheduleJob, type JobRow } from "@/lib/agent-engine/queue/queue";
 import { readApprovedAudios } from '@/lib/ai/agents/approved-audios';
+import { readApprovedMedia } from '@/lib/ai/agents/approved-media';
 import { requiredAudioPlan, deliverRequiredAudio } from '@/lib/agent-engine/agent/required-audio';
 import { getAdapter } from "@/lib/channels";
 import * as templateSender from "@/lib/channels/meta/send-template-for-session";
@@ -171,7 +172,8 @@ describe('áudio privado aprovado pelo mesmo sink', () => {
     expect(state.download).toHaveBeenCalledWith(approvedAudio().storage_path);
     const row = (await db.pool.query('select * from messages')).rows[0]!;
     expect(row.media_storage_path).toMatch(new RegExp(`^${ORG}/${CONV}/agent-`));
-    expect(row.metadata.approved_audio).toEqual({ agent_id: AUDIO_AGENT, audio_id: AUDIO_ID });
+    expect(row.metadata.approved_audio).toMatchObject({ agent_id: AUDIO_AGENT, audio_id: AUDIO_ID });
+    expect(row.metadata.approved_media).toMatchObject({ agent_id: AUDIO_AGENT, media_id: AUDIO_ID, media_type: 'audio' });
     expect((await sendTurnMessage(db.pool, { supabase }, audioInput())).kind).toBe('already_sent');
     expect(transport).toHaveBeenCalledOnce(); expect(state.download).toHaveBeenCalledOnce();
   });
@@ -237,6 +239,62 @@ describe('áudio privado aprovado pelo mesmo sink', () => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe('foto e vídeo privados aprovados pelo mesmo sink', () => {
+  async function catalog(type: 'image' | 'video') {
+    const bytes = Buffer.from('approved-visual-bytes');
+    const mime = type === 'image' ? 'image/png' : 'video/mp4';
+    const media = readApprovedMedia({ approved_media: [{ ...approvedAudio(), type,
+      mime, size_bytes: bytes.length, required: true,
+      storage_path: `${ORG}/agent-media/${AUDIO_AGENT}/${AUDIO_ID}.${type === 'image' ? 'png' : 'mp4'}` }] });
+    expect(media).toHaveLength(1);
+    await db.pool.query('update ai_agents set config=$1', [JSON.stringify({ approved_media: media })]);
+    state.download.mockResolvedValueOnce({ data: new Blob([bytes], { type: mime }), error: null });
+    return media;
+  }
+  it.each(['image', 'video'] as const)('obrigatório envia contexto e %s, preservando identidade no replay', async type => {
+    const media = await catalog(type);
+    vi.spyOn(getAdapter('waha'), 'isConfigured').mockReturnValue(true);
+    const transport = vi.spyOn(getAdapter('waha'), 'send').mockResolvedValue({ externalId: 'visual-confirmed' });
+    await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+    const current = (await db.pool.query<JobRow>('select * from job_queue where id=$1', [JOB])).rows[0]!;
+    const plan = (await requiredAudioPlan(db.pool, current, 'media-test', AUDIO_AGENT, media, 3))!;
+    let seq = 0;
+    const invoke: Parameters<typeof deliverRequiredAudio>[0]['invoke'] = async args => {
+      const outcome = await sendTurnMessage(db.pool, { supabase }, { ...input(), seq: ++seq, body: args.body,
+        media: args.media ? { ...args.media, agent_id: AUDIO_AGENT } : undefined });
+      return { ok: true, status: ['sent', 'already_sent'].includes(outcome.kind) ? 'enviada' : 'aceita_aguardando_canal' };
+    };
+    await deliverRequiredAudio({ plan, agent: AUDIO_AGENT, audios: media, invoke, reserve: vi.fn(), discard: vi.fn() });
+    expect(transport.mock.calls.map(c => c[0].kind)).toEqual(['text', type]);
+    const row = (await db.pool.query('select * from messages where type=$1', [type])).rows[0]!;
+    expect(row.metadata.approved_media).toMatchObject({ agent_id: AUDIO_AGENT, media_id: AUDIO_ID, media_type: type });
+    const replay = { ...input(), seq: 2, media: { type, media_id: AUDIO_ID, agent_id: AUDIO_AGENT } };
+    expect((await sendTurnMessage(db.pool, { supabase }, replay)).kind).toBe('already_sent');
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(state.download).toHaveBeenCalledOnce();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  for (const type of ['image', 'video'] as const) {
+    it.each(['revoked', 'text'] as const)(`%s durante assinatura veta ${type} antes do transporte`, async reason => {
+      await catalog(type);
+      vi.spyOn(getAdapter('waha'), 'isConfigured').mockReturnValue(true);
+      const transport = vi.spyOn(getAdapter('waha'), 'send');
+      state.sign.mockImplementationOnce(async () => {
+        if (reason === 'revoked') await db.pool.query("update ai_agents set config='{}'");
+        else await db.pool.query(`insert into messages(organization_id,conversation_id,contact_id,direction,type,body)
+          values($1,$2,$3,'inbound','text','Prefiro apenas texto')`, [ORG, CONV, CONTACT]);
+        return { data: { signedUrl: 'https://signed.example/visual' }, error: null };
+      });
+      await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
+      await expect(sendTurnMessage(db.pool, { supabase }, { ...input(), media: { type, media_id: AUDIO_ID, agent_id: AUDIO_AGENT } }))
+        .rejects.toMatchObject({ message: reason === 'revoked' ? 'audio_approval_revoked' : 'audio_text_preference' });
+      expect(transport).not.toHaveBeenCalled();
+      expect((await db.pool.query("select metadata from messages where direction='outbound'")).rows[0]!.metadata)
+        .toMatchObject({ outbound_attempt: { phase: 'rejected', retryable: false } });
+    });
+  }
 });
 
 describe("arquivo oficial pelo Storage e pelo sink real", () => {

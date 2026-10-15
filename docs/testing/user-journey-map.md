@@ -1932,7 +1932,7 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
   confere a prévia decodificada, edita a regra de reenvio, recarrega e remove.
 - `audios-pre-gravados.spec.ts` usa Supabase local e nenhum WhatsApp real.
   O CI executa os três casos isolados antes da parte 2 completa e exige as
-  capturas `audio.png`, `image.png` e `video.png`, disponibilizadas no artefato
+  uma captura de cada formato, disponibilizadas no artefato
   `evidencias-midias-aprovadas` inclusive quando a execução passa.
 - Reenvio por pedido explícito, mesma inbound, tentativas pendentes/incertas,
   preferência por texto, fingerprint, catálogo legado e isolamento de
