@@ -131,6 +131,8 @@ for (const kind of ['image','video'] as const) {
     await item.getByRole('button',{name:'Editar mídia',exact:true}).click();
     await expect(library.getByRole('switch',{name:'Permitir reenvio a pedido explícito'}).first()).not.toBeChecked();
     await library.getByRole('button',{name:'Cancelar edição'}).click();
+    // A captura após recarga também deve mostrar a prévia carregada, não o spinner.
+    await expect.poll(() => preview.evaluate(el => el instanceof HTMLVideoElement ? el.readyState : (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(kind === 'video' ? 1 : 0);
     await mkdir('.superpowers/evidence/midias-aprovadas', { recursive: true });
     await info.attach(`midia-${kind}`,{body:await item.screenshot({path:`.superpowers/evidence/midias-aprovadas/${kind}.png`}),contentType:'image/png'});
     await item.getByRole('button',{name:'Remover mídia',exact:true}).click();
