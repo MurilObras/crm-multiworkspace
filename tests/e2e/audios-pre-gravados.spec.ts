@@ -47,7 +47,7 @@ test('aprovar gravação → ouvir → recarregar → desativar → remover pela
   const upload = page.waitForResponse(r => r.url().endsWith(`/agents/${agent}/media`) && r.request().method() === 'POST');
   await library.getByRole('button', { name: 'Aprovar mídia para o agente' }).click();
   expect((await upload).status()).toBe(200);
-  const player = library.getByLabel('E2E gravação aprovada');
+  const player = library.getByLabel('E2E gravação aprovada', { exact: true });
   await expect(player).toBeVisible();
   await player.evaluate(async el => {
     const audio = el as HTMLAudioElement;
