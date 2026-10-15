@@ -8,6 +8,16 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.3.0] — 2026-10-15
+
+### Adicionado
+
+- **Mídias aprovadas com regras de assunto e reenvio a pedido** O editor dos agentes passa a reunir áudio, foto e vídeo, com prévia, etapas
+  permitidas e envio obrigatório ou opcional por assunto. Uma pergunta repetida
+  recebe texto; a opção de reenvio exige um pedido explícito do cliente e nunca
+  duplica tentativas pendentes ou incertas. Cada workspace administra seu catálogo.
+  Áudios existentes continuam disponíveis sem migração manual.
+
 ## [3.2.0] — 2026-10-14
 
 ### Corrigido
@@ -3301,7 +3311,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.2.0...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v2.2.0...v3.0.0
