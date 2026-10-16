@@ -63,7 +63,7 @@ uma rodada sem falhas acionáveis; aprovação de revisão não significa testes
    recente. Nova bateria de eco/transporte aprovada com 55/55. Revisão e tipos
    da fixture concluídos antes da nova rodada completa de E2E.
 
-## Validação preparada, ainda não executada
+## Cobertura de validação
 
 - API/UI: custo NULL, erro persistente, tentativa única e identificação de testes.
 - PostgreSQL isolado: reconciliação atômica, replay, rollback e isolamento entre

@@ -880,6 +880,7 @@ jobs:
           path: |
             .superpowers/evidence/teste-conversador-contexto.png
             .superpowers/evidence/inbox-quem-manda/ordem-temporal-apos-recarga.png
+            .superpowers/evidence/video-test-executions/*.png
           if-no-files-found: ignore
           retention-days: 7
 
