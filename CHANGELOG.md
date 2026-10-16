@@ -8,6 +8,21 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.4.0] — 2026-10-16
+
+### Corrigido
+
+- **Vídeos com entrega incerta e resultados de teste podem ser conferidos no CRM** Vídeos têm uma espera maior para concluir a conversão e o envio. Se uma entrega
+  ficar incerta e aparecer depois no histórico, um gerente pode conferir as duas
+  prévias e usar “Confirmar vídeo recebido”, sem enviar outra mensagem. O registro
+  original mantém sua identidade e o reenvio solicitado volta a ser permitido;
+  tentativas em execução continuam protegidas contra duplicidade.
+
+  O teste do agente aceita custo desconhecido, mostra falhas na própria tela e não
+  repete automaticamente uma chamada cobrada após falha de rede. A aba Execuções
+  identifica ensaios como teste e mostra o resultado completo, mesmo quando a
+  chamada ao modelo terminou antes de uma falha ao salvar.
+
 ## [3.3.0] — 2026-10-15
 
 ### Adicionado
@@ -3311,7 +3326,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.3.0...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.0.0...v3.1.0
