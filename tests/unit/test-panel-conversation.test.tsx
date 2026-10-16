@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { beforeEach, expect, it, vi } from "vitest";
 import { TestPanel } from "@/app/app/ai/agents/[id]/_components/TestPanel";
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@tanstack/react-query", () => ({
@@ -24,6 +25,33 @@ const props = {
 } as ComponentProps<typeof TestPanel>;
 
 beforeEach(() => vi.clearAllMocks());
+
+it("mostra a falha no resultado e não repete automaticamente um ensaio cobrado", async () => {
+  vi.mocked(apiClient.post).mockRejectedValue(
+    new ApiError(
+      500,
+      "agent_test_result_persist_failed",
+      undefined,
+      "req-1",
+      "Não foi possível salvar o resultado.",
+    ),
+  );
+  render(<TestPanel {...props} />);
+  fireEvent.change(screen.getByLabelText("Mensagem do cliente (sample)"), {
+    target: { value: "Quanto custa?" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Executar teste" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Não foi possível salvar o resultado.",
+  );
+  expect(screen.queryByText("Nenhum teste executado ainda.")).not.toBeInTheDocument();
+  expect(apiClient.post).toHaveBeenCalledWith(expect.any(String), expect.anything(), {
+    timeoutMs: 120_000,
+    maxAttempts: 1,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Nova conversa de teste" }));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
 
 it("preserva a mensagem do cliente e respostas parciais quando o turno é abortado", async () => {
   vi.mocked(apiClient.post).mockResolvedValue({

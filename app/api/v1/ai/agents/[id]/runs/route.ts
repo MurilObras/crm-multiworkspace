@@ -1,6 +1,10 @@
 /**
  * GET /api/v1/ai/agents/:id/runs (manager+) — as execuções DESTE agente.
  *
+ * Produção vem de llm_calls, excluindo agent_test. Ensaios vêm de ai_agent_runs
+ * com is_dry_run=true, incluindo falha posterior à resposta do modelo e trace.
+ * A paginação combina as duas fontes pela mesma tupla (instante,id).
+ *
  * ## Por que esta rota mudou de tabela
  *
  * Ela lia `ai_agent_runs`, e a aba "Execuções" da tela do agente dizia
@@ -105,7 +109,7 @@ export function paraLinhaDeExecucao(c: LlmCallRow): Record<string, unknown> {
     channel_session_id: null,
     inbound_message_id: null,
     outbound_message_id: null,
-    status: STATUS_DO_BANCO_PARA_A_TELA[c.status ?? ""] ?? (c.status ?? "completed"),
+    status: STATUS_DO_BANCO_PARA_A_TELA[c.status ?? ""] ?? c.status ?? "completed",
     abort_reason: null,
     error_code: c.error_code,
     error_message: c.error_message,
@@ -117,7 +121,7 @@ export function paraLinhaDeExecucao(c: LlmCallRow): Record<string, unknown> {
     // zero seria uma afirmação falsa sobre o turno.
     steps_count: null,
     tool_calls: null,
-    is_dry_run: false,
+    is_dry_run: c.purpose === "agent_test",
     started_at: c.created_at,
     completed_at: c.created_at,
     created_at: c.created_at,
@@ -139,7 +143,14 @@ function decodeCursor(raw: string): CursorPayload | null {
   try {
     const json = Buffer.from(raw, "base64url").toString("utf8");
     const p = JSON.parse(json) as CursorPayload;
-    if (typeof p.id !== "string" || typeof p.started_at !== "string") return null;
+    if (
+      typeof p.id !== "string" ||
+      !UUID_RX.test(p.id) ||
+      typeof p.started_at !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2})$/.test(p.started_at) ||
+      !Number.isFinite(Date.parse(p.started_at))
+    )
+      return null;
     return p;
   } catch {
     return null;
@@ -177,6 +188,8 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
     // sobrevive a alguém trocar o client por um admin um dia.
     .eq("organization_id", activeOrg.orgId)
     .eq("agent_id", id)
+    // O estado completo do ensaio vem de ai_agent_runs, não só da chamada ao modelo.
+    .neq("purpose", "agent_test")
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(q.limit + 1);
@@ -197,7 +210,33 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { data, error } = await query;
   if (error) return fail("internal_error", "Erro ao listar execuções.", 500, { requestId });
 
-  const rows = ((data ?? []) as unknown as LlmCallRow[]).map(paraLinhaDeExecucao);
+  let testsQuery = supabase
+    .from("ai_agent_runs")
+    .select("*")
+    .eq("organization_id", activeOrg.orgId)
+    .eq("agent_id", id)
+    .eq("is_dry_run", true)
+    .order("started_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(q.limit + 1);
+  if (q.status) testsQuery = testsQuery.eq("status", q.status);
+  if (q.cursor) {
+    const c = decodeCursor(q.cursor)!;
+    testsQuery = testsQuery.or(
+      `started_at.lt.${c.started_at},and(started_at.eq.${c.started_at},id.lt.${c.id})`,
+    );
+  }
+  const { data: testRuns, error: testError } = await testsQuery;
+  if (testError)
+    return fail("internal_error", "Erro ao listar testes do agente.", 500, { requestId });
+  const rows = [
+    ...((data ?? []) as unknown as LlmCallRow[]).map(paraLinhaDeExecucao),
+    ...(testRuns ?? []),
+  ].sort(
+    (a, b) =>
+      new Date(b.started_at as string).getTime() - new Date(a.started_at as string).getTime() ||
+      String(b.id).localeCompare(String(a.id)),
+  );
   const hasMore = rows.length > q.limit;
   const slice = hasMore ? rows.slice(0, q.limit) : rows;
   const last = slice[slice.length - 1];

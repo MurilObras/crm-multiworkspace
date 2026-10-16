@@ -233,6 +233,7 @@ export async function getLeadContext(
                   media_derived_text, sent_at
            from messages
            where organization_id = $1 and conversation_id = $2
+               and metadata->>'reconciled_into_message_id' is null
              and direction in ('inbound', 'outbound')
            order by ${MESSAGE_ORDER_DESC}
            limit $3`,

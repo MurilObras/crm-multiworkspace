@@ -364,7 +364,7 @@ jobs:
       SPECS_PARTE_2: >-
         agente-marca-consulta.spec.ts agenda-marcar-pela-tela.spec.ts agenda-remarcar-e-cancelar.spec.ts
         agenda-tipos-de-agendamento.spec.ts agenda-grade-interativa.spec.ts
-        agente-novo-e-uso.spec.ts agente-organiza-operacao.spec.ts
+        agente-novo-e-uso.spec.ts agente-organiza-operacao.spec.ts video-test-executions.spec.ts
         central-de-avisos-capacidades.spec.ts escalacao-ciclo.spec.ts
         olhar-telas-do-epico.spec.ts pipelines-gestao.spec.ts
         qa-agente-usa-as-maos.spec.ts qa-selo-no-funil-usado.spec.ts

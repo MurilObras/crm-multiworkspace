@@ -10,10 +10,8 @@ import type { Message } from "@/lib/types/messaging";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
-import {
-  extractCitations,
-  isAiGeneratedMessage,
-} from "@/lib/ai/citations/types";
+import { ConfirmVideoDelivery } from "./ConfirmVideoDelivery";
+import { extractCitations, isAiGeneratedMessage } from "@/lib/ai/citations/types";
 
 interface Props {
   message: Message;
@@ -22,6 +20,7 @@ interface Props {
   onResponder?: (m: Message) => void;
   /** A mensagem citada por ESTA, quando houver — desenha o fio. */
   citada?: Message | null;
+  canManage?: boolean;
 }
 
 function AckIndicator({ status, t }: { status: string; t: (texto: string) => string }) {
@@ -29,7 +28,9 @@ function AckIndicator({ status, t }: { status: string; t: (texto: string) => str
     return <Checks size={12} weight="bold" className="text-blue-400" aria-label={t("Lida")} />;
   }
   if (status === "delivered") {
-    return <Checks size={12} weight="bold" className="text-current/70" aria-label={t("Entregue")} />;
+    return (
+      <Checks size={12} weight="bold" className="text-current/70" aria-label={t("Entregue")} />
+    );
   }
   if (status === "sent") {
     return <Check size={12} weight="bold" className="text-current/70" aria-label={t("Enviada")} />;
@@ -37,7 +38,7 @@ function AckIndicator({ status, t }: { status: string; t: (texto: string) => str
   return null;
 }
 
-export function MessageBubble({ message, debugCitations, onResponder, citada }: Props) {
+export function MessageBubble({ message, debugCitations, onResponder, citada, canManage }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const isOutbound = message.direction === "outbound";
@@ -55,8 +56,7 @@ export function MessageBubble({ message, debugCitations, onResponder, citada }: 
   const editada = Boolean(message.edited_at) && !apagada;
   const aiGenerated = isAiGeneratedMessage(message.metadata);
   const citations = extractCitations(message.metadata);
-  const showCitationButton =
-    isOutbound && aiGenerated && (debugCitations ?? false);
+  const showCitationButton = isOutbound && aiGenerated && (debugCitations ?? false);
   const senderLabel = (() => {
     if (!isOutbound) return null;
     if (message.sent_via === "ai") return "IA";
@@ -99,7 +99,7 @@ export function MessageBubble({ message, debugCitations, onResponder, citada }: 
             // largura: um tablet largo com toque continua mostrando, e um
             // desktop estreito continua escondendo. Largura não é a pergunta.
             "opacity-100 [@media(hover:hover)]:opacity-0",
-            "[@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100",
+            "focus-visible:opacity-100 [@media(hover:hover)]:group-hover:opacity-100",
           )}
         >
           <ArrowBendUpLeft size={14} />
@@ -156,9 +156,7 @@ export function MessageBubble({ message, debugCitations, onResponder, citada }: 
         )}
         {senderLabel && (
           <div className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold opacity-80">
-            {senderLabel === "IA" ? (
-              <Robot size={10} weight="duotone" aria-hidden />
-            ) : null}
+            {senderLabel === "IA" ? <Robot size={10} weight="duotone" aria-hidden /> : null}
             {senderLabel && t(senderLabel)}
           </div>
         )}
@@ -167,7 +165,7 @@ export function MessageBubble({ message, debugCitations, onResponder, citada }: 
           // Nem corpo nem mídia: o anexo apagado também sai. Em itálico e
           // esmaecido porque não é texto de ninguém — é o CRM narrando o que
           // aconteceu com aquele lugar da conversa.
-          <p className="whitespace-pre-wrap break-words italic leading-snug opacity-60">
+          <p className="leading-snug break-words whitespace-pre-wrap italic opacity-60">
             {t("Esta mensagem foi apagada")}
           </p>
         ) : (
@@ -185,11 +183,20 @@ export function MessageBubble({ message, debugCitations, onResponder, citada }: 
             )}
 
             {message.body && !isContact && (
-              <p className="whitespace-pre-wrap break-words leading-snug">{message.body}</p>
+              <p className="leading-snug break-words whitespace-pre-wrap">{message.body}</p>
             )}
           </>
         )}
 
+        {canManage &&
+        isOutbound &&
+        isFailed &&
+        message.type === "video" &&
+        message.error_code === "outbound_delivery_uncertain" &&
+        (message.metadata?.outbound_attempt as { phase?: string } | undefined)?.phase ===
+          "uncertain" ? (
+          <ConfirmVideoDelivery message={message} />
+        ) : null}
         <div
           className={cn(
             "mt-1 flex items-center justify-end gap-1 text-[10px]",
@@ -204,9 +211,7 @@ export function MessageBubble({ message, debugCitations, onResponder, citada }: 
             <span title={t("O autor editou esta mensagem")}>{t("editada")}</span>
           )}
           <span>{time}</span>
-          {showCitationButton && (
-            <CitationButton citations={citations} messageId={message.id} />
-          )}
+          {showCitationButton && <CitationButton citations={citations} messageId={message.id} />}
           {isOutbound && !isFailed && <AckIndicator status={message.status} t={t} />}
           {isFailed && (
             // Provider local: o painel do inbox não tem TooltipProvider ancestral e
@@ -246,7 +251,7 @@ export function MessageBubble({ message, debugCitations, onResponder, citada }: 
             // largura: um tablet largo com toque continua mostrando, e um
             // desktop estreito continua escondendo. Largura não é a pergunta.
             "opacity-100 [@media(hover:hover)]:opacity-0",
-            "[@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100",
+            "focus-visible:opacity-100 [@media(hover:hover)]:group-hover:opacity-100",
           )}
         >
           <ArrowBendUpLeft size={14} />

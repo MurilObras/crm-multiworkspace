@@ -20595,3 +20595,9 @@ grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
 grant execute on function public.fn_encrypt_oauth(text) to service_role;
 grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
 grant execute on function public.fn_update_budget_consumption() to service_role;
+
+-- ---- Custo desconhecido em ensaio de agente (migration 0233) ----
+-- NULL e custo zero têm significados diferentes; o seam usa NULL se não há tarifa.
+alter table public.ai_agent_runs alter column cost_cents drop not null;
+alter table public.ai_agent_runs alter column cost_cents drop default;
+notify pgrst, 'reload schema';

@@ -63,12 +63,7 @@ export function RunsTable({ agentId, active }: Props) {
         <p className="text-sm text-muted-foreground">
           {isLoading ? t("Carregando…") : `${rows.length} ${t("execuções recentes")}`}
         </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          disabled={isFetching}
-        >
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
           {isFetching ? t("Atualizando…") : t("Atualizar")}
         </Button>
       </div>
@@ -129,12 +124,11 @@ export function RunsTable({ agentId, active }: Props) {
                   )}
                 </TableCell>
                 <TableCell className="font-mono text-xs">
-                  {(r.tokens_in ?? 0).toLocaleString()} /{" "}
-                  {(r.tokens_out ?? 0).toLocaleString()}
+                  {(r.tokens_in ?? 0).toLocaleString()} / {(r.tokens_out ?? 0).toLocaleString()}
                 </TableCell>
                 <TableCell className="font-mono text-xs">{fmtCost(r.cost_cents)}</TableCell>
                 <TableCell className="font-mono text-xs">{fmtLatency(r.latency_ms)}</TableCell>
-                <TableCell className="font-mono text-xs">{r.steps_count ?? 0}</TableCell>
+                <TableCell className="font-mono text-xs">{r.steps_count ?? "—"}</TableCell>
                 <TableCell className="text-right">
                   <Button
                     variant="ghost"

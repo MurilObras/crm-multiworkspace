@@ -346,7 +346,7 @@ export type Database = {
           completed_at: string | null
           contact_id: string | null
           conversation_id: string | null
-          cost_cents: number
+          cost_cents: number | null
           created_at: string
           error_code: string | null
           error_message: string | null
@@ -371,7 +371,7 @@ export type Database = {
           completed_at?: string | null
           contact_id?: string | null
           conversation_id?: string | null
-          cost_cents?: number
+          cost_cents?: number | null
           created_at?: string
           error_code?: string | null
           error_message?: string | null
@@ -396,7 +396,7 @@ export type Database = {
           completed_at?: string | null
           contact_id?: string | null
           conversation_id?: string | null
-          cost_cents?: number
+          cost_cents?: number | null
           created_at?: string
           error_code?: string | null
           error_message?: string | null

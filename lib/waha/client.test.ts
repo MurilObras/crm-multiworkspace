@@ -34,7 +34,7 @@ import type { AddressInfo } from "node:net";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { TETO_PADRAO_MS, TETO_DE_MIDIA_MS, WahaClient } from "./client";
+import { TETO_PADRAO_MS, TETO_DE_MIDIA_MS, TETO_DE_VIDEO_MS, WahaClient } from "./client";
 
 /** Sockets aceitos e deixados pendurados — o modo de falha caro. */
 let mudo: Server;
@@ -81,6 +81,16 @@ async function medir(fn: () => Promise<unknown>): Promise<{ ms: number; erro: st
 }
 
 describe("as constantes de teto são as que a spec prescreve", () => {
+  it("vídeo conclui além da espera de outra mídia sem perder o retorno do transporte", async () => {
+    expect(TETO_DE_VIDEO_MS).toBeGreaterThan(TETO_DE_MIDIA_MS);
+    const c = new WahaClient(urlLento, "teste", { tetoMidiaMs: 100, tetoVideoMs: 900 });
+    await expect(
+      c.sendMedia("teste", "5511999@c.us", { endpoint: "sendImage", payload: {} }),
+    ).rejects.toThrow("waha_timeout");
+    await expect(
+      c.sendMedia("teste", "5511999@c.us", { endpoint: "sendVideo", payload: {} }),
+    ).resolves.toMatchObject({ id: "ok" });
+  });
   it("o teto padrão é 15s — o número de docs/specs/03-spec-whatsapp-waha.md:636", () => {
     // Não inventar 10s: a spec deste arquivo já prescreve `timeoutMs ?? 15_000`,
     // e duas réguas para a mesma grandeza divergem na primeira mudança.
@@ -252,7 +262,9 @@ describe("o corpo devolvido pelo WAHA nunca entra na exceção", () => {
     // Controle: sem exceção, o resto do caso não mede nada.
     expect(erro, "a chamada não lançou — o caso ficaria verde sem medir").not.toBe("");
     for (const agulha of AGULHAS) {
-      expect(erro, `a exceção carrega "${agulha}", que veio do corpo do WAHA`).not.toContain(agulha);
+      expect(erro, `a exceção carrega "${agulha}", que veio do corpo do WAHA`).not.toContain(
+        agulha,
+      );
     }
   });
 

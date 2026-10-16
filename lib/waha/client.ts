@@ -81,6 +81,8 @@ export const TETO_PADRAO_MS = 15_000;
  * (`lib/messaging/media/waha-source.ts:18`).
  */
 export const TETO_DE_MIDIA_MS = 30_000;
+/** Vídeo inclui download, conversão e upload; 30s cortava entregas legítimas. */
+export const TETO_DE_VIDEO_MS = 90_000;
 
 /**
  * O ERRO DIZ O STATUS. NUNCA O CORPO QUE O WAHA DEVOLVEU.
@@ -124,10 +126,14 @@ export const TETO_DE_MIDIA_MS = 30_000;
 export interface WahaClientOpts {
   /** Sobrescreve o teto padrão. Existe para o teste; produção usa o default. */
   tetoMs?: number;
+  tetoMidiaMs?: number;
+  tetoVideoMs?: number;
 }
 
 export class WahaClient {
   private readonly tetoMs: number;
+  private readonly tetoMidiaMs: number;
+  private readonly tetoVideoMs: number;
 
   constructor(
     private readonly baseUrl: string,
@@ -135,6 +141,8 @@ export class WahaClient {
     opts: WahaClientOpts = {},
   ) {
     this.tetoMs = opts.tetoMs ?? TETO_PADRAO_MS;
+    this.tetoMidiaMs = opts.tetoMidiaMs ?? TETO_DE_MIDIA_MS;
+    this.tetoVideoMs = opts.tetoVideoMs ?? TETO_DE_VIDEO_MS;
   }
 
   /**
@@ -350,9 +358,12 @@ export class WahaClient {
   }
 
   async getSessionQr(name: string): Promise<{ qr?: string; status: string }> {
-    const res = await this.fetchComTeto(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`, {
-      headers: { "X-Api-Key": this.apiKey },
-    });
+    const res = await this.fetchComTeto(
+      `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`,
+      {
+        headers: { "X-Api-Key": this.apiKey },
+      },
+    );
     if (!res.ok) throw new Error(`waha_${res.status}`);
     return (await res.json()) as { qr?: string; status: string };
   }
@@ -479,7 +490,11 @@ export class WahaClient {
     if (!res.ok) {
       throw new Error(`waha_${res.status}`);
     }
-    return res.json() as Promise<{ numberExists: boolean; chatId?: string | null; pn?: string | null }>;
+    return res.json() as Promise<{
+      numberExists: boolean;
+      chatId?: string | null;
+      pn?: string | null;
+    }>;
   }
 
   async sendContactVcard(
@@ -515,11 +530,15 @@ export class WahaClient {
     // o WAHA roda ffmpeg e baixa a URL do Storage antes de responder. Com o teto
     // de texto, o envio de áudio legítimo seria cortado — o conserto do timeout
     // viraria um defeito novo, e mais silencioso que o original.
-    const res = await this.fetchComTeto(`${this.baseUrl}/api/${plan.endpoint}`, {
-      method: "POST",
-      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ session, chatId, ...plan.payload }),
-    }, TETO_DE_MIDIA_MS);
+    const res = await this.fetchComTeto(
+      `${this.baseUrl}/api/${plan.endpoint}`,
+      {
+        method: "POST",
+        headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ session, chatId, ...plan.payload }),
+      },
+      plan.endpoint === "sendVideo" ? this.tetoVideoMs : this.tetoMidiaMs,
+    );
     if (!res.ok) {
       throw new Error(`waha_${res.status}`);
     }
