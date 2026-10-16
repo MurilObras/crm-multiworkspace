@@ -1041,7 +1041,8 @@ async function handleMessageEdited(
   session: Session,
   p: WahaPayload,
 ): Promise<void> {
-  const alvo = bareWaMessageId(p.editedMessageId ?? "");
+  const full = p.editedMessageId ?? "";
+  const alvo = bareWaMessageId(full);
   const corpo = typeof p.body === "string" ? p.body : null;
   if (!alvo || corpo === null) return;
 
@@ -1049,7 +1050,8 @@ async function handleMessageEdited(
     .from("messages")
     .update({ body: corpo, edited_at: new Date().toISOString() })
     .eq("organization_id", session.organization_id)
-    .eq("external_id", alvo);
+    .eq("channel_session_id", session.id)
+    .in("external_id", alvo === full ? [full] : [full, alvo]);
 }
 
 /**
@@ -1066,14 +1068,18 @@ async function handleMessageRevoked(
   session: Session,
   p: WahaPayload,
 ): Promise<void> {
-  const alvo = bareWaMessageId(p.revokedMessageId ?? "");
+  const full = p.revokedMessageId ?? "";
+  const alvo = bareWaMessageId(full);
   if (!alvo) return;
 
   await admin
     .from("messages")
     .update({ revoked_at: new Date().toISOString() })
     .eq("organization_id", session.organization_id)
-    .eq("external_id", alvo);
+    .eq("channel_session_id", session.id)
+    // Uma confirmação manual conserva o ID completo recebido pelo webhook;
+    // envios NOWEB normais usam a cauda. Ambos pertencem à sessão autenticada.
+    .in("external_id", alvo === full ? [full] : [full, alvo]);
 }
 
 /**

@@ -80,6 +80,11 @@ uma rodada sem falhas acionáveis; aprovação de revisão não significa testes
     webhook, descartando uma pergunta do mesmo segundo. Excluído dos limites
     de assunto/primeiro contato; regressão conserva as duas perguntas reais.
     Revisão estática dos leitores concluída antes de repetir os testes.
+14. Nova rodada: eventos de edição/apagamento buscavam somente ID curto, mas
+    a confirmação conserva o ID completo do eco. Alinhados aos dois formatos
+    e restritos à sessão autenticada, além do workspace. Regressão executa a
+    confirmação seguida dos dois eventos contra PostgreSQL, incluindo cópias
+    de controle em outra organização e conexão. Revisão concluída antes dos testes.
 
 ## Cobertura de validação
 
@@ -98,7 +103,9 @@ uma rodada sem falhas acionáveis; aprovação de revisão não significa testes
 - Typecheck completo aprovado após os últimos ajustes.
 - Lint dos arquivos alterados aprovado; o único aviso de importação foi corrigido
   e os arquivos afetados foram conferidos novamente, sem avisos.
-- E2E e invariantes completos aguardam o ambiente descartável do GitHub Actions.
+- E2E e invariantes completos rodam no ambiente descartável do GitHub Actions.
+  Resultado válido é o do HEAD atual: `gh pr checks 30`. Links, contagens e
+  exceções preexistentes estão na descrição do PR; um commit novo exige nova rodada.
 - Após as correções de CI: confirmação/isolamento repetidos (20/20); transporte,
   eco e atendimento humano repetidos (54/54). Lint de canais e de papéis aprovados.
 - A tentativa exploratória de suíte completa no Windows foi interrompida após
