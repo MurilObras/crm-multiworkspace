@@ -76,6 +76,7 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
     conversation_id: "conversa-1",
     external_id: null,
     updated_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
     ...m,
   }));
   const conversa: Record<string, unknown> = {
@@ -221,6 +222,16 @@ const emVoo = (over: Partial<Linha> = {}): Partial<Linha> => ({
 });
 
 describe("eco do próprio envio — a IA não se cala por ter falado", () => {
+  it("atualizar uma fila antiga não mascara a retomada humana", async () => {
+    const { admin, conversa } = banco([
+      emVoo({
+        created_at: new Date(Date.now() - 86_400_000).toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    ]);
+    await dispatchWahaEvent(admin as never, SESSION as never, envelope(eco(TEXTO)), "old-queue");
+    expect(conversa.bot_silenced_until).not.toBeNull();
+  });
   it.each([
     [65_000, false],
     [95_000, true],

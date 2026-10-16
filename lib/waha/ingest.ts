@@ -73,7 +73,7 @@ async function ehEcoDeEnvioNosso(
   const desde = new Date(now - (kind === "video" ? TETO_DE_VIDEO_MS : JANELA_DO_ECO_MS)).toISOString();
   const { data, error } = await admin
     .from("messages")
-    .select("id, body, type, status, updated_at")
+    .select("id, body, type, status, created_at, updated_at")
     .eq("organization_id", organizationId)
     .eq("conversation_id", conversationId)
     .eq("direction", "outbound")
@@ -97,7 +97,10 @@ async function ehEcoDeEnvioNosso(
 
   const corpo = (p.body ?? "").trim();
   for (const linha of data ?? []) {
-    const l = linha as { body: string | null; type?: string | null; status?: string; updated_at?: string };
+    const l = linha as { body: string | null; type?: string | null; status?: string; created_at?: string; updated_at?: string };
+    // Uma fila antiga não vira transporte por ter recebido atualização de erro/metadados.
+    const queuedAt = Date.parse(l.created_at ?? "");
+    if (l.status === "queued" && (!Number.isFinite(queuedAt) || queuedAt < now - JANELA_DO_ECO_MS)) continue;
     if (kind !== "text") {
       // Mídia: sem corpo para comparar, a existência do envio em voo é a prova
       // possível. Mais fraco, e escrito para ninguém supor o contrário.

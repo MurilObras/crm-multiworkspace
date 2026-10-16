@@ -5,29 +5,35 @@ import path from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { test, expect } from "@playwright/test";
 import { loginComoAdmin, lerCreds, type CredsE2E } from "./helpers/login-admin";
+import type { Database } from "@/lib/database.types";
 
 // Banco descartável e canal parado: nenhuma mensagem sai para WhatsApp.
 test.describe.configure({ mode: "serial", timeout: 180_000 });
 test.use({ locale: "pt-BR" });
-const id = Object.fromEntries(
-  [
-    "agent",
-    "version",
-    "session",
-    "contact",
-    "conversation",
-    "job",
-    "original",
-    "echo",
-    "testRun",
-    "testCall",
-  ].map((k) => [k, randomUUID()]),
-) as Record<string, string>;
+const idNames = [
+  "agent",
+  "version",
+  "session",
+  "contact",
+  "conversation",
+  "job",
+  "original",
+  "echo",
+  "testRun",
+  "testCall",
+] as const;
+const id = Object.fromEntries(idNames.map((k) => [k, randomUUID()])) as Record<
+  (typeof idNames)[number],
+  string
+>;
 let db: SupabaseClient;
 let creds: CredsE2E & { org_id: string; users: Record<string, { id: string; email: string }> };
 let mediaPath: string;
 const evidence = path.join(process.cwd(), ".superpowers/evidence/video-test-executions");
-async function insert(table: string, value: Record<string, unknown>) {
+async function insert<T extends keyof Database["public"]["Tables"]>(
+  table: T,
+  value: Database["public"]["Tables"][T]["Insert"],
+) {
   const { error } = await db.from(table).insert(value);
   if (error) throw new Error(`Fixture ${table}: ${error.message}`);
 }
@@ -51,7 +57,7 @@ test.beforeAll(async () => {
   await insert("contacts", {
     id: id.contact,
     organization_id: org,
-    full_name: `E2E Vídeo ${id.contact}`,
+    name: `E2E Vídeo ${id.contact}`,
     phone_number: `+55119${parseInt(id.contact!.slice(0, 8), 16).toString().padStart(8, "0").slice(-8)}`,
   });
   await insert("conversations", {
@@ -199,7 +205,7 @@ test.afterAll(async () => {
     ["conversations", "conversation"],
     ["contacts", "contact"],
     ["channel_sessions", "session"],
-  ]) {
+  ] as const) {
     const { error } = await db
       .from(table!)
       .delete()

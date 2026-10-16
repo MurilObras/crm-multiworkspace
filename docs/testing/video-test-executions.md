@@ -53,6 +53,15 @@ uma rodada sem falhas acionáveis; aprovação de revisão não significa testes
    vídeo em sending; fila parada mantém 60s. A data usada é a última atualização
    do transporte, cobrindo retomadas antigas. Formatos diferentes não se protegem.
    Revisão concluída antes de testar controles de 65s, 95s, fila e intervenção humana.
+8. Primeiro E2E: parte 1 aprovada; parte 2 teve 144 casos aprovados e parou nos
+   dados da nova fixture (contacts.name, não full_name). Dois cenários da mesma
+   sequência não executaram por causa dessa preparação. Fixture corrigida e
+   inserts tipados pelo schema gerado para conferir todos os campos antes de
+   repetir a sequência completa; nenhum cenário foi dispensado.
+9. Controle complementar: fila antiga com atualização recente não é transporte.
+   Mantida a janela por criação para queued; somente sending usa a atualização
+   recente. Nova bateria de eco/transporte aprovada com 55/55. Revisão e tipos
+   da fixture concluídos antes da nova rodada completa de E2E.
 
 ## Validação preparada, ainda não executada
 
