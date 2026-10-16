@@ -10,6 +10,7 @@
  */
 import { logger } from "@/lib/logger";
 import { classificarFalhaDeAlcance, explicarFalhaDeAlcance } from "@/lib/net/alcance";
+import { TETO_DE_VIDEO_MS } from "./timeouts";
 
 /**
  * AS CONVERSAS QUE O CRM NÃO ATENDE, E POR ISSO NÃO PRECISA RECEBER.
@@ -82,7 +83,7 @@ export const TETO_PADRAO_MS = 15_000;
  */
 export const TETO_DE_MIDIA_MS = 30_000;
 /** Vídeo inclui download, conversão e upload; 30s cortava entregas legítimas. */
-export const TETO_DE_VIDEO_MS = 90_000;
+export { TETO_DE_VIDEO_MS } from "./timeouts";
 
 /**
  * O ERRO DIZ O STATUS. NUNCA O CORPO QUE O WAHA DEVOLVEU.

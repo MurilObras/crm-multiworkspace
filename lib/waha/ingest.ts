@@ -12,6 +12,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { audit } from "@/lib/audit";
+import { TETO_DE_VIDEO_MS } from "./timeouts";
 import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
@@ -67,10 +68,12 @@ async function ehEcoDeEnvioNosso(
   conversationId: string,
   p: WahaPayload,
 ): Promise<boolean> {
-  const desde = new Date(Date.now() - JANELA_DO_ECO_MS).toISOString();
+  const kind = resolveMessageType(p);
+  const now = Date.now();
+  const desde = new Date(now - (kind === "video" ? TETO_DE_VIDEO_MS : JANELA_DO_ECO_MS)).toISOString();
   const { data, error } = await admin
     .from("messages")
-    .select("id, body, type")
+    .select("id, body, type, status, updated_at")
     .eq("organization_id", organizationId)
     .eq("conversation_id", conversationId)
     .eq("direction", "outbound")
@@ -81,7 +84,8 @@ async function ehEcoDeEnvioNosso(
     // a janela exata em que o eco é indistinguível de digitação humana.
     .is("external_id", null)
     .in("status", ["queued", "sending"])
-    .gte("created_at", desde)
+    // Retomadas conservam created_at antigo; o CAS de transporte atualiza updated_at.
+    .gte("updated_at", desde)
     .limit(20);
 
   if (error) {
@@ -93,12 +97,15 @@ async function ehEcoDeEnvioNosso(
 
   const corpo = (p.body ?? "").trim();
   for (const linha of data ?? []) {
-    const l = linha as { body: string | null; type?: string | null };
-    if (p.type && p.type !== "chat") {
+    const l = linha as { body: string | null; type?: string | null; status?: string; updated_at?: string };
+    if (kind !== "text") {
       // Mídia: sem corpo para comparar, a existência do envio em voo é a prova
       // possível. Mais fraco, e escrito para ninguém supor o contrário.
-      if ((l.type ?? "chat") !== "chat") return true;
-      continue;
+      if (l.type !== kind) continue;
+      // A extensão além de 60s vale só durante transporte de vídeo, não para uma fila parada.
+      if (kind === "video" && l.status !== "sending"
+        && (!l.updated_at || Date.parse(l.updated_at) < now - JANELA_DO_ECO_MS)) continue;
+      return true;
     }
     if (corpo.length > 0 && (l.body ?? "").trim() === corpo) return true;
   }

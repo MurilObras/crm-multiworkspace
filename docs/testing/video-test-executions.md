@@ -41,6 +41,18 @@ uma rodada sem falhas acionáveis; aprovação de revisão não significa testes
    conversa, que ainda bloqueava a limpeza do erro sem histórico. Checagem de
    tipos detectou a ação de auditoria ausente do registro canônico; adicionada.
    Revisão dos dois ajustes concluída antes de repetir os testes.
+5. CI detectou rotina específica de canal fora de lib/channels. Movida para a
+   camada canônica, sem alterar o protocolo. Imports e isolamento revisados
+   antes de repetir checagens locais e CI.
+6. Invariantes completos: 1370 casos passaram e oito falharam no mesmo duplo de
+   PostgREST, que não implementava o novo filtro IS NULL. O duplo agora traduz o
+   filtro para SQL real e ganhou uma prova de paginação excluindo o eco conciliado.
+   Nenhuma restrição de teste foi removida.
+7. Revisão da janela do próprio envio: transporte de vídeo agora dura mais que
+   a janela antiga de reconhecimento. Janela alinhada ao timeout somente para
+   vídeo em sending; fila parada mantém 60s. A data usada é a última atualização
+   do transporte, cobrindo retomadas antigas. Formatos diferentes não se protegem.
+   Revisão concluída antes de testar controles de 65s, 95s, fila e intervenção humana.
 
 ## Validação preparada, ainda não executada
 
@@ -60,6 +72,11 @@ uma rodada sem falhas acionáveis; aprovação de revisão não significa testes
 - Lint dos arquivos alterados aprovado; o único aviso de importação foi corrigido
   e os arquivos afetados foram conferidos novamente, sem avisos.
 - E2E e invariantes completos aguardam o ambiente descartável do GitHub Actions.
+- Após as correções de CI: confirmação/isolamento repetidos (20/20); transporte,
+  eco e atendimento humano repetidos (54/54). Lint de canais e de papéis aprovados.
+- A tentativa exploratória de suíte completa no Windows foi interrompida após
+  sondas dependentes de utilitários Linux falharem. Não foi usada como aprovação;
+  a suíte completa obrigatória roda no runner Linux isolado do CI.
 
 ## Living System Checklist
 

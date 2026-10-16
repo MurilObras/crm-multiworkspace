@@ -7,7 +7,7 @@ import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import {
   confirmVideoDelivery,
   VideoConfirmationConflict,
-} from "@/lib/messaging/confirm-video-delivery";
+} from "@/lib/channels/confirm-video-delivery";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { ok, fail } from "@/lib/api/wrappers";

@@ -3,7 +3,7 @@ import type { Message } from "@/lib/types/messaging";
 
 export class VideoConfirmationConflict extends Error {}
 
-/** Confirmação HUMANA, sem transporte. Não infere identidade por tamanho/horário:
+/** Reconciliação do canal, com confirmação HUMANA e sem transporte. Não infere identidade por tamanho/horário:
  * o operador compara as duas mídias e escolhe a confirmação no próprio histórico.
  * Ordem de locks igual ao engine: job -> mensagem -> ledger. Nunca toca job em voo.
  */

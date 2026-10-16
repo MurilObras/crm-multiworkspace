@@ -6,7 +6,7 @@ import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import {
   confirmVideoDelivery,
   VideoConfirmationConflict,
-} from "@/lib/messaging/confirm-video-delivery";
+} from "@/lib/channels/confirm-video-delivery";
 import { availableConversationAudios } from "@/lib/agent-engine/agent/conversation-audios";
 import type { ApprovedMedia } from "@/lib/ai/agents/approved-media";
 

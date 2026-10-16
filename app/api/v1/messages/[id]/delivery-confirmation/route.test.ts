@@ -4,12 +4,12 @@ import { requireRole } from "@/lib/auth/require-role";
 import {
   confirmVideoDelivery,
   VideoConfirmationConflict,
-} from "@/lib/messaging/confirm-video-delivery";
+} from "@/lib/channels/confirm-video-delivery";
 import { POST } from "./route";
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: () => ({}) }));
-vi.mock("@/lib/messaging/confirm-video-delivery", () => ({
+vi.mock("@/lib/channels/confirm-video-delivery", () => ({
   confirmVideoDelivery: vi.fn(),
   VideoConfirmationConflict: class extends Error {},
 }));
