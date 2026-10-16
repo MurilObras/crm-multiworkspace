@@ -43,6 +43,7 @@ export async function pendingAudioMessages(
        select m.created_at,m.id,coalesce(m.sent_at,m.created_at) as message_at from messages m left join send_ledger l
          on l.organization_id=m.organization_id and l.id::text=m.metadata->>'idempotency_key'
        where m.organization_id=$1 and m.conversation_id=$2 and m.direction='outbound'
+         and m.metadata->>'reconciled_into_message_id' is null
          and (m.status in ('sent','delivered','read') or m.external_id is not null)
          and l.job_id is distinct from $3::uuid
          and (coalesce(m.sent_at,m.created_at),m.created_at,m.id)<=(select message_at,created_at,id from anchor)
@@ -75,6 +76,7 @@ export async function isFirstAudioContact(db: Queryable, org: string, conversati
        select 1 from messages m left join send_ledger l
          on l.organization_id=m.organization_id and l.id::text=m.metadata->>'idempotency_key'
        where m.organization_id=$1 and m.conversation_id=$2 and m.id<>anchor.id
+         and m.metadata->>'reconciled_into_message_id' is null
          and m.created_at<=anchor.created_at
          and m.direction='outbound' and l.job_id is distinct from $3::uuid
          and not coalesce(m.status='failed' and m.external_id is null

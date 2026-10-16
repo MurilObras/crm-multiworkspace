@@ -75,6 +75,11 @@ uma rodada sem falhas acionáveis; aprovação de revisão não significa testes
     comparador que preserva a precisão do Postgres; regressão verifica duas
     páginas com timestamps no mesmo milissegundo. Segunda revisão estática
     concluída sem novo achado acionável antes de repetir as checagens.
+13. Conferência dos demais leitores de histórico: o eco conciliado também
+    podia encerrar o trecho pendente de perguntas pelo horário de chegada do
+    webhook, descartando uma pergunta do mesmo segundo. Excluído dos limites
+    de assunto/primeiro contato; regressão conserva as duas perguntas reais.
+    Revisão estática dos leitores concluída antes de repetir os testes.
 
 ## Cobertura de validação
 

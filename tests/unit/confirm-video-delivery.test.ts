@@ -8,6 +8,7 @@ import {
   VideoConfirmationConflict,
 } from "@/lib/channels/confirm-video-delivery";
 import { availableConversationAudios } from "@/lib/agent-engine/agent/conversation-audios";
+import { pendingAudioSubject } from "@/lib/agent-engine/agent/audio-rule";
 import type { ApprovedMedia } from "@/lib/ai/agents/approved-media";
 
 const org = "10000000-0000-4000-8000-000000000001";
@@ -138,6 +139,21 @@ describe("confirmação de vídeo recebido", () => {
       ).toEqual([]);
     },
   );
+  it("eco conciliado não apaga pergunta que chegou antes do webhook atrasado no mesmo segundo", async () => {
+    await confirmVideoDelivery(pool, org, original, echo);
+    const first = "70000000-0000-4000-8000-000000000005";
+    const anchor = "70000000-0000-4000-8000-000000000006";
+    const newJob = "70000000-0000-4000-8000-000000000007";
+    await db.query(
+      `insert into messages(id,organization_id,conversation_id,direction,type,body,created_at,sent_at,metadata)
+      values($1,$3,$4,'inbound','text','Qual é o preço?','2026-10-15T19:28:17Z','2026-10-15T19:28:14Z','{}'),
+            ($2,$3,$4,'inbound','text','E quais planos vocês têm?','2026-10-15T19:28:20Z','2026-10-15T19:28:20Z','{}')`,
+      [first, anchor, org, conversation],
+    );
+    expect(await pendingAudioSubject(pool, org, conversation, newJob, anchor)).toBe(
+      "Qual é o preço?\n\nE quais planos vocês têm?",
+    );
+  });
   it("reconcilia a entrega, libera reenvio solicitado e preserva as duas linhas para auditoria", async () => {
     await confirmVideoDelivery(pool, org, original, echo);
     const rows = (
