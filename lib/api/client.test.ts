@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 
-function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+function jsonResponse(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Response {
   const text = typeof body === "string" ? body : JSON.stringify(body);
   return new Response(text, {
     status,
@@ -21,6 +25,13 @@ describe("apiClient", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+  it("não repete um teste cobrado após falha de rede quando maxAttempts é 1", async () => {
+    fetchMock.mockRejectedValue(new Error("network"));
+    await expect(
+      apiClient.post("/x", { sample_message: "teste" }, { maxAttempts: 1 }),
+    ).rejects.toThrow("network");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("t1: POST injects Idempotency-Key (uuid) and X-Request-Id headers", async () => {

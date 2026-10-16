@@ -75,6 +75,8 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
     organization_id: "org-1",
     conversation_id: "conversa-1",
     external_id: null,
+    updated_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
     ...m,
   }));
   const conversa: Record<string, unknown> = {
@@ -87,6 +89,7 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
     let org: string | null = null;
     let externos: string[] = [];
     const filtros: Array<[string, unknown]> = [];
+    const lowerBounds: Array<[string, string]> = [];
     const q: Record<string, unknown> = {
       eq(coluna: string, valor: unknown) {
         if (coluna === "organization_id") org = valor as string;
@@ -105,7 +108,10 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
         filtros.push([coluna, valor]);
         return q;
       },
-      gte: () => q,
+      gte: (col: string, value: string) => {
+        lowerBounds.push([col, value]);
+        return q;
+      },
       order: () => q,
       limit: () => q,
       async maybeSingle() {
@@ -123,6 +129,7 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
           (m) =>
             (org === null || m.organization_id === org) &&
             filtros.every(([c, v]) => (Array.isArray(v) ? v.includes(m[c]) : m[c] === v)) &&
+            lowerBounds.every(([c, v]) => typeof m[c] === "string" && String(m[c]) >= v) &&
             (externos.length === 0 || (m.external_id !== null && externos.includes(m.external_id))),
         );
         return Promise.resolve(ok({ data: casadas, error: null }));
@@ -150,7 +157,9 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
           const externo = linha.external_id as string | null;
           if (
             externo !== null &&
-            messages.some((m) => m.organization_id === linha.organization_id && m.external_id === externo)
+            messages.some(
+              (m) => m.organization_id === linha.organization_id && m.external_id === externo,
+            )
           ) {
             return { data: null, error: { code: "23505", message: "duplicate key" } };
           }
@@ -213,6 +222,62 @@ const emVoo = (over: Partial<Linha> = {}): Partial<Linha> => ({
 });
 
 describe("eco do próprio envio — a IA não se cala por ter falado", () => {
+  it("atualizar uma fila antiga não mascara a retomada humana", async () => {
+    const { admin, conversa } = banco([
+      emVoo({
+        created_at: new Date(Date.now() - 86_400_000).toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    ]);
+    await dispatchWahaEvent(admin as never, SESSION as never, envelope(eco(TEXTO)), "old-queue");
+    expect(conversa.bot_silenced_until).not.toBeNull();
+  });
+  it.each([
+    [65_000, false],
+    [95_000, true],
+  ] as const)("vídeo em transporte há %i ms respeita a janela estendida", async (age, paused) => {
+    const { admin, conversa } = banco([
+      emVoo({
+        type: "video",
+        status: "sending",
+        created_at: new Date(Date.now() - 86_400_000).toISOString(),
+        updated_at: new Date(Date.now() - age).toISOString(),
+      }),
+    ]);
+    await dispatchWahaEvent(
+      admin as never,
+      SESSION as never,
+      envelope({ ...eco(""), type: "video", hasMedia: true }),
+      "video-window",
+    );
+    expect(conversa.bot_silenced_until !== null).toBe(paused);
+  });
+  it("vídeo de pessoa não usa áudio pendente como prova de eco", async () => {
+    const { admin, conversa } = banco([emVoo({ type: "audio", status: "sending" })]);
+    await dispatchWahaEvent(
+      admin as never,
+      SESSION as never,
+      envelope({ ...eco(""), type: "video", hasMedia: true }),
+      "video-human",
+    );
+    expect(conversa.bot_silenced_until).not.toBeNull();
+  });
+  it("fila parada não ganha proteção de transporte de 90s", async () => {
+    const { admin, conversa } = banco([
+      emVoo({
+        type: "video",
+        status: "queued",
+        updated_at: new Date(Date.now() - 65_000).toISOString(),
+      }),
+    ]);
+    await dispatchWahaEvent(
+      admin as never,
+      SESSION as never,
+      envelope({ ...eco(""), type: "video", hasMedia: true }),
+      "video-queued",
+    );
+    expect(conversa.bot_silenced_until).not.toBeNull();
+  });
   it("⭐ envio da IA em voo + eco com o MESMO texto: o bot NÃO é silenciado", async () => {
     const { admin, conversa } = banco([emVoo()]);
 
@@ -295,7 +360,12 @@ describe("eco do próprio envio — a IA não se cala por ter falado", () => {
     const { admin, conversa } = banco([emVoo({ body: "digitei no celular" })]);
     conversa.bot_silenced_until = "infinity";
 
-    await dispatchWahaEvent(admin as never, SESSION as never, envelope(eco("digitei no celular")), "req-7");
+    await dispatchWahaEvent(
+      admin as never,
+      SESSION as never,
+      envelope(eco("digitei no celular")),
+      "req-7",
+    );
 
     expect(conversa.bot_silenced_until, "encurtou um handoff formal").toBe("infinity");
   });

@@ -150,6 +150,7 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
   >([]);
   const [pending, setPending] = React.useState(false);
   const [result, setResult] = React.useState<TestResponse["data"] | null>(null);
+  const [runError, setRunError] = React.useState<string | null>(null);
 
   if (!target) {
     return (
@@ -172,6 +173,7 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
     if (!target) return;
     setPending(true);
     setResult(null);
+    setRunError(null);
     try {
       const body: Record<string, unknown> = {
         sample_message: message.trim(),
@@ -186,6 +188,7 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
       const res = await apiClient.post<TestResponse>(
         `/api/v1/ai/agents/${agent.id}/versions/${target.id}/test`,
         body,
+        { timeoutMs: 120_000, maxAttempts: 1 },
       );
       setResult(res.data);
       if (!res.data.stub) {
@@ -199,15 +202,22 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
           ),
         );
       }
-      qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });
       toast.success(t("Teste executado."));
     } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? t(err.message)
+          : t(
+              "Não foi possível obter o resultado. Confira a aba Execuções antes de executar outro teste.",
+            );
+      setRunError(message);
       if (err instanceof ApiError) {
         toast.error(t(err.message) || `${t("Erro")}: ${err.code}`);
       } else {
         toast.error(t("Erro inesperado."));
       }
     } finally {
+      qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });
       setPending(false);
     }
   }
@@ -256,10 +266,11 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
           <Button
             variant="outline"
             size="sm"
-            disabled={pending || readOnly || !history.length}
+            disabled={pending || readOnly || (!history.length && !result && !runError)}
             onClick={() => {
               setHistory([]);
               setResult(null);
+              setRunError(null);
               setMessage("");
             }}
           >
@@ -312,7 +323,15 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
           {t("Resultado")}
         </p>
 
-        {!result && !pending ? (
+        {runError ? (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/40 p-3 text-sm text-destructive"
+          >
+            {runError}
+          </p>
+        ) : null}
+        {!result && !pending && !runError ? (
           <p className="text-sm text-muted-foreground">{t("Nenhum teste executado ainda.")}</p>
         ) : null}
 

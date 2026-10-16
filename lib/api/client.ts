@@ -9,6 +9,8 @@ export type RequestOpts = {
   schema?: ZodSchema<unknown>;
   idempotencyKey?: string;
   timeoutMs?: number;
+  /** Uma simulação cobrada não deve ser repetida automaticamente após timeout. */
+  maxAttempts?: number;
   headers?: Record<string, string>;
   signal?: AbortSignal;
 };
@@ -67,11 +69,7 @@ function combineSignals(signals: Array<AbortSignal | undefined>): AbortSignal {
       controller.abort(sig.reason);
       break;
     }
-    sig.addEventListener(
-      "abort",
-      () => controller.abort(sig.reason),
-      { once: true },
-    );
+    sig.addEventListener("abort", () => controller.abort(sig.reason), { once: true });
   }
   return controller.signal;
 }
@@ -117,13 +115,14 @@ async function request<T>(
     headers["Idempotency-Key"] ??= opts.idempotencyKey ?? randomId();
   }
 
-  const serializedBody =
-    body === undefined || body === null ? undefined : JSON.stringify(body);
+  const serializedBody = body === undefined || body === null ? undefined : JSON.stringify(body);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const requestedAttempts = Number.isFinite(opts.maxAttempts) ? opts.maxAttempts! : MAX_ATTEMPTS;
+  const maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.trunc(requestedAttempts)));
 
   let lastError: unknown;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const timeoutController = new AbortController();
     const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
     const signal = combineSignals([timeoutController.signal, opts.signal]);
@@ -148,7 +147,7 @@ async function request<T>(
       }
 
       // Retry on 429/503
-      if (RETRYABLE_STATUSES.has(res.status) && attempt < MAX_ATTEMPTS) {
+      if (RETRYABLE_STATUSES.has(res.status) && attempt < maxAttempts) {
         const retryAfter = parseRetryAfterSeconds(res.headers.get("Retry-After"));
         const delay = retryAfter !== null ? retryAfter * 1000 : backoffMs(attempt);
         await sleep(delay, opts.signal);
@@ -172,9 +171,7 @@ async function request<T>(
         synthesizeCode(res.status),
         undefined,
         responseRequestId,
-        typeof errBody === "string" && errBody.length > 0
-          ? errBody
-          : `HTTP ${res.status}`,
+        typeof errBody === "string" && errBody.length > 0 ? errBody : `HTTP ${res.status}`,
       );
     } catch (err) {
       // ApiError thrown above for non-retryable: propagate immediately
@@ -187,7 +184,7 @@ async function request<T>(
       }
       // Network error / timeout — retry
       lastError = err;
-      if (attempt < MAX_ATTEMPTS) {
+      if (attempt < maxAttempts) {
         await sleep(backoffMs(attempt), opts.signal);
         continue;
       }
@@ -198,14 +195,10 @@ async function request<T>(
   }
 
   // Exhausted retries on retryable status: throw a synthetic ApiError
-  throw lastError ??
-    new ApiError(
-      503,
-      "service_unavailable",
-      undefined,
-      requestId,
-      "Max retries exhausted",
-    );
+  throw (
+    lastError ??
+    new ApiError(503, "service_unavailable", undefined, requestId, "Max retries exhausted")
+  );
 }
 
 export const apiClient = {

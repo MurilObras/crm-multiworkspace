@@ -95,4 +95,7 @@ describe("aba de Execuções — llm_calls traduzido para a tela", () => {
     const linha = paraLinhaDeExecucao(chamada());
     expect(linha["agent_id"]).toBe(AGENTE);
   });
+  it("uma chamada de ensaio nunca recebe identificação de produção", () => {
+    expect(paraLinhaDeExecucao(chamada({ purpose: "agent_test" }))["is_dry_run"]).toBe(true);
+  });
 });

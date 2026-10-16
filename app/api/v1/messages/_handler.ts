@@ -190,6 +190,7 @@ export async function listMessagesHandler(
     .from("messages")
     .select(MSG_COLS)
     .eq("conversation_id", conversationId)
+    .is("metadata->>reconciled_into_message_id", null)
     .eq("organization_id", ctx.organization_id)
     .order("sent_at", { ascending: false })
     .order("created_at", { ascending: false })

@@ -123,25 +123,38 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
         sampleContact: parsed.data.sample_contact,
       });
     }
-  } catch {
+  } catch (err) {
+    const persistFailed = err instanceof Error && err.message === "test_run_persist_failed";
+    const errorCode = persistFailed
+      ? "agent_test_result_persist_failed"
+      : "agent_test_execution_failed";
+    const errorMessage = persistFailed
+      ? "O agente executou, mas não foi possível salvar o resultado. Confira a atualização do banco da instalação."
+      : "Não consegui executar o agente. Confira as credenciais de IA e a conexão com o banco da instalação.";
+    logger.warn("agent_test_failed", {
+      requestId,
+      runId: runRow.id,
+      organizationId: activeOrg.orgId,
+      code: errorCode,
+    });
     // O banco pode ser a causa da falha. Tentar encerrar o registro não pode
     // substituir a resposta amigável por outra exceção, nem expor o provider.
     try {
       const { error } = await admin
         .from("ai_agent_runs")
-        .update({ status: "failed", completed_at: new Date().toISOString() })
+        .update({
+          status: "failed",
+          error_code: errorCode,
+          error_message: errorMessage,
+          completed_at: new Date().toISOString(),
+        })
         .eq("id", runRow.id)
         .eq("organization_id", activeOrg.orgId);
       if (error) logger.warn("agent_test_failed_run_persist", { requestId, runId: runRow.id });
     } catch {
       logger.warn("agent_test_failed_run_persist", { requestId, runId: runRow.id });
     }
-    return fail(
-      "internal_error",
-      "Não consegui executar o agente. Confira as credenciais de IA e a conexão com o banco da instalação.",
-      500,
-      { requestId },
-    );
+    return fail(errorCode, errorMessage, 500, { requestId });
   }
 
   void audit({

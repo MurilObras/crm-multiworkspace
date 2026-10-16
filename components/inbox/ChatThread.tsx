@@ -27,8 +27,7 @@ interface Props {
 
 /** Onda 5.2: union de item do thread — mensagem real ou nota interna (nunca vai ao cliente). */
 export type ThreadItem =
-  | { kind: "message"; ts: string; data: Message }
-  | { kind: "note"; ts: string; data: Note };
+  { kind: "message"; ts: string; data: Message } | { kind: "note"; ts: string; data: Note };
 
 /** Intercala mensagens e notas por timestamp asc (puro, sem I/O — testado em thread-merge.test.ts). */
 export function mergeThreadItems(messages: Message[], notes: Note[]): ThreadItem[] {
@@ -50,7 +49,11 @@ export function mergeThreadItems(messages: Message[], notes: Note[]): ThreadItem
   return items;
 }
 
-function dayLabel(d: Date, t: (texto: string) => string = (texto) => texto, locale: Locale): string {
+function dayLabel(
+  d: Date,
+  t: (texto: string) => string = (texto) => texto,
+  locale: Locale,
+): string {
   if (isToday(d)) return t("Hoje");
   if (isYesterday(d)) return t("Ontem");
   return format(d, "dd/MM/yyyy", { locale: locale });
@@ -70,10 +73,7 @@ export function ChatThread({ conversationId, onResponder }: Props) {
   const canManage = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
 
-  const messages: Message[] = useMemo(
-    () => q.data?.pages.flatMap((p) => p.data) ?? [],
-    [q.data],
-  );
+  const messages: Message[] = useMemo(() => q.data?.pages.flatMap((p) => p.data) ?? [], [q.data]);
 
   /**
    * As mensagens por id, para resolver a CITADA sem ir ao servidor.
@@ -85,10 +85,7 @@ export function ChatThread({ conversationId, onResponder }: Props) {
    */
   const porId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
 
-  const items: ThreadItem[] = useMemo(
-    () => mergeThreadItems(messages, notes),
-    [messages, notes],
-  );
+  const items: ThreadItem[] = useMemo(() => mergeThreadItems(messages, notes), [messages, notes]);
 
   const paginas = q.data?.pages.length ?? 0;
 
@@ -247,6 +244,7 @@ export function ChatThread({ conversationId, onResponder }: Props) {
                 />
               ) : (
                 <MessageBubble
+                  canManage={canManage}
                   key={`msg-${item.data.id}`}
                   message={item.data}
                   debugCitations={debugCitations}

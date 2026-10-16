@@ -38,6 +38,24 @@ import { KIWIFY_HISTORY_TRANSLATIONS, KIWIFY_OPERATOR_TRANSLATIONS } from "./kiw
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Confirmar vídeo recebido": { es: "Confirmar video recibido" },
+  "Confira no WhatsApp se este vídeo chegou. Selecione abaixo a cópia recebida do mesmo vídeo. Esta ação corrige o registro e não envia outra mensagem.":
+    {
+      es: "Comprueba en WhatsApp si llegó este video. Selecciona abajo la copia recibida del mismo video. Esta acción corrige el registro y no envía otro mensaje.",
+    },
+  "Nenhuma cópia recebida foi encontrada. A entrega permanece incerta; não confirme sem verificar.":
+    {
+      es: "No se encontró una copia recibida. La entrega sigue siendo incierta; no confirmes sin verificar.",
+    },
+  "Conferi no WhatsApp: é o mesmo vídeo e foi recebido.": {
+    es: "Verifiqué en WhatsApp: es el mismo video y fue recibido.",
+  },
+  "Confirmar entrega": { es: "Confirmar entrega" },
+  "Não foi possível confirmar a entrega.": { es: "No se pudo confirmar la entrega." },
+  "Não foi possível consultar as entregas.": { es: "No se pudieron consultar las entregas." },
+  "Não foi possível obter o resultado. Confira a aba Execuções antes de executar outro teste.": {
+    es: "No se pudo obtener el resultado. Revisa la pestaña Ejecuciones antes de ejecutar otra prueba.",
+  },
   "Alteração salva. Vale para os próximos turnos deste agente.": { es: "Cambio guardado. Se aplica en los próximos turnos de este agente." },
   "Erro ao salvar áudio.": { es: "Error al guardar el audio." },
   "Escolha uma gravação, informe um título e descreva quando usar (mínimo 10 caracteres).": { es: "Elige una grabación, escribe un título y describe cuándo usarla (mínimo 10 caracteres)." },

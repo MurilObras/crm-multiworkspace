@@ -96,6 +96,7 @@ class FakeQuery implements PromiseLike<Res> {
   private cols = "*";
   private eqs: Array<{ col: string; val: unknown }> = [];
   private ors: string[] = [];
+  private nulls: string[] = [];
   // ACUMULA os order: o handler encadeia .order("sent_at").order("id") e o
   // desempate por id é o que segura a borda da página quando há sent_at igual.
   // Guardar um só (como fazem os outros duplos do repo) apagaria o desempate
@@ -111,6 +112,13 @@ class FakeQuery implements PromiseLike<Res> {
   }
   eq(col: string, val: unknown): this {
     this.eqs.push({ col, val });
+    return this;
+  }
+  is(col: string, val: unknown): this {
+    if (col !== "metadata->>reconciled_into_message_id" || val !== null) {
+      throw new Error("FakeQuery: filtro IS não suportado");
+    }
+    this.nulls.push("metadata->>'reconciled_into_message_id' is null");
     return this;
   }
   or(raw: string): this {
@@ -130,6 +138,7 @@ class FakeQuery implements PromiseLike<Res> {
     const where = [
       ...this.eqs.map((f) => `${f.col} = ${sqlString(String(f.val))}`),
       ...this.ors,
+      ...this.nulls,
     ];
     let q = `select ${this.cols} from public.${this.table}`;
     if (where.length) q += ` where ${where.join(" and ")}`;
@@ -209,19 +218,23 @@ const ctx: HandlerCtx = {
 };
 
 beforeAll(() => {
-  const linhas = Array.from({ length: TOTAL }, (_, i) =>
-    `('${msgId(i)}','${ORG}','${CONV}','${SESSION}','${CONTACT}','text',` +
-    // NUNCA status='queued' + sent_via='ai': agent-watchdog.test.ts varre
-    // exatamente essa combinação no banco COMPARTILHADO da suíte e apagaria
-    // estas linhas no meio do arquivo.
-    `'${i % 2 === 0 ? "inbound" : "outbound"}','${i % 2 === 0 ? "received" : "sent"}',` +
-    `'${i % 2 === 0 ? "crm" : "user"}','${corpo(i)}','${sentAt(i)}')`,
+  const linhas = Array.from(
+    { length: TOTAL },
+    (_, i) =>
+      `('${msgId(i)}','${ORG}','${CONV}','${SESSION}','${CONTACT}','text',` +
+      // NUNCA status='queued' + sent_via='ai': agent-watchdog.test.ts varre
+      // exatamente essa combinação no banco COMPARTILHADO da suíte e apagaria
+      // estas linhas no meio do arquivo.
+      `'${i % 2 === 0 ? "inbound" : "outbound"}','${i % 2 === 0 ? "received" : "sent"}',` +
+      `'${i % 2 === 0 ? "crm" : "user"}','${corpo(i)}','${sentAt(i)}')`,
   ).join(",\n      ");
 
-  const linhasCurta = Array.from({ length: CURTA_TOTAL }, (_, i) =>
-    `('aaaabbbb-7777-4000-8000-${String(i).padStart(12, "0")}','${ORG}','${CONV_CURTA}','${SESSION}',` +
-    `'${CONTACT_CURTA}','text','inbound','received','crm','curta-${i + 1}',` +
-    `'${new Date(BASE_MS + i * 60_000).toISOString()}')`,
+  const linhasCurta = Array.from(
+    { length: CURTA_TOTAL },
+    (_, i) =>
+      `('aaaabbbb-7777-4000-8000-${String(i).padStart(12, "0")}','${ORG}','${CONV_CURTA}','${SESSION}',` +
+      `'${CONTACT_CURTA}','text','inbound','received','crm','curta-${i + 1}',` +
+      `'${new Date(BASE_MS + i * 60_000).toISOString()}')`,
   ).join(",\n      ");
 
   sql(`
@@ -274,6 +287,27 @@ function maisRecentesPorSql(n: number): string[] {
 }
 
 describe("listMessagesHandler — paginação da thread", () => {
+  it("omite somente o eco conciliado e preenche a página com mensagens anteriores", async () => {
+    const hidden = msgId(TOTAL - 1);
+    try {
+      sql(`update public.messages set metadata=jsonb_build_object('reconciled_into_message_id','${msgId(0)}')
+        where organization_id='${ORG}' and id='${hidden}'`);
+      const r = await listMessagesHandler(fakeAdminClient(), ctx, CONV, { limit: LIMIT });
+      expect(r.messages).toHaveLength(LIMIT);
+      expect(r.messages.some((m) => m.id === hidden)).toBe(false);
+      expect(r.messages.map((m) => m.id).sort()).toEqual(
+        sql(`select string_agg(id::text,',' order by id) from
+        (select id from public.messages where organization_id='${ORG}' and conversation_id='${CONV}'
+         and metadata->>'reconciled_into_message_id' is null order by sent_at desc,created_at desc,id desc limit ${LIMIT}) t`)
+          .split(",")
+          .sort(),
+      );
+    } finally {
+      sql(
+        `update public.messages set metadata=metadata-'reconciled_into_message_id' where organization_id='${ORG}' and id='${hidden}'`,
+      );
+    }
+  });
   it("[DISCRIMINA] a primeira página traz as mensagens MAIS RECENTES", async () => {
     const r = await listMessagesHandler(fakeAdminClient(), ctx, CONV, { limit: LIMIT });
 
@@ -361,7 +395,10 @@ describe("listMessagesHandler — paginação da thread", () => {
 
   it("cursor inválido vira ApiError 400 invalid_cursor (não 500, não página silenciosa)", async () => {
     await expect(
-      listMessagesHandler(fakeAdminClient(), ctx, CONV, { limit: LIMIT, cursor: "%%nao-e-base64%%" }),
+      listMessagesHandler(fakeAdminClient(), ctx, CONV, {
+        limit: LIMIT,
+        cursor: "%%nao-e-base64%%",
+      }),
     ).rejects.toMatchObject({ status: 400, code: "invalid_cursor" });
 
     // base64url válido, mas com payload que não tem o shape do cursor.

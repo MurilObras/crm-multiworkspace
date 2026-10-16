@@ -12,6 +12,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { audit } from "@/lib/audit";
+import { TETO_DE_VIDEO_MS } from "./timeouts";
 import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
@@ -67,10 +68,12 @@ async function ehEcoDeEnvioNosso(
   conversationId: string,
   p: WahaPayload,
 ): Promise<boolean> {
-  const desde = new Date(Date.now() - JANELA_DO_ECO_MS).toISOString();
+  const kind = resolveMessageType(p);
+  const now = Date.now();
+  const desde = new Date(now - (kind === "video" ? TETO_DE_VIDEO_MS : JANELA_DO_ECO_MS)).toISOString();
   const { data, error } = await admin
     .from("messages")
-    .select("id, body, type")
+    .select("id, body, type, status, created_at, updated_at")
     .eq("organization_id", organizationId)
     .eq("conversation_id", conversationId)
     .eq("direction", "outbound")
@@ -81,7 +84,8 @@ async function ehEcoDeEnvioNosso(
     // a janela exata em que o eco é indistinguível de digitação humana.
     .is("external_id", null)
     .in("status", ["queued", "sending"])
-    .gte("created_at", desde)
+    // Retomadas conservam created_at antigo; o CAS de transporte atualiza updated_at.
+    .gte("updated_at", desde)
     .limit(20);
 
   if (error) {
@@ -93,12 +97,18 @@ async function ehEcoDeEnvioNosso(
 
   const corpo = (p.body ?? "").trim();
   for (const linha of data ?? []) {
-    const l = linha as { body: string | null; type?: string | null };
-    if (p.type && p.type !== "chat") {
+    const l = linha as { body: string | null; type?: string | null; status?: string; created_at?: string; updated_at?: string };
+    // Uma fila antiga não vira transporte por ter recebido atualização de erro/metadados.
+    const queuedAt = Date.parse(l.created_at ?? "");
+    if (l.status === "queued" && (!Number.isFinite(queuedAt) || queuedAt < now - JANELA_DO_ECO_MS)) continue;
+    if (kind !== "text") {
       // Mídia: sem corpo para comparar, a existência do envio em voo é a prova
       // possível. Mais fraco, e escrito para ninguém supor o contrário.
-      if ((l.type ?? "chat") !== "chat") return true;
-      continue;
+      if (l.type !== kind) continue;
+      // A extensão além de 60s vale só durante transporte de vídeo, não para uma fila parada.
+      if (kind === "video" && l.status !== "sending"
+        && (!l.updated_at || Date.parse(l.updated_at) < now - JANELA_DO_ECO_MS)) continue;
+      return true;
     }
     if (corpo.length > 0 && (l.body ?? "").trim() === corpo) return true;
   }
@@ -1031,7 +1041,8 @@ async function handleMessageEdited(
   session: Session,
   p: WahaPayload,
 ): Promise<void> {
-  const alvo = bareWaMessageId(p.editedMessageId ?? "");
+  const full = p.editedMessageId ?? "";
+  const alvo = bareWaMessageId(full);
   const corpo = typeof p.body === "string" ? p.body : null;
   if (!alvo || corpo === null) return;
 
@@ -1039,7 +1050,8 @@ async function handleMessageEdited(
     .from("messages")
     .update({ body: corpo, edited_at: new Date().toISOString() })
     .eq("organization_id", session.organization_id)
-    .eq("external_id", alvo);
+    .eq("channel_session_id", session.id)
+    .in("external_id", alvo === full ? [full] : [full, alvo]);
 }
 
 /**
@@ -1056,14 +1068,18 @@ async function handleMessageRevoked(
   session: Session,
   p: WahaPayload,
 ): Promise<void> {
-  const alvo = bareWaMessageId(p.revokedMessageId ?? "");
+  const full = p.revokedMessageId ?? "";
+  const alvo = bareWaMessageId(full);
   if (!alvo) return;
 
   await admin
     .from("messages")
     .update({ revoked_at: new Date().toISOString() })
     .eq("organization_id", session.organization_id)
-    .eq("external_id", alvo);
+    .eq("channel_session_id", session.id)
+    // Uma confirmação manual conserva o ID completo recebido pelo webhook;
+    // envios NOWEB normais usam a cauda. Ambos pertencem à sessão autenticada.
+    .in("external_id", alvo === full ? [full] : [full, alvo]);
 }
 
 /**

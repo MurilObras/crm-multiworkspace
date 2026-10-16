@@ -113,7 +113,7 @@ describe("POST .../versions/:vid/test — runtime real", () => {
       tool_calls: [],
       tokens_in: 1,
       tokens_out: 1,
-      cost_cents: 0,
+      cost_cents: null,
       latency_ms: 1,
       runtime: "conversation_engine",
       limitations: [],
@@ -144,6 +144,7 @@ describe("POST .../versions/:vid/test — runtime real", () => {
       stub: false,
       messages: ["Resposta"],
       runtime: "conversation_engine",
+      cost_cents: null,
     });
   });
 

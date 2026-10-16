@@ -41,6 +41,7 @@ function db(data = rows): SupabaseClient {
       let cap = Infinity;
       const query = {
         select: () => query,
+        is: () => query,
         eq: (col: keyof Row, value: string) => {
           current = current.filter((r) => r[col] === value);
           return query;

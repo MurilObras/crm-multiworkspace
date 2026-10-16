@@ -17,18 +17,13 @@ import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useT } from "@/hooks/i18n/useT";
 
 export type RunStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "aborted"
-  | "timeout";
+  "pending" | "running" | "completed" | "failed" | "aborted" | "handoff" | "timeout";
 
 export interface AgentRunRow {
   id: string;
   organization_id: string;
   agent_id: string;
-  agent_version_id: string;
+  agent_version_id: string | null;
   conversation_id: string | null;
   contact_id: string | null;
   channel_session_id: string | null;
@@ -55,8 +50,7 @@ interface ListResponse {
   meta?: { cursor: string | null; has_more: boolean };
 }
 
-export const agentRunsKey = (agentId: string) =>
-  ["ai", "agents", agentId, "runs"] as const;
+export const agentRunsKey = (agentId: string) => ["ai", "agents", agentId, "runs"] as const;
 
 export function useAgentRuns(
   agentId: string,
