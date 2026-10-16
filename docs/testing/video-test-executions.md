@@ -66,6 +66,15 @@ uma rodada sem falhas acionáveis; aprovação de revisão não significa testes
     O teste do erro visível encontrou também os alertas globais da página; o
     erro esperado estava presente. Seletor restrito ao tabpanel Teste, sem
     relaxar a asserção. Revisão concluída antes de repetir o E2E completo.
+11. Revisão final adicional: a cópia conciliada ainda participava da seleção
+    da última mídia, bloqueando pedidos como “reenvie aquele vídeo”. Excluída
+    desse histórico, preservando o original confirmado e a proteção contra
+    repetição sem pedido. Regressão cobre pedido nomeado e referência ao último vídeo.
+12. A ordenação conjunta de execuções truncava timestamps para milissegundos,
+    podendo inverter duas fontes e pular uma linha na paginação. Reutilizado o
+    comparador que preserva a precisão do Postgres; regressão verifica duas
+    páginas com timestamps no mesmo milissegundo. Segunda revisão estática
+    concluída sem novo achado acionável antes de repetir as checagens.
 
 ## Cobertura de validação
 

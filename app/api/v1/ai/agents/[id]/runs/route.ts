@@ -51,6 +51,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { runsListQuerySchema } from "@/lib/ai/agents/validation";
+import { compareMessages } from "@/lib/messaging/message-order";
 
 export const dynamic = "force-dynamic";
 
@@ -232,10 +233,13 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const rows = [
     ...((data ?? []) as unknown as LlmCallRow[]).map(paraLinhaDeExecucao),
     ...(testRuns ?? []),
-  ].sort(
-    (a, b) =>
-      new Date(b.started_at as string).getTime() - new Date(a.started_at as string).getTime() ||
-      String(b.id).localeCompare(String(a.id)),
+  ].sort((a, b) =>
+    // Date sozinho perde microssegundos e pode produzir um cursor que pula
+    // execuções da outra fonte. Mantém a precisão e o desempate do Postgres.
+    compareMessages(
+      { id: String(b.id), created_at: b.started_at as string },
+      { id: String(a.id), created_at: a.started_at as string },
+    ),
   );
   const hasMore = rows.length > q.limit;
   const slice = hasMore ? rows.slice(0, q.limit) : rows;

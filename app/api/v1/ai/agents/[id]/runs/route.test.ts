@@ -8,7 +8,7 @@ vi.mock("@/lib/auth/require-role", () => ({
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 const agent = "11111111-1111-4111-8111-111111111111";
 type Row = Record<string, unknown>;
-const rows: Record<string, Row[]> = {
+const fixtures: Record<string, Row[]> = {
   llm_calls: [
     {
       id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -56,7 +56,9 @@ const rows: Record<string, Row[]> = {
     },
   ],
 };
+let rows: Record<string, Row[]>;
 beforeEach(() => {
+  rows = structuredClone(fixtures);
   vi.mocked(createClient).mockResolvedValue({
     from: (table: string) => {
       let result = [...rows[table]!],
@@ -135,4 +137,20 @@ it("filtro de falha inclui teste que teve chamada ao modelo bem-sucedida", async
   ).json();
   expect(data).toHaveLength(1);
   expect(data[0].is_dry_run).toBe(true);
+});
+it("pagina testes e produção no mesmo milissegundo sem perder os microssegundos do banco", async () => {
+  rows.llm_calls = [{ ...fixtures.llm_calls![0], created_at: "2026-10-15T12:00:00.123002Z" }];
+  rows.ai_agent_runs = [
+    { ...fixtures.ai_agent_runs![0], started_at: "2026-10-15T12:00:00.123001Z" },
+  ];
+  // O UUID do teste mais antigo é maior: truncar para ms o colocaria primeiro
+  // e o cursor eliminaria a chamada mais nova de todas as páginas seguintes.
+  const first = await (await GET(new NextRequest("http://localhost/x?limit=1"), ctx)).json();
+  expect(first.data.map((r: Row) => r.id)).toEqual([fixtures.llm_calls![0]!.id]);
+  expect(first.meta.has_more).toBe(true);
+  const second = await (
+    await GET(new NextRequest(`http://localhost/x?limit=1&cursor=${first.meta.cursor}`), ctx)
+  ).json();
+  expect(second.data.map((r: Row) => r.id)).toEqual([fixtures.ai_agent_runs![0]!.id]);
+  expect(second.meta.has_more).toBe(false);
 });

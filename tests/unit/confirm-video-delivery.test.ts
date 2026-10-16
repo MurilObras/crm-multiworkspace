@@ -54,85 +54,90 @@ beforeEach(async () => {
 afterEach(async () => db.close());
 
 describe("confirmação de vídeo recebido", () => {
-  it("mantém vídeo incerto bloqueado e libera somente reenvio solicitado depois da confirmação", async () => {
-    const agent = "70000000-0000-4000-8000-000000000001",
-      media = "70000000-0000-4000-8000-000000000002";
-    const inbound = "70000000-0000-4000-8000-000000000003",
-      newJob = "70000000-0000-4000-8000-000000000004";
-    await db.query(`update messages set metadata=metadata || $2::jsonb where id=$1`, [
-      original,
-      JSON.stringify({
-        idempotency_key: original,
-        approved_media: {
-          agent_id: agent,
-          media_id: media,
-          audio_id: media,
-          media_type: "video",
-          fingerprint: "a".repeat(64),
-          request_inbound_id: "old-request",
-        },
-      }),
-    ]);
-    await db.query(
-      `insert into messages(id,organization_id,conversation_id,contact_id,type,direction,status,body,metadata,created_at,sent_at)
-      values($1,$2,$3,$4,'text','inbound','delivered','Pode reenviar o vídeo oficial de demonstração?','{}','2026-10-15T19:29:00Z','2026-10-15T19:29:00Z')`,
-      [inbound, org, conversation, contact],
-    );
-    const approved: ApprovedMedia = {
-      id: media,
-      type: "video",
-      mime: "video/mp4",
-      title: "Demonstração",
-      enabled: true,
-      required: true,
-      storage_path: `${org}/agent-media/${agent}/${media}.mp4`,
-      size_bytes: 100,
-      use_when: "Demonstração visual",
-      send_when: "Pedido do vídeo",
-      trigger_type: "topic",
-      stage_ids: [],
-      allow_requested_repeat: true,
-      content_sha256: "a".repeat(64),
-    };
-    expect(
-      await availableConversationAudios(
-        pool,
-        org,
-        conversation,
-        agent,
-        newJob,
-        [approved],
+  it.each(["Pode reenviar o vídeo oficial de demonstração?", "Reenvie aquele vídeo de novo"])(
+    "libera %s após confirmar, sem confundir o eco com a mídia aprovada",
+    async (request) => {
+      const agent = "70000000-0000-4000-8000-000000000001",
+        media = "70000000-0000-4000-8000-000000000002";
+      const inbound = "70000000-0000-4000-8000-000000000003",
+        newJob = "70000000-0000-4000-8000-000000000004";
+      await db.query(`update messages set metadata=metadata || $2::jsonb where id=$1`, [
+        original,
+        JSON.stringify({
+          idempotency_key: original,
+          approved_media: {
+            agent_id: agent,
+            media_id: media,
+            audio_id: media,
+            media_type: "video",
+            fingerprint: "a".repeat(64),
+            request_inbound_id: "old-request",
+          },
+        }),
+      ]);
+      await db.query(
+        `insert into messages(id,organization_id,conversation_id,contact_id,type,direction,status,body,metadata,created_at,sent_at)
+      values($1,$2,$3,$4,'text','inbound','delivered',$5,'{}','2026-10-15T19:29:00Z','2026-10-15T19:29:00Z')`,
+        [inbound, org, conversation, contact, request],
+      );
+      const approved: ApprovedMedia = {
+        id: media,
+        type: "video",
+        mime: "video/mp4",
+        title: "Demonstração",
+        enabled: true,
+        required: true,
+        storage_path: `${org}/agent-media/${agent}/${media}.mp4`,
+        size_bytes: 100,
+        use_when: "Demonstração visual",
+        send_when: "Pedido do vídeo",
+        trigger_type: "topic",
+        stage_ids: [],
+        allow_requested_repeat: true,
+        content_sha256: "a".repeat(64),
+      };
+      expect(
+        await availableConversationAudios(
+          pool,
+          org,
+          conversation,
+          agent,
+          newJob,
+          [approved],
+          inbound,
+          false,
+        ),
+      ).toEqual([]);
+      await confirmVideoDelivery(pool, org, original, echo);
+      expect(
+        await availableConversationAudios(
+          pool,
+          org,
+          conversation,
+          agent,
+          newJob,
+          [approved],
+          inbound,
+          false,
+        ),
+      ).toEqual([approved]);
+      await db.query("update messages set body='Como funciona o aplicativo?' where id=$1", [
         inbound,
-        false,
-      ),
-    ).toEqual([]);
-    await confirmVideoDelivery(pool, org, original, echo);
-    expect(
-      await availableConversationAudios(
-        pool,
-        org,
-        conversation,
-        agent,
-        newJob,
-        [approved],
-        inbound,
-        false,
-      ),
-    ).toEqual([approved]);
-    await db.query("update messages set body='Como funciona o aplicativo?' where id=$1", [inbound]);
-    expect(
-      await availableConversationAudios(
-        pool,
-        org,
-        conversation,
-        agent,
-        newJob,
-        [approved],
-        inbound,
-        false,
-      ),
-    ).toEqual([]);
-  });
+      ]);
+      expect(
+        await availableConversationAudios(
+          pool,
+          org,
+          conversation,
+          agent,
+          newJob,
+          [approved],
+          inbound,
+          false,
+        ),
+      ).toEqual([]);
+    },
+  );
   it("reconcilia a entrega, libera reenvio solicitado e preserva as duas linhas para auditoria", async () => {
     await confirmVideoDelivery(pool, org, original, echo);
     const rows = (

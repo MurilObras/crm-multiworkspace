@@ -29,6 +29,7 @@ async function history(db: Queryable, org: string, conversation: string): Promis
       m.status,m.type as kind,m.metadata->'outbound_attempt'->>'phase' as phase,l.job_id
      from messages m left join send_ledger l on l.organization_id=m.organization_id and l.id::text=m.metadata->>'idempotency_key'
      where m.organization_id=$1 and m.conversation_id=$2 and m.direction='outbound'
+       and m.metadata->>'reconciled_into_message_id' is null
        and m.type in ('audio','image','video') and ${HELD}
        order by coalesce(m.sent_at,m.created_at) desc,m.created_at desc,m.id desc`, [org,conversation]);
   return rows;
