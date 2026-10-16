@@ -279,7 +279,8 @@ test("erro na tela de teste permanece visível e não vira resultado vazio", asy
   await page.getByRole("tab", { name: "Teste", exact: true }).click();
   await page.getByLabel("Mensagem do cliente (sample)").fill("Qual é o plano para três pessoas?");
   await page.getByRole("button", { name: "Executar teste", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("não foi possível salvar o resultado");
+  const testPanel = page.getByRole("tabpanel", { name: "Teste", exact: true });
+  await expect(testPanel.getByRole("alert")).toContainText("não foi possível salvar o resultado");
   await expect(page.getByText("Nenhum teste executado ainda.", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: path.join(evidence, "teste-erro-visivel.png"), fullPage: true });
 });

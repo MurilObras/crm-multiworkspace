@@ -62,6 +62,10 @@ uma rodada sem falhas acionáveis; aprovação de revisão não significa testes
    Mantida a janela por criação para queued; somente sending usa a atualização
    recente. Nova bateria de eco/transporte aprovada com 55/55. Revisão e tipos
    da fixture concluídos antes da nova rodada completa de E2E.
+10. Segunda rodada completa: vídeo e identificação das execuções aprovados.
+    O teste do erro visível encontrou também os alertas globais da página; o
+    erro esperado estava presente. Seletor restrito ao tabpanel Teste, sem
+    relaxar a asserção. Revisão concluída antes de repetir o E2E completo.
 
 ## Cobertura de validação
 
