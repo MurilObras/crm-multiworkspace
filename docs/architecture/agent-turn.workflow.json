@@ -289,6 +289,15 @@
       "label": "Descarte do envio antigo",
       "sublabel": "owner + CAS: messages/ledger terminais; Inbox e atividade explicam",
       "tag": "discardSupersededOutbound"
+    },
+    {
+      "id": "turnclosing",
+      "lane": "worker",
+      "col": 4,
+      "type": "backend",
+      "label": "Fechamento durável",
+      "sublabel": "retry só da memória; chave do agente/painel",
+      "tag": "turn_closing"
     }
   ],
   "edges": [
@@ -655,6 +664,25 @@
       "from": "discardoutbound",
       "to": "turn",
       "label": "prepared sem rede → rejected/vetoed; só então complete",
+      "variant": "dashed"
+    },
+    {
+      "id": "turn-closing",
+      "from": "turn",
+      "to": "turnclosing",
+      "label": "tools encerradas; sem transporte pendente"
+    },
+    {
+      "id": "closing-declaracao",
+      "from": "turnclosing",
+      "to": "declaracao",
+      "label": "checkpoint idempotente e operador deduplicado"
+    },
+    {
+      "id": "closing-retry",
+      "from": "turnclosing",
+      "to": "turnclosing",
+      "label": "falha → backoff só do fechamento; sem canal",
       "variant": "dashed"
     }
   ],

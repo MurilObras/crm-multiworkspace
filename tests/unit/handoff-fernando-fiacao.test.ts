@@ -52,7 +52,8 @@ describe("fiação — caso humano aberto move o lead pra etapa de handoff", () 
 
 describe("fiação — lead urgente represado pelo cap de warm-up gera alerta crítico", () => {
   it("o bloco de reagendamento por cap checa detectUrgencySignal e abre agent_inbox_items kind='handoff'", () => {
-    const i = FONTE_INBOUND.indexOf("pacingCapVeto !== null && outcomes.length === 0");
+    // O cap vem do accessor que preserva a união fora da closure de envio.
+    const i = FONTE_INBOUND.indexOf("veto !== null && outcomes.length === 0");
     expect(i).toBeGreaterThan(-1);
     const janela = FONTE_INBOUND.slice(i, i + 2000);
     expect(janela).toContain("detectUrgencySignal(inboundSignal)");

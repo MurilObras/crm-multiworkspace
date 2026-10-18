@@ -68,6 +68,20 @@ describe("resolveOrgLlmConfig — chave de plataforma por provider", () => {
       resolveOrgLlmConfig(poolFake({ provider: "openai" }, SEM_BYOK), {}, "org-1"),
     ).rejects.toBeInstanceOf(LlmNotConfiguredError);
   });
+
+  it('chave específica ausente ou revogada não cai na chave da plataforma', async () => {
+    await expect(resolveOrgLlmConfig(poolFake({ provider: 'openai' }, []),
+      { openaiApiKey: 'fake-platform' }, 'org-1', { provider: 'openai', credentialId: 'revogada' },
+    )).rejects.toBeInstanceOf(LlmNotConfiguredError);
+  });
+
+  it('consulta chave específica com tenant e provider, além do id', async () => {
+    const query = vi.fn(async (sql: string) => sql.includes("settings->'llm'")
+      ? { rows: [{ llm: { provider: 'anthropic' } }] }
+      : { rows: [{ api_key_encrypted: 'x', api_key_iv: 'y', api_key_tag: 'z' }] });
+    await resolveOrgLlmConfig({ query } as never, {}, 'org-escola', { provider: 'openai', credentialId: 'cred-escola' });
+    expect(query).toHaveBeenLastCalledWith(expect.stringContaining('and provider = $3'), ['org-escola', 'cred-escola', 'openai']);
+  });
 });
 
 /**
