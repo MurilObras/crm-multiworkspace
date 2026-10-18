@@ -8,6 +8,19 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.4.1] — 2026-10-18
+
+### Corrigido
+
+- **Atendimento continua com a chave configurada e sem refazer respostas por falha de memória** As chamadas internas de memória respeitam o provedor e a chave escolhidos no
+  agente. Uma escolha no painel de provedores não exige uma chave de outro provedor
+  para o padrão da organização. Chaves específicas continuam restritas à organização
+  e ao provedor configurados.
+
+  Quando o atendimento termina e o registro de memória falha, a nova tentativa
+  fecha somente a memória, sem repetir ferramentas ou mensagens ao cliente. A fila
+  mantém a referência do fechamento, sem copiar a conversa ou segredos para o job.
+
 ## [3.4.0] — 2026-10-16
 
 ### Corrigido
@@ -3326,7 +3339,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.4.0...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.4.1...HEAD
+[3.4.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.4.0...v3.4.1
 [3.4.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.1.0...v3.2.0
