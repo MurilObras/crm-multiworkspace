@@ -32,6 +32,7 @@ import { MESSAGE_ORDER_DESC } from '@/lib/messaging/message-order';
 import type pg from 'pg';
 import { z } from 'zod';
 import { auxModelArgs, type AuxModelArgs } from './aux-model-args';
+import { closingMessages, readTurnClosing, rememberTurnClosing, recoverClosingBeforeMarker, checkpointSupersededByNewerTurn, type TurnClosing } from './turn-closing';
 import type { ChannelAdapter, ChannelSendResult, ChannelSendInput } from '../channel-adapter';
 
 import { withFields, type Logger } from '../obs/logger';
@@ -59,7 +60,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { moverLeadParaEtapaDeHandoff } from '@/lib/leads/handoff-stage-move';
 import { detectUrgencySignal } from '../guardrails/sinal-de-urgencia';
 import { buildNativeMediaParts } from './media-parts';
-import { enqueueJob, rescheduleJob, completeJob, type JobRow, type Queryable } from '../queue/queue';
+import { enqueueJob, rescheduleJob, completeJob, withJobLease, type JobRow, type Queryable } from '../queue/queue';
 import { isCurrentInbound } from '../queue/inbound-pending';
 import { collectApprovedMediaUrls } from './approved-media';
 import { readApprovedMedia, renderApprovedMedia } from '@/lib/ai/agents/approved-media';
@@ -1280,6 +1281,244 @@ function turnoVaiFalarComOLead(job: JobRow): boolean {
   return purpose === undefined || purpose === 'send_message';
 }
 
+/** Memória/continuidade sem ferramentas de atendimento: comum ao fechamento e ao retry. */
+async function publishTurnCheckpoint(
+  pool: pg.Pool, job: JobRow, ctx: { workerId: string },
+  input: AgentTurnInput, agentConfig: TurnClosing['agent'], content: CheckpointContent,
+  closing: { callId: string | null }, runLog: Logger,
+): Promise<void> {
+  const tenantId = job.organization_id;
+  const leadId = job.contact_id;
+  if (leadId === null) throw new Error('fechamento sem contato');
+  // Wave 3 (2.4): o checkpoint anterior é lido ANTES de gravar o novo — a
+  // timeline recebe o DIFF, nunca o snapshot. Emitir a cada turno encheria a
+  // tela com "a IA pensou" e enterraria a única linha que muda o que alguém
+  // faria a seguir.
+  const checkpointAnterior = await withJobLease(pool, job.id, ctx.workerId, tenantId, async tx => {
+    const previous = await latestCheckpoint(tx, tenantId, leadId);
+    if (await checkpointDoJob(tx, tenantId, leadId, job.id) === null) {
+      await insertCheckpoint(tx, { tenantId, leadId, jobId: job.id, content });
+    }
+    return previous;
+  });
+
+  // ── O TURNO DO OPERADOR (spec 16 §3.2) ─────────────────────────────────────
+  //
+  // Enfileirado AQUI, pelo RUNTIME, logo depois de o checkpoint existir — nunca
+  // por decisão do modelo. Um Conversador que "chama" o Operador devolveria o
+  // problema inteiro: voltaria a depender de o modelo lembrar, e o turno em que
+  // ele não achasse necessário seria um lead parado no funil, em silêncio.
+  //
+  // Depois do checkpoint porque a declaração É o insumo do Operador; enfileirar
+  // antes criaria uma corrida em que ele leria o checkpoint do turno ANTERIOR e
+  // agiria sobre um turno que não é o seu.
+  //
+  // Fire-and-forget: falha ao enfileirar NÃO derruba um turno que já respondeu
+  // ao cliente. O `sourceEventId` é o job do Conversador, então o retry da fila
+  // não gera um segundo Operador para o mesmo turno.
+  const disparo = decidirSeEnfileiraOperador({
+    temAgentePublicado: agentConfig !== null,
+    papelLigado: agentConfig?.operatorEnabled ?? false,
+  });
+  if (!disparo.enfileira) {
+    runLog.info('turno do operador não enfileirado', { porque: disparo.porque });
+  } else {
+    try {
+      const { deduped } = await enqueueJob(pool, tenantId, {
+        kind: 'operator_turn',
+        leadId,
+        sourceEventId: job.id,
+        payload: {
+          conversation_id: input.conversationId,
+          origin_job_id: job.id,
+          agent_id: agentConfig?.agentId ?? null,
+        },
+      });
+      runLog.info('turno do operador enfileirado', { deduped });
+    } catch (err) {
+      runLog.error('turno do operador NÃO foi enfileirado (o turno segue)', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+      // O CATCH TINHA A DOUTRINA CERTA E A CONCLUSÃO ERRADA.
+      //
+      // "O aviso não pode derrubar o turno que já respondeu ao cliente" está certo.
+      // "Então basta um log" não: o enfileiramento é o ÚNICO mecanismo que garante o
+      // disparo do papel, e falhar aqui significa que a promessa que o Conversador
+      // acabou de fazer não terá dono e ninguém vai saber.
+      //
+      // É a mesma lição que este arquivo já aplicou no catch das capacidades MCP,
+      // onde o comentário diz que a versão anterior "dizia 'o humano vê o log'. Não
+      // vê." Lição aplicada numa ocorrência e não na irmã.
+      //
+      // Só quando HÁ promessa: sem ela o Operador teria decidido "nada a fazer", e
+      // item sem ação é ruído — ruído ensina a ignorar a Central.
+      const promessas = promessasEmAberto(content.declaracao ?? null);
+      if (promessas.length > 0) {
+        try {
+          await insertInboxItem(
+            pool,
+            tenantId,
+            {
+              kind: 'promise_unfulfilled',
+              severity: 'warn',
+              title: 'Um retorno prometido a um cliente ficou sem dono',
+              body:
+                'O assistente prometeu algo a esta pessoa nesta conversa e o passo que registra ' +
+                'o cumprimento não chegou a ser agendado. Abra a conversa, veja o que foi ' +
+                'combinado e cumpra você mesmo.',
+              refKind: 'conversation',
+              refId: input.conversationId,
+            },
+            'kind_e_ref',
+          );
+        } catch (erroDoAviso) {
+          runLog.error('aviso de promessa sem dono não foi gravado', {
+            error: (erroDoAviso instanceof Error ? erroDoAviso.message : String(erroDoAviso)).slice(0, 120),
+          });
+        }
+      }
+    }
+  }
+
+  const mudanca = diffCheckpoint(
+    checkpointAnterior
+      ? {
+          commitments: (checkpointAnterior.commitments ?? []) as string[],
+          objections: (checkpointAnterior.objections ?? []) as string[],
+          next_action: checkpointAnterior.next_action ?? null,
+          rolling_summary: checkpointAnterior.rolling_summary ?? null,
+        }
+      : null,
+    content,
+  );
+
+  if (mudanca.emit) {
+    try {
+      const r = await emitAgentActivityForContact({
+        pool,
+        organizationId: tenantId,
+        contactId: leadId,
+        type: "ai_turn",
+        sourceModule: "agent",
+        sourceId: job.id,
+        // O lastro é a chamada de modelo que PRODUZIU este checkpoint
+        // (llm_calls.id). Sem ele a linha entraria como 'system' e perderia a
+        // autoria justamente no evento mais "de IA" que existe.
+        ...(closing.callId ? { evidence: { llm_call_ids: [closing.callId] } } : {}),
+        ...(agentConfig?.agentId ? { agentId: agentConfig.agentId } : {}),
+        reason: mudanca.reason,
+        payload: {
+          added_commitments: mudanca.addedCommitments,
+          added_objections: mudanca.addedObjections,
+          next_action_changed: mudanca.nextActionChanged,
+        },
+      });
+      if (!r.routed) {
+        runLog.info('checkpoint sem negócio para pendurar: registrado no event_log', {
+          reason: r.reason,
+        });
+      }
+    } catch (err) {
+      // A timeline do turno não pode derrubar o turno.
+      runLog.error('falha ao registrar atividade de checkpoint (segue)', {
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    }
+  }
+
+  // ── A NOTA DO NEGÓCIO ──────────────────────────────────────────────────────
+  //
+  // O turno acabou de mexer em TUDO que a fórmula lê: compromissos e objeções
+  // (o checkpoint acima) e a qualificação BANT (`lead_state`, escrita pelo
+  // update_lead_state do modelo). Recalcular aqui é recalcular no instante em
+  // que os sinais mudaram — não há evento melhor.
+  //
+  // ⚠️ POR QUE ISTO EXISTE: `recalculaScoreDoLead` estava escrita, testada e
+  // com constraint no banco exigindo o `reason` — e SEM UM ÚNICO CHAMADOR no
+  // repositório inteiro. Nenhuma nota jamais foi calculada. O modo de falha era
+  // mudo: o card simplesmente não mostrava número, e "não tem nota ainda" é
+  // indistinguível de "ninguém nunca calcula".
+  //
+  // Fora do `if (mudanca.emit)` DE PROPÓSITO: o BANT muda em turnos que não
+  // mexem no checkpoint, e esses turnos também mudam a nota. Amarrar o cálculo
+  // à emissão da atividade faria a nota envelhecer em silêncio — o mesmo
+  // defeito, um andar acima.
+  //
+  // Falha aqui não derruba o turno: nota é derivado, e o próximo turno
+  // recalcula. O que não pode é o cliente ficar sem resposta por causa dela.
+  try {
+    const alvo = await resolveActiveLeadForContact(
+      (
+        await pool.query<LeadCandidate>(
+          `select l.id, l.organization_id, l.pipeline_id, l.status,
+                  l.last_activity_at, l.created_at
+             from crm_leads l
+            where l.organization_id = $1 and l.contact_id = $2`,
+          [tenantId, leadId],
+        )
+      ).rows,
+    );
+    if (alvo.routed) {
+      const r = await recalculaScoreDoLead(pool, tenantId, alvo.leadId);
+      runLog.info('score do negócio recalculado', {
+        lead_id: alvo.leadId,
+        gravou: r.gravou,
+        ...(r.motivo !== undefined ? { motivo: r.motivo } : {}),
+      });
+    }
+  } catch (err) {
+    runLog.error('falha ao recalcular score (segue)', {
+      error: err instanceof Error ? err.name : 'unknown',
+    });
+  }
+
+}
+
+/** Retentativa nunca remonta roteador, compaction, mídias ou tools mutantes. */
+async function resumeTurnClosing(
+  deps: InboundTurnDeps, pool: pg.Pool, job: JobRow, ctx: { workerId: string },
+  input: AgentTurnInput, state: TurnClosing, log: Logger,
+): Promise<void> {
+  const leadId = job.contact_id;
+  if (leadId === null) throw new Error('fechamento sem contato');
+  const previous = await latestCheckpoint(pool, job.organization_id, leadId);
+  const existing = await checkpointDoJob(pool, job.organization_id, leadId, job.id);
+  const memoryAdvanced = state.previousCheckpointId === undefined
+    ? await checkpointSupersededByNewerTurn(pool, job, previous?.job_id ?? null)
+    : (previous?.id ?? null) !== state.previousCheckpointId;
+  if (existing === null && memoryAdvanced) {
+    log.info('fechamento antigo dispensado — preservado checkpoint de turno mais recente');
+    return;
+  }
+  const messages = await closingMessages(pool, job, input.conversationId, previous, CHECKPOINT_INSTRUCTION);
+  if (messages === null) {
+    log.info('fechamento dispensado — contato removido ou anonimizado');
+    return;
+  }
+  let content: CheckpointContent;
+  let callId: string | null = null;
+  if (existing !== null) {
+    content = {
+      commitments: existing.commitments, objections: existing.objections,
+      next_action: existing.next_action, rolling_summary: existing.rolling_summary,
+      ...(existing.declaracao == null ? {} : { declaracao: existing.declaracao }),
+    };
+  } else {
+    const closing = await runModelCall(pool, deps.llmCfg, {
+      tenantId: job.organization_id, leadId, jobId: job.id, purpose: 'checkpoint',
+      ...(state.agent === null ? {} : {
+        model: state.agent.model,
+        llmOverride: { provider: state.agent.provider, credentialId: state.agent.credentialId },
+      }),
+      messages,
+    }, { registry: deps.registry, log });
+    content = parseCheckpointText(closing.result.text);
+    callId = closing.callId;
+  }
+  await publishTurnCheckpoint(pool, job, ctx, input, state.agent, content, { callId }, log);
+  log.info('fechamento retomado e concluído — sem repetir atendimento ou envios');
+}
+
 async function executarTurnoDoAgente(
   deps: InboundTurnDeps,
   job: JobRow,
@@ -1305,6 +1544,11 @@ async function executarTurnoDoAgente(
   const contextKnobs = { historyLimit: deps.knobs.historyLimit, maxTokens: deps.knobs.maxContextTokens };
   // Contexto do RUN em toda linha de log do turno (F2-16): job_id É o run id.
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
+  const closingState = readTurnClosing(job) ?? await recoverClosingBeforeMarker(pool, job, ctx.workerId);
+  if (closingState !== null) {
+    await resumeTurnClosing(deps, pool, job, ctx, input, closingState, runLog);
+    return;
+  }
 
   const inboundAnchor = job.kind === 'inbound_turn' && typeof job.payload.inbound_message_id === 'string'
     ? job.payload.inbound_message_id : null;
@@ -1953,6 +2197,7 @@ async function executarTurnoDoAgente(
   // o cap depende de quanto já saiu HOJE, que muda com o turno concorrente — só dá pra
   // saber com certeza no momento do envio, não antes.
   let pacingCapVeto: { code: string; nextAllowedAt: Date } | null = null;
+  const readPacingCapVeto = (): { code: string; nextAllowedAt: Date } | null => pacingCapVeto;
   // Best-effort: move o lead pra etapa `crm_stages.slug='chamar-humano'` do pipeline
   // dele (se o tenant tiver criado essa etapa — opt-in, ver `lib/leads/handoff-stage-move.ts`)
   // sempre que um caso humano abre neste turno, deliberado (open_human_case) ou pelo
@@ -3289,6 +3534,23 @@ async function executarTurnoDoAgente(
       ? pruneToolResults(turn.result.response.messages, deps.knobs.prune)
       : turn.result.response.messages;
 
+  // O modelo e suas tools terminaram. Se o fechamento falhar, a fila só
+  // repete memória. Sessão offline/cap sem entrega continuam na política de envio.
+  await execution.drain();
+  await mcpCleanup?.();
+  mcpCleanup = null;
+  const capAtClosing = readPacingCapVeto();
+  if ((capAtClosing === null || outcomes.length > 0) && outcomes.every(o => o.kind === 'sent' || o.kind === 'already_sent')) {
+    await rememberTurnClosing(pool, job, ctx.workerId, {
+      version: 1,
+      previousCheckpointId: previous?.id ?? null,
+      agent: agentConfig === null ? null : {
+        agentId: agentConfig.agentId, operatorEnabled: agentConfig.operatorEnabled,
+        provider: agentConfig.provider, model: agentConfig.model, credentialId: agentConfig.credentialId,
+      },
+    });
+  }
+
   // Fechamento imposto pelo runtime: 2ª chamada, mesma conversa, só o checkpoint.
   //
   // Também sob o handoff (o do turno inteiro, em `runAgentTurn`): o teto pode
@@ -3324,182 +3586,7 @@ async function executarTurnoDoAgente(
   );
   const content = parseCheckpointText(closing.result.text);
 
-  // Wave 3 (2.4): o checkpoint anterior é lido ANTES de gravar o novo — a
-  // timeline recebe o DIFF, nunca o snapshot. Emitir a cada turno encheria a
-  // tela com "a IA pensou" e enterraria a única linha que muda o que alguém
-  // faria a seguir.
-  const checkpointAnterior = await latestCheckpoint(pool, tenantId, leadId);
-  await insertCheckpoint(pool, { tenantId, leadId, jobId: job.id, content });
-
-  // ── O TURNO DO OPERADOR (spec 16 §3.2) ─────────────────────────────────────
-  //
-  // Enfileirado AQUI, pelo RUNTIME, logo depois de o checkpoint existir — nunca
-  // por decisão do modelo. Um Conversador que "chama" o Operador devolveria o
-  // problema inteiro: voltaria a depender de o modelo lembrar, e o turno em que
-  // ele não achasse necessário seria um lead parado no funil, em silêncio.
-  //
-  // Depois do checkpoint porque a declaração É o insumo do Operador; enfileirar
-  // antes criaria uma corrida em que ele leria o checkpoint do turno ANTERIOR e
-  // agiria sobre um turno que não é o seu.
-  //
-  // Fire-and-forget: falha ao enfileirar NÃO derruba um turno que já respondeu
-  // ao cliente. O `sourceEventId` é o job do Conversador, então o retry da fila
-  // não gera um segundo Operador para o mesmo turno.
-  const disparo = decidirSeEnfileiraOperador({
-    temAgentePublicado: agentConfig !== null,
-    papelLigado: agentConfig?.operatorEnabled ?? false,
-  });
-  if (!disparo.enfileira) {
-    runLog.info('turno do operador não enfileirado', { porque: disparo.porque });
-  } else {
-    try {
-      const { deduped } = await enqueueJob(pool, tenantId, {
-        kind: 'operator_turn',
-        leadId,
-        sourceEventId: job.id,
-        payload: {
-          conversation_id: input.conversationId,
-          origin_job_id: job.id,
-          agent_id: agentConfig?.agentId ?? null,
-        },
-      });
-      runLog.info('turno do operador enfileirado', { deduped });
-    } catch (err) {
-      runLog.error('turno do operador NÃO foi enfileirado (o turno segue)', {
-        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
-      });
-      // O CATCH TINHA A DOUTRINA CERTA E A CONCLUSÃO ERRADA.
-      //
-      // "O aviso não pode derrubar o turno que já respondeu ao cliente" está certo.
-      // "Então basta um log" não: o enfileiramento é o ÚNICO mecanismo que garante o
-      // disparo do papel, e falhar aqui significa que a promessa que o Conversador
-      // acabou de fazer não terá dono e ninguém vai saber.
-      //
-      // É a mesma lição que este arquivo já aplicou no catch das capacidades MCP,
-      // onde o comentário diz que a versão anterior "dizia 'o humano vê o log'. Não
-      // vê." Lição aplicada numa ocorrência e não na irmã.
-      //
-      // Só quando HÁ promessa: sem ela o Operador teria decidido "nada a fazer", e
-      // item sem ação é ruído — ruído ensina a ignorar a Central.
-      const promessas = promessasEmAberto(content.declaracao ?? null);
-      if (promessas.length > 0) {
-        try {
-          await insertInboxItem(
-            pool,
-            tenantId,
-            {
-              kind: 'promise_unfulfilled',
-              severity: 'warn',
-              title: 'Um retorno prometido a um cliente ficou sem dono',
-              body:
-                'O assistente prometeu algo a esta pessoa nesta conversa e o passo que registra ' +
-                'o cumprimento não chegou a ser agendado. Abra a conversa, veja o que foi ' +
-                'combinado e cumpra você mesmo.',
-              refKind: 'conversation',
-              refId: input.conversationId,
-            },
-            'kind_e_ref',
-          );
-        } catch (erroDoAviso) {
-          runLog.error('aviso de promessa sem dono não foi gravado', {
-            error: (erroDoAviso instanceof Error ? erroDoAviso.message : String(erroDoAviso)).slice(0, 120),
-          });
-        }
-      }
-    }
-  }
-
-  const mudanca = diffCheckpoint(
-    checkpointAnterior
-      ? {
-          commitments: (checkpointAnterior.commitments ?? []) as string[],
-          objections: (checkpointAnterior.objections ?? []) as string[],
-          next_action: checkpointAnterior.next_action ?? null,
-          rolling_summary: checkpointAnterior.rolling_summary ?? null,
-        }
-      : null,
-    content,
-  );
-
-  if (mudanca.emit) {
-    try {
-      const r = await emitAgentActivityForContact({
-        pool,
-        organizationId: tenantId,
-        contactId: leadId,
-        type: "ai_turn",
-        sourceModule: "agent",
-        sourceId: job.id,
-        // O lastro é a chamada de modelo que PRODUZIU este checkpoint
-        // (llm_calls.id). Sem ele a linha entraria como 'system' e perderia a
-        // autoria justamente no evento mais "de IA" que existe.
-        ...(closing.callId ? { evidence: { llm_call_ids: [closing.callId] } } : {}),
-        ...(agentConfig?.agentId ? { agentId: agentConfig.agentId } : {}),
-        reason: mudanca.reason,
-        payload: {
-          added_commitments: mudanca.addedCommitments,
-          added_objections: mudanca.addedObjections,
-          next_action_changed: mudanca.nextActionChanged,
-        },
-      });
-      if (!r.routed) {
-        runLog.info('checkpoint sem negócio para pendurar: registrado no event_log', {
-          reason: r.reason,
-        });
-      }
-    } catch (err) {
-      // A timeline do turno não pode derrubar o turno.
-      runLog.error('falha ao registrar atividade de checkpoint (segue)', {
-        error: err instanceof Error ? err.name : 'unknown',
-      });
-    }
-  }
-
-  // ── A NOTA DO NEGÓCIO ──────────────────────────────────────────────────────
-  //
-  // O turno acabou de mexer em TUDO que a fórmula lê: compromissos e objeções
-  // (o checkpoint acima) e a qualificação BANT (`lead_state`, escrita pelo
-  // update_lead_state do modelo). Recalcular aqui é recalcular no instante em
-  // que os sinais mudaram — não há evento melhor.
-  //
-  // ⚠️ POR QUE ISTO EXISTE: `recalculaScoreDoLead` estava escrita, testada e
-  // com constraint no banco exigindo o `reason` — e SEM UM ÚNICO CHAMADOR no
-  // repositório inteiro. Nenhuma nota jamais foi calculada. O modo de falha era
-  // mudo: o card simplesmente não mostrava número, e "não tem nota ainda" é
-  // indistinguível de "ninguém nunca calcula".
-  //
-  // Fora do `if (mudanca.emit)` DE PROPÓSITO: o BANT muda em turnos que não
-  // mexem no checkpoint, e esses turnos também mudam a nota. Amarrar o cálculo
-  // à emissão da atividade faria a nota envelhecer em silêncio — o mesmo
-  // defeito, um andar acima.
-  //
-  // Falha aqui não derruba o turno: nota é derivado, e o próximo turno
-  // recalcula. O que não pode é o cliente ficar sem resposta por causa dela.
-  try {
-    const alvo = await resolveActiveLeadForContact(
-      (
-        await pool.query<LeadCandidate>(
-          `select l.id, l.organization_id, l.pipeline_id, l.status,
-                  l.last_activity_at, l.created_at
-             from crm_leads l
-            where l.organization_id = $1 and l.contact_id = $2`,
-          [tenantId, leadId],
-        )
-      ).rows,
-    );
-    if (alvo.routed) {
-      const r = await recalculaScoreDoLead(pool, tenantId, alvo.leadId);
-      runLog.info('score do negócio recalculado', {
-        lead_id: alvo.leadId,
-        gravou: r.gravou,
-        ...(r.motivo !== undefined ? { motivo: r.motivo } : {}),
-      });
-    }
-  } catch (err) {
-    runLog.error('falha ao recalcular score (segue)', {
-      error: err instanceof Error ? err.name : 'unknown',
-    });
-  }
+  await publishTurnCheckpoint(pool, job, ctx, input, agentConfig, content, closing, runLog);
 
   // F3-11: divergência classificador×modelo. O classificador sugeriu um estágio; se o
   // modelo confirmou (via update_lead_state — a máquina F2-10) um estágio DIFERENTE, o
@@ -3545,11 +3632,8 @@ async function executarTurnoDoAgente(
   // (número no dia 0 de warm-up, cap batido pelo volume da própria conversa de teste).
   // Mesmo contrato da janela anti-ban (linha ~1233): adia sem gastar `attempts`, o job
   // volta a 'pending' na hora certa e o mesmo turno roda de novo, com o mesmo contexto.
-  if (pacingCapVeto !== null && outcomes.length === 0) {
-    // Capturado num `const`: `pacingCapVeto` é reatribuído numa closure em outro ponto do
-    // turno, e o TS reabre a união (perde o `!== null`) depois de qualquer chamada — o
-    // valor JÁ CHECADO não muda, só a inferência precisa de um nome que não reatribui.
-    const veto = pacingCapVeto;
+  const veto = readPacingCapVeto();
+  if (veto !== null && outcomes.length === 0) {
     await rescheduleJob(pool, job.id, ctx.workerId, {
       delayMs: Math.max(veto.nextAllowedAt.getTime() - clock().getTime(), 1_000),
       reason: `cap de envio (${veto.code}) atingido — turno adiado para a próxima abertura`,
@@ -3593,8 +3677,6 @@ async function executarTurnoDoAgente(
       'cap de envio atingido — job reagendado para a próxima abertura, sem mensagem enviada',
     );
   }
-
-  await mcpCleanup?.();
 
   runLog.info('turno do agente concluído', {
     kind: job.kind,

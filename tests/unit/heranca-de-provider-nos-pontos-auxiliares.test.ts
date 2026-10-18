@@ -75,6 +75,7 @@ const PONTOS_AUXILIARES = [
   "jailbreak_detect",
   "promise_semantic",
   "compaction",
+  "flush",
   "checkpoint",
   "draft_suggestion",
   "automation_ai_message",
@@ -213,8 +214,8 @@ describe("o seam instancia o modelo do agente, não o do padrão da org", () => 
  * O eixo é o objeto literal passado a `runModelCall`: se ele empresta o modelo
  * do agente publicado (`model: agentConfig.…` / `agent.…`), tem de emprestar
  * `llmOverride` no MESMO objeto. Ler o objeto balanceado, e não o arquivo,
- * é o que separa `compaction` (empresta) de `flush` (não empresta) — os dois
- * moram em `compaction.ts`.
+ * também alcança as duas chamadas de `compaction.ts`: o flush e o resumo
+ * precisam propagar o mesmo override através dos seus próprios argumentos.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";

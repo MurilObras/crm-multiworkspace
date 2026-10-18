@@ -67,7 +67,8 @@ export async function decidirParaOSeam(
   deps: { log?: { warn: (msg: string, meta?: Record<string, unknown>) => void } } = {},
 ): Promise<DecisaoDeBinding> {
   // Ensaio contabiliza separado, mas NUNCA escolhe outro modelo/endpoint.
-  const purposeDeConfiguracao = entrada.purpose === 'agent_test' ? 'agent_turn' : entrada.purpose;
+  const purposeDeConfiguracao = entrada.purpose === 'agent_test' ? 'agent_turn'
+    : entrada.purpose === 'flush' ? 'compaction' : entrada.purpose;
   let binding: LinhaDeBinding | null = null;
   try {
     binding = await carregarBinding(db, entrada.organizationId, purposeDeConfiguracao);

@@ -243,12 +243,13 @@ export interface LlmResolveOverride {
   credentialId?: string | null;
 }
 
-export async function resolveOrgLlmConfig(
+/** Knobs sem segredo: a decisão de provider não pode exigir a chave do padrão. */
+export type OrgLlmSettings = Omit<OrgLlmConfig, 'apiKey'>;
+
+export async function readOrgLlmSettings(
   db: pg.Pool,
-  cfg: LlmEdgeConfig,
   organizationId: string,
-  override?: LlmResolveOverride,
-): Promise<OrgLlmConfig> {
+): Promise<OrgLlmSettings> {
   // ⚠️ O RESOLVEDOR NUNCA LANÇA POR SCHEMA DESATUALIZADO.
   //
   // `hostgator-setup-kit/update.sh` aplica o baseline com `|| true` e SEM
@@ -276,7 +277,6 @@ export async function resolveOrgLlmConfig(
   }
   const linha = rows[0];
   const settings = llmSettingsSchema.parse(linha?.llm ?? {});
-  const provider = override?.provider ?? settings.provider;
 
   // Organização sem linha em `ai_budgets` cai aqui com tudo nulo, e o
   // normalizador resolve `modo` para 'off'. NULO É SEMPRE A RESPOSTA MAIS
@@ -291,6 +291,26 @@ export async function resolveOrgLlmConfig(
           limiarPct: Number(linha?.limiar_pct ?? LIMIAR_PADRAO_PCT),
         };
 
+  return {
+    provider: settings.provider,
+    defaultModel: settings.default_model ?? null,
+    params: settings.params,
+    enabledModels: settings.enabled_models,
+    orcamento,
+    orcamentoIndisponivelPorque,
+  };
+}
+
+export async function resolveOrgLlmConfig(
+  db: pg.Pool,
+  cfg: LlmEdgeConfig,
+  organizationId: string,
+  override?: LlmResolveOverride,
+  settings?: OrgLlmSettings,
+): Promise<OrgLlmConfig> {
+  const knobs = settings ?? await readOrgLlmSettings(db, organizationId);
+  const provider = override?.provider ?? knobs.provider;
+
   // Credencial: a ESCOLHIDA na versão publicada quando houver (ainda exigindo
   // ativa+validada — publish valida, mas a credencial pode ser revogada depois);
   // senão a mais recente ativa/validada do provider. Sempre escopada pela org.
@@ -303,9 +323,10 @@ export async function resolveOrgLlmConfig(
         `select api_key_encrypted, api_key_iv, api_key_tag
          from ai_provider_credentials
          where organization_id = $1 and id = $2
+           and provider = $3
            and is_active and validated_at is not null
          limit 1`,
-        [organizationId, override.credentialId],
+        [organizationId, override.credentialId, provider],
       )
     : await db.query<{
         api_key_encrypted: unknown;
@@ -329,6 +350,10 @@ export async function resolveOrgLlmConfig(
       iv: byteaToBuffer(cred.api_key_iv),
       tag: byteaToBuffer(cred.api_key_tag),
     });
+  } else if (override?.credentialId) {
+    // Uma chave específica revogada, de outro tenant ou de outro provider não
+    // autoriza usar a chave da plataforma em seu lugar.
+    throw new LlmNotConfiguredError();
   } else if (provider === 'anthropic' && cfg.anthropicApiKey) {
     apiKey = cfg.anthropicApiKey;
   } else if (provider === 'openai' && cfg.openaiApiKey) {
@@ -340,12 +365,8 @@ export async function resolveOrgLlmConfig(
   }
 
   return {
+    ...knobs,
     provider,
     apiKey,
-    defaultModel: settings.default_model ?? null,
-    params: settings.params,
-    enabledModels: settings.enabled_models,
-    orcamento,
-    orcamentoIndisponivelPorque,
   };
 }

@@ -140,7 +140,7 @@ async function runFlush(
   db: pg.Pool,
   cfg: LlmEdgeConfig,
   ids: { tenantId: string; leadId: string; jobId?: string },
-  args: { context: LeadContext; previousSummary: string; model?: string; notesIndexMaxTokens: number },
+  args: { context: LeadContext; previousSummary: string; model?: string; llmOverride?: LlmResolveOverride; notesIndexMaxTokens: number },
   deps: { registry?: ProviderRegistry; log: Logger },
 ): Promise<void> {
   const call = await runModelCall(
@@ -152,6 +152,7 @@ async function runFlush(
       ...(ids.jobId !== undefined ? { jobId: ids.jobId } : {}),
       purpose: 'flush',
       ...(args.model !== undefined ? { model: args.model } : {}),
+      ...(args.llmOverride !== undefined ? { llmOverride: args.llmOverride } : {}),
       messages: [{ role: 'user', content: buildTranscriptMessage(args.context, args.previousSummary, FLUSH_INSTRUCTION) }],
     },
     { registry: deps.registry, log: deps.log },
@@ -213,6 +214,7 @@ export async function maybeCompact(
       context: args.context,
       previousSummary: args.previousSummary,
       ...(args.knobs.model !== undefined ? { model: args.knobs.model } : {}),
+      ...(args.knobs.llmOverride !== undefined ? { llmOverride: args.knobs.llmOverride } : {}),
       notesIndexMaxTokens: args.notesIndexMaxTokens,
     },
     deps,

@@ -148,6 +148,7 @@ export const PONTOS_QUE_HERDAM_DO_AGENTE: ReadonlySet<string> = new Set([
   "jailbreak_detect",
   "promise_semantic",
   "compaction",
+  "flush",
   "checkpoint",
   "draft_suggestion",
   "automation_ai_message",
