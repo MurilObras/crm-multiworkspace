@@ -296,7 +296,7 @@
       "col": 4,
       "type": "backend",
       "label": "Fechamento durável",
-      "sublabel": "retry só da memória; chave do agente/painel",
+      "sublabel": "reconcilia ledger sob lease; retry só da memória; incerto impede conclusão",
       "tag": "turn_closing"
     }
   ],

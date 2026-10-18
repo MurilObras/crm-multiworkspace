@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { withJobLease, type JobRow } from '../queue/queue';
 import type { ModelMessage } from '../edge/llm/run-model-call';
 import { loadPublishedAgentConfigById } from './agent-config';
+import { isCurrentInbound } from '../queue/inbound-pending';
+import { discardSupersededOutbound } from '../edge/crm/discard-superseded-outbound';
+import { decideOutboundRecovery, type RecoveryMessage } from '../edge/crm/outbound-recovery';
 
 /** Só referências/configuração. Transcript, chave e resultado de tool NÃO vão ao payload. */
 export const turnClosingSchema = z.object({
@@ -39,6 +42,56 @@ export async function rememberTurnClosing(
     );
   });
   job.payload.turn_closing = checked;
+}
+
+/** O marcador encerra as ferramentas, não comprova a entrega das tentativas
+ * anteriores. Conferir o ledger durável antes de TODO caminho de conclusão,
+ * inclusive memória já avançada/contato anonimizado. Nunca abre transporte.
+ * Incertos ficam intactos e falham para o backoff/aviso job_dead, sem repetir
+ * ferramentas. O descarte de prepared só é permitido se a inbound foi superada. */
+export async function settleTurnClosingOutbound(
+  pool: pg.Pool, job: JobRow, workerId: string, conversationId: string,
+): Promise<void> {
+  const unresolved = await withJobLease(pool, job.id, workerId, job.organization_id, async tx => {
+    if (job.contact_id === null) throw new Error('fechamento sem contato');
+    const anchor = typeof job.payload.inbound_message_id === 'string' ? job.payload.inbound_message_id : null;
+    if (job.kind === 'inbound_turn' && anchor !== null &&
+        !(await isCurrentInbound(tx, job.organization_id, conversationId, anchor))) {
+      await discardSupersededOutbound(tx, {
+        organizationId: job.organization_id, contactId: job.contact_id,
+        jobId: job.id, workerId, conversationId,
+      });
+    }
+    const { rows: intents } = await tx.query<{ id: string; status: string; crm_message_id: string | null }>(
+      `select id,status,crm_message_id from send_ledger
+        where organization_id=$1 and contact_id=$2 and job_id=$3
+          and status not in ('accepted','vetoed') order by seq for update`,
+      [job.organization_id, job.contact_id, job.id],
+    );
+    let pending = 0;
+    for (const intent of intents) {
+      const { rows } = await tx.query<RecoveryMessage>(
+        `select id,status,external_id,error_code,metadata from messages
+          where organization_id=$1 and contact_id=$2 and conversation_id=$3
+            and direction='outbound' and metadata->>'idempotency_key'=$4 for update`,
+        [job.organization_id, job.contact_id, conversationId, intent.id],
+      );
+      const identified = rows.length === 1 && (intent.crm_message_id === null || intent.crm_message_id === rows[0]!.id);
+      const decision = identified ? decideOutboundRecovery(intent.status, rows[0]!) : 'uncertain';
+      if (decision === 'confirmed' || decision === 'terminal') {
+        await tx.query(
+          `update send_ledger set status=$4,crm_message_id=$5,last_error=$6,updated_at=now()
+            where organization_id=$1 and contact_id=$2 and job_id=$3 and id=$7 and status=$8`,
+          [job.organization_id, job.contact_id, job.id, decision === 'confirmed' ? 'accepted' : 'vetoed',
+            rows[0]!.id, decision === 'confirmed' ? null : 'outbound_rejected_terminal', intent.id, intent.status],
+        );
+      } else pending++;
+    }
+    return pending;
+  });
+  // Fora da transação: o descarte seguro e os ACKs reconciliados sobrevivem ao
+  // backoff, mesmo se outra intenção permanecer incerta/sem identidade.
+  if (unresolved > 0) throw new Error('fechamento aguarda reconciliação de envio pendente — não repetir ferramentas ou transporte');
 }
 
 /** Jobs da versão anterior podem já ter enviado e falhado no checkpoint.
