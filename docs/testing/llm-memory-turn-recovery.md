@@ -7,8 +7,16 @@
 - Uma chave específica exige organização, provider, estado ativo e validação;
   revogação não autoriza substituir pela chave da plataforma.
 - `flush` usa a configuração de `compaction` e recebe o mesmo override do agente.
-- Depois que as ferramentas terminam e não há transporte pendente, o job guarda
+- Depois que as ferramentas terminam, o job guarda
   `turn_closing`: somente referências e configuração, sem transcript ou chave.
+- Esse marcador proíbe repetir ferramentas; não comprova entrega. Antes do
+  checkpoint e de qualquer saída na retomada, conferir o ledger de todas as
+  tentativas sob lease. ACK confirmado reconcilia o ledger; rejeição terminal
+  encerra a intenção. Só a inbound superada permite descartar `prepared` sem rede.
+- Pendência atual, sem identidade ou incerta impede concluir o job. Não reenviar
+  nem voltar às ferramentas; o backoff existente tenta a reconciliação e, se
+  esgotado, o aviso `job_dead` pede revisão humana na Central. O descarte seguro
+  persiste mesmo quando outra intenção continua incerta.
 - Falha de fechamento reexecuta somente o checkpoint. A retomada usa a inbound
   âncora e as mensagens aceitas daquele job; não consome uma pergunta nova.
 - Checkpoint já persistido é reaproveitado. A posse da fila é conferida com lock
@@ -25,6 +33,11 @@
 `seam-sem-chave-do-provedor-padrao.test.ts` e
 `inbound-fechamento-retomavel.test.ts` cobrem a propagação da chave, ausência da
 chave do padrão e retry com banco real sem repetir envio ou nota.
+
+`fechamento-reconcilia-envios-anteriores.test.ts` cobre mensagem preparada por
+tentativa anterior, nova inbound, falha de checkpoint, ACK tardio, rejeição
+terminal, incerteza, ausência de identidade, lease, isolamento e as saídas por
+anonimização/memória recente, sem transporte real.
 
 ## Living System Checklist
 

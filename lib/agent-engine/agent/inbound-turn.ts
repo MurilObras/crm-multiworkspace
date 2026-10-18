@@ -32,7 +32,7 @@ import { MESSAGE_ORDER_DESC } from '@/lib/messaging/message-order';
 import type pg from 'pg';
 import { z } from 'zod';
 import { auxModelArgs, type AuxModelArgs } from './aux-model-args';
-import { closingMessages, readTurnClosing, rememberTurnClosing, recoverClosingBeforeMarker, checkpointSupersededByNewerTurn, type TurnClosing } from './turn-closing';
+import { closingMessages, readTurnClosing, rememberTurnClosing, recoverClosingBeforeMarker, checkpointSupersededByNewerTurn, settleTurnClosingOutbound, type TurnClosing } from './turn-closing';
 import type { ChannelAdapter, ChannelSendResult, ChannelSendInput } from '../channel-adapter';
 
 import { withFields, type Logger } from '../obs/logger';
@@ -1481,6 +1481,7 @@ async function resumeTurnClosing(
 ): Promise<void> {
   const leadId = job.contact_id;
   if (leadId === null) throw new Error('fechamento sem contato');
+  await settleTurnClosingOutbound(pool, job, ctx.workerId, input.conversationId);
   const previous = await latestCheckpoint(pool, job.organization_id, leadId);
   const existing = await checkpointDoJob(pool, job.organization_id, leadId, job.id);
   const memoryAdvanced = state.previousCheckpointId === undefined
@@ -3549,6 +3550,7 @@ async function executarTurnoDoAgente(
         provider: agentConfig.provider, model: agentConfig.model, credentialId: agentConfig.credentialId,
       },
     });
+    await settleTurnClosingOutbound(pool, job, ctx.workerId, input.conversationId);
   }
 
   // Fechamento imposto pelo runtime: 2ª chamada, mesma conversa, só o checkpoint.
