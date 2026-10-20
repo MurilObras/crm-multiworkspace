@@ -8,6 +8,7 @@ import type { FlowEdge, FlowNode, ReplySaveTo } from "./graph-schema";
 import { parseReplyCount } from "./parse-count";
 import { clampEspera, esperaPlanejadaDe, type EsperaAdaptativa } from "./timing-plan";
 import { fraseDeConfirmacao } from "./vocabulario";
+import { nextInSendWindow } from "./send-window";
 
 export type EnrollmentStatus =
   | "active"
@@ -418,6 +419,12 @@ export function processNode(input: {
     }
 
     case "wait": {
+      // Revalidar também quando a resposta acorda o fluxo ou o worker chega atrasado.
+      if ((waitElapsed || wokeEarly) && node.config.mode === "fixed" && node.config.send_window) {
+        const now = clock();
+        const allowed = nextInSendWindow(now, node.config.send_window);
+        if (allowed.getTime() > now.getTime()) return { kind: "wait", next_eval_at: allowed };
+      }
       // Resposta do lead corta a espera: o timer é teto (ninguém respondeu),
       // não um atraso obrigatório depois de cada envio.
       if (wokeEarly) {
@@ -443,7 +450,9 @@ export function processNode(input: {
             : planejada === null
               ? node.config.max_ms
               : clampEspera(planejada.escolhido_ms, node.config.min_ms, node.config.max_ms).escolhido_ms;
-        return { kind: "wait", next_eval_at: new Date(clock().getTime() + durationMs) };
+        const target = new Date(clock().getTime() + durationMs);
+        return { kind: "wait", next_eval_at: node.config.mode === "fixed" && node.config.send_window
+          ? nextInSendWindow(target, node.config.send_window) : target };
       }
       const edge = selectEdge(edges, node.id, { type: "always" });
       if (!edge) return { kind: "fail", error: `wait node "${node.id}" has no outbound edge after elapsing` };

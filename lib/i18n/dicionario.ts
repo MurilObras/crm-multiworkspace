@@ -38,6 +38,23 @@ import { KIWIFY_HISTORY_TRANSLATIONS, KIWIFY_OPERATOR_TRANSLATIONS } from "./kiw
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Domingo": { es: "Domingo" },
+  "Sábado": { es: "Sábado" },
+  "Informe um fuso válido.": { es: "Indique una zona horaria válida." },
+  "Não repita dias.": { es: "No repita días." },
+  "O fim deve ser depois do início.": { es: "El fin debe ser posterior al inicio." },
+  "Janela desta espera": { es: "Ventana de esta espera" },
+  "Ajustar o fim da espera aos dias e horários": { es: "Ajustar el fin de la espera a los días y horarios" },
+  "O relógio soma a duração e escolhe o primeiro horário permitido, sem pedir à IA. As regras do canal continuam valendo no envio.": { es: "El reloj suma la duración y elige el primer horario permitido, sin pedirlo a la IA. Las reglas del canal siguen vigentes al enviar." },
+  "Dias permitidos": { es: "Días permitidos" },
+  "Hora inicial": { es: "Hora inicial" },
+  "Hora final (exclusiva)": { es: "Hora final (exclusiva)" },
+  "janela de envio": { es: "ventana de envío" },
+  "Segunda-feira": { es: "Lunes" },
+  "Terça-feira": { es: "Martes" },
+  "Quarta-feira": { es: "Miércoles" },
+  "Quinta-feira": { es: "Jueves" },
+  "Sexta-feira": { es: "Viernes" },
   "Confirmar vídeo recebido": { es: "Confirmar video recibido" },
   "Confira no WhatsApp se este vídeo chegou. Selecione abaixo a cópia recebida do mesmo vídeo. Esta ação corrige o registro e não envia outra mensagem.":
     {

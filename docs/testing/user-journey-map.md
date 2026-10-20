@@ -10,6 +10,13 @@
 
 ## Convenções
 
+Follow-up `[P1]`: o caso de edição da espera de 10min e janela de
+`tests/e2e/followup-builder.spec.ts` configura a janela na tela, salva e recarrega.
+O bug de etiqueta no contato consultada no cartão é coberto nos dois adapters por
+`lib/followup/contact-tags.test.ts` e
+`tests/invariants/followup-contact-tags.test.ts`. Contrato e roteiro de reteste:
+[`followup-contact-tags-window.md`](followup-contact-tags-window.md).
+
 Kiwify gerenciamento `[P1]`: `tests/e2e/kiwify-operator-ui.spec.ts` cobre edição com
 segredo vazio/URL preservada, link/unlink e arquivamento sem apagar regra.
 `tests/invariants/kiwify-management.test.ts` e `kiwify-automation.integration.ts`

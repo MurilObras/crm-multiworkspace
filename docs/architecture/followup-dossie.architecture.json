@@ -397,7 +397,9 @@
         "O dossiê **não** escreve no grafo do fluxo: pular um passo move o enrollment, nunca edita a versão pinada — o mesmo fluxo continua valendo para os outros contatos.",
         "`reactToHandoffClose` **não** retoma `paused_manual`: ele procura `paused_handoff`. Quem pausou pela tela decide quando volta; o fim de um atendimento humano não desfaz a decisão de uma pessoa.",
         "A intervenção **não** cria job na fila do agente: ela mexe no relógio e no passo, e quem enfileira turno continua sendo o motor.",
-        "O bloco do tempo da IA **não** aparece sem `timing_plan` — placeholder ali afirmaria que houve decisão do modelo onde não houve."
+        "O bloco do tempo da IA **não** aparece sem `timing_plan` — placeholder ali afirmaria que houve decisão do modelo onde não houve.",
+        "A condição Etiqueta do contato consulta contacts.tags nos adapters pg e Supabase, como o gatilho de silêncio; não lê nem une etiquetas do cartão.",
+        "WaitForm configura send_window opcional na espera fixa; o motor calcula o primeiro término permitido e wait_started leva o próximo horário ao dossiê. Não substitui as proteções de envio do canal."
       ]
     },
     {
