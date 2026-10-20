@@ -706,13 +706,13 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       const [{ data: lead, error: leadErr }, { data: contact, error: contactErr }] = await Promise.all([
         admin
           .from("crm_leads")
-          .select("stage_id, tags, custom_fields")
+          .select("stage_id, custom_fields")
           .eq("organization_id", orgId)
           .eq("contact_id", contactId)
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
-        admin.from("contacts").select("name").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
+        admin.from("contacts").select("name, tags").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
       ]);
       if (leadErr) throw new Error(leadErr.message);
       if (contactErr) throw new Error(contactErr.message);
@@ -722,7 +722,9 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           : {};
       return {
         lead_stage: lead?.stage_id ?? null,
-        tags: lead?.tags ?? [],
+        // A condição "Etiqueta do contato" deve ler a mesma fonte do gatilho de silêncio.
+        // Não unir com as tags do cartão: uma etiqueta removida do contato deve parar o fluxo.
+        tags: contact?.tags ?? [],
         contact_name: contact?.name ?? null,
         custom_fields: custom,
       };
