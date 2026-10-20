@@ -8,6 +8,21 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.5.0] — 2026-10-20
+
+### Corrigido
+
+- **Acompanhamentos consultam as etiquetas corretas e podem usar espera com dias e horários** A condição “Etiqueta do contato” passa a consultar o cadastro do contato, como o
+  gatilho de silêncio. Não é necessário copiar a etiqueta para o cartão do funil.
+  Retirar a etiqueta do contato também interrompe a elegibilidade, mesmo que uma
+  cópia antiga continue no cartão.
+
+  No construtor de fluxos, uma espera de tempo fixo agora pode terminar apenas nos
+  dias, horários e fuso configurados na tela. O relógio calcula o primeiro horário
+  permitido depois da duração, sem acrescentar uma escolha da IA. As proteções do
+  canal continuam valendo no envio. Fluxos existentes preservam sua configuração;
+  inscrições já iniciadas continuam usando a versão de fluxo em que entraram.
+
 ## [3.4.1] — 2026-10-18
 
 ### Corrigido
@@ -3345,7 +3360,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.4.1...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.4.1...v3.5.0
 [3.4.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.4.0...v3.4.1
 [3.4.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.2.0...v3.3.0
