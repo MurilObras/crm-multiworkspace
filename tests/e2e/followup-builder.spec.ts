@@ -43,6 +43,37 @@ function loadCreds(): Creds {
 
 let creds = loadCreds();
 
+/** Reusa o login do caso de edição; não amplia a rajada de login da suíte. */
+async function configureAndReloadWaitWindow(page: Page): Promise<void> {
+  const flowId = page.url().split("/").pop()!;
+  const panel = page.getByTestId("node-config-panel");
+  const toggle = panel.getByRole("switch", { name: "Ajustar o fim da espera aos dias e horários" });
+  await toggle.click();
+  await panel.getByLabel("Hora inicial", { exact: true }).fill("9");
+  await panel.getByLabel("Hora final (exclusiva)").fill("18");
+  await panel.getByRole("checkbox", { name: "Sábado", exact: true }).click();
+  const saved = page.waitForResponse(
+    (r) =>
+      r.request().method() === "PATCH" && r.url().endsWith(`/api/v1/ai/followup-flows/${flowId}`),
+  );
+  await page.getByRole("button", { name: "Salvar", exact: true }).click();
+  expect((await saved).status()).toBe(200);
+  await page.reload();
+  await page.locator('[data-testid^="node-card-wait-"]').click();
+  await expect(
+    panel.getByRole("switch", { name: "Ajustar o fim da espera aos dias e horários" }),
+  ).toBeChecked();
+  await expect(panel.getByLabel("Duração (minutos)")).toHaveValue("10");
+  await expect(panel.getByLabel("Hora inicial", { exact: true })).toHaveValue("9");
+  await expect(panel.getByLabel("Hora final (exclusiva)")).toHaveValue("18");
+  await expect(panel.getByRole("checkbox", { name: "Sábado", exact: true })).toBeChecked();
+  await expect(panel.getByRole("checkbox", { name: "Domingo", exact: true })).not.toBeChecked();
+  await page.screenshot({
+    path: path.join(ARTIFACTS_DIR, "followup-janela-fixa-salva.png"),
+    fullPage: true,
+  });
+}
+
 // ── Precondição de identidade ────────────────────────────────────────────────
 // Esta spec dirige o produto como ADMIN DE TENANT (`creds.users.admin`), o
 // usuário compartilhado por 10 arquivos — e que `seed-e2e-system-update.ts`
@@ -260,7 +291,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await page.screenshot({ path: "test-results/followup-6.2-02-connected.png", fullPage: true });
   });
 
-  test("clica no nó Aguardar e configura 10min; clica no nó Ação e configura o prompt_hint", async ({ page }) => {
+  test("clica no nó Aguardar e configura 10min e janela; salva, reabre e configura a Ação", async ({ page }) => {
     await login(page, creds.users.manager!.email);
 
     await page.goto("/app/ai/followups");
@@ -288,6 +319,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     // panel wrote through to the live FlowGraph state, not just local form state.
     await expect(page.locator('[data-testid^="node-card-wait-"]')).toContainText("10 min");
     await page.screenshot({ path: "test-results/followup-6.2-03-wait-configured.png", fullPage: true });
+    await configureAndReloadWaitWindow(page);
 
     // Action node → prompt_hint.
     await page.locator('[data-testid^="node-card-action-"]').click();

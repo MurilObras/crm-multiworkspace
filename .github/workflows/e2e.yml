@@ -884,6 +884,15 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Guardar captura da janela de follow-up
+        if: ${{ always() && matrix.parte == 2 }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidencia-followup-janela
+          path: e2e-artifacts/followup-janela-fixa-salva.png
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Guardar capturas de mídias aprovadas
         if: ${{ always() && matrix.parte == 2 }}
         uses: actions/upload-artifact@v7

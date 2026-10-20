@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sendWindowSchema } from './send-window';
 
 /**
  * Flow graph schema for the follow-up automation system.
@@ -88,6 +89,7 @@ export const waitConfigSchema = z
     z.strictObject({
       mode: z.literal('fixed'),
       duration_ms: z.number().int().min(300_000).max(7_776_000_000),
+      send_window: sendWindowSchema.optional(),
     }),
     z.strictObject({
       mode: z.literal('smart'),

@@ -41,7 +41,8 @@ const MIN_CYCLE_WAIT_MS = 300_000; // 5min
 const MAX_PATH_STEPS = 30;
 
 function waitMs(config: Extract<FlowNode, { type: 'wait' }>['config']): number {
-  return config.mode === 'fixed' ? config.duration_ms : config.max_ms;
+  // Uma janela semanal pode acrescentar até sete dias ao prazo fixo.
+  return config.mode === 'fixed' ? config.duration_ms + (config.send_window ? 7 * 86_400_000 : 0) : config.max_ms;
 }
 
 /** A wait node whose duration meets the 5min floor required to break a cycle. */

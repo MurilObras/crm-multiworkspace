@@ -290,9 +290,15 @@ test.describe("condição com várias regras — uma bolinha por regra", () => {
     const etapaId = etapaCriada!.id;
 
     async function matricular(nome: string, etiqueta: string): Promise<string> {
-      const contatoRes = await page.request.post("/api/v1/contacts", { data: { display_name: nome } });
+      // O campo escolhido na tela é "Etiqueta do contato", não a etiqueta da oportunidade.
+      // O cartão fica sem cópia: voltar a ler crm_leads.tags precisa reprovar este caso.
+      const contatoRes = await page.request.post("/api/v1/contacts", {
+        data: { display_name: nome, tags: [etiqueta] },
+      });
       expect(contatoRes.ok(), `criar contato ${nome}: ${contatoRes.status()}`).toBe(true);
-      const contatoId = ((await contatoRes.json()) as { data: { contact: { id: string } } }).data.contact.id;
+      const contato = ((await contatoRes.json()) as { data: { contact: { id: string; tags: string[] } } }).data.contact;
+      expect(contato.tags).toEqual([etiqueta]);
+      const contatoId = contato.id;
 
       const leadRes = await page.request.post("/api/v1/leads", {
         data: {
@@ -300,7 +306,7 @@ test.describe("condição com várias regras — uma bolinha por regra", () => {
           stage_id: etapaId,
           title: nome,
           contact_id: contatoId,
-          tags: [etiqueta],
+          tags: [],
         },
       });
       expect(leadRes.ok(), `criar lead ${nome}: ${leadRes.status()} ${await leadRes.text()}`).toBe(true);

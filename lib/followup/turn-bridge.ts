@@ -239,21 +239,21 @@ export function createPgAdminClient(pool: Pick<pg.Pool, 'query'>): TurnBridgeAdm
     async loadLeadFacts(orgId, contactId) {
       const { rows: leads } = await pool.query<{
         stage_id: string | null;
-        tags: string[];
         custom_fields: Record<string, unknown> | null;
       }>(
-        `select stage_id, tags, custom_fields from crm_leads where organization_id = $1 and contact_id = $2
+        `select stage_id, custom_fields from crm_leads where organization_id = $1 and contact_id = $2
          order by updated_at desc limit 1`,
         [orgId, contactId],
       );
-      const { rows: contacts } = await pool.query<{ name: string | null }>(
-        `select name from contacts where organization_id = $1 and id = $2`,
+      const { rows: contacts } = await pool.query<{ name: string | null; tags: string[] | null }>(
+        `select name, tags from contacts where organization_id = $1 and id = $2`,
         [orgId, contactId],
       );
       const lead = leads[0];
       return {
         lead_stage: lead?.stage_id ?? null,
-        tags: lead?.tags ?? [],
+        // Mesma fonte da varredura de silêncio e do adapter Supabase, sem fallback ao cartão.
+        tags: contacts[0]?.tags ?? [],
         contact_name: contacts[0]?.name ?? null,
         custom_fields: lead?.custom_fields ?? {},
       };
