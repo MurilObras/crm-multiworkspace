@@ -77,6 +77,15 @@ describe('continuação automática após resposta contra PostgreSQL real', () =
     expect(await applyReactivityEvent(reactivity,()=>new Date(),{ ...event,id:randomUUID(),created_at:new Date().toISOString() })).toEqual({ matched:true,reacted:1 });
     expect((await pool.query('select status from followup_enrollments where id=$1', [enrollment])).rows[0]!.status).toBe('cancelled');
   });
+  it('mensagem antiga entregue tardiamente não encerra a continuação outra vez', async () => {
+    expect(await resume()).toEqual({ inserted:true });
+    const message = (await pool.query<{ id:string }>('select id from messages where organization_id=$1 and contact_id=$2 limit 1', [org,input.contact_id])).rows[0]!.id;
+    const reactivity = createSupabaseReactivityClient(admin);
+    expect(await applyReactivityEvent(reactivity,()=>new Date(),{ id:randomUUID(),organization_id:org,event_type:'message.received',
+      entity_kind:'message',entity_id:message,payload:{ contact_id:input.contact_id },metadata:{},consumed_by:[],attempts:0,
+      created_at:new Date().toISOString() })).toEqual({ matched:true,reacted:0 });
+    expect((await pool.query('select status from followup_enrollments where id=$1', [enrollment])).rows[0]!.status).toBe('active');
+  });
   it('reaplicar o baseline completo preserva a inscrição que já retomou', async () => {
     expect(await resume()).toEqual({ inserted:true });
     execFileSync('docker',['exec','-i',process.env.TEST_DB_CONTAINER!,'psql','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-q','-f','-'],

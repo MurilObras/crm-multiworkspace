@@ -76,6 +76,7 @@ export interface LiveEnrollmentRef {
   started_at?: string;
   next_eval_at?: string | null;
   node_epoch?: number;
+  silence_anchor_at?: string | null;
 }
 
 /** Interface estreita de DB (mesma doutrina de `AdminClient`/`TurnBridgeAdminClient`
@@ -84,6 +85,7 @@ export interface LiveEnrollmentRef {
 export interface ReactivityAdminClient {
   loadConversationContactId(orgId: string, conversationId: string): Promise<string | null>;
   loadContactBlocked(orgId: string, contactId: string): Promise<boolean>;
+  loadInboundMessageTime?(orgId: string, contactId: string, messageId: string): Promise<string | null>;
   loadLiveEnrollmentsForContact(orgId: string, contactId: string): Promise<LiveEnrollmentRef[]>;
   insertEnrollmentEvent(event: {
     organization_id: string;
@@ -206,7 +208,11 @@ async function reactToInbound(
     return { matched: true, reacted };
   }
 
-  const live = allLive.filter((e) => !e.started_at || !row.created_at || Date.parse(row.created_at)>Date.parse(e.started_at));
+  const messageTime = row.entity_id && db.loadInboundMessageTime && allLive.some((e) => e.silence_anchor_at)
+    ? await db.loadInboundMessageTime(row.organization_id,contactId,row.entity_id) : null;
+  const live = allLive.filter((e) =>
+    (!e.started_at || !row.created_at || Date.parse(row.created_at)>Date.parse(e.started_at)) &&
+    (!e.silence_anchor_at || !messageTime || Date.parse(messageTime)>Date.parse(e.silence_anchor_at)));
   let reacted = 0;
   for (const e of live) {
     if (parseCancelOnReply(e.trigger_config)) {
@@ -395,6 +401,12 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
       if (error) throw new Error(error.message);
       return data?.is_blocked ?? false;
     },
+    async loadInboundMessageTime(orgId, contactId, messageId) {
+      const { data,error } = await admin.from("messages").select("sent_at").eq("organization_id",orgId)
+        .eq("contact_id",contactId).eq("id",messageId).eq("direction","inbound").maybeSingle();
+      if (error) throw new Error(error.message);
+      return data?.sent_at ?? null;
+    },
     async loadLiveEnrollmentsForContact(orgId, contactId) {
       const ids = await idsDoContatoEGemeos(admin, orgId, contactId);
       const { data: enrollments, error } = await admin
@@ -440,6 +452,7 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
           started_at: resumedAt.get(e.id) ?? e.started_at,
           next_eval_at: e.next_eval_at,
           node_epoch: e.node_epoch,
+          silence_anchor_at: e.silence_anchor_at,
         };
       });
     },
