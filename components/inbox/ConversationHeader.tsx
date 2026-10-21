@@ -143,7 +143,7 @@ export function ConversationHeader({ conversation }: Props) {
     // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <h2 className="truncate text-sm font-semibold">{displayName}</h2>
           <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
             {t(STATUS_LABEL[status] ?? status)}
@@ -165,14 +165,16 @@ export function ConversationHeader({ conversation }: Props) {
           {motivo !== null && (
             <Badge
               variant="outline"
-              className="h-4 px-1.5 text-[10px]"
+              className="h-auto max-w-full whitespace-normal px-1.5 text-[10px] leading-4"
               data-testid="badge-atendimento-humano"
             >
+              <span className="min-w-0">
               {t(ROTULO_DO_MOTIVO[motivo])}
               {silencioAte && <> · {t("Retorno previsto")}: {silencioAte.toLocaleString(idiomaDaData, {
                 day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
                 timeZone: fuso,
               })}</>}
+              </span>
             </Badge>
           )}
         </div>

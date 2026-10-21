@@ -331,6 +331,20 @@ test.describe("IA 360 W3 — o agente para, a pessoa continua, o agente retoma s
       await expect(badge).toContainText("Retorno previsto", { timeout: 30_000 });
       await expect(badge).toContainText(/\d{2}\/\d{2}.*\d{2}:\d{2}/);
       await expect(badge).not.toContainText("em instantes");
+      await page.setViewportSize({ width: 1280, height: 900 });
+      const geometry = await badge.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        const parent = element.parentElement!.getBoundingClientRect();
+        return { right: bounds.right, parentRight: parent.right,
+          clipped: element.scrollHeight > element.clientHeight + 1 };
+      });
+      expect(geometry.clipped, "o prazo não pode sair da altura do aviso").toBe(false);
+      expect(geometry.right).toBeLessThanOrEqual(geometry.parentRight + 1);
+      const badgeBox = await badge.boundingBox();
+      const ownerBox = await page.getByTestId("comando-da-conversa").boundingBox();
+      expect(badgeBox).not.toBeNull();
+      expect(ownerBox).not.toBeNull();
+      expect(badgeBox!.y + badgeBox!.height).toBeLessThanOrEqual(ownerBox!.y);
       await captura(page, "06-pausa-temporaria-com-prazo");
       await admin.from("conversations").update({ bot_silenced_until: "infinity" })
         .eq("organization_id", creds.org_id).eq("id", e.conversation_id);
