@@ -297,6 +297,11 @@ describe("rearmamento por novo episódio silencioso", () => {
     await sql.exec("update job_queue set payload=jsonb_set(payload,'{node_epoch}','1')");
     expect(await live()).toBe(true);
   });
+  it("job legado sem ocupação não recupera permissão na mesma etapa retomada", async () => {
+    await reply(); await resume();
+    await sql.exec("update job_queue set status='running',payload=payload-'node_epoch'");
+    expect(await live()).toBe(false);
+  });
   it("a reaplicação do saneamento anterior não cancela novamente a sequência retomada", async () => {
     await reply(); await resume();
     const baseline = readFileSync('supabase/baseline.sql','utf8');

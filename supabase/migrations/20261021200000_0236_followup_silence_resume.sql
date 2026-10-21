@@ -99,6 +99,7 @@ returns boolean language sql stable security invoker set search_path=public,pg_t
           and e.status in ('active','waiting_reply') and p.status='active'
           and e.current_node_id=j.payload->>'node_id'
           and (j.payload->>'node_epoch' is null or e.node_epoch=(j.payload->>'node_epoch')::integer)
+          and (j.payload->>'node_epoch' is not null or e.silence_anchor_at is null)
           and (j.payload->>'node_epoch' is not null or not exists(select 1 from public.followup_enrollment_events ev
             where ev.organization_id=p_org and ev.enrollment_id=e.id and ev.created_at>j.created_at and ev.node_id<>e.current_node_id))
           and (j.payload->>'enrollment_action_key' is null or j.payload->>'enrollment_action_key'=(
