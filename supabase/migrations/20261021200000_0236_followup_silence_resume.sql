@@ -231,7 +231,10 @@ begin
         and m.metadata->>'idempotency_key'=l.id::text
       where j.organization_id=org and j.contact_id=contact and j.kind='followup_turn'
         and j.payload->>'followup_enrollment_id'=e.id::text and j.payload->>'node_id'=e.current_node_id
-        and j.payload->>'node_epoch'=e.node_epoch::text and m.status in ('sent','delivered','read')
+        and (j.payload->>'node_epoch'=e.node_epoch::text or (j.payload->>'node_epoch' is null and not exists(
+          select 1 from public.followup_enrollment_events ev where ev.organization_id=org and ev.enrollment_id=e.id
+            and ev.created_at>j.created_at and ev.node_id<>e.current_node_id)))
+        and m.status in ('sent','delivered','read')
         and m.external_id is not null) into confirmed;
     -- A retomada espera tanto o novo silêncio quanto o prazo já configurado.
     -- A próxima espera não vira uma nova primeira mensagem de duas em duas horas.

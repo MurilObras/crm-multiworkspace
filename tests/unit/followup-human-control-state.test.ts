@@ -440,6 +440,29 @@ describe("rearmamento por novo episódio silencioso", () => {
     expect((await enrollment()).current_node_id).toBe("end");
     expect(enqueued).toHaveLength(0);
   });
+  it("entrega legada confirmada na mesma ocupação não é reenviada quando perdeu o callback", async () => {
+    await reply();
+    await sql.exec("update job_queue set payload=payload-'node_epoch',created_at=now()-interval '6 hours'");
+    const ledger=(await sql.query<{id:string}>("insert into send_ledger(organization_id,contact_id,job_id,status) values($1,$2,$3,'accepted') returning id",[ORG,CONTACT,JOB])).rows[0]!.id;
+    await message('outbound',{status:'sent',external_id:'LEGACY-ACK',sent_at:new Date(Date.now()-4*3_600_000).toISOString(),metadata:{idempotency_key:ledger}});
+    expect(await resume()).toEqual({inserted:true});
+    const jobs:FollowupJobRequest[]=[];
+    await runFollowupTick({db:{...db,loadLeadFacts:async()=>({lead_stage:null,tags:[]})},clock:()=>new Date(),enqueueJob:async(job)=>{jobs.push(job);}});
+    expect(jobs).toHaveLength(0);
+    expect((await enrollment()).current_node_id).toBe('end');
+  });
+  it("entrega legada de outra passagem pelo nó não pula a ação atual", async () => {
+    await reply();
+    await sql.exec("update job_queue set payload=payload-'node_epoch',created_at=now()-interval '6 hours'");
+    await sql.query(`insert into followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,created_at)
+      values($1,$2,'other-node','node_advanced',now()-interval '5 hours')`,[ORG,ENROLLMENT]);
+    const ledger=(await sql.query<{id:string}>("insert into send_ledger(organization_id,contact_id,job_id,status) values($1,$2,$3,'accepted') returning id",[ORG,CONTACT,JOB])).rows[0]!.id;
+    await message('outbound',{status:'sent',external_id:'OLD-OCCUPATION-ACK',metadata:{idempotency_key:ledger}});
+    expect(await resume()).toEqual({inserted:true});
+    const jobs:FollowupJobRequest[]=[];
+    await runFollowupTick({db:{...db,loadLeadFacts:async()=>({lead_stage:null,tags:[]})},clock:()=>new Date(),enqueueJob:async(job)=>{jobs.push(job);}});
+    expect(jobs.map(job=>job.payload.node_id)).toEqual(['action']);
+  });
   it("legado sem prova de transporte não autoriza refazer um envio", async () => {
     await reply();
     await sql.query("insert into send_ledger(organization_id,contact_id,job_id,status) values($1,$2,$3,'failed')", [ORG,CONTACT,JOB]);
