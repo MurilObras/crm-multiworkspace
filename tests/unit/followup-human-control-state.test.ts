@@ -130,6 +130,17 @@ describe("cancelamento e barreira do trabalho antigo", () => {
     await sql.exec(`update followup_enrollment_events set payload=jsonb_build_object('next_eval_at',now()-interval '1 minute')`);
     expect((await followupJobGate(pool, ORG, JOB, CONTACT)).retryAt).toBeNull();
   });
+  it.each([60, -1])("última remarcação humana vence a anterior, inclusive depois de vencer (%s min)", async (minutes) => {
+    const latest = new Date(Date.now() + minutes * 60_000).toISOString();
+    const older = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    await sql.query("update followup_enrollments set next_eval_at=$1", [latest]);
+    await sql.query(`insert into followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,created_at)
+      values($1,$2,'action','snoozed_manual',$3,now()+interval '1 second'),
+        ($1,$2,'action','snoozed_manual',$4,now()+interval '2 seconds')`,
+    [ORG, ENROLLMENT, JSON.stringify({ next_eval_at: older }), JSON.stringify({ next_eval_at: latest })]);
+    const gate = await followupJobGate(pool, ORG, JOB, CONTACT);
+    expect(gate.retryAt?.toISOString() ?? null).toBe(minutes > 0 ? latest : null);
+  });
 });
 
 describe("conclusão atômica sem desfazer a pausa", () => {

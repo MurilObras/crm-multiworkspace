@@ -44,7 +44,7 @@ import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 // egress de canal — o envio em si vai pelo adapter (ChannelAdapter). Ver F2-25.
 import { applySendOutcome } from '../edge/crm/send-message';
 import { discardSupersededOutbound, discardPreparedOutbound } from '../edge/crm/discard-superseded-outbound';
-import { followupJobGate } from '../edge/crm/followup-job-gate';
+import { followupJobGate, followupRetryDelay } from '../edge/crm/followup-job-gate';
 import {
   LlmBudgetExceededError,
   runModelCall,
@@ -3233,7 +3233,7 @@ async function executarTurnoDoAgente(
     await mcpCleanup?.();
     const reason = supersededError?.message ?? 'inbound_superseded';
     if (reason === 'human_in_control' && job.kind === 'followup_turn') {
-      await rescheduleJob(pool, job.id, ctx.workerId, { delayMs: Math.max(60_000, (pausedUntil?.getTime() ?? 0)-Date.now()), reason });
+      await rescheduleJob(pool, job.id, ctx.workerId, { delayMs: followupRetryDelay(pausedUntil), reason });
       throw new JobSettledError('follow-up aguardando devolução do atendimento humano');
     }
     const discardInput = {

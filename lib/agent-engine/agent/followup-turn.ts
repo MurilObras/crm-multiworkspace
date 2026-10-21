@@ -17,7 +17,7 @@
  */
 import { z } from 'zod';
 import { discardPreparedOutbound } from '../edge/crm/discard-superseded-outbound';
-import { followupJobGate } from '../edge/crm/followup-job-gate';
+import { followupJobGate, followupRetryDelay } from '../edge/crm/followup-job-gate';
 import type pg from 'pg';
 import { selectOutboundSession, type OutboundSession } from '@/lib/channels/resolve-outbound';
 import { followupNeedsTemplate, loadOfficialFollowupTemplate, type OfficialFollowupTemplate } from '@/lib/channels/followup-delivery';
@@ -253,7 +253,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
     if (payload.followup_enrollment_id) {
       const gate = await followupJobGate(pool, tenantId, job.id, leadId, ctx.workerId);
       if (gate.retryAt) {
-        await rescheduleJob(pool, job.id, ctx.workerId, { delayMs: Math.max(1, gate.retryAt.getTime()-Date.now()), reason: 'followup_paused' });
+        await rescheduleJob(pool, job.id, ctx.workerId, { delayMs: followupRetryDelay(gate.retryAt), reason: 'followup_paused' });
         return;
       }
       if (!gate.allowed) {

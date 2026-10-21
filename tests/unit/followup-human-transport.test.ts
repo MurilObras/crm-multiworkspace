@@ -2,7 +2,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { outboundPostgres, ORG, CONTACT, JOB, CONV, ENROLLMENT } from '../helpers/outbound-postgres';
 import { sendTurnMessage } from '@/lib/agent-engine/edge/crm/send-message';
-import { claimJobs } from '@/lib/agent-engine/queue/queue';
+import { claimJobs, type JobRow } from '@/lib/agent-engine/queue/queue';
+import { createFollowupTurnHandler } from '@/lib/agent-engine/agent/followup-turn';
 import { discardPreparedOutbound } from '@/lib/agent-engine/edge/crm/discard-superseded-outbound';
 import { getAdapter } from '@/lib/channels';
 import { followupJobGate } from '@/lib/agent-engine/edge/crm/followup-job-gate';
@@ -30,6 +31,19 @@ async function attempt() {
 }
 
 describe('última barreira antes da rede usa estado real do banco', () => {
+  it('prazo distante conserva o job com recheck curto, sem gastar tentativa ou chamar o modelo', async () => {
+    await db.pool.query(`insert into followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,created_at)
+      values($1,$2,'node','snoozed_manual',jsonb_build_object('next_eval_at',now()+interval '7 days'),now()+interval '1 second')`,
+    [ORG, ENROLLMENT]);
+    const job = (await db.pool.query<JobRow>('select * from job_queue where id=$1', [JOB])).rows[0]!;
+    const before = Date.now();
+    await createFollowupTurnHandler({} as never)(job, db.pool, { workerId: 'owner' });
+    const pending = (await db.pool.query<JobRow>('select * from job_queue where id=$1', [JOB])).rows[0]!;
+    expect(pending.status).toBe('pending');
+    expect(pending.attempts).toBe(0);
+    expect(pending.run_after.getTime()).toBeLessThanOrEqual(before + 61_000);
+    expect(transport).not.toHaveBeenCalled();
+  });
   it('SDK que continua após encerrar o job não executa outra ferramenta mutante', async () => {
     const mutate = vi.fn(async () => 'não deve executar');
     const execution = guardCurrentInboundTools({

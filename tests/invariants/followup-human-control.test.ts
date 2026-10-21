@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { createPgAdminClient } from '@/lib/followup/turn-bridge';
+import { followupJobGate } from '@/lib/agent-engine/edge/crm/followup-job-gate';
 
 if (!process.env.TEST_DB_CONTAINER) throw new Error('Rode via pnpm test:db');
 const pool = new pg.Pool({ connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,
@@ -33,6 +34,22 @@ const patch = () => ({ current_node_id: 'end', status: 'active' as const, next_e
   steps_taken: 1, claimed_until: null, updated_at: new Date().toISOString() });
 
 describe('lock/CAS da conclusão contra intervenção humana real', () => {
+  it.each([60, -1])('barreira usa a última remarcação, não a data mais distante (%s min)', async (minutes) => {
+    const job = randomUUID();
+    const latest = new Date(Date.now() + minutes * 60_000).toISOString();
+    const older = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    await pool.query(`insert into job_queue(id,organization_id,contact_id,kind,status,locked_by,locked_at,payload)
+      values($1,$2,$3,'followup_turn','running','invariant-worker',now(),$4)`,
+    [job, ORG, contact, JSON.stringify({ followup_enrollment_id: enrollment, node_id: 'action', node_epoch: 0 })]);
+    await pool.query('update followup_enrollments set next_eval_at=$1 where id=$2', [latest, enrollment]);
+    await pool.query(`insert into followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,created_at)
+      values($1,$2,'action','snoozed_manual',$3,now()+interval '1 second'),
+        ($1,$2,'action','snoozed_manual',$4,now()+interval '2 seconds')`,
+    [ORG, enrollment, JSON.stringify({ next_eval_at: older }), JSON.stringify({ next_eval_at: latest })]);
+    const gate = await followupJobGate(pool, ORG, job, contact, 'invariant-worker');
+    expect(gate.allowed).toBe(true);
+    expect(gate.retryAt?.toISOString() ?? null).toBe(minutes > 0 ? latest : null);
+  });
   it('duas conclusões concorrentes progridem exatamente uma vez', async () => {
     const snap = (await db.loadEnrollmentById(ORG, enrollment))!;
     expect((await Promise.all([db.completeStep(snap, event, patch()), db.completeStep(snap, event, patch())])).sort()).toEqual([false, true]);
