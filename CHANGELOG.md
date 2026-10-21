@@ -8,6 +8,16 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.5.1] — 2026-10-21
+
+### Corrigido
+
+- **Follow-up respeita respostas, pausas humanas e o limite da sequência** Quando o fluxo está configurado para parar após uma resposta, a sequência é cancelada também durante esperas fixas. Trabalhos antigos não enviam depois do cancelamento ou de uma troca de etapa. A pausa humana preserva a retomada e não é desfeita por uma conclusão atrasada.
+
+  O eco do próprio envio no WhatsApp é reconhecido pelo identificador confirmado, sem pausar indevidamente o atendimento nem apagar referências do histórico. O Inbox informa o horário previsto de retorno de uma pausa temporária.
+
+  Uma sequência de silêncio encerrada não reinicia só porque a etiqueta permaneceu: exige uma nova mensagem posterior ao encerramento ou inscrição manual. A atualização corrige inscrições que já haviam ignorado uma resposta, sem mandar outra mensagem.
+
 ## [3.5.0] — 2026-10-20
 
 ### Corrigido
@@ -3360,7 +3370,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.0...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.1...HEAD
+[3.5.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.4.1...v3.5.0
 [3.4.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.4.0...v3.4.1
 [3.4.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.3.0...v3.4.0
