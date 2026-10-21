@@ -264,6 +264,11 @@ describe("rearmamento por novo episódio silencioso", () => {
     await reply(1);
     expect(await resume()).toEqual({ inserted: false });
   });
+  it("carimbo atrasado da conversa não antecipa a retomada depois de mensagem recente", async () => {
+    await reply();
+    await message('inbound',{sent_at:new Date(Date.now()-3_600_000).toISOString()});
+    expect(await resume()).toEqual({inserted:false});
+  });
   it("depois da primeira mensagem, responde e continua na segunda sem recomeçar a sequência", async () => {
     const sequence = { nodes:[...graph.nodes,
       { id:'wait-nine',type:'wait',label:'Próximo intervalo',position:{x:0,y:50},config:{mode:'fixed',duration_ms:9*3_600_000} },

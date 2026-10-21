@@ -161,7 +161,12 @@ begin
     and c.id=contact and c.tags && segments) then return false; end if;
   select max(v.last_inbound_at) into last_inbound from public.conversations v
     where v.organization_id=org and v.contact_id=contact and v.status not in ('closed','archived');
-  if last_inbound is null or last_inbound>now()-make_interval(mins=>threshold) then return false; end if;
+  if last_inbound is null then return false; end if;
+  -- O carimbo da conversa pode estar atrasado ou usar o instante de recepção.
+  -- A âncora cobre também as mensagens persistidas, como a barreira de envio.
+  select greatest(last_inbound,max(m.sent_at)) into last_inbound from public.messages m
+    where m.organization_id=org and m.contact_id=contact and m.direction='inbound';
+  if last_inbound>now()-make_interval(mins=>threshold) then return false; end if;
   if exists(select 1 from public.conversations v where v.organization_id=org and v.contact_id=contact
     and (v.assignee_kind='user' or v.bot_silenced_until>now())) then return false; end if;
   if exists(select 1 from public.followup_enrollments f where f.organization_id=org and f.contact_id=contact
