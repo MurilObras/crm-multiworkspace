@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
@@ -74,6 +76,14 @@ describe('continuação automática após resposta contra PostgreSQL real', () =
     expect(await applyReactivityEvent(reactivity,()=>new Date(),event)).toEqual({ matched:true,reacted:0 });
     expect(await applyReactivityEvent(reactivity,()=>new Date(),{ ...event,id:randomUUID(),created_at:new Date().toISOString() })).toEqual({ matched:true,reacted:1 });
     expect((await pool.query('select status from followup_enrollments where id=$1', [enrollment])).rows[0]!.status).toBe('cancelled');
+  });
+  it('reaplicar o baseline completo preserva a inscrição que já retomou', async () => {
+    expect(await resume()).toEqual({ inserted:true });
+    execFileSync('docker',['exec','-i',process.env.TEST_DB_CONTAINER!,'psql','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-q','-f','-'],
+      { input:readFileSync('supabase/baseline.sql'),stdio:['pipe','pipe','pipe'],timeout:60_000 });
+    const row = (await pool.query('select status,steps_taken,node_epoch,silence_anchor_at from followup_enrollments where id=$1', [enrollment])).rows[0]!;
+    expect(row).toMatchObject({ status:'active',steps_taken:14,node_epoch:1 });
+    expect(row.silence_anchor_at).not.toBeNull();
   });
   it('uma pausa humana concorrente vence antes da retomada obter o lock', async () => {
     const human = await pool.connect();

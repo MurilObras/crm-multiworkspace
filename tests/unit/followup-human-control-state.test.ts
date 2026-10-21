@@ -297,6 +297,15 @@ describe("rearmamento por novo episódio silencioso", () => {
     await sql.exec("update job_queue set payload=jsonb_set(payload,'{node_epoch}','1')");
     expect(await live()).toBe(true);
   });
+  it("a reaplicação do saneamento anterior não cancela novamente a sequência retomada", async () => {
+    await reply(); await resume();
+    const baseline = readFileSync('supabase/baseline.sql','utf8');
+    const start = baseline.indexOf('-- Corrige inscrições antigas que ignoraram uma resposta');
+    const end = baseline.indexOf('-- Uma varredura por silêncio',start);
+    expect(start).toBeGreaterThan(0); expect(end).toBeGreaterThan(start);
+    await sql.exec(baseline.slice(start,end));
+    expect((await enrollment()).status).toBe('active');
+  });
   it("nova resposta interrompe também a continuação", async () => {
     await reply(); await resume();
     await message();

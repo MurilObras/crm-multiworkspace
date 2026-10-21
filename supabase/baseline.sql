@@ -20682,7 +20682,7 @@ with stopped as (
     and e.status in ('active','waiting_reply','paused_handoff','paused_manual')
     and coalesce(p.trigger_config->'cancel_on_reply'='true'::jsonb,false)
     and exists(select 1 from public.messages m where m.organization_id=e.organization_id and m.contact_id=e.contact_id
-      and m.direction='inbound' and m.sent_at>e.started_at)
+      and m.direction='inbound' and m.sent_at>coalesce((to_jsonb(e)->>'silence_anchor_at')::timestamptz,e.started_at))
   returning e.*
 ) insert into public.followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,idempotency_key)
   select organization_id,id,current_node_id,'reactivity_replied',jsonb_build_object('reason','cancel_on_reply','source','migration_0234'),
