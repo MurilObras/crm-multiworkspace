@@ -8,6 +8,12 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.5.2] — 2026-10-21
+
+### Corrigido
+
+- **Follow-up continua após nova ausência sem reiniciar a sequência** O follow-up interrompido por uma resposta volta automaticamente após novo silêncio, na etapa pendente, preservando intervalos, envios anteriores e limites da sequência. Pausas humanas e sequências encerradas continuam protegidas.
+
 ## [3.5.1] — 2026-10-21
 
 ### Corrigido
@@ -3370,7 +3376,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.1...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.2...HEAD
+[3.5.2]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.1...v3.5.2
 [3.5.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.4.1...v3.5.0
 [3.4.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.4.0...v3.4.1
