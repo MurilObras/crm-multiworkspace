@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 
 export function automaticRecipientReason(data: {
-  is_anonymized?: boolean; is_blocked?: boolean; phone_number?: string | null;
+  is_anonymized?: boolean; is_blocked?: boolean; force_human?: boolean; phone_number?: string | null;
   consent?: { marketing?: { declined_at?: unknown } } | null;
 }, requirePhone = false) {
   return data.is_anonymized ? "contact_anonymized" : data.is_blocked ? "contact_blocked"
@@ -13,7 +13,7 @@ export function automaticRecipientReason(data: {
  * consentimento fotografado no evento de compra como autorização para enviar. */
 export async function currentAutomaticRecipient(db: SupabaseClient, org: string, id: string) {
   const { data, error } = await db.from("contacts")
-    .select("id, phone_number, wa_identity, wa_lid, is_blocked, is_anonymized, consent")
+    .select("id, phone_number, wa_identity, wa_lid, is_blocked, is_anonymized, force_human, consent")
     .eq("organization_id", org).eq("id", id).maybeSingle();
   if (error) throw new ApiError(503, "internal_error", undefined, "automation", "recipient_unavailable");
   const reason = !data ? "no_contact" : automaticRecipientReason(data);

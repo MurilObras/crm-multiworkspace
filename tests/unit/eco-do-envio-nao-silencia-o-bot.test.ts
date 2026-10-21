@@ -174,6 +174,9 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
       const enc: Record<string, unknown> = { error: null };
       enc.eq = () => enc;
       enc.in = () => enc;
+      enc.or = () => enc;
+      enc.select = () => enc;
+      enc.maybeSingle = async () => ({ data: { id: conversa.id }, error: null });
       return enc;
     },
   });
@@ -369,4 +372,34 @@ describe("eco do próprio envio — a IA não se cala por ter falado", () => {
 
     expect(conversa.bot_silenced_until, "encurtou um handoff formal").toBe("infinity");
   });
+});
+
+
+it("confirmação do ID entre o dedup e a busca de em-voo não pausa o bot", async () => {
+  const state = banco([emVoo()]);
+  const fromOriginal = state.admin.from;
+  let first = true;
+  state.admin.from = (name: string) => {
+    const table = fromOriginal(name);
+    if (name !== "messages") return table;
+    const select = table.select;
+    table.select = () => {
+      const q = select();
+      const original = q.maybeSingle as () => Promise<{ data: unknown; error: unknown }>;
+      q.maybeSingle = async () => {
+        const result = await original();
+        if (first) {
+          first = false;
+          state.messages[0]!.external_id = "3EB0C767D097E9ECA6B1";
+          state.messages[0]!.status = "sent";
+        }
+        return result;
+      };
+      return q;
+    };
+    return table;
+  };
+  await dispatchWahaEvent(state.admin as never, SESSION as never, envelope(eco(TEXTO)), "race");
+  expect(state.conversa.bot_silenced_until).toBeNull();
+  expect(state.messages).toHaveLength(1);
 });

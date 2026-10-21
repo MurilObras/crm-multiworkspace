@@ -64,6 +64,7 @@ function makeAdmin(cap: Captura, jaRegistrada: boolean) {
         return chain;
       },
       eq: () => chain,
+      or: () => chain,
       in: () => chain,
       limit: () => chain,
       // `ehEcoDeEnvioNosso` (lib/waha/ingest.ts, issue #519) consulta com

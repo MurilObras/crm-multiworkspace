@@ -256,7 +256,8 @@ describe('foto e vídeo privados aprovados pelo mesmo sink', () => {
   it.each(['image', 'video'] as const)('obrigatório envia contexto e %s, preservando identidade no replay', async type => {
     const media = await catalog(type);
     vi.spyOn(getAdapter('waha'), 'isConfigured').mockReturnValue(true);
-    const transport = vi.spyOn(getAdapter('waha'), 'send').mockResolvedValue({ externalId: 'visual-confirmed' });
+    let providerSequence = 0;
+    const transport = vi.spyOn(getAdapter('waha'), 'send').mockImplementation(async () => ({ externalId: `visual-confirmed-${++providerSequence}` }));
     await claimJobs(db.pool, { workerId: 'media-test', maxConcurrency: 1, jobIds: [JOB] });
     const current = (await db.pool.query<JobRow>('select * from job_queue where id=$1', [JOB])).rows[0]!;
     const plan = (await requiredAudioPlan(db.pool, current, 'media-test', AUDIO_AGENT, media, 3))!;

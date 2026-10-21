@@ -413,6 +413,8 @@ export const DICIONARIO: Traducoes = {
     es: "Automático pausado para este cliente",
   },
   "Automático volta em instantes": { es: "El automático vuelve en instantes" },
+  "Automático pausado após resposta humana": { es: "Automático pausado tras una respuesta humana" },
+  "Retorno previsto": { es: "Reanudación prevista" },
   "Pausar o automático": { es: "Pausar el automático" },
   "Ver contato": { es: "Ver contacto" },
 

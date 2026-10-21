@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,7 @@ import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { FUSO_PADRAO, fusoValido } from "@/lib/tempo/fusos";
 
 interface Props {
   conversation: ConversationWithContact;
@@ -53,7 +55,9 @@ const STATUS_LABEL: Record<string, string> = {
 
 export function ConversationHeader({ conversation }: Props) {
   const t = useT();
+  const idiomaDaData = useTagDeIdioma();
   const { user } = useAuth();
+  const fuso = user.timezone && fusoValido(user.timezone) ? user.timezone : FUSO_PADRAO;
   const claim = useClaimConversation();
   const release = useReleaseConversation();
   const close = useCloseConversation();
@@ -81,7 +85,7 @@ export function ConversationHeader({ conversation }: Props) {
    * leituras divergiram em primeiro lugar. A regra mora em `lib/inbox`,
    * espelhando os gates que o MOTOR lê, e esta tela só a consome.
    */
-  const { comando, automaticoAtivo, travaVigente, motivo } = comandoDaConversa({
+  const { comando, automaticoAtivo, travaVigente, motivo, silencioAte } = comandoDaConversa({
     status,
     assigned_to_user_id: conversation.assigned_to_user_id,
     assigned_to_user_name: conversation.assigned_to_user_name ?? null,
@@ -165,6 +169,10 @@ export function ConversationHeader({ conversation }: Props) {
               data-testid="badge-atendimento-humano"
             >
               {t(ROTULO_DO_MOTIVO[motivo])}
+              {silencioAte && <> · {t("Retorno previsto")}: {silencioAte.toLocaleString(idiomaDaData, {
+                day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                timeZone: fuso,
+              })}</>}
             </Badge>
           )}
         </div>

@@ -109,10 +109,10 @@ it.each(['force_human', 'is_blocked'])('retomada revalida %s e não envia após 
   await finishActionIntent(db.pool, ORG, id!, desfechoDoEnvio('send_whatsapp_message', message));
   await db.pool.query(`update contacts set ${flag}=true where organization_id=$1 and id=$2`, [ORG,CONTACT]);
   const resumed = await resumeQueuedAutomationMessage(ctx, 0, 'send_whatsapp_message');
-  expect(resumed?.result.status).toBe('failed');
+  expect(resumed?.result.status).toBe(flag === 'force_human' ? 'postponed' : 'failed');
   await finishActionIntent(db.pool, ORG, id!, resumed!.result);
   expect(transport).not.toHaveBeenCalled();
-  expect(await actionStillWaiting(db.pool, ORG, EVENT, RULE, 0)).toBe(false);
+  expect(await actionStillWaiting(db.pool, ORG, EVENT, RULE, 0)).toBe(flag === 'force_human');
 });
 
 it('erro de espera vindo depois de STARTED mantém incerteza e nunca autoriza reenvio', async () => {

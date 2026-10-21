@@ -21,14 +21,14 @@ function setup(provider: string, inbound: Date | null, payload: Record<string, u
   const conversation = { id: "conv-1", channel_session_id: "s-1", channel_archived_at: null,
     resolved_session_id: "s-1", organization_id: "org-1", contact_id: "contact-1", provider, channel_status: "WORKING", last_inbound_at: inbound };
   const conversations = [conversation];
-  const enrollment = { id: fallback, organization_id: 'org-1', contact_id: 'contact-1', conversation_id: null as string | null };
+  const enrollment = { status: 'active', current_node_id: 'node-1', id: fallback, organization_id: 'org-1', contact_id: 'contact-1', conversation_id: null as string | null };
   const ledger = { id: 'ledger-1', status: 'accepted', crm_message_id: 'msg-1' };
   const pool = { connect: async () => ({
     query: async (sql: string, params: unknown[] = []) => ({
       rows: sql.startsWith('select id from job_queue') && params[1] === 'worker-1' ? [{id:'job-1'}] : [],
       rowCount: sql.startsWith('select id from job_queue') && params[1] === 'worker-1' ? 1 : 0,
     }), release: () => {},
-  }), query: async (sql: string, params: unknown[] = []) => ({ rows: /from followup_enrollments/.test(sql)
+  }), query: async (sql: string, params: unknown[] = []) => ({ rows: sql.includes('fn_followup_job_live') ? [{ allowed: true, owned: true, retry_at: null }] : sql.includes('as owned') ? [{ owned: true }] : /from followup_enrollments/.test(sql)
     ? (params[0] === enrollment.organization_id && params[1] === enrollment.contact_id && params[2] === enrollment.id ? [enrollment] : [])
     : /from conversations/.test(sql) ? conversations.filter((c) => c.organization_id === params[0] && c.contact_id === params[1] &&
       (!sql.includes('and c.id = $3') || c.id === params[2]))
@@ -116,5 +116,23 @@ describe("agent-engine usa o fallback oficial pinado no fluxo", () => {
     await s.run(); expect(agent).not.toHaveBeenCalled();
     s.conversation.last_inbound_at = now;
     await s.run(); expect(agent).toHaveBeenCalledOnce(); expect(send).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe("fila respeita intervenção antes de executar o modelo", () => {
+  it.each(["paused_manual", "paused_handoff", "dead", "cancelled", "completed"])("não executa %s", async (status) => {
+    const state = setup("waha", now);
+    state.enrollment.status = status;
+    await state.run();
+    expect(agent).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+  it("descarta o job do nó anterior depois de pular", async () => {
+    const state = setup("waha", now);
+    state.enrollment.current_node_id = "novo-no";
+    await state.run();
+    expect(agent).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 });

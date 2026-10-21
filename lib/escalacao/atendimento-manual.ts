@@ -146,7 +146,7 @@ export async function pausarIaPorAtendimentoManual(
           : silenciadaAte;
     if (atualMs >= proposto.getTime()) return false;
 
-    const { error: updErr } = await admin
+    const { data: gravada, error: updErr } = await admin
       .from("conversations")
       .update({
         bot_silenced_until: proposto.toISOString(),
@@ -154,7 +154,12 @@ export async function pausarIaPorAtendimentoManual(
         last_handoff_reason: MOTIVO,
       })
       .eq("organization_id", input.organizationId)
-      .eq("id", input.conversationId);
+      .eq("id", input.conversationId)
+      // A comparação pertence ao UPDATE: infinity gravado depois do SELECT
+      // também vence. PostgreSQL reavalia o predicado após esperar pelo lock.
+      .or(`bot_silenced_until.is.null,bot_silenced_until.lt.${proposto.toISOString()}`)
+      .select("id")
+      .maybeSingle();
 
     if (updErr) {
       logger.warn("[atendimento-manual] pausa da IA não gravada", {
@@ -165,6 +170,7 @@ export async function pausarIaPorAtendimentoManual(
       return false;
     }
 
+    if (!gravada) return false;
     logger.info("[atendimento-manual] IA pausada — pessoa respondeu pelo canal", {
       organization_id: input.organizationId,
       conversation_id: input.conversationId,

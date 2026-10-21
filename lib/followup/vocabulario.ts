@@ -459,6 +459,7 @@ export const SITUACOES_DO_ACOMPANHAMENTO: Record<EnrollmentStatus, string> = {
   active: "Em andamento",
   waiting_reply: "Aguardando resposta",
   paused_handoff: "Pausado — um humano assumiu",
+  paused_manual: "Pausado pelo operador",
   completed: "Concluído",
   cancelled: "Cancelado",
   dead: "Parou por falha",

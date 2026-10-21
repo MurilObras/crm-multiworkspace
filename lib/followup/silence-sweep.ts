@@ -21,10 +21,9 @@
  * Idempotência + exclusividade: o índice único `idx_followup_enrollments_one_live`
  * é ORG-WIDE `(organization_id, contact_id)` (migration 0062, Task 8.6) — um
  * contato já vivo em QUALQUER fluxo da org barra novo enrollment (1 follow-up
- * vivo por lead), 23505 vira skip silencioso (`insertEnrollment` devolve
- * `inserted:false`), nunca erro. Um contato que COMPLETOU ou foi cancelado
- * pode ser re-enrollado na varredura seguinte se continuar silencioso —
- * aceitável no MVP, sem cooldown table.
+ * vivo por lead). Um episódio encerrado só admite nova entrada automática
+ * depois de um novo inbound posterior ao encerramento. A inscrição manual
+ * continua disponível para uma retomada decidida pelo operador.
  *
  * agent_id: cada pointer é gateado por `resolveAgentForAutomaticTrigger`, que
  * devolve o agente publicado que ARMA o pointer (menor uuid se >1) — esse
@@ -256,12 +255,9 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       // 23505 aqui agora é o índice ORG-WIDE (organization_id, contact_id) —
       // um contato já vivo em QUALQUER fluxo da org barra este insert (Task
       // 8.6: 1 follow-up vivo por lead). Vira skip silencioso, nunca erro.
-      const { error } = await admin.from("followup_enrollments").insert(input);
-      if (error) {
-        if (error.code === "23505") return { inserted: false };
-        throw new Error(error.message);
-      }
-      return { inserted: true };
+      const { data, error } = await admin.rpc("fn_enroll_silence_episode" as never, { p_input: input } as never);
+      if (error) throw new Error(error.message);
+      return { inserted: data === true };
     },
   };
 }

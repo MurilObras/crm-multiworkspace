@@ -144,7 +144,7 @@ describe("followup_turn — canal arquivado", () => {
     query.mockResolvedValue({ rows: [{ id: CONVERSA, channel_session_id: CANAL, channel_archived_at: null,
       resolved_session_id: CANAL, organization_id: ORG, provider: "meta_cloud", channel_status: "WORKING", ...over }] });
     await expect(handler()(job(), pool, ctx)).rejects.toThrow("outbound_session_unavailable");
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls.filter(([sql]) => /select c\.id[\s\S]*from conversations/.test(sql))).toHaveLength(1);
     expect(runAgentTurn).not.toHaveBeenCalled();
   });
 
@@ -171,7 +171,7 @@ describe("followup_turn — canal arquivado", () => {
       last_inbound_at: new Date().toISOString() }] });
     await handler()(job(), pool, ctx);
     expect(runAgentTurn).toHaveBeenCalledOnce();
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls.filter(([sql]) => /select c\.id[\s\S]*from conversations/.test(sql))).toHaveLength(1);
   });
 
   it("⭐ canal EXCLUÍDO: o job morre com o motivo escrito, sem pagar o turno de modelo", async () => {

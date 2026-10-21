@@ -22,15 +22,16 @@ export async function discardSupersededOutbound(
 /** Mesmo CAS para retirar um plano de áudio, sem descartar as respostas normais. */
 export async function discardPreparedOutbound(
   db: Queryable,
-  input: { organizationId: string; contactId: string; conversationId: string; jobId: string; workerId: string },
-  reason: { code: 'inbound_superseded' | 'required_audio_no_longer_eligible'; maxSequence?: number },
+  input: { organizationId: string; contactId: string; conversationId: string; jobId: string; workerId: string;
+    kind?: 'inbound_turn' | 'followup_turn' | 'case_reply_turn' },
+  reason: { code: 'inbound_superseded' | 'required_audio_no_longer_eligible' | 'followup_inactive' | 'human_in_control'; maxSequence?: number },
 ): Promise<void> {
   const { rows } = await db.query<{ owned: boolean }>(
     `with owner as materialized (
        select id from job_queue
        where id=$1 and organization_id=$2 and contact_id=$3
-         and kind='inbound_turn' and status='running' and locked_by=$4
-         and payload->>'conversation_id'=$5::text
+         and kind=$9::text and status='running' and locked_by=$4
+         and ($9 in ('followup_turn','case_reply_turn') or payload->>'conversation_id'=$5::text)
        for update
      ), discarded as (
        update messages m set status='failed', error_code=$6,
@@ -38,7 +39,8 @@ export async function discardPreparedOutbound(
          metadata=coalesce(m.metadata,'{}'::jsonb) || jsonb_build_object(
            'outbound_attempt',(m.metadata->'outbound_attempt') ||
              '{"phase":"rejected","retryable":false}'::jsonb)
-       where m.organization_id=$2 and m.contact_id=$3 and m.conversation_id=$5::text::uuid
+       where m.organization_id=$2 and m.contact_id=$3
+         and ($5='' or m.conversation_id=nullif($5,'')::uuid)
          and m.direction='outbound' and m.status in ('queued','failed')
          and m.external_id is null and m.metadata->'outbound_attempt'->>'phase'='prepared'
          and exists(select 1 from owner)
@@ -65,7 +67,10 @@ export async function discardPreparedOutbound(
      ) select exists(select 1 from owner) as owned`,
     [input.jobId, input.organizationId, input.contactId, input.workerId, input.conversationId, reason.code,
       reason.code === 'inbound_superseded' ? 'Resposta dispensada porque chegou uma nova mensagem.'
-        : 'Recepção com áudio dispensada porque a configuração ou a etapa mudou.', reason.maxSequence ?? null],
+        : reason.code === 'human_in_control' ? 'Resposta dispensada porque o atendimento humano assumiu.'
+        : reason.code === 'followup_inactive' ? 'Retorno dispensado porque a inscrição foi pausada, encerrada ou mudou de etapa.'
+        : 'Recepção com áudio dispensada porque a configuração ou a etapa mudou.', reason.maxSequence ?? null,
+      input.kind ?? (reason.code === 'followup_inactive' ? 'followup_turn' : 'inbound_turn')],
   );
   if (!rows[0]?.owned) throw new OutboundLeaseLostError();
 }

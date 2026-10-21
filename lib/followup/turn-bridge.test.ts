@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { completeTurnForEnrollment, type TurnBridgeAdminClient } from "./turn-bridge";
 import type { EnrollmentRow } from "./node-handlers";
 import type { FlowGraph } from "./graph-schema";
+import type { EnrollmentPatch } from "./engine";
 
 const NOW = new Date("2026-07-22T12:00:00.000Z");
 const clock = () => NOW;
@@ -92,7 +93,7 @@ function fakeDb(opts: {
   existingEvents?: Set<string>;
 }): { db: TurnBridgeAdminClient; updateEnrollment: ReturnType<typeof vi.fn>; insertEnrollmentEvent: ReturnType<typeof vi.fn> } {
   const eventKeys = opts.existingEvents ?? new Set<string>();
-  const updateEnrollment = vi.fn(async () => {});
+  const updateEnrollment = vi.fn(async (_id: string, _org: string, _patch: EnrollmentPatch) => {});
   const insertEnrollmentEvent = vi.fn(async (event: { idempotency_key: string }) => {
     if (eventKeys.has(event.idempotency_key)) return { inserted: false };
     eventKeys.add(event.idempotency_key);
@@ -107,6 +108,12 @@ function fakeDb(opts: {
     loadEnrollmentEvents: async () => [],
     insertEnrollmentEvent,
     updateEnrollment,
+    completeStep: async (enr, event, patch) => {
+      const { inserted } = await insertEnrollmentEvent(event);
+      if (!inserted || !['active', 'waiting_reply'].includes(enr.status)) return false;
+      await updateEnrollment(enr.id, enr.organization_id, patch);
+      return true;
+    },
     loadFlowPointerName: async () => null,
     insertDeadInboxItem: async () => {},
     persistirRespostaFollowup: async () => {},

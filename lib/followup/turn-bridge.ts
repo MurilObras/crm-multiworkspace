@@ -29,6 +29,10 @@ import { persistirRespostaFollowupPg } from "./persistir-resposta";
  *  estreita por consumidor). */
 export interface TurnBridgeAdminClient extends AdminClient {
   loadEnrollmentById(orgId: string, id: string): Promise<EnrollmentRow | null>;
+  /** Evento e avanço sob o mesmo lock/CAS; a intervenção posterior ao snapshot vence. */
+  completeStep(enrollment: EnrollmentRow, event: {
+    node_id: string; event_type: string; payload: Record<string, unknown>; idempotency_key: string;
+  }, patch: EnrollmentPatch): Promise<boolean>;
 }
 
 /** Resultado de um turno `followup_turn` dirigido por fluxo, por `purpose`. */
@@ -61,10 +65,12 @@ export async function completeTurnForEnrollment(
   nodeId: string,
   result: TurnResult,
   clock: () => Date = () => new Date(),
+  occupation?: { key?: string; nodeEpoch?: number },
 ): Promise<void> {
   const enrollment = await db.loadEnrollmentById(orgId, enrollmentId);
   if (!enrollment) return; // enrollment sumiu (nunca deveria, mas nada a completar)
   if (enrollment.current_node_id !== nodeId) return; // turno tardio/obsoleto — o enrollment já saiu do nó
+  if (occupation?.nodeEpoch !== undefined && enrollment.node_epoch !== occupation.nodeEpoch) return;
   // SÓ QUEM ESTÁ ANDANDO AVANÇA — lista positiva, e isso é o conserto.
   //
   // O guard nasceu excluindo completed/cancelled/dead e a Task 5.2 teve de
@@ -76,8 +82,10 @@ export async function completeTurnForEnrollment(
   //
   // Aconteceu de novo com `paused_manual` (migration 0145): sem esta troca, um
   // envio que terminasse depois do clique desfazia a pausa em silêncio.
-  // Descartar o resultado é o comportamento CERTO, não perda de dado.
-  if (enrollment.status !== "active" && enrollment.status !== "waiting_reply") return;
+  // Resultado classificado/planejado é descartado na pausa. Um envio já
+  // confirmado conserva somente a prova, sem avançar nem desfazer a pausa.
+  if (enrollment.status !== "active" && enrollment.status !== "waiting_reply" &&
+      !(result.kind === "sent" && ["paused_manual", "paused_handoff"].includes(enrollment.status))) return;
 
   const graph = await db.loadFlowGraph(orgId, enrollment.version_id);
   if (!graph) throw new Error("flow_version_not_found");
@@ -92,16 +100,12 @@ export async function completeTurnForEnrollment(
     payload: Record<string, unknown>,
     patch: EnrollmentPatch,
   ): Promise<void> => {
-    const { inserted } = await db.insertEnrollmentEvent({
-      organization_id: orgId,
-      enrollment_id: enrollmentId,
+    await db.completeStep(enrollment, {
       node_id: node.id,
       event_type: eventType,
-      payload,
+      payload: { ...payload, ...(occupation?.key ? { enrollment_action_key: occupation.key } : {}) },
       idempotency_key: idemKey,
-    });
-    if (!inserted) return; // replay — a 1ª aplicação já progrediu o enrollment
-    await db.updateEnrollment(enrollmentId, orgId, {
+    }, {
       ...patch,
       steps_taken: enrollment.steps_taken + 1,
       claimed_until: null,
@@ -200,6 +204,7 @@ function mapEnrollmentRow(row: Record<string, unknown>): EnrollmentRow {
     max_attempts: Number(row.max_attempts),
     last_error: (row.last_error as string | null) ?? null,
     steps_taken: Number(row.steps_taken),
+    node_epoch: row.node_epoch === undefined ? undefined : Number(row.node_epoch),
     outcome: (row.outcome as EnrollmentRow["outcome"]) ?? null,
     cancel_reason: (row.cancel_reason as string | null) ?? null,
     started_at: toIso(row.started_at)!,
@@ -215,7 +220,7 @@ function mapEnrollmentRow(row: Record<string, unknown>): EnrollmentRow {
 export function createPgAdminClient(pool: Pick<pg.Pool, 'query'>): TurnBridgeAdminClient {
   return {
     async claimDueEnrollments(limit, leaseSeconds) {
-      const { rows } = await pool.query(`select * from fn_claim_due_followup_enrollments($1, $2)`, [
+      const { rows } = await pool.query(`select e.*,e.updated_at::text as updated_at from fn_claim_due_followup_enrollments($1, $2) e`, [
         limit,
         leaseSeconds,
       ]);
@@ -223,10 +228,19 @@ export function createPgAdminClient(pool: Pick<pg.Pool, 'query'>): TurnBridgeAdm
     },
     async loadEnrollmentById(orgId, id) {
       const { rows } = await pool.query(
-        `select * from followup_enrollments where id = $1 and organization_id = $2`,
+        `select *,updated_at::text as updated_at from followup_enrollments where id = $1 and organization_id = $2`,
         [id, orgId],
       );
       return rows[0] ? mapEnrollmentRow(rows[0] as Record<string, unknown>) : null;
+    },
+    async completeStep(enrollment, event, patch) {
+      const { rows } = await pool.query<{ applied: boolean }>(
+        `select public.fn_followup_complete_step($1,$2,$3,$4,$5) as applied`,
+        [enrollment.organization_id, enrollment.id, JSON.stringify({ status: enrollment.status,
+          current_node_id: enrollment.current_node_id, steps_taken: enrollment.steps_taken,
+          updated_at: enrollment.updated_at, node_epoch: enrollment.node_epoch }), JSON.stringify(event), JSON.stringify(patch)],
+      );
+      return rows[0]?.applied === true;
     },
     async loadFlowGraph(orgId, versionId) {
       const { rows } = await pool.query<{ graph: unknown }>(
@@ -291,15 +305,18 @@ export function createPgAdminClient(pool: Pick<pg.Pool, 'query'>): TurnBridgeAdm
         throw err;
       }
     },
-    async updateEnrollment(id, orgId, patch) {
+    async updateEnrollment(id, orgId, patch, expected) {
       const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
       if (entries.length === 0) return;
       const setSql = entries.map(([k], i) => `${k} = $${i + 3}`).join(", ");
       const values = entries.map(([, v]) => v);
-      await pool.query(`update followup_enrollments set ${setSql} where id = $1 and organization_id = $2`, [
+      const n = entries.length + 3;
+      const guard = expected ? ` and status=$${n} and current_node_id=$${n+1} and steps_taken=$${n+2} and updated_at=$${n+3}::timestamptz` : '';
+      await pool.query(`update followup_enrollments set ${setSql} where id = $1 and organization_id = $2${guard}`, [
         id,
         orgId,
         ...values,
+        ...(expected ? [expected.status, expected.current_node_id, expected.steps_taken, expected.updated_at] : []),
       ]);
     },
     async loadFlowPointerName(orgId, pointerId) {

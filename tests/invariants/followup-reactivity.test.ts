@@ -499,7 +499,8 @@ describe("applyReactivityEvent — STOP/opt-out (message.received + is_blocked)"
   // caso REPROVA por ter passado, e quem consertar é obrigado a vir tirar o
   // `.fails`. O conserto é acrescentar o estado à lista em
   // `lib/followup/reactivity.ts` — decisão de comportamento, do dono do arquivo.
-  it.fails("STOP alcança também o enrollment PAUSADO MANUALMENTE — opt-out não abre exceção de estado", async () => {
+  // Corrigido na 0234: a antiga catraca agora exige o comportamento correto.
+  it("STOP alcança também o enrollment PAUSADO MANUALMENTE — opt-out não abre exceção de estado", async () => {
     const org = nextOrgId();
     await seedOrg(org);
     const contactId = await seedContact(org, { isBlocked: true });

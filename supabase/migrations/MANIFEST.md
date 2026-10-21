@@ -267,6 +267,8 @@ aplica.
 | `20261008230000` | `0231_obra_subscription_outreach` | Mensagens editáveis e habilitação separada por workspace; event_log agenda até dois cuidados, confirmação única e liberação do segmento de recuperação. Guardas finais de identidade, resposta, humano, dias úteis 08–20h e snapshot atual. Regras internas privadas e recuperação limitada ao fluxo escolhido. |
 | `20261009001000` | `0232_obra_outreach_message_storage` | Preserva os três textos do ciclo sem exigir canal conectado; mantém envio desligado sem número, migra textos existentes sem reativar mensagens vazias e conserva as permissões privadas. |
 | `20261016020000` | `0233_agent_test_unknown_cost` | Aceita custo desconhecido nos ensaios sem impedir o resultado nem fabricar custo zero; incluída no baseline de instalação e atualização. |
+| `20261021160000` | `0234_followup_human_control` | Cancelamento síncrono por resposta, CAS de conclusão, barreira de nó/ocupação e reinscrição por novo episódio. |
+| `20261021160100` | `0235_waha_echo_identity` | Identidade canônica do outbound WAHA e reconciliação do eco confirmado preservando referências. |
 
 ## Reproducibility
 

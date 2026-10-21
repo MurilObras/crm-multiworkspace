@@ -78,7 +78,7 @@ function admin(provider = DEFAULT_CHANNEL_PROVIDER, inbound: string | null = nul
           parameter_format: "POSITIONAL", components: [{ type: "BODY", text: "Olá!" }] }, error: null });
         if (table === "job_queue" && chain._upd) return Promise.resolve({ data: { id: JOB.id }, error: null });
         if (table === "followup_enrollments")
-          return Promise.resolve({ data: { current_node_id: "node-1" }, error: null });
+          return Promise.resolve({ data: { current_node_id: "node-1", status: "active" }, error: null });
         return Promise.resolve({ data: null, error: null });
       },
       then: (r: (v: unknown) => unknown) => {

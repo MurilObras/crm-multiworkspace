@@ -14,6 +14,7 @@ export type EnrollmentStatus =
   | "active"
   | "waiting_reply"
   | "paused_handoff"
+  | "paused_manual"
   | "completed"
   | "cancelled"
   | "dead";
@@ -40,6 +41,8 @@ export interface EnrollmentRow {
   max_attempts: number;
   last_error: string | null;
   steps_taken: number;
+  /** Ocupação do nó, incrementada pelo banco ao trocar de etapa. */
+  node_epoch?: number;
   outcome: EnrollmentOutcome | null;
   cancel_reason: string | null;
   started_at: string;

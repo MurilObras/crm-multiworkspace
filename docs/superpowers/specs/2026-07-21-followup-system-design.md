@@ -73,7 +73,7 @@ RLS `tenant_isolation_*_all` via `fn_user_org_ids()` em todas. Service role nos 
 6. **Boot/tick repair** (no próprio tick): enrollment `active` com claim expirado volta à fila como falha explícita (`attempts+1`); backlog vencido dispara 1× e re-ancora (collapse, sem burst).
 
 **Cancelamento reativo** (consumer de `event_log`, no mesmo tick do worker):
-- Mensagem inbound do contato → enrollments `waiting_reply` desse contato avançam pela aresta de resposta; fluxos com `cancel_on_reply` cancelam (`outcome='replied'`).
+- Mensagem inbound do contato → enrollments `waiting_reply` desse contato avançam pela aresta de resposta; fluxos com `cancel_on_reply` cancelam (`outcome='replied'`) também em espera `active` ou pausa. O inbound persistido cancela sincronamente; o dispatcher cobre replay e contatos irmãos.
 - STOP/opt-out → cancela tudo do contato (`outcome='opted_out'`).
 - Handoff humano iniciado → aplica `handoff_policy` do pointer (`pause` → `paused_handoff`, sem relógio). **Handoff encerrado (evento de fechamento já emitido no `event_log`) → retoma**: `paused_handoff` volta a `active` com `next_eval_at = now() + grace` (grace configurável, default 30min). Estado órfão é impossível por construção: `paused_handoff` só existe com consumidor de retomada ativo.
 
@@ -135,3 +135,9 @@ Rota `/app/ai/followups`, 2 abas + integração no editor do agente:
 - **React Flow bundle**: importar só no route do builder (dynamic import), medir com build-and-size.
 - **Análise estática da regra 24h** (§6.3) em grafos com ciclo: usar soma de `max` no caminho mais curto até o `action`; ciclos contam 1 iteração (conservador; documentado na UI).
 - **Extensão do `followup-turn.ts`**: mexe em código do harness portado — mudanças mínimas, atrás de purpose novo no payload, cobertas por testes existentes + novos.
+
+### Proteções de concorrência e novo episódio (0234/0235)
+
+O envio revalida inscrição/nó/ocupação e comando humano antes da rede. Pausa conserva a retomada; conclusão tardia não reativa o fluxo. Evento e avanço da ponte são atômicos. Envios confirmados são conservados mesmo quando a pausa impede avanço; rechecks não consomem orçamento durante atendimento humano.
+
+Um episódio de silêncio encerrado não reinicia por etiqueta remanescente. Exige novo inbound posterior ao encerramento ou inscrição manual. A identidade do eco WAHA é reconciliada por ID confirmado, preservando referências; proximidade de texto/horário não autoriza apagar mensagem humana. Contrato e provas: `docs/testing/followup-human-control.md`.

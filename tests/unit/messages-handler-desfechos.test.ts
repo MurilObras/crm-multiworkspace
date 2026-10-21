@@ -688,3 +688,15 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
     expect(msg.external_id).toBe('TEXT9');
   });
 });
+
+
+it("não transporta se o humano assumiu durante a preparação", async () => {
+  wahaConfigured(true);
+  const network = vi.fn<typeof fetch>(async () => Response.json({ key: { id: "CONTROLLED-ID" } }));
+  vi.stubGlobal("fetch", network);
+  const conversation = conversationRow();
+  await sendMessageHandler(makeSupabase(conversation), { ...ctx, actor: { type: "webhook_source", id: USER } }, textInput(), {
+    beforeSend: async () => { conversation.bot_silenced_until = "infinity"; },
+  });
+  expect(network.mock.calls.filter(([url]) => String(url).endsWith("/api/sendText"))).toHaveLength(0);
+});

@@ -313,4 +313,36 @@ test.describe("IA 360 W3 — o agente para, a pessoa continua, o agente retoma s
       "acrescentar o que a pessoa fez não pode apagar o histórico da conversa",
     ).toContain("Cliente quer 200 unidades");
   });
+  test("pausa temporária informa o prazo real e distingue o handoff durável", async ({ page }) => {
+    const e = creds.escalacao;
+    await login(page, creds.users.agent!.email, creds.password);
+    const until = new Date(Date.now() + 60 * 60_000).toISOString();
+    try {
+      const contact = await admin.from("contacts").update({ force_human: false, is_blocked: false })
+        .eq("organization_id", creds.org_id).eq("id", e.contact_id);
+      expect(contact.error).toBeNull();
+      const prepared = await admin.from("conversations").update({ status: "ai_handling", assignee_kind: "ai",
+        assigned_to_user_id: null, bot_silenced_until: until,
+        last_handoff_reason: "Atendimento manual pelo canal (resposta fora do CRM)" })
+        .eq("organization_id", creds.org_id).eq("id", e.conversation_id);
+      expect(prepared.error).toBeNull();
+      await page.goto(`/app/inbox/${e.conversation_id}`);
+      const badge = page.getByTestId("badge-atendimento-humano");
+      await expect(badge).toContainText("Retorno previsto", { timeout: 30_000 });
+      await expect(badge).toContainText(/\d{2}\/\d{2}.*\d{2}:\d{2}/);
+      await expect(badge).not.toContainText("em instantes");
+      await captura(page, "06-pausa-temporaria-com-prazo");
+      await admin.from("conversations").update({ bot_silenced_until: "infinity" })
+        .eq("organization_id", creds.org_id).eq("id", e.conversation_id);
+      await page.reload();
+      await expect(badge).toBeVisible({ timeout: 30_000 });
+      await expect(badge).not.toContainText("Retorno previsto");
+      await expect(page.getByTestId("devolver-ao-automatico")).toBeVisible();
+      await captura(page, "07-handoff-sem-retorno-automatico");
+    } finally {
+      await admin.from("conversations").update({ bot_silenced_until: null, last_handoff_at: null, last_handoff_reason: null })
+        .eq("organization_id", creds.org_id).eq("id", e.conversation_id);
+    }
+  });
+
 });

@@ -195,7 +195,31 @@
       "col": 4,
       "type": "service",
       "label": "turn-bridge.completeTurnForEnrollment",
-      "sublabel": "só active|waiting_reply avançam (lista POSITIVA)"
+      "sublabel": "CAS atômico de evento + avanço; pausa conserva confirmação física"
+    },
+    {
+      "id": "atomic_step",
+      "lane": "dados",
+      "col": 6,
+      "type": "database",
+      "label": "fn_followup_complete_step",
+      "sublabel": "lock/CAS; evento e progressão na mesma transação"
+    },
+    {
+      "id": "transport_gate",
+      "lane": "motor",
+      "col": 5,
+      "type": "service",
+      "label": "outbound-attempt.beforeTransport",
+      "sublabel": "nó/ocupação, resposta e comando humano antes da rede"
+    },
+    {
+      "id": "reply_cancel",
+      "lane": "dados",
+      "col": 5,
+      "type": "database",
+      "label": "tr_cancel_followup_on_reply",
+      "sublabel": "resposta persistida cancela sem esperar drain"
     }
   ],
   "edges": [
@@ -378,6 +402,48 @@
       "from": "legiveis",
       "to": "fila",
       "label": "rotuloDoStatus/tomDoStatus: a fila e o dossiê nomeiam o MESMO status no mesmo lugar"
+    },
+    {
+      "id": "e31",
+      "from": "bridge",
+      "to": "atomic_step",
+      "label": "snapshot esperado e resultado do turno"
+    },
+    {
+      "id": "e32",
+      "from": "atomic_step",
+      "to": "enrollments",
+      "label": "pausa concorrente vence; sem reativação tardia"
+    },
+    {
+      "id": "e33",
+      "from": "atomic_step",
+      "to": "eventos",
+      "label": "prova do envio confirmado preservada na pausa"
+    },
+    {
+      "id": "e34",
+      "from": "enrollments",
+      "to": "transport_gate",
+      "label": "inscrição executável, nó e ocupação atuais"
+    },
+    {
+      "id": "e35",
+      "from": "transport_gate",
+      "to": "bridge",
+      "label": "só transporte confirmado conclui o passo"
+    },
+    {
+      "id": "e36",
+      "from": "reply_cancel",
+      "to": "enrollments",
+      "label": "cancel_on_reply inclui esperas e pausas"
+    },
+    {
+      "id": "e37",
+      "from": "reply_cancel",
+      "to": "eventos",
+      "label": "cancelamento explicado no dossiê"
     }
   ],
   "cards": [

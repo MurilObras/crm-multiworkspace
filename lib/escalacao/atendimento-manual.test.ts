@@ -32,9 +32,10 @@ function adminStub(
       return chain;
     },
     eq: () => chain,
+    or: () => chain,
     maybeSingle: () =>
       Promise.resolve(
-        falhas.leitura
+        falhas.leitura || (updates.length > 0 && falhas.escrita)
           ? { data: null, error: { message: falhas.leitura } }
           : { data: { bot_silenced_until: silencedUntil }, error: null },
       ),

@@ -4262,6 +4262,7 @@ export type Database = {
           last_error: string | null
           max_attempts: number
           next_eval_at: string | null
+          node_epoch: number
           organization_id: string
           outcome: string | null
           pointer_id: string
@@ -4286,6 +4287,7 @@ export type Database = {
           last_error?: string | null
           max_attempts?: number
           next_eval_at?: string | null
+          node_epoch?: number
           organization_id: string
           outcome?: string | null
           pointer_id: string
@@ -4310,6 +4312,7 @@ export type Database = {
           last_error?: string | null
           max_attempts?: number
           next_eval_at?: string | null
+          node_epoch?: number
           organization_id?: string
           outcome?: string | null
           pointer_id?: string
@@ -7885,6 +7888,21 @@ export type Database = {
       }
     }
     Functions: {
+      fn_enroll_silence_episode: { Args: { p_input: Json }; Returns: boolean }
+      fn_followup_complete_step: {
+        Args: {
+          p_event: Json
+          p_expected: Json
+          p_id: string
+          p_org: string
+          p_patch: Json
+        }
+        Returns: boolean
+      }
+      fn_followup_job_live: {
+        Args: { p_contact: string; p_job: string; p_org: string }
+        Returns: boolean
+      }
       fn_manage_kiwify: {
         Args: {
           p_actor_user_id: string
