@@ -302,6 +302,22 @@ describe("rearmamento por novo episódio silencioso", () => {
     await sql.exec("update job_queue set status='running',payload=payload-'node_epoch'");
     expect(await live()).toBe(false);
   });
+  it("ação retomada continua respeitando os dias da espera anterior, inclusive antes do transporte", async () => {
+    await reply(); await resume();
+    const tomorrow = (new Date().getUTCDay()+1)%7;
+    const window = { timezone:'UTC',days:[tomorrow],start_hour:8,end_hour:20 };
+    await sql.query("update followup_flow_versions set graph=$1", [JSON.stringify({ ...graph,nodes:[
+      { id:'previous-wait',type:'wait',label:'Espera',position:{x:0,y:0},config:{ mode:'fixed',duration_ms:1,send_window:window } },...graph.nodes,
+    ] })]);
+    await sql.query(`insert into followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,created_at)
+      values($1,$2,'previous-wait','node_advanced',now()-interval '4 hours')`, [ORG,ENROLLMENT]);
+    await sql.exec("update job_queue set status='running',payload=jsonb_set(payload,'{node_epoch}','1')");
+    const gate = await followupJobGate(pool,ORG,JOB,CONTACT);
+    expect(gate.allowed).toBe(false);
+    expect(gate.retryAt!.getTime()).toBeGreaterThan(Date.now());
+    expect(gate.retryAt!.getUTCDay()).toBe(tomorrow);
+    expect(gate.retryAt!.getUTCHours()).toBe(8);
+  });
   it("a reaplicação do saneamento anterior não cancela novamente a sequência retomada", async () => {
     await reply(); await resume();
     const baseline = readFileSync('supabase/baseline.sql','utf8');
