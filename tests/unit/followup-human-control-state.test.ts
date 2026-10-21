@@ -7,7 +7,7 @@ import { pgComoSupabase } from "@/tests/pg-como-supabase";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
 import { createSupabaseSilenceSweepDb } from "@/lib/followup/silence-sweep";
-import { runFollowupTick } from "@/lib/followup/engine";
+import { runFollowupTick, type FollowupJobRequest } from "@/lib/followup/engine";
 import { followupJobGate } from "@/lib/agent-engine/edge/crm/followup-job-gate";
 
 const ORG = "10000000-0000-4000-8000-000000000001";
@@ -263,6 +263,35 @@ describe("rearmamento por novo episódio silencioso", () => {
     await reply();
     await reply(1);
     expect(await resume()).toEqual({ inserted: false });
+  });
+  it("depois da primeira mensagem, responde e continua na segunda sem recomeçar a sequência", async () => {
+    const sequence = { nodes:[...graph.nodes,
+      { id:'wait-nine',type:'wait',label:'Próximo intervalo',position:{x:0,y:50},config:{mode:'fixed',duration_ms:9*3_600_000} },
+      { id:'second',type:'action',label:'Segundo retorno',position:{x:0,y:70},config:{mode:'text',body:'Segundo retorno'} },
+    ],edges:[
+      { id:'first-wait',source:'action',target:'wait-nine',priority:0,condition:{type:'always'} },
+      { id:'wait-second',source:'wait-nine',target:'second',priority:0,condition:{type:'always'} },
+      { id:'second-end',source:'second',target:'end',priority:0,condition:{type:'always'} },
+    ] };
+    await sql.query('update followup_flow_versions set graph=$1',[JSON.stringify(sequence)]);
+    const sixHoursAgo = ()=>new Date(Date.now()-6*3_600_000);
+    await completeTurnForEnrollment(db,ORG,ENROLLMENT,'action',{kind:'sent'},sixHoursAgo);
+    const jobs:FollowupJobRequest[]=[];
+    const dependencies = { db:{ ...db,loadLeadFacts:async()=>({lead_stage:null,tags:[]}) },
+      clock:()=>new Date(Date.now()-1000),enqueueJob:async(job:FollowupJobRequest)=>{jobs.push(job);} };
+    await runFollowupTick({...dependencies,clock:sixHoursAgo});
+    const due = (await sql.query<{ due:Date }>('select next_eval_at as due from followup_enrollments')).rows[0]!.due;
+    await reply();
+    expect(await resume()).toEqual({inserted:true});
+    expect(await enrollment()).toMatchObject({id:ENROLLMENT,current_node_id:'wait-nine',steps_taken:2});
+    expect((await sql.query<{due:Date}>('select next_eval_at as due from followup_enrollments')).rows[0]!.due.toISOString()).toBe(due.toISOString());
+    await runFollowupTick(dependencies);
+    expect(jobs).toHaveLength(0);
+    await sql.exec("update followup_enrollments set next_eval_at=now()-interval '1 minute'");
+    await runFollowupTick(dependencies);
+    await runFollowupTick(dependencies);
+    expect(jobs.map(job=>job.payload.node_id)).toEqual(['second']);
+    expect((await sql.query("select * from followup_enrollment_events where node_id='action' and event_type='action_sent'")).rows).toHaveLength(1);
   });
   it("conserva etapa, versão, histórico, contadores e um intervalo maior já previsto", async () => {
     const due = new Date(Date.now() + 7 * 3_600_000).toISOString();
