@@ -311,6 +311,20 @@ describe("rearmamento por novo episódio silencioso", () => {
     await sql.exec(baseline.slice(start,end));
     expect((await enrollment()).status).toBe('active');
   });
+  it("os gates intermediários do atualizador também respeitam a âncora nova", async () => {
+    const at = await reply(); await resume();
+    const baseline = readFileSync('supabase/baseline.sql','utf8');
+    const old = baseline.slice(baseline.indexOf('-- ---- 20261021160000_0234_followup_human_control ----'),
+      baseline.indexOf('-- ---- 20261021160100_0235_waha_echo_identity ----'));
+    try {
+      await sql.exec(old.slice(old.indexOf('create or replace function public.fn_followup_job_live('),old.indexOf('-- O cancelamento')));
+      await sql.exec(old.slice(old.indexOf('create or replace function public.fn_cancel_followup_on_reply()'),old.indexOf('-- Corrige inscrições antigas')));
+      await sql.exec("update job_queue set status='running',payload=jsonb_set(payload,'{node_epoch}','1')");
+      expect(await live()).toBe(true);
+      await message('inbound',{ sent_at:at });
+      expect((await enrollment()).status).toBe('active');
+    } finally { await sql.exec(readFileSync('supabase/migrations/20261021200000_0236_followup_silence_resume.sql','utf8')); }
+  });
   it("nova resposta interrompe também a continuação", async () => {
     await reply(); await resume();
     await message();

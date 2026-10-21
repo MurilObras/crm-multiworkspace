@@ -20643,7 +20643,7 @@ returns boolean language sql stable security invoker set search_path=public,pg_t
             order by substring(ev.idempotency_key from '([0-9]+)$')::integer desc nulls last limit 1))
           and (coalesce(p.trigger_config->'cancel_on_reply'='true'::jsonb,false)=false or not exists(
             select 1 from public.messages m where m.organization_id=p_org and m.contact_id=p_contact
-              and m.direction='inbound' and m.sent_at>e.started_at))
+              and m.direction='inbound' and m.sent_at>coalesce((to_jsonb(e)->>'silence_anchor_at')::timestamptz,e.started_at)))
       )))
 $$;
 revoke execute on function public.fn_followup_job_live(uuid,uuid,uuid) from public,anon,authenticated;
@@ -20662,7 +20662,7 @@ begin
     from public.followup_flow_pointers p where p.id=e.pointer_id and p.organization_id=e.organization_id
       and e.organization_id=new.organization_id and e.contact_id=new.contact_id
       and e.status in ('active','waiting_reply','paused_handoff','paused_manual')
-      and new.sent_at>e.started_at and coalesce(p.trigger_config->'cancel_on_reply'='true'::jsonb,false)
+      and new.sent_at>coalesce((to_jsonb(e)->>'silence_anchor_at')::timestamptz,e.started_at) and coalesce(p.trigger_config->'cancel_on_reply'='true'::jsonb,false)
     returning e.*
   ) insert into public.followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,idempotency_key)
     select organization_id,id,current_node_id,'reactivity_replied',jsonb_build_object('reason','cancel_on_reply'),
