@@ -571,8 +571,9 @@ export async function main(): Promise<void> {
     // o worker fala pg puro (nunca Supabase client), então usa o adapter pg de
     // lib/followup/turn-bridge.ts (equivalente ao createSupabaseAdminClient das
     // rotas Next.js, mas pra este processo).
-    completeFollowupTurn: (pool, { organizationId, enrollmentId, nodeId, result }) =>
-      completeTurnForEnrollment(createPgAdminClient(pool), organizationId, enrollmentId, nodeId, result),
+    completeFollowupTurn: (pool, { organizationId, enrollmentId, nodeId, result, occupationKey, nodeEpoch }) =>
+      completeTurnForEnrollment(createPgAdminClient(pool), organizationId, enrollmentId, nodeId, result, undefined,
+        { key: occupationKey, nodeEpoch }),
   };
   handlers.set('inbound_turn', createInboundTurnHandler(turnDeps));
   handlers.set('followup_turn', createFollowupTurnHandler(turnDeps));

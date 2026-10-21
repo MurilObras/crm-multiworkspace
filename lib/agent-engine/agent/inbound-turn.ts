@@ -44,6 +44,7 @@ import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 // egress de canal — o envio em si vai pelo adapter (ChannelAdapter). Ver F2-25.
 import { applySendOutcome } from '../edge/crm/send-message';
 import { discardSupersededOutbound, discardPreparedOutbound } from '../edge/crm/discard-superseded-outbound';
+import { followupJobGate, followupRetryDelay } from '../edge/crm/followup-job-gate';
 import {
   LlmBudgetExceededError,
   runModelCall,
@@ -65,7 +66,7 @@ import { isCurrentInbound } from '../queue/inbound-pending';
 import { collectApprovedMediaUrls } from './approved-media';
 import { readApprovedMedia, renderApprovedMedia } from '@/lib/ai/agents/approved-media';
 import { guardCurrentInboundTools } from './current-inbound-tools';
-import { OutboundAudioUnavailableError, OutboundSupersededError } from '@/lib/channels/delivery-error';
+import { OutboundAudioUnavailableError, OutboundLeaseLostError, OutboundPreflightDeferredError, OutboundSupersededError } from '@/lib/channels/delivery-error';
 import { eligibleAudiosForContact } from './audio-stage-eligibility';
 import { availableConversationAudios } from './conversation-audios';
 import { requiredAudioPlan, deliverRequiredAudio, type RequiredAudioPlan } from './required-audio';
@@ -1556,12 +1557,14 @@ async function executarTurnoDoAgente(
   const inboundStillCurrent = () => inboundAnchor === null
     ? Promise.resolve(true)
     : isCurrentInbound(pool, tenantId, input.conversationId, inboundAnchor);
-  const recordSuperseded = async (phase: 'before_model' | 'before_send'): Promise<void> => {
+  const recordSuperseded = async (phase: 'before_model' | 'before_send', reasonCode = 'inbound_superseded'): Promise<void> => {
     try {
       await emitAgentActivityForContact({ pool, organizationId: tenantId, contactId: leadId,
         type: 'send_vetoed', sourceModule: 'agent', sourceId: job.id,
-        reason: 'Resposta anterior dispensada porque chegou uma nova mensagem. O novo turno atende a conversa atual.',
-        payload: { reason_code: 'inbound_superseded', phase },
+        reason: reasonCode === 'human_in_control' ? 'Resposta automática interrompida porque o atendimento humano assumiu.'
+          : reasonCode === 'followup_inactive' ? 'Retorno interrompido porque a inscrição encerrou ou mudou de etapa.'
+          : 'Resposta anterior dispensada porque chegou uma nova mensagem. O novo turno atende a conversa atual.',
+        payload: { reason_code: reasonCode, phase },
       });
     } catch {
       runLog.error('falha ao registrar resposta substituída na atividade');
@@ -1578,8 +1581,32 @@ async function executarTurnoDoAgente(
   }
   // Revalida após o LLM/pacing e entre bolhas: outro assunto pode ter chegado.
   let supersededError: OutboundSupersededError | null = null;
+  let leaseLostError: OutboundLeaseLostError | null = null;
+  let pausedUntil: Date | null = null;
   const assertCurrentInbound = async (): Promise<void> => {
+    if (leaseLostError !== null) throw leaseLostError;
     if (supersededError !== null) throw supersededError;
+    let gate;
+    try { gate = await followupJobGate(pool, tenantId, job.id, leadId, ctx.workerId); }
+    catch (error) {
+      if (error instanceof OutboundLeaseLostError) leaseLostError = error;
+      throw error;
+    }
+    let interrupted: 'human_in_control' | 'followup_inactive' | null =
+      await isLeadInHandoff(pool, tenantId, leadId) ? 'human_in_control' : null;
+    if (!interrupted && job.kind === 'followup_turn' && job.payload.followup_enrollment_id) {
+      pausedUntil = gate.retryAt;
+      if (gate.retryAt) interrupted = 'human_in_control';
+      else if (!gate.allowed) interrupted = 'followup_inactive';
+    }
+    if (interrupted) {
+      supersededError = new OutboundSupersededError(interrupted);
+      await recordSuperseded('before_send', interrupted);
+      // No follow-up a pausa conserva o mesmo prepared para retomada segura.
+      if (interrupted === 'human_in_control' && job.kind === 'followup_turn')
+        throw new OutboundPreflightDeferredError('human_in_control');
+      throw supersededError;
+    }
     if (await inboundStillCurrent()) return;
     supersededError = new OutboundSupersededError();
     await recordSuperseded('before_send');
@@ -1610,6 +1637,13 @@ async function executarTurnoDoAgente(
   // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
   if (await isLeadInHandoff(pool, tenantId, leadId)) {
     runLog.info('turno pulado — lead em handoff humano (bot silenciado)', { kind: job.kind });
+    if (job.kind === 'followup_turn') {
+      await rescheduleJob(pool, job.id, ctx.workerId, { delayMs: 60_000, reason: 'human_in_control' });
+      throw new JobSettledError('follow-up aguardando atendimento humano');
+    }
+    await discardPreparedOutbound(pool, { organizationId: tenantId, contactId: leadId,
+      conversationId: input.conversationId, jobId: job.id, workerId: ctx.workerId,
+      kind: job.kind === 'case_reply_turn' ? 'case_reply_turn' : 'inbound_turn' }, { code: 'human_in_control' });
     return;
   }
 
@@ -3184,21 +3218,34 @@ async function executarTurnoDoAgente(
     readOnlyTools: READ_ONLY_TOOLS,
     log: runLog, // os warns dos gates do breaker saem carimbados com o run
   });
-  const execution = inboundAnchor === null
-    ? { tools: breakerTools, drain: () => Promise.resolve() }
-    : guardCurrentInboundTools(breakerTools, assertCurrentInbound);
+  const execution = guardCurrentInboundTools(breakerTools, assertCurrentInbound);
   const tools = execution.tools;
+  const stopAfterLeaseLoss = async () => {
+    if (!leaseLostError) return;
+    await execution.drain();
+    await mcpCleanup?.();
+    throw leaseLostError;
+  };
   const settleSuperseded = async (): Promise<never> => {
     // Só libera a lane depois de terminarem TODAS as tools, inclusive as que
     // o SDK iniciou no mesmo step. Nenhuma tool posterior atravessa o wrapper.
     await execution.drain();
     await mcpCleanup?.();
-    await discardSupersededOutbound(pool, {
+    const reason = supersededError?.message ?? 'inbound_superseded';
+    if (reason === 'human_in_control' && job.kind === 'followup_turn') {
+      await rescheduleJob(pool, job.id, ctx.workerId, { delayMs: followupRetryDelay(pausedUntil), reason });
+      throw new JobSettledError('follow-up aguardando devolução do atendimento humano');
+    }
+    const discardInput = {
       organizationId: tenantId, contactId: leadId, conversationId: input.conversationId,
       jobId: job.id, workerId: ctx.workerId,
-    });
+    };
+    if (reason === 'inbound_superseded') await discardSupersededOutbound(pool, discardInput);
+    else await discardPreparedOutbound(pool, { ...discardInput,
+      kind: job.kind === 'followup_turn' || job.kind === 'case_reply_turn' ? job.kind : 'inbound_turn' },
+      { code: reason === 'human_in_control' ? 'human_in_control' : 'followup_inactive' });
     await completeJob(pool, job.id, ctx.workerId);
-    throw new JobSettledError('turno substituído por inbound mais recente — envio interrompido');
+    throw new JobSettledError(`turno interrompido antes de novos efeitos: ${reason}`);
   };
 
   // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
@@ -3312,7 +3359,8 @@ async function executarTurnoDoAgente(
   let audioPlan: RequiredAudioPlan | null = null;
   let requiredAudioResult: unknown;
   const discardAudioPlan = () => discardPreparedOutbound(pool, { organizationId: tenantId, contactId: leadId,
-    conversationId: input.conversationId, jobId: job.id, workerId: ctx.workerId },
+    conversationId: input.conversationId, jobId: job.id, workerId: ctx.workerId,
+    kind: job.kind === 'followup_turn' || job.kind === 'case_reply_turn' ? job.kind : 'inbound_turn' },
   { code: 'required_audio_no_longer_eligible', maxSequence: 2 });
   const executeAudioPlan = async (plan: RequiredAudioPlan, afterResponse: boolean) => {
     const execute = tools.send_message?.execute;
@@ -3498,6 +3546,7 @@ async function executarTurnoDoAgente(
   // inbox_items (dedup por episódio). Advisório: o classifier sozinho nunca escala — o gate
   // determinístico é que confirma a promessa indevida. Feito antes do runError/veto para
   // não se perder num turno que falha o envio depois.
+  await stopAfterLeaseLoss();
   if (supersededError !== null) {
     await settleSuperseded();
   }

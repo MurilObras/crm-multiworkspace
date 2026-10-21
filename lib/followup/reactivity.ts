@@ -34,7 +34,8 @@
  *      (`opted_out`). Senão, para enrollments `waiting_reply` do contato:
  *      `cancel_on_reply` no `trigger_config` do pointer → cancela
  *      (`replied`); senão, acorda (marker `inbound_woke` + `next_eval_at=now`).
- *      Inscrições `active` no nó `wait` também acordam — a resposta corta o timer.
+ *      A mesma política vale para `active` em espera; pausas humanas só podem
+ *      ser canceladas por resposta, nunca acordadas por ela.
  *   2. `ai.handoff_triggered` (handoff aberto) — já emitido em produção por
  *      `lib/ai/handoff/orchestrator.ts` (triggerHandoff, chamado por
  *      workers/ai-response-worker.ts, workers/ai-handoff-from-sentiment.handler.ts,
@@ -60,7 +61,7 @@ import { idsDoContatoEGemeos } from "@/lib/channels/contato-por-telefone";
 /** Grace pós-resume (spec §4: "grace configurável, default 30min, knob"). */
 export const RESUME_GRACE_MS = 30 * 60_000;
 
-export const LIVE_STATUSES: readonly EnrollmentStatus[] = ["active", "waiting_reply", "paused_handoff"];
+export const LIVE_STATUSES: readonly EnrollmentStatus[] = ["active", "waiting_reply", "paused_handoff", "paused_manual"];
 
 export interface LiveEnrollmentRef {
   id: string;
@@ -71,6 +72,8 @@ export interface LiveEnrollmentRef {
   handoff_policy: "pause" | "cancel" | "allow";
   /** jsonb bruto do pointer — parseado defensivamente aqui (safeParse, default false). */
   trigger_config: unknown;
+  /** Evita aplicar backlog de um episódio anterior a uma inscrição nova. */
+  started_at?: string;
 }
 
 /** Interface estreita de DB (mesma doutrina de `AdminClient`/`TurnBridgeAdminClient`
@@ -88,7 +91,8 @@ export interface ReactivityAdminClient {
     payload: Record<string, unknown>;
     idempotency_key: string;
   }): Promise<{ inserted: boolean }>;
-  updateEnrollment(id: string, orgId: string, patch: EnrollmentPatch): Promise<void>;
+  updateEnrollment(id: string, orgId: string, patch: EnrollmentPatch,
+    expected?: Pick<LiveEnrollmentRef, "status" | "current_node_id" | "steps_taken">): Promise<void>;
   /**
    * O relógio do BANCO (`fn_agora()`, migration 0147).
    *
@@ -129,7 +133,7 @@ function strOrNull(v: unknown): string | null {
 async function applyStep(
   db: ReactivityAdminClient,
   orgId: string,
-  enrollment: Pick<LiveEnrollmentRef, "id" | "current_node_id">,
+  enrollment: LiveEnrollmentRef,
   idempotencyKey: string,
   eventType: string,
   eventPayload: Record<string, unknown>,
@@ -144,7 +148,7 @@ async function applyStep(
     idempotency_key: idempotencyKey,
   });
   if (!inserted) return false; // já aplicado nesta ocupação — no-op
-  await db.updateEnrollment(enrollment.id, orgId, patch);
+  await db.updateEnrollment(enrollment.id, orgId, patch, enrollment);
   return true;
 }
 
@@ -190,20 +194,19 @@ async function reactToInbound(
   if (!contactId) return { matched: false, reacted: 0 };
 
   const isBlocked = await db.loadContactBlocked(row.organization_id, contactId);
-  const live = await db.loadLiveEnrollmentsForContact(row.organization_id, contactId);
+  const allLive = await db.loadLiveEnrollmentsForContact(row.organization_id, contactId);
 
   if (isBlocked) {
     // STOP/opt-out (a regex já rodou em lib/waha/ingest.ts e setou is_blocked
     // ANTES de emitir este evento, na mesma request — ver header do arquivo).
     // Hard stop LGPD/anti-ban: cancela TUDO que está vivo, sem exceção de política.
-    const reacted = await cancelAll(db, row.organization_id, row.id, live, "opted_out", "stop_keyword", "reactivity_opted_out", clock);
+    const reacted = await cancelAll(db, row.organization_id, row.id, allLive, "opted_out", "stop_keyword", "reactivity_opted_out", clock);
     return { matched: true, reacted };
   }
 
-  const waitingReply = live.filter((e) => e.status === "waiting_reply");
-  const esperaAtiva = live.filter((e) => e.status === "active");
+  const live = allLive.filter((e) => !e.started_at || !row.created_at || Date.parse(row.created_at)>Date.parse(e.started_at));
   let reacted = 0;
-  for (const e of waitingReply) {
+  for (const e of live) {
     if (parseCancelOnReply(e.trigger_config)) {
       const key = `reactivity:${row.id}:${e.id}:reactivity_replied`;
       const applied = await applyStep(
@@ -219,12 +222,9 @@ async function reactToInbound(
       continue;
     }
 
-    if (await acordarPorInbound(db, clock, row, e)) reacted++;
-  }
-  // Nó `wait` fica `active` com timer — sem isto a resposta do lead não corta
-  // a espera de 5min (o motor só acordava `waiting_reply`).
-  for (const e of esperaAtiva) {
-    if (await acordarPorInbound(db, clock, row, e)) reacted++;
+    // Uma resposta nunca devolve o comando de uma pausa humana.
+    if ((e.status === "active" || e.status === "waiting_reply") &&
+        await acordarPorInbound(db, clock, row, e)) reacted++;
   }
   return { matched: true, reacted };
 }
@@ -272,6 +272,7 @@ async function reactToHandoffOpen(
   const live = await db.loadLiveEnrollmentsForContact(row.organization_id, contactId);
   let reacted = 0;
   for (const e of live) {
+    if (e.status === "paused_manual") continue;
     if (e.handoff_policy === "allow") continue;
 
     if (e.handoff_policy === "cancel") {
@@ -333,7 +334,7 @@ async function reactToHandoffClose(
       e,
       key,
       "handoff_resumed",
-      {},
+      { next_eval_at: nextEvalAt },
       { status: "active", next_eval_at: nextEvalAt, claimed_until: null, updated_at: clock().toISOString() },
     );
     if (applied) reacted++;
@@ -396,7 +397,7 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
       const ids = await idsDoContatoEGemeos(admin, orgId, contactId);
       const { data: enrollments, error } = await admin
         .from("followup_enrollments")
-        .select("id, status, current_node_id, steps_taken, pointer_id")
+        .select("id, status, current_node_id, steps_taken, pointer_id, started_at")
         .eq("organization_id", orgId)
         .in("contact_id", ids)
         .in("status", LIVE_STATUSES);
@@ -422,6 +423,7 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
           pointer_id: e.pointer_id,
           handoff_policy: (p?.handoff_policy as LiveEnrollmentRef["handoff_policy"]) ?? "pause",
           trigger_config: p?.trigger_config ?? null,
+          started_at: e.started_at,
         };
       });
     },
@@ -433,8 +435,11 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
       }
       return { inserted: true };
     },
-    async updateEnrollment(id, orgId, patch) {
-      const { error } = await admin.from("followup_enrollments").update(patch).eq("id", id).eq("organization_id", orgId);
+    async updateEnrollment(id, orgId, patch, expected) {
+      let query = admin.from("followup_enrollments").update(patch).eq("id", id).eq("organization_id", orgId);
+      if (expected) query = query.eq("status", expected.status).eq("current_node_id", expected.current_node_id)
+        .eq("steps_taken", expected.steps_taken);
+      const { error } = await query;
       if (error) throw new Error(error.message);
     },
     async agoraNoBanco() {

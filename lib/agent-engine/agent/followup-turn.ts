@@ -16,6 +16,8 @@
  * NUNCA do payload do modelo — o cron só carrega o snapshot da promessa (F3-02).
  */
 import { z } from 'zod';
+import { discardPreparedOutbound } from '../edge/crm/discard-superseded-outbound';
+import { followupJobGate, followupRetryDelay } from '../edge/crm/followup-job-gate';
 import type pg from 'pg';
 import { selectOutboundSession, type OutboundSession } from '@/lib/channels/resolve-outbound';
 import { followupNeedsTemplate, loadOfficialFollowupTemplate, type OfficialFollowupTemplate } from '@/lib/channels/followup-delivery';
@@ -74,6 +76,7 @@ export const followupTurnPayloadSchema = z
     // (schedule_followup / F3-03 / F3-04) intocado — nem lido.
     followup_enrollment_id: z.string().uuid().optional(),
     node_id: z.string().min(1).optional(),
+    node_epoch: z.number().int().min(0).optional(),
     purpose: z.enum(['send_message', 'classify', 'plan_timing']).optional(),
     prompt_hint: z.string().optional(),
     /** action mode `text` — enviado pela cadeia de guardrails, sem LLM. */
@@ -117,7 +120,7 @@ export type FollowupFlowTurnResult =
 export interface FollowupTurnDeps extends InboundTurnDeps {
   completeFollowupTurn?: (
     pool: Pick<pg.Pool, 'query'>,
-    input: { organizationId: string; enrollmentId: string; nodeId: string; result: FollowupFlowTurnResult },
+    input: { organizationId: string; enrollmentId: string; nodeId: string; result: FollowupFlowTurnResult; occupationKey?: string; nodeEpoch?: number },
   ) => Promise<void>;
 }
 
@@ -247,6 +250,23 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
       throw new Error('job followup_turn sem contact_id — o CHECK da fila deveria impedir');
     }
     const payload = followupTurnPayloadSchema.parse(job.payload);
+    if (payload.followup_enrollment_id) {
+      const gate = await followupJobGate(pool, tenantId, job.id, leadId, ctx.workerId);
+      if (gate.retryAt) {
+        await rescheduleJob(pool, job.id, ctx.workerId, { delayMs: followupRetryDelay(gate.retryAt), reason: 'followup_paused' });
+        return;
+      }
+      if (!gate.allowed) {
+        await discardPreparedOutbound(pool, { organizationId: tenantId, contactId: leadId,
+          conversationId: '', jobId: job.id, workerId: ctx.workerId }, { code: 'followup_inactive' });
+        await cancelJob(pool, job.id, ctx.workerId, 'followup_inactive');
+        return;
+      }
+    }
+    if (await isLeadInHandoff(pool, tenantId, leadId)) {
+      await rescheduleJob(pool, job.id, ctx.workerId, { delayMs: 60_000, reason: 'human_in_control' });
+      return;
+    }
     let obra;
     try { obra = await guardObraFollowup(pool, tenantId, job.id, leadId); }
     catch {
@@ -261,9 +281,15 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
     }
 
     let target;
-    try { target = await resolveSendTarget(pool, tenantId, leadId, payload.followup_enrollment_id); }
+    try { target = await resolveSendTarget(pool, tenantId, leadId, payload.followup_enrollment_id, payload.node_id); }
     catch (error) {
+      if (error instanceof Error && error.message === 'followup_paused') {
+        await rescheduleJob(pool, job.id, ctx.workerId, { delayMs: 60_000, reason: 'followup_paused' });
+        return;
+      }
       if (!(error instanceof Error) || error.message !== 'followup_inactive') throw error;
+      await discardPreparedOutbound(pool, { organizationId: tenantId, contactId: leadId,
+        conversationId: '', jobId: job.id, workerId: ctx.workerId }, { code: 'followup_inactive' });
       await cancelJob(pool, job.id, ctx.workerId, 'followup_inactive');
       return;
     }
@@ -342,15 +368,18 @@ async function resolveSendTarget(
   tenantId: string,
   contactId: string,
   enrollmentId?: string,
+  nodeId?: string,
 ): Promise<ReentrySendTarget> {
   let conversationId: string | null = null;
   if (enrollmentId) {
-    const { rows: enrollments } = await pool.query<{ conversation_id: string | null; status: string }>(
-      'select conversation_id,status from followup_enrollments where organization_id = $1 and contact_id = $2 and id = $3',
+    const { rows: enrollments } = await pool.query<{ conversation_id: string | null; status: string; current_node_id: string }>(
+      'select conversation_id,status,current_node_id from followup_enrollments where organization_id = $1 and contact_id = $2 and id = $3',
       [tenantId, contactId, enrollmentId],
     );
     if (!enrollments[0]) throw new Error('followup_enrollment_not_found');
-    if (['cancelled', 'completed', 'paused_handoff'].includes(enrollments[0].status)) throw new Error('followup_inactive');
+    if (['paused_manual', 'paused_handoff'].includes(enrollments[0].status)) throw new Error('followup_paused');
+    if (!['active', 'waiting_reply'].includes(enrollments[0].status) ||
+        !nodeId || enrollments[0].current_node_id !== nodeId) throw new Error('followup_inactive');
     conversationId = enrollments[0].conversation_id;
   }
   const { rows } = await pool.query<{
@@ -483,7 +512,9 @@ async function runFlowDrivenTurn(
     );
   }
   const complete = (_pool: pg.Pool, result: Parameters<NonNullable<FollowupTurnDeps['completeFollowupTurn']>>[1]) =>
-    withJobLease(pool, job.id, ctx.workerId, target.tenantId, (tx) => completeTurn(tx,result));
+    withJobLease(pool, job.id, ctx.workerId, target.tenantId, (tx) => completeTurn(tx, { ...result,
+      ...(typeof job.payload.enrollment_action_key === 'string' ? { occupationKey: job.payload.enrollment_action_key } : {}),
+      ...(typeof job.payload.node_epoch === 'number' ? { nodeEpoch: job.payload.node_epoch } : {}) }));
   const { enrollmentId, nodeId } = input;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
 
@@ -708,7 +739,8 @@ async function sendFixedOutbound(
 
   if (await isLeadInHandoff(pool, tenantId, leadId)) {
     runLog.info('envio fixo pulado — lead silenciado (handoff/opt-out)', { kind: job.kind });
-    return false;
+    await rescheduleJob(pool, job.id, ctx.workerId, { delayMs: 60_000, reason: 'human_in_control' });
+    throw new JobSettledError('follow-up pausado para atendimento humano');
   }
 
   const context = await getLeadContext(

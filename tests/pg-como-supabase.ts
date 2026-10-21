@@ -264,6 +264,7 @@ class InsercaoPg<T> implements PromiseLike<RespostaFalsa<null>> {
  */
 class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
   private filtros: Array<[string, unknown]> = [];
+  private alternativas: Array<[string, "is" | "lt", string]> = [];
   private colunasDeVolta: string | null = null;
 
   constructor(
@@ -274,6 +275,16 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
 
   eq(coluna: string, valor: unknown): this {
     this.filtros.push([coluna, valor]);
+    return this;
+  }
+
+  /** Subconjunto usado pela pausa atômica; operadores desconhecidos falham. */
+  or(expressao: string): this {
+    this.alternativas = expressao.split(",").map((termo) => {
+      const m = /^([a-z_]+)\.(is|lt)\.(.+)$/.exec(termo);
+      if (!m || (m[2] === "is" && m[3] !== "null")) return naoImplementado("update.or");
+      return [m[1]!, m[2] as "is" | "lt", m[3]!];
+    });
     return this;
   }
 
@@ -293,6 +304,11 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
       valores.push(v);
       return `"${c}" = $${valores.length}`;
     });
+    if (this.alternativas.length) onde.push("(" + this.alternativas.map(([c, op, v]) => {
+      if (op === "is") return `"${c}" is null`;
+      valores.push(v);
+      return `"${c}" < $${valores.length}`;
+    }).join(" or ") + ")");
     let texto = `update public."${this.tabela}" set ${sets.join(", ")}`;
     if (onde.length > 0) texto += ` where ${onde.join(" and ")}`;
     if (this.colunasDeVolta) texto += ` returning ${colunasSql(this.colunasDeVolta)}`;

@@ -3,7 +3,7 @@ import type { HandlerCtx } from '@/lib/api/handlers/types';
 import { ApiError } from '@/lib/api/types';
 import type { SendMessageInput as SinkInput } from '@/lib/schemas';
 import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
-import { OutboundApprovalRevokedError, OutboundAudioUnavailableError, OutboundLeaseLostError, OutboundSupersededError, type OutboundAttemptWrite } from '@/lib/channels/delivery-error';
+import { OutboundApprovalRevokedError, OutboundAudioUnavailableError, OutboundLeaseLostError, OutboundPreflightDeferredError, OutboundSupersededError, type OutboundAttemptWrite } from '@/lib/channels/delivery-error';
 import { z } from 'zod';
 import { assertAudioStillApproved } from '../../agent/approved-audios';
 import { assertConversationAudioAvailable, assertRawMediaNotPreviouslyManaged } from '../../agent/conversation-audios';
@@ -14,6 +14,8 @@ import type { SendMessageInput, SendOutcome } from './send-message';
 import { decideOutboundRecovery, type RecoveryMessage } from './outbound-recovery';
 import { guardObraFollowup } from '@/lib/obra-no-bolso/followup-guard';
 import { prepareAgentMedia } from './prepare-media';
+import { followupJobGate } from './followup-job-gate';
+import { currentAutomaticRecipient } from '@/lib/automation/current-recipient';
 
 export interface OutboundAttemptOptions {
   actor?: HandlerCtx['actor'];
@@ -200,6 +202,9 @@ export async function executeOutboundAttempt(
         if (!rows.length) throw new OutboundLeaseLostError();
       },
       beforeTransport: async () => {
+        const gate = await followupJobGate(db, org, job, contact, owner);
+        if (gate.retryAt) throw new OutboundPreflightDeferredError('followup_paused');
+        if (!gate.allowed) throw new ApiError(403, 'forbidden', undefined, job, 'followup_inactive');
         const obra = contact ? await guardObraFollowup(db, org, job, contact) : { allowed: true };
         if (!obra.allowed) throw new ApiError(403, 'forbidden', undefined, job, 'obra_followup_not_eligible');
         // Depois da assinatura do Storage/pré-voo e antes do CAS que abre a rede.
@@ -209,10 +214,24 @@ export async function executeOutboundAttempt(
         const { rows } = await db.query<{ id: string }>(
           `with owner as materialized (select id from job_queue where id=$1 and organization_id=$2
              and status='running' and locked_by=$3 for update),
+           eligible_flow as materialized (select e.id from followup_enrollments e join job_queue j
+             on e.id::text=j.payload->>'followup_enrollment_id' and e.organization_id=j.organization_id and e.contact_id=j.contact_id
+             where j.id=$1 and j.organization_id=$2 and exists(select 1 from owner)
+               and e.status in ('active','waiting_reply') and e.current_node_id=j.payload->>'node_id'
+               and (j.payload->>'node_epoch' is null or e.node_epoch=(j.payload->>'node_epoch')::integer)
+               and public.fn_followup_job_live($2,$1,j.contact_id) for update of e),
+           eligible_conversation as materialized (select v.id from conversations v join messages m
+             on m.conversation_id=v.id and m.organization_id=v.organization_id
+             join contacts c on c.id=v.contact_id and c.organization_id=v.organization_id
+             where m.id=$4 and v.organization_id=$2 and exists(select 1 from owner)
+               and not c.force_human and not c.is_blocked and not c.is_anonymized
+               and v.assignee_kind is distinct from 'user' and v.status not in ('closed','archived')
+               and (v.bot_silenced_until is null or v.bot_silenced_until<=now()) for update of v),
            eligible_contact as materialized (select c.id from contacts c join job_queue j
              on j.contact_id=c.id and j.organization_id=c.organization_id
              where j.id=$1 and j.organization_id=$2 and j.kind='followup_turn'
-               and exists(select 1 from owner) and public.fn_obra_followup_live($2,$1,c.id) for update of c)
+               and exists(select 1 from owner) and public.fn_obra_followup_live($2,$1,c.id)
+               and public.fn_followup_job_live($2,$1,c.id) for update of c)
            update messages set status='sending',
               metadata=jsonb_set(metadata,'{outbound_attempt,phase}','"started"'::jsonb)
                 || coalesce((select jsonb_build_object('automation_destination_phone',c.phone_number)
@@ -220,17 +239,31 @@ export async function executeOutboundAttempt(
                     and not c.is_anonymized), '{}'::jsonb)
            where id=$4 and organization_id=$2 and status='queued'
              and metadata->'outbound_attempt'->>'phase'='prepared'
+             and ($5::boolean or exists(select 1 from eligible_conversation))
+             and (not exists(select 1 from job_queue where id=$1 and organization_id=$2
+               and payload->>'followup_enrollment_id' is not null) or exists(select 1 from eligible_flow))
              and (not exists(select 1 from job_queue where id=$1 and organization_id=$2 and kind='followup_turn')
                or exists(select 1 from eligible_contact))
-             and exists(select 1 from owner) returning id`, [job, org, owner, messageId],
+             and exists(select 1 from owner) returning id`, [job, org, owner, messageId, options.actor?.type === 'user'],
         );
-        if (!rows.length) throw new OutboundLeaseLostError();
+        if (!rows.length) {
+          const owned = await db.query('select id from job_queue where id=$1 and organization_id=$2 and status=\'running\' and locked_by=$3',
+            [job, org, owner]);
+          if (owned.rows.length) {
+            if (contact) await currentAutomaticRecipient(cfg.supabase, org, contact);
+            const current = await followupJobGate(db, org, job, contact, owner);
+            if (!current.allowed && !current.retryAt)
+              throw new ApiError(403, 'forbidden', undefined, job, 'followup_inactive');
+            throw new OutboundPreflightDeferredError('automation_command_changed');
+          }
+          throw new OutboundLeaseLostError();
+        }
       },
     });
   } catch (error) {
     if (error instanceof OutboundLeaseLostError) throw error;
     if (error instanceof OutboundSupersededError || error instanceof OutboundAudioUnavailableError) {
-      const reason = error instanceof OutboundAudioUnavailableError ? error.message : 'inbound_superseded';
+      const reason = error.message;
       const message = await readMessage();
       const phase = (message?.metadata?.outbound_attempt as { phase?: string } | undefined)?.phase;
       // Também encerra a linha de um retry que foi dispensado no beforePersist.
@@ -243,7 +276,13 @@ export async function executeOutboundAttempt(
       throw error; // O turno conserva sua lane até terminar o laço de tools.
     }
     if (error instanceof ApiError && error.status === 403) {
-      await saveLedger('vetoed', previous?.id ?? null, 'contact_blocked');
+      const message = await readMessage();
+      if (message?.metadata?.outbound_attempt &&
+          (message.metadata.outbound_attempt as { phase?: string }).phase === 'prepared') {
+        await writeAttemptState(message.id, { expectedPhase: 'prepared', phase: 'rejected', retryable: false,
+          patch: { status: 'failed', error_code: 'automatic_send_blocked' } });
+      }
+      await saveLedger('vetoed', message?.id ?? null, 'automatic_send_blocked');
       return { kind: 'blocked', idempotencyKey: key };
     }
     // Se a rede pode ter começado, settle fecha a tentativa como incerta. Antes

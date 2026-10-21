@@ -292,7 +292,7 @@ export const ROTULO_DO_MOTIVO: Record<MotivoDoSilencio, string> = {
   atendente_no_comando: "Automático pausado — alguém assumiu",
   contato_travado: "Automático pausado para este cliente",
   pausado: "Automático pausado",
-  resposta_humana_recente: "Automático volta em instantes",
+  resposta_humana_recente: "Automático pausado após resposta humana",
   contato_descadastrado: "Cliente pediu para não receber mensagens",
 };
 

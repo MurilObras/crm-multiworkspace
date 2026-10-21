@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { discardPreparedOutbound } from '@/lib/agent-engine/edge/crm/discard-superseded-outbound';
 import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { getRequestPool } from '@/lib/agent-engine/db/request-pool';
@@ -73,7 +74,13 @@ export async function enviarTextoFixoPendente(
         .eq("contact_id", contactId)
         .maybeSingle();
       if (enrollmentError) throw new Error('followup_enrollment_lookup_failed');
-      if (!enr || enr.current_node_id !== nodeId || ["cancelled", "completed", "paused_handoff"].includes(enr.status)) {
+      if (enr && ['paused_manual', 'paused_handoff'].includes(enr.status)) {
+        await rescheduleJob(pool, job.id, workerId, { delayMs: 60_000, reason: 'followup_paused' });
+        continue;
+      }
+      if (!enr || enr.current_node_id !== nodeId || !["active", "waiting_reply"].includes(enr.status)) {
+        await discardPreparedOutbound(pool, { organizationId: job.organization_id, contactId,
+          conversationId: '', jobId: job.id, workerId }, { code: 'followup_inactive' });
         await completeJob(pool, job.id, workerId);
         continue;
       }
@@ -105,6 +112,8 @@ export async function enviarTextoFixoPendente(
           ttlMs: ttlDaAutorizacaoMs(process.env),
         });
         if (elegib !== null && !elegib.permite) {
+          if (['conversa_silenciada', 'conversa_de_humano', 'force_human'].includes(elegib.motivo))
+            throw new Error('followup_paused');
           logger.info("[followup] texto fixo não enviado — conversa não elegível para IA", {
             organization_id: job.organization_id,
             conversation_id: conversationId,
@@ -141,14 +150,16 @@ export async function enviarTextoFixoPendente(
       }
       enviados++;
       await completeJob(pool, job.id, workerId, async (tx) => {
-        await completeTurnForEnrollment(createPgAdminClient(tx), job.organization_id, enrollmentId, nodeId, { kind: 'sent' });
+        await completeTurnForEnrollment(createPgAdminClient(tx), job.organization_id, enrollmentId, nodeId, { kind: 'sent' }, undefined,
+          { key: payload.enrollment_action_key, nodeEpoch: payload.node_epoch });
       });
     } catch (err) {
       if (err instanceof OutboundLeaseLostError) continue;
       const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
       const terminal = /^(messaging_window_closed|followup_template_(not_found|not_approved|missing_values))/.test(message);
       logger.warn("[dev.pipeline] envio inline falhou", { error: message });
-      if (message === 'followup_not_eligible' || terminal) await cancelJob(pool, job.id, workerId, message);
+      if (message === 'followup_paused') await rescheduleJob(pool, job.id, workerId, { delayMs: 60_000, reason: message });
+      else if (message === 'followup_not_eligible' || terminal) await cancelJob(pool, job.id, workerId, message);
       else await failJob(pool, job.id, workerId, message);
     }
   }

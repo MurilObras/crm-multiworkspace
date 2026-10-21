@@ -77,6 +77,20 @@ export async function outboundPostgres() {
     if (!definition) throw new Error(`Guarda SQL ausente na migration: ${name}`);
     await sql.exec(definition);
   }
+  // Contratos novos são executados, sem dublê do resultado das guardas.
+  await sql.exec(`
+    create role anon; create role authenticated; create role service_role;
+    alter table contacts add column tags text[] default '{}';
+    alter table conversations add column assignee_kind text,add column last_handoff_at timestamptz,add column last_handoff_reason text;
+    alter table followup_enrollments add column outcome text,add column cancel_reason text,
+      add column completed_at timestamptz,add column timing_plan jsonb,add column agent_id uuid;
+    alter table followup_enrollment_events add column id uuid default gen_random_uuid(),add column created_at timestamptz default now();
+    create table followup_flow_pointers(id uuid primary key,organization_id uuid,status text default 'active',
+      active_version_id uuid,trigger_config jsonb default '{"kind":"manual"}');
+    create unique index message_external on messages(organization_id,external_id);
+  `);
+  for (const file of ['20261021160000_0234_followup_human_control.sql','20261021160100_0235_waha_echo_identity.sql'])
+    await sql.exec(readFileSync(`supabase/migrations/${file}`, 'utf8'));
   let tail = Promise.resolve();
   async function lock() { let release!: () => void; const next = new Promise<void>((r) => { release = r; }); const old = tail; tail = next; await old; return release; }
   const query = async (text: string, values: unknown[] = []) => {
@@ -129,12 +143,14 @@ export async function outboundPostgres() {
   }, rpc: async (name: string) => ({data:name==='fn_automation_message_live'?true:name==='fn_automation_message_preview'?false:null,error:null}) } as unknown as SupabaseClient;
 
   async function seed() {
-    await sql.exec('truncate send_ledger,messages,job_queue,channel_sessions,contacts,conversations,followup_enrollments,agent_inbox_items,followup_flow_versions,followup_enrollment_events,obra_access_integrations,obra_subscription_states,obra_subscription_outreach,crm_leads,crm_pipelines,crm_stages,event_log,automation_rules cascade');
-    await pool.query('insert into job_queue(id,organization_id,contact_id,payload) values ($1,$2,$3,$4)',[JOB,ORG,CONTACT,JSON.stringify({fixed_body:'Oi',followup_enrollment_id:ENROLLMENT,node_id:'node'})]);
+    await sql.exec('truncate send_ledger,messages,job_queue,channel_sessions,contacts,conversations,followup_enrollments,agent_inbox_items,followup_flow_versions,followup_flow_pointers,followup_enrollment_events,obra_access_integrations,obra_subscription_states,obra_subscription_outreach,crm_leads,crm_pipelines,crm_stages,event_log,automation_rules cascade');
+    await pool.query('insert into job_queue(id,organization_id,contact_id,payload) values ($1,$2,$3,$4)',[JOB,ORG,CONTACT,JSON.stringify({fixed_body:'Oi',followup_enrollment_id:ENROLLMENT,node_id:'node',node_epoch:0})]);
     await pool.query('insert into contacts(id,organization_id,phone_number) values ($1,$2,$3)',[CONTACT,ORG,'+5511000000000']);
     await pool.query('insert into channel_sessions(id,organization_id) values ($1,$2)',[SESSION,ORG]);
     await pool.query('insert into conversations(id,organization_id,contact_id,channel_session_id) values ($1,$2,$3,$4)',[CONV,ORG,CONTACT,SESSION]);
-    await pool.query('insert into followup_enrollments(id,organization_id,contact_id,conversation_id,current_node_id,version_id) values ($1,$2,$3,$4,$5,$6)',[ENROLLMENT,ORG,CONTACT,CONV,'node',VERSION]);
+    const pointer = '10000000-0000-4000-8000-000000000009';
+    await pool.query('insert into followup_flow_pointers(id,organization_id,active_version_id) values($1,$2,$3)', [pointer,ORG,VERSION]);
+    await pool.query('insert into followup_enrollments(id,organization_id,contact_id,conversation_id,current_node_id,version_id,pointer_id) values ($1,$2,$3,$4,$5,$6,$7)',[ENROLLMENT,ORG,CONTACT,CONV,'node',VERSION,pointer]);
     await pool.query('insert into followup_flow_versions(id,organization_id,graph) values($1,$2,$3)',[VERSION,ORG,JSON.stringify({nodes:[
       {id:'node',type:'action',label:'Envio',position:{x:0,y:0},config:{mode:'text',body:'Oi'}},
       {id:'end',type:'end',label:'Fim',position:{x:0,y:0},config:{outcome:'exhausted'}},

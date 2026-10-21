@@ -849,7 +849,7 @@ async function handleOutboundFromUserPhone(
       conversation_id: conversationId,
       channel_session_id: session.id,
       contact_id: contactId,
-      external_id: p.id,
+      external_id: bare,
       type: resolveMessageType(p),
       direction: "outbound",
       status: "sent",
@@ -906,7 +906,18 @@ async function handleOutboundFromUserPhone(
   //   silenciar o bot -> ESTRITO    (na dúvida NÃO cala; calar a IA por engano é
   //                                  pior que não calar)
   // Quem reaproveitar esta condição para pular o INSERT reabre o #108.
-  if (!(await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p))) {
+  const emVoo = await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p);
+  // A confirmação pode ter ocorrido DEPOIS do dedup inicial e ANTES da busca
+  // de em-voo. Ler o ID depois dessa busca fecha a troca NULL → ID sem confundir
+  // digitação humana com texto parecido. A migração arquiva o eco pelo ID exato.
+  const { data: confirmado, error: confirmError } = await admin.from("messages").select("id")
+    .eq("organization_id", session.organization_id).eq("conversation_id", conversationId)
+    .eq("channel_session_id", session.id).eq("direction", "outbound")
+    .in("sent_via", ["ai", "user"]).in("external_id", idCandidates).limit(1).maybeSingle();
+  if (confirmError) logger.warn("waha.echo: confirmação indisponível; preservando proteção do atendente", {
+    organization_id: session.organization_id, conversation_id: conversationId,
+  });
+  if (!emVoo && !confirmado) {
     await pausarIaPorAtendimentoManual(admin, {
       organizationId: session.organization_id,
       conversationId,

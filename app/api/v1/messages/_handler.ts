@@ -36,84 +36,9 @@ import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-se
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
 import { currentAutomaticRecipient } from "@/lib/automation/current-recipient";
+import { decidirElegibilidade, normalizarInstante } from "@/lib/ai/elegibilidade/gate";
 
 type SB = SupabaseClient;
-
-/**
- * Remove a linha que o WEBHOOK criou para a mensagem que ESTE envio acabou de
- * mandar — o "eco do próprio envio".
- *
- * A janela: a linha do envio nasce antes de falar com o canal (`queued`,
- * `external_id` NULL) e só recebe o id depois que o adapter volta. Todo envio
- * retorna pelo webhook como `fromMe=true`; o eco que chega nesse intervalo não
- * acha nada para casar e vira uma segunda linha com a mesma frase.
- *
- * POR QUE AQUI E NÃO NO WEBHOOK. Lá, a única coisa disponível para casar seria a
- * própria linha `queued` — e ela não carrega nada que a identifique como sendo
- * daquela mensagem. Casar por ela é casar por "existe um envio em voo nesta
- * conversa", o que vale para o eco e também para uma mensagem legítima que o
- * atendente digitou no celular enquanto o envio estava em voo: medido, esperado
- * 2 mensagens e obtido 1, com a do celular descartada. Seria o defeito do #108
- * de volta — e permanente, porque nada tira uma linha de `queued`.
- *
- * ATUALIZAÇÃO (issue #129): o cron `recover-stuck-messages` passou a existir
- * (`app/api/v1/cron/recover-stuck-messages/route.ts`), mas ele cobre `sending`,
- * não `queued` — e a diferença é deliberada. `queued` é estado de espera com
- * DONO: o agent-engine reagenda o job (`SEND_QUEUED_RETRY_MS`, 5 min por
- * padrão) enquanto a sessão do canal não está WORKING, e o watchdog redirige.
- * Um cron marcando `queued` como falha depois de 5 min brigaria com essa
- * retentativa e perderia mensagem que ia sair. `sending` não tem dono nenhum —
- * é ali que a linha morre em silêncio.
- *
- * Aqui não há ambiguidade: o canal acabou de devolver o id EXATO da mensagem que
- * mandamos. Casa por id, nunca por proximidade.
- *
- * QUAIS formas o mesmo id pode ter é conhecimento do CANAL, não de quem envia —
- * então os candidatos chegam prontos, de `adapter.echoExternalIds`. Um canal
- * simétrico não implementa o método e o chamador cai no próprio `externalId`.
- *
- * O escopo é deliberadamente estreito — mesma conversa e só o que nasceu de
- * `external_device`. O bare pode colidir entre mensagens diferentes (garantia do
- * WhatsApp, não nossa); restringir mantém o estrago de uma colisão dentro do
- * único lugar onde ela seria de fato a nossa mensagem, e impede de apagar linha
- * do próprio CRM.
- */
-async function removerEcoDoProprioEnvio(
-  supabase: SB,
-  organizationId: string,
-  conversationId: string,
-  minhaLinhaId: string,
-  externalId: string | null,
-  candidatos: string[],
-): Promise<void> {
-  if (!externalId || candidatos.length === 0) return;
-
-  // BLINDADO DE PROPÓSITO. Esta chamada roda dentro do `try` do envio, e a
-  // mensagem JÁ SAIU quando chegamos aqui: deixar uma exceção subir faria o
-  // `catch` de baixo marcar como `failed` uma mensagem que o cliente recebeu —
-  // trocar uma duplicata visível por um status mentiroso. O pior caso aceitável
-  // é não conseguir remover, que é exatamente o mundo de antes desta função.
-  try {
-    const { error } = await supabase
-      .from("messages")
-      .delete()
-      .eq("organization_id", organizationId)
-      .eq("conversation_id", conversationId)
-      .eq("sent_via", "external_device")
-      .in("external_id", candidatos)
-      // ⚠️ SEGUNDA CAMADA, SEM COBERTURA POSSÍVEL — escrito porque medi: trocar
-      // este `neq` por um que nunca casa deixa a suíte VERDE. O filtro de
-      // `sent_via` acima já exclui a linha deste envio (que nasce `user`/`ai`,
-      // nunca `external_device`), então nenhum teste alcança esta cláusula.
-      // Fica porque o desfecho que ela impede é o pior que esta função poderia
-      // produzir: apagar a própria mensagem que acabou de ser entregue. Quem
-      // mexer no filtro de cima não vai ser avisado por teste nenhum.
-      .neq("id", minhaLinhaId);
-    if (error) console.error("[messages.send] não consegui remover o eco do próprio envio", error.message);
-  } catch (err) {
-    console.error("[messages.send] a remoção do eco lançou", err instanceof Error ? err.message : err);
-  }
-}
 
 const MSG_COLS =
   "id, organization_id, conversation_id, channel_session_id, contact_id, external_id, type, direction, status, ack, error_code, error_message, body, media_url, media_mime, media_size_bytes, media_storage_path, sent_via, sent_by_user_id, sent_at, delivered_at, read_at, metadata, edited_at, revoked_at, reply_to_message_id, created_at";
@@ -662,7 +587,7 @@ export async function sendMessageHandler(
           throw new ApiError(403, "forbidden", undefined, ctx.requestId, "recipient_changed");
         }
         const { data: latest, error: latestError } = await supabase.from("conversations")
-          .select("contact_id, channel_session_id, last_inbound_at")
+          .select("contact_id, channel_session_id, last_inbound_at, bot_silenced_until, assignee_kind, status")
           .eq("id",c.id).eq("organization_id",ctx.organization_id).maybeSingle();
         const { data: channel, error: channelError } = await supabase.from("channel_sessions")
           .select("status, archived_at").eq("id",c.channel_session_id)
@@ -670,6 +595,14 @@ export async function sendMessageHandler(
         if (latestError || channelError || !latest || latest.contact_id !== current.id ||
             latest.channel_session_id !== c.channel_session_id || !channel || channel.archived_at || channel.status !== "WORKING") {
           throw new ApiError(403,"forbidden",undefined,ctx.requestId,"channel_unavailable");
+        }
+        const command = decidirElegibilidade({ modo: "open", forceHuman: current.force_human === true,
+          botSilencedUntil: normalizarInstante(latest.bot_silenced_until),
+          assigneeKind: latest.assignee_kind, aiAuthorizedAt: null, agora: new Date(), ttlMs: 0 });
+        if (!command.permite || ["closed", "archived"].includes(latest.status)) {
+          if (options?.messageId && !["closed", "archived"].includes(latest.status))
+            throw new OutboundPreflightDeferredError("human_in_control");
+          throw new ApiError(403, "forbidden", undefined, ctx.requestId, "human_in_control");
         }
         if (input.type !== "template" && !capabilitiesOf(provider).freeformOutsideWindow &&
             !isWindowOpen(new Date(),latest.last_inbound_at ? new Date(latest.last_inbound_at) : null)) {
@@ -817,14 +750,6 @@ export async function sendMessageHandler(
           replyToExternalId: citada?.external_id ?? null,
         }));
       }
-      await removerEcoDoProprioEnvio(
-        supabase,
-        ctx.organization_id,
-        c.id,
-        message.id,
-        externalId,
-        externalId ? (adapter.echoExternalIds?.({ externalId, recipient: chatId }) ?? [externalId]) : [],
-      );
       const { data: updated } = await writeState({
           status: "sent",
           external_id: externalId,
@@ -886,7 +811,8 @@ export async function sendMessageHandler(
         return message;
       }
 
-      const phase = !transportStarted || (err instanceof DeliveryRejectedError && err.beforeTransport)
+      const vetoed = !transportStarted && ctx.actor.type !== "user" && err instanceof ApiError && err.status === 403;
+      const phase = vetoed ? 'rejected' : !transportStarted || (err instanceof DeliveryRejectedError && err.beforeTransport)
         ? 'prepared' : err instanceof DeliveryRejectedError ? 'rejected' : 'uncertain';
       const { data: updated } = await writeState({
           status: "failed",
@@ -897,7 +823,7 @@ export async function sendMessageHandler(
             phase,
             ...(err instanceof DeliveryRejectedError ? { retryable: err.retryable } : {}),
           } } } : {}),
-        }, transportStarted ? 'started' : 'prepared', phase, err instanceof DeliveryRejectedError ? err.retryable : undefined);
+        }, transportStarted ? 'started' : 'prepared', phase, vetoed ? false : err instanceof DeliveryRejectedError ? err.retryable : undefined);
       if (updated) message = updated as unknown as Message;
     }
   }

@@ -236,18 +236,18 @@ describe("o espelho entre a tela e o motor", () => {
    */
   const RAIZ = join(__dirname, "..", "..");
 
-  it("o gate do motor moderno segue lendo exatamente force_human + bot_silenced_until", () => {
+  it("o gate do motor moderno espelha force_human, bot_silenced_until e atribuição humana", () => {
     const fonte = readFileSync(
       join(RAIZ, "lib/agent-engine/agent/human-handoff.ts"),
       "utf8",
     );
     const corpo = fonte.slice(fonte.indexOf("export async function isLeadInHandoff"));
     const sql = corpo.slice(corpo.indexOf("`"), corpo.indexOf("[tenantId, leadId]"));
-    const colunas = ["force_human", "bot_silenced_until"];
+    const colunas = ["force_human", "bot_silenced_until", "assignee_kind"];
     for (const c of colunas) expect(sql).toContain(c);
     // O controle: nenhuma OUTRA coluna de conversa entrou no gate sem que este
     // arquivo aprendesse a explicá-la.
-    for (const naoEsperada of ["assignee_kind", "assigned_to_user_id", "last_handoff_at"]) {
+    for (const naoEsperada of ["assigned_to_user_id", "last_handoff_at"]) {
       expect(sql).not.toContain(naoEsperada);
     }
   });

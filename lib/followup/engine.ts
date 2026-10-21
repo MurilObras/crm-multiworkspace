@@ -65,6 +65,9 @@ export interface FollowupJobRequest {
     followup_enrollment_id: string;
     node_id: string;
     purpose: "send_message" | "classify" | "plan_timing";
+    /** Identifica a ocupação do nó; rechecks não criam nova intenção de envio. */
+    enrollment_action_key?: string;
+    node_epoch?: number;
     /** action (mode 'ai_message') — Task 5.1: repassado ao turno pra virar o bloco de orientação. */
     prompt_hint?: string;
     /** action (mode 'text') — corpo pronto; o turno envia sem chamar o modelo. */
@@ -113,7 +116,8 @@ export interface AdminClient {
     payload: Record<string, unknown>;
     idempotency_key: string;
   }): Promise<{ inserted: boolean }>;
-  updateEnrollment(id: string, orgId: string, patch: EnrollmentPatch): Promise<void>;
+  updateEnrollment(id: string, orgId: string, patch: EnrollmentPatch,
+    expected?: Pick<EnrollmentRow, "status" | "current_node_id" | "steps_taken" | "updated_at">): Promise<void>;
   loadFlowPointerName(orgId: string, pointerId: string): Promise<string | null>;
   insertDeadInboxItem(item: { organization_id: string; title: string; body: string; ref_id: string }): Promise<void>;
   persistirRespostaFollowup(input: {
@@ -282,7 +286,7 @@ async function markDead(
     claimed_until: null,
     completed_at: clock().toISOString(),
     updated_at: clock().toISOString(),
-  });
+  }, enrollment);
 }
 
 async function applyHandlerFailure(
@@ -308,7 +312,7 @@ async function applyHandlerFailure(
     next_eval_at: new Date(clock().getTime() + backoffMs).toISOString(),
     claimed_until: null,
     updated_at: clock().toISOString(),
-  });
+  }, enrollment);
 }
 
 function tallyOutcome(result: NodeResult, summary: TickSummary): void {
@@ -375,7 +379,7 @@ async function applyResult(
           steps_taken: enrollment.steps_taken + 1,
           claimed_until: null,
           updated_at: clock().toISOString(),
-        });
+        }, enrollment);
         tallyOutcome(result, summary);
       }
       return;
@@ -424,6 +428,8 @@ async function applyResult(
             followup_enrollment_id: enrollment.id,
             node_id: node.id,
             purpose: result.purpose,
+            enrollment_action_key: idemKey,
+            ...(enrollment.node_epoch !== undefined ? { node_epoch: enrollment.node_epoch } : {}),
             ...turnPayloadExtras(node, smartWaits, events),
             ...(result.fixed_body ? { fixed_body: result.fixed_body } : {}),
           },
@@ -441,7 +447,7 @@ async function applyResult(
       break;
   }
 
-  await db.updateEnrollment(enrollment.id, enrollment.organization_id, patch);
+  await db.updateEnrollment(enrollment.id, enrollment.organization_id, patch, enrollment);
 
   if (
     result.kind === "advance" &&
@@ -500,6 +506,7 @@ async function processEnrollment(
 ): Promise<void> {
   const { db, clock } = deps;
 
+  if (enrollment.status !== "active" && enrollment.status !== "waiting_reply") return;
   if (enrollment.steps_taken > MAX_STEPS) {
     await markDead(db, clock, enrollment, "max_steps");
     summary.dead++;
@@ -767,8 +774,11 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       }
       return { inserted: true };
     },
-    async updateEnrollment(id, orgId, patch) {
-      const { error } = await admin.from("followup_enrollments").update(patch).eq("id", id).eq("organization_id", orgId);
+    async updateEnrollment(id, orgId, patch, expected) {
+      let query = admin.from("followup_enrollments").update(patch).eq("id", id).eq("organization_id", orgId);
+      if (expected) query = query.eq("status", expected.status).eq("current_node_id", expected.current_node_id)
+        .eq("steps_taken", expected.steps_taken).eq("updated_at", expected.updated_at);
+      const { error } = await query;
       if (error) throw new Error(error.message);
     },
     async loadFlowPointerName(orgId, pointerId) {

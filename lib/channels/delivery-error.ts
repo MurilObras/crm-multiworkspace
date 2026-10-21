@@ -27,8 +27,8 @@ export class DeliveryRejectedError extends Error {
 
 /** Resposta superada antes da rede: descarte terminal, nunca autorização de retry. */
 export class OutboundSupersededError extends DeliveryRejectedError {
-  constructor() {
-    super('inbound_superseded', false, true);
+  constructor(reason: 'inbound_superseded' | 'human_in_control' | 'followup_inactive' = 'inbound_superseded') {
+    super(reason, false, true);
     this.name = 'OutboundSupersededError';
   }
 }

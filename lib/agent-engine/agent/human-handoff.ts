@@ -92,7 +92,7 @@ export async function isLeadInHandoff(db: pg.Pool, tenantId: string, leadId: str
        or exists (
          select 1 from conversations v
          where v.organization_id = $1 and v.contact_id = c.id
-           and v.bot_silenced_until is not null and v.bot_silenced_until > now()
+           and (v.assignee_kind='user' or (v.bot_silenced_until is not null and v.bot_silenced_until > now()))
        )
      ) as handoff
      from contacts c
