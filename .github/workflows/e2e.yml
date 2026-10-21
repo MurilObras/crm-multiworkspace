@@ -883,6 +883,7 @@ jobs:
             .superpowers/evidence/video-test-executions/*.png
             .superpowers/evidence/ia-360-w3/06-pausa-temporaria-com-prazo.png
             .superpowers/evidence/ia-360-w3/07-handoff-sem-retorno-automatico.png
+            evidence/followup-dossie/*.png
           if-no-files-found: ignore
           retention-days: 7
 

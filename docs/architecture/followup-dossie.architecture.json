@@ -220,6 +220,14 @@
       "type": "database",
       "label": "tr_cancel_followup_on_reply",
       "sublabel": "resposta persistida cancela sem esperar drain"
+    },
+    {
+      "id": "silence_resume",
+      "lane": "dados",
+      "col": 6,
+      "type": "database",
+      "label": "fn_enroll_silence_episode",
+      "sublabel": "novo silêncio continua a mesma etapa; orçamento e prazos preservados"
     }
   ],
   "edges": [
@@ -444,6 +452,24 @@
       "from": "reply_cancel",
       "to": "eventos",
       "label": "cancelamento explicado no dossiê"
+    },
+    {
+      "id": "e38",
+      "from": "enrollments",
+      "to": "silence_resume",
+      "label": "só interrupção por resposta; sem pausa ou outro fluxo vivo"
+    },
+    {
+      "id": "e39",
+      "from": "silence_resume",
+      "to": "eventos",
+      "label": "silence_resumed explica a continuação e o prazo"
+    },
+    {
+      "id": "e40",
+      "from": "silence_resume",
+      "to": "transport_gate",
+      "label": "nova ocupação invalida jobs antigos; prova confirmada permanece"
     }
   ],
   "cards": [

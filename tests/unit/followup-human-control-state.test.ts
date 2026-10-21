@@ -7,6 +7,7 @@ import { pgComoSupabase } from "@/tests/pg-como-supabase";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
 import { createSupabaseSilenceSweepDb } from "@/lib/followup/silence-sweep";
+import { runFollowupTick, type FollowupJobRequest } from "@/lib/followup/engine";
 import { followupJobGate } from "@/lib/agent-engine/edge/crm/followup-job-gate";
 
 const ORG = "10000000-0000-4000-8000-000000000001";
@@ -56,17 +57,19 @@ beforeAll(async () => {
     create unique index event_key on followup_enrollment_events(enrollment_id,idempotency_key) where idempotency_key is not null;
     create table job_queue(id uuid primary key,organization_id uuid,contact_id uuid,kind text,payload jsonb,status text default 'running',locked_by text default 'owner',
       created_at timestamptz default now()-interval '1 hour');
+    create table send_ledger(id uuid primary key default gen_random_uuid(),organization_id uuid,contact_id uuid,job_id uuid,
+      status text default 'requested');
     create table messages(id uuid primary key default gen_random_uuid(),organization_id uuid,conversation_id uuid,
       channel_session_id uuid,contact_id uuid,type text default 'text',direction text,status text default 'sent',
       external_id text,sent_via text,metadata jsonb default '{}',body text,sent_at timestamptz default now(),
       created_at timestamptz default now(),unique(organization_id,external_id));
   `);
-  for (const file of ["20261021160000_0234_followup_human_control.sql", "20261021160100_0235_waha_echo_identity.sql"])
+  for (const file of ["20261021160000_0234_followup_human_control.sql", "20261021160100_0235_waha_echo_identity.sql", "20261021200000_0236_followup_silence_resume.sql"])
     await sql.exec(readFileSync(`supabase/migrations/${file}`, "utf8"));
 }, 30_000);
 afterAll(() => sql.close());
 beforeEach(async () => {
-  await sql.exec("truncate contacts,channel_sessions,conversations,followup_flow_versions,followup_flow_pointers,followup_enrollments,followup_enrollment_events,job_queue,messages");
+  await sql.exec("truncate contacts,channel_sessions,conversations,followup_flow_versions,followup_flow_pointers,followup_enrollments,followup_enrollment_events,job_queue,messages,send_ledger");
   await sql.query("insert into contacts(id,organization_id) values($1,$2)", [CONTACT, ORG]);
   await sql.query("insert into channel_sessions values($1,$2,'waha')", [SESSION, ORG]);
   await sql.query("insert into conversations(id,organization_id,contact_id,last_inbound_at) values($1,$2,$3,now()-interval '3 hours')", [CONV, ORG, CONTACT]);
@@ -229,11 +232,255 @@ describe("rearmamento por novo episódio silencioso", () => {
     await sql.exec("update followup_enrollments set status='completed',completed_at=now()-interval '1 hour'");
     expect(await createSupabaseSilenceSweepDb(admin).insertEnrollment(input)).toEqual({ inserted: false });
   });
-  it("novo inbound posterior ao encerramento permite um novo ciclo, uma vez", async () => {
-    await sql.exec("update followup_enrollments set status='completed',completed_at=now()-interval '5 hours'");
+  it("uma sequência esgotada não ganha outro orçamento só porque voltou a conversar", async () => {
+    await sql.exec("update followup_enrollments set status='completed',outcome='exhausted',completed_at=now()-interval '5 hours'");
+    expect(await createSupabaseSilenceSweepDb(admin).insertEnrollment(input)).toEqual({ inserted: false });
+  });
+  it("primeira entrada segue automática e única", async () => {
+    await sql.exec("delete from followup_enrollments");
     expect(await createSupabaseSilenceSweepDb(admin).insertEnrollment(input)).toEqual({ inserted: true });
     expect(await createSupabaseSilenceSweepDb(admin).insertEnrollment(input)).toEqual({ inserted: false });
   });
+  async function reply(hours = 3) {
+    const at = new Date(Date.now() - hours * 3_600_000).toISOString();
+    await message("inbound", { sent_at: at });
+    await sql.query("update conversations set last_inbound_at=$1", [at]);
+    await sql.exec("update job_queue set status='done'");
+    return at;
+  }
+  const resume = () => createSupabaseSilenceSweepDb(admin).insertEnrollment(input);
+  it("a própria resposta que interrompeu libera continuação, sem outra mensagem/etiqueta", async () => {
+    const at = await reply();
+    expect((await enrollment()).status).toBe("cancelled");
+    expect(await resume()).toEqual({ inserted: true });
+    const row = await enrollment();
+    expect(row).toMatchObject({ id: ENROLLMENT, status: "active", current_node_id: "action", steps_taken: 0, node_epoch: 1 });
+    expect((await sql.query<{ at: Date }>("select silence_anchor_at as at from followup_enrollments")).rows[0]!.at.toISOString()).toBe(at);
+    expect(await resume()).toEqual({ inserted: false });
+    expect((await sql.query("select * from followup_enrollments")).rows).toHaveLength(1);
+  });
+  it("duas horas contam da resposta mais recente, não da primeira nem do encerramento", async () => {
+    await reply();
+    await reply(1);
+    expect(await resume()).toEqual({ inserted: false });
+  });
+  it("carimbo atrasado da conversa não antecipa a retomada depois de mensagem recente", async () => {
+    await reply();
+    await message('inbound',{sent_at:new Date(Date.now()-3_600_000).toISOString()});
+    expect(await resume()).toEqual({inserted:false});
+  });
+  it("depois da primeira mensagem, responde e continua na segunda sem recomeçar a sequência", async () => {
+    const sequence = { nodes:[...graph.nodes,
+      { id:'wait-nine',type:'wait',label:'Próximo intervalo',position:{x:0,y:50},config:{mode:'fixed',duration_ms:9*3_600_000} },
+      { id:'second',type:'action',label:'Segundo retorno',position:{x:0,y:70},config:{mode:'text',body:'Segundo retorno'} },
+    ],edges:[
+      { id:'first-wait',source:'action',target:'wait-nine',priority:0,condition:{type:'always'} },
+      { id:'wait-second',source:'wait-nine',target:'second',priority:0,condition:{type:'always'} },
+      { id:'second-end',source:'second',target:'end',priority:0,condition:{type:'always'} },
+    ] };
+    await sql.query('update followup_flow_versions set graph=$1',[JSON.stringify(sequence)]);
+    const sixHoursAgo = ()=>new Date(Date.now()-6*3_600_000);
+    await completeTurnForEnrollment(db,ORG,ENROLLMENT,'action',{kind:'sent'},sixHoursAgo);
+    const jobs:FollowupJobRequest[]=[];
+    const dependencies = { db:{ ...db,loadLeadFacts:async()=>({lead_stage:null,tags:[]}) },
+      clock:()=>new Date(Date.now()-1000),enqueueJob:async(job:FollowupJobRequest)=>{jobs.push(job);} };
+    await runFollowupTick({...dependencies,clock:sixHoursAgo});
+    const due = (await sql.query<{ due:Date }>('select next_eval_at as due from followup_enrollments')).rows[0]!.due;
+    await reply();
+    expect(await resume()).toEqual({inserted:true});
+    expect(await enrollment()).toMatchObject({id:ENROLLMENT,current_node_id:'wait-nine',steps_taken:2});
+    expect((await sql.query<{due:Date}>('select next_eval_at as due from followup_enrollments')).rows[0]!.due.toISOString()).toBe(due.toISOString());
+    await runFollowupTick(dependencies);
+    expect(jobs).toHaveLength(0);
+    await sql.exec("update followup_enrollments set next_eval_at=now()-interval '1 minute'");
+    await runFollowupTick(dependencies);
+    await runFollowupTick(dependencies);
+    expect(jobs.map(job=>job.payload.node_id)).toEqual(['second']);
+    expect((await sql.query("select * from followup_enrollment_events where node_id='action' and event_type='action_sent'")).rows).toHaveLength(1);
+  });
+  it("conserva etapa, versão, histórico, contadores e um intervalo maior já previsto", async () => {
+    const due = new Date(Date.now() + 7 * 3_600_000).toISOString();
+    await sql.query("update followup_enrollments set steps_taken=17,attempts=2,next_eval_at=$1", [due]);
+    await reply();
+    expect(await resume()).toEqual({ inserted: true });
+    expect(await enrollment()).toMatchObject({ steps_taken: 17, attempts: 2, version_id: VERSION });
+    expect((await sql.query<{ due: Date }>("select next_eval_at as due from followup_enrollments")).rows[0]!.due.toISOString()).toBe(due);
+    expect((await sql.query("select * from followup_enrollment_events")).rows).toHaveLength(2);
+  });
+  it("inscrição antiga recupera o prazo maior da timeline sem adiantar a mensagem", async () => {
+    await reply();
+    const due = new Date(Date.now()+8*3_600_000).toISOString();
+    await sql.exec("update followup_enrollment_events set payload='{}',created_at=now()-interval '1 hour'; update followup_enrollments set completed_at=now()");
+    await sql.query(`insert into followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,created_at)
+      values($1,$2,'action','resumed_manual',$3,now()-interval '2 hours')`, [ORG,ENROLLMENT,JSON.stringify({ next_eval_at:due })]);
+    expect(await resume()).toEqual({ inserted:true });
+    expect((await sql.query<{ due:Date }>("select next_eval_at as due from followup_enrollments")).rows[0]!.due.toISOString()).toBe(due);
+  });
+  it("inscrição antiga conserva pausa humana registrada antes da correção", async () => {
+    await reply();
+    await sql.exec("update followup_enrollment_events set payload='{}',created_at=now()-interval '1 hour'; update followup_enrollments set completed_at=now()");
+    await sql.query(`insert into followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,created_at)
+      values($1,$2,'action','paused_manual',now()-interval '2 hours')`, [ORG,ENROLLMENT]);
+    expect(await resume()).toEqual({ inserted:false });
+  });
+  it("não desbloqueia jobs antigos ao reativar a mesma etapa", async () => {
+    await reply();
+    await resume();
+    await sql.exec("update job_queue set status='running'");
+    expect(await live()).toBe(false);
+    await sql.exec("update job_queue set payload=jsonb_set(payload,'{node_epoch}','1')");
+    expect(await live()).toBe(true);
+  });
+  it("job legado sem ocupação não recupera permissão na mesma etapa retomada", async () => {
+    await reply(); await resume();
+    await sql.exec("update job_queue set status='running',payload=payload-'node_epoch'");
+    expect(await live()).toBe(false);
+  });
+  it("ação retomada continua respeitando os dias da espera anterior, inclusive antes do transporte", async () => {
+    await reply(); await resume();
+    const tomorrow = (new Date().getUTCDay()+1)%7;
+    const window = { timezone:'UTC',days:[tomorrow],start_hour:8,end_hour:20 };
+    await sql.query("update followup_flow_versions set graph=$1", [JSON.stringify({ ...graph,nodes:[
+      { id:'previous-wait',type:'wait',label:'Espera',position:{x:0,y:0},config:{ mode:'fixed',duration_ms:1,send_window:window } },...graph.nodes,
+    ] })]);
+    await sql.query(`insert into followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,created_at)
+      values($1,$2,'previous-wait','node_advanced',now()-interval '4 hours')`, [ORG,ENROLLMENT]);
+    await sql.exec("update job_queue set status='running',payload=jsonb_set(payload,'{node_epoch}','1')");
+    const gate = await followupJobGate(pool,ORG,JOB,CONTACT);
+    expect(gate.allowed).toBe(false);
+    expect(gate.retryAt!.getTime()).toBeGreaterThan(Date.now());
+    expect(gate.retryAt!.getUTCDay()).toBe(tomorrow);
+    expect(gate.retryAt!.getUTCHours()).toBe(8);
+  });
+  it("a reaplicação do saneamento anterior não cancela novamente a sequência retomada", async () => {
+    await reply(); await resume();
+    const baseline = readFileSync('supabase/baseline.sql','utf8');
+    const start = baseline.indexOf('-- Corrige inscrições antigas que ignoraram uma resposta');
+    const end = baseline.indexOf('-- Uma varredura por silêncio',start);
+    expect(start).toBeGreaterThan(0); expect(end).toBeGreaterThan(start);
+    await sql.exec(baseline.slice(start,end));
+    expect((await enrollment()).status).toBe('active');
+  });
+  it("os gates intermediários do atualizador também respeitam a âncora nova", async () => {
+    const at = await reply(); await resume();
+    const baseline = readFileSync('supabase/baseline.sql','utf8');
+    const old = baseline.slice(baseline.indexOf('-- ---- 20261021160000_0234_followup_human_control ----'),
+      baseline.indexOf('-- ---- 20261021160100_0235_waha_echo_identity ----'));
+    try {
+      await sql.exec(old.slice(old.indexOf('create or replace function public.fn_followup_job_live('),old.indexOf('-- O cancelamento')));
+      await sql.exec(old.slice(old.indexOf('create or replace function public.fn_cancel_followup_on_reply()'),old.indexOf('-- Corrige inscrições antigas')));
+      await sql.exec("update job_queue set status='running',payload=jsonb_set(payload,'{node_epoch}','1')");
+      expect(await live()).toBe(true);
+      await message('inbound',{ sent_at:at });
+      expect((await enrollment()).status).toBe('active');
+    } finally { await sql.exec(readFileSync('supabase/migrations/20261021200000_0236_followup_silence_resume.sql','utf8')); }
+  });
+  it("nova resposta interrompe também a continuação", async () => {
+    await reply(); await resume();
+    await message();
+    expect((await enrollment()).status).toBe("cancelled");
+    expect(await live()).toBe(false);
+  });
+  it.each(["paused_manual", "paused_handoff"])("resposta durante %s não cancela a decisão humana", async (status) => {
+    await sql.query("update followup_enrollments set status=$1", [status]);
+    await reply();
+    expect(await resume()).toEqual({ inserted: false });
+  });
+  it.each(["is_blocked", "force_human", "is_anonymized"])("não continua com %s", async (flag) => {
+    await reply();
+    await sql.exec(`update contacts set ${flag}=true`);
+    expect(await resume()).toEqual({ inserted: false });
+  });
+  it("atendente humano e conversa encerrada impedem a continuação", async () => {
+    await reply();
+    await sql.exec("update conversations set assignee_kind='user'");
+    expect(await resume()).toEqual({ inserted: false });
+    await sql.exec("update conversations set assignee_kind=null,status='closed'");
+    expect(await resume()).toEqual({ inserted: false });
+  });
+  it("cancelamento humano não é interpretado como uma resposta", async () => {
+    await sql.exec("update followup_enrollments set status='cancelled',outcome='replied',cancel_reason='cancelled_manual'");
+    expect(await resume()).toEqual({ inserted: false });
+  });
+  it("fluxo desativado e segmento removido impedem retomada", async () => {
+    await reply();
+    await sql.exec("update followup_flow_pointers set status='disabled'");
+    expect(await resume()).toEqual({ inserted: false });
+    await sql.exec(`update followup_flow_pointers set status='active',trigger_config=jsonb_set(trigger_config,'{params,segments}','["comercial"]')`);
+    expect(await resume()).toEqual({ inserted: false });
+  });
+  it("aguarda efeito em execução ou transporte incerto", async () => {
+    await reply();
+    await sql.exec("update job_queue set status='running'");
+    expect(await resume()).toEqual({ inserted: false });
+    await sql.exec("update job_queue set status='done'");
+    const ledger = (await sql.query<{ id: string }>("insert into send_ledger(organization_id,contact_id,job_id,status) values($1,$2,$3,'failed') returning id", [ORG,CONTACT,JOB])).rows[0]!.id;
+    await message("outbound", { status: "failed", metadata: { idempotency_key: ledger, outbound_attempt: { phase: "uncertain" } } });
+    expect(await resume()).toEqual({ inserted: false });
+  });
+  it("callback confirmado depois da resposta conserva prova e não desfaz o cancelamento", async () => {
+    await reply();
+    await completeTurnForEnrollment(db, ORG, ENROLLMENT, 'action', { kind: 'sent' }, () => new Date(), { nodeEpoch: 0 });
+    expect((await enrollment()).status).toBe('cancelled');
+    expect((await sql.query("select * from followup_enrollment_events where event_type='action_sent'")).rows).toHaveLength(1);
+    await resume();
+    const enqueued: unknown[] = [];
+    await runFollowupTick({ db: { ...db, loadLeadFacts: async () => ({ lead_stage: null, tags: [] }) },
+      clock: () => new Date(), enqueueJob: async (job) => { enqueued.push(job); } });
+    expect((await enrollment()).current_node_id).toBe('end');
+    expect(enqueued).toHaveLength(0);
+  });
+  it("confirmação física sem callback também impede repetir a etapa", async () => {
+    await reply();
+    const ledger = (await sql.query<{ id:string }>("insert into send_ledger(organization_id,contact_id,job_id,status) values($1,$2,$3,'accepted') returning id", [ORG,CONTACT,JOB])).rows[0]!.id;
+    await message("outbound", { status:"sent",external_id:"REAL-ACK",metadata:{ idempotency_key:ledger } });
+    await resume();
+    const enqueued:unknown[] = [];
+    await runFollowupTick({ db:{ ...db,loadLeadFacts:async()=>({ lead_stage:null,tags:[] }) },clock:()=>new Date(),enqueueJob:async(job)=>{ enqueued.push(job); } });
+    expect((await enrollment()).current_node_id).toBe("end");
+    expect(enqueued).toHaveLength(0);
+  });
+  it("entrega legada confirmada na mesma ocupação não é reenviada quando perdeu o callback", async () => {
+    await reply();
+    await sql.exec("update job_queue set payload=payload-'node_epoch',created_at=now()-interval '6 hours'");
+    const ledger=(await sql.query<{id:string}>("insert into send_ledger(organization_id,contact_id,job_id,status) values($1,$2,$3,'accepted') returning id",[ORG,CONTACT,JOB])).rows[0]!.id;
+    await message('outbound',{status:'sent',external_id:'LEGACY-ACK',sent_at:new Date(Date.now()-4*3_600_000).toISOString(),metadata:{idempotency_key:ledger}});
+    expect(await resume()).toEqual({inserted:true});
+    const jobs:FollowupJobRequest[]=[];
+    await runFollowupTick({db:{...db,loadLeadFacts:async()=>({lead_stage:null,tags:[]})},clock:()=>new Date(),enqueueJob:async(job)=>{jobs.push(job);}});
+    expect(jobs).toHaveLength(0);
+    expect((await enrollment()).current_node_id).toBe('end');
+  });
+  it("entrega legada de outra passagem pelo nó não pula a ação atual", async () => {
+    await reply();
+    await sql.exec("update job_queue set payload=payload-'node_epoch',created_at=now()-interval '6 hours'");
+    await sql.query(`insert into followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,created_at)
+      values($1,$2,'other-node','node_advanced',now()-interval '5 hours')`,[ORG,ENROLLMENT]);
+    const ledger=(await sql.query<{id:string}>("insert into send_ledger(organization_id,contact_id,job_id,status) values($1,$2,$3,'accepted') returning id",[ORG,CONTACT,JOB])).rows[0]!.id;
+    await message('outbound',{status:'sent',external_id:'OLD-OCCUPATION-ACK',metadata:{idempotency_key:ledger}});
+    expect(await resume()).toEqual({inserted:true});
+    const jobs:FollowupJobRequest[]=[];
+    await runFollowupTick({db:{...db,loadLeadFacts:async()=>({lead_stage:null,tags:[]})},clock:()=>new Date(),enqueueJob:async(job)=>{jobs.push(job);}});
+    expect(jobs.map(job=>job.payload.node_id)).toEqual(['action']);
+  });
+  it("legado sem prova de transporte não autoriza refazer um envio", async () => {
+    await reply();
+    await sql.query("insert into send_ledger(organization_id,contact_id,job_id,status) values($1,$2,$3,'failed')", [ORG,CONTACT,JOB]);
+    expect(await resume()).toEqual({ inserted:false });
+  });
+  it("retoma ação sem transporte com outra chave, preservando o histórico do job vetado", async () => {
+    await sql.exec(`update followup_enrollments set steps_taken=1;
+      insert into followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,idempotency_key)
+      select organization_id,id,current_node_id,'turn_enqueued','action:0' from followup_enrollments`);
+    await reply(); await resume();
+    const enqueued: Array<{ payload: { enrollment_action_key?: string; node_epoch?: number } }> = [];
+    await runFollowupTick({ db: { ...db, loadLeadFacts: async () => ({ lead_stage: null, tags: [] }) },
+      clock: () => new Date(), enqueueJob: async (job) => { enqueued.push(job); } });
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]!.payload).toMatchObject({ enrollment_action_key: 'action:1', node_epoch: 1 });
+    expect((await enrollment()).steps_taken).toBe(2);
+  });
+
 });
 
 describe("identidade confirmada do eco WAHA", () => {

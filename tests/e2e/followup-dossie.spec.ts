@@ -315,6 +315,35 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     await limpa(page, cenario);
   });
 
+  test("uma resposta interrompe e o novo silêncio continua da etapa pendente", async ({ page }) => {
+    test.setTimeout(180_000);
+    await login(page, creds.users.manager!.email);
+    const c = await montaCenario(page, "continua");
+    try {
+      expect((await page.request.patch(`/api/v1/ai/followup-flows/${c.flowId}`, { data: {
+        trigger_config: { kind: "silence", params: { threshold_minutes: 120 }, cancel_on_reply: true },
+      } })).status()).toBe(200);
+      await rodaTickDoMotor(page);
+      await rodaTickDoMotor(page);
+      const result = JSON.parse(execFileSync("npx", ["tsx", "scripts/e2e-followup-journey-helpers.ts",
+        "resume-silence-after-reply",creds.org_id,c.enrollmentId], { encoding:"utf8" })) as {
+          cancelled:string; resumed:boolean; before:{ current_node_id:string; steps_taken:number };
+          after:{ id:string; current_node_id:string; steps_taken:number; status:string };
+        };
+      expect(result.cancelled).toBe("cancelled");
+      expect(result.resumed).toBe(true);
+      expect(result.after).toEqual({ id:c.enrollmentId,status:"active",
+        current_node_id:result.before.current_node_id,steps_taken:result.before.steps_taken });
+      await page.goto(`/app/ai/followups/enrollments/${c.enrollmentId}`);
+      const timeline = page.getByTestId("dossie-timeline");
+      await expect(timeline).toContainText("Encerrado porque o cliente respondeu", { timeout:30_000 });
+      await expect(timeline).toContainText("Retomado após novo silêncio do cliente");
+      await expect(page.getByTestId("dossie-onde-esta")).toContainText("Deixa esfriar");
+      await expect(timeline).not.toContainText("silence_resumed");
+      await page.screenshot({ path:path.join(ARTIFACTS_DIR,"08-retomada-apos-resposta.png"),fullPage:true });
+    } finally { await limpa(page,c); }
+  });
+
   test("o dossiê mostra o tempo que a IA escolheu — e quanto ela pediu antes do corte", async ({ page }) => {
     test.setTimeout(180_000);
     await login(page, creds.users.manager!.email);

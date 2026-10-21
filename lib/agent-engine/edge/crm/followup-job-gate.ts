@@ -1,3 +1,4 @@
+import { nextInSendWindow, sendWindowSchema } from '@/lib/followup/send-window';
 import type { Queryable } from '../../queue/queue';
 import { OutboundLeaseLostError } from '@/lib/channels/delivery-error';
 
@@ -10,7 +11,7 @@ export function followupRetryDelay(retryAt: Date | null, now = Date.now()): numb
 /** Pausa conserva a intenção preparada; término/nó antigo a descarta. A grace
  * da retomada vale também para um job criado antes de o humano assumir. */
 export async function followupJobGate(db: Queryable, org: string, job: string, contact: string | null, worker?: string) {
-  const { rows } = await db.query<{ allowed: boolean; owned: boolean; retry_at: Date | string | null }>(
+  const { rows } = await db.query<{ allowed: boolean; owned: boolean; retry_at: Date | string | null; db_now?: Date | string; flow_send_window?: unknown }>(
     `select public.fn_followup_job_live($1,$2,$3) as allowed,
        (j.status='running' and ($4::text is null or j.locked_by=$4)) as owned,
        case when e.current_node_id is distinct from j.payload->>'node_id'
@@ -23,11 +24,29 @@ export async function followupJobGate(db: Queryable, org: string, job: string, c
              and ev.event_type in ('handoff_resumed','resumed_manual','snoozed_manual') and ev.created_at>j.created_at
            -- A última decisão vence, inclusive quando encurta/encerra a espera.
            order by ev.created_at desc,ev.id desc limit 1)
-         else null end as retry_at
+         else null end as retry_at, now() as db_now,
+       case when e.silence_anchor_at is not null then (
+         select n->'config'->'send_window' from followup_enrollment_events ev
+         join followup_flow_versions v on v.organization_id=$1 and v.id=e.version_id,
+           lateral jsonb_array_elements(v.graph->'nodes') n
+         where ev.organization_id=$1 and ev.enrollment_id=e.id and n->>'id'=ev.node_id and n->>'type'='wait'
+         order by ev.created_at desc,ev.id desc limit 1
+       ) else null end as flow_send_window
      from job_queue j left join followup_enrollments e
        on e.id::text=j.payload->>'followup_enrollment_id' and e.organization_id=j.organization_id and e.contact_id=j.contact_id
      where j.id=$2 and j.organization_id=$1 and j.contact_id is not distinct from $3`, [org, job, contact, worker ?? null]);
   if (!rows[0]?.owned) throw new OutboundLeaseLostError();
-  return { allowed: rows[0].allowed === true,
-    retryAt: rows[0].retry_at ? new Date(rows[0].retry_at) : null };
+  const row = rows[0];
+  const retryAt = row.retry_at ? new Date(row.retry_at) : null;
+  // Retomar uma ação já preparada não pode pular a janela da espera que a
+  // liberou. A mesma barreira roda antes do modelo e imediatamente antes da
+  // rede, inclusive se o worker atrasou ou o canal ficou offline no fim de semana.
+  if (row.allowed && row.flow_send_window != null) {
+    const parsed = sendWindowSchema.safeParse(row.flow_send_window);
+    if (!parsed.success) throw new Error('followup_window_invalid');
+    const now = row.db_now ? new Date(row.db_now) : new Date();
+    const next = nextInSendWindow(now,parsed.data);
+    if (next > now) return { allowed:false,retryAt:retryAt && retryAt>next ? retryAt : next };
+  }
+  return { allowed:row.allowed === true,retryAt };
 }

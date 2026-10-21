@@ -4266,6 +4266,7 @@ export type Database = {
           organization_id: string
           outcome: string | null
           pointer_id: string
+          silence_anchor_at: string | null
           started_at: string
           status: string
           steps_taken: number
@@ -4291,6 +4292,7 @@ export type Database = {
           organization_id: string
           outcome?: string | null
           pointer_id: string
+          silence_anchor_at?: string | null
           started_at?: string
           status?: string
           steps_taken?: number
@@ -4316,6 +4318,7 @@ export type Database = {
           organization_id?: string
           outcome?: string | null
           pointer_id?: string
+          silence_anchor_at?: string | null
           started_at?: string
           status?: string
           steps_taken?: number
@@ -8037,6 +8040,7 @@ export type Database = {
           organization_id: string
           outcome: string | null
           pointer_id: string
+          silence_anchor_at: string | null
           started_at: string
           status: string
           steps_taken: number

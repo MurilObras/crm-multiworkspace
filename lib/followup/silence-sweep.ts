@@ -20,10 +20,10 @@
  *
  * Idempotência + exclusividade: o índice único `idx_followup_enrollments_one_live`
  * é ORG-WIDE `(organization_id, contact_id)` (migration 0062, Task 8.6) — um
- * contato já vivo em QUALQUER fluxo da org barra novo enrollment (1 follow-up
- * vivo por lead). Um episódio encerrado só admite nova entrada automática
- * depois de um novo inbound posterior ao encerramento. A inscrição manual
- * continua disponível para uma retomada decidida pelo operador.
+ * contato já vivo em QUALQUER fluxo da org barra nova entrada (1 follow-up vivo
+ * por lead). Resposta interrompe a sequência; novo silêncio retoma a MESMA
+ * inscrição/versão na etapa pendente, sem zerar histórico ou orçamento. Sequência
+ * concluída, cancelamento humano e opt-out exigem inscrição manual explícita.
  *
  * agent_id: cada pointer é gateado por `resolveAgentForAutomaticTrigger`, que
  * devolve o agente publicado que ARMA o pointer (menor uuid se >1) — esse

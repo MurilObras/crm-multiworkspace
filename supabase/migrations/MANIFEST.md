@@ -269,6 +269,7 @@ aplica.
 | `20261016020000` | `0233_agent_test_unknown_cost` | Aceita custo desconhecido nos ensaios sem impedir o resultado nem fabricar custo zero; incluída no baseline de instalação e atualização. |
 | `20261021160000` | `0234_followup_human_control` | Cancelamento síncrono por resposta, CAS de conclusão, barreira de nó/ocupação e reinscrição por novo episódio. |
 | `20261021160100` | `0235_waha_echo_identity` | Identidade canônica do outbound WAHA e reconciliação do eco confirmado preservando referências. |
+| `20261021200000` | `0236_followup_silence_resume` | Retoma a inscrição após novo silêncio sem zerar etapas, intervalos, orçamento ou proteção de atendimento humano. |
 
 ## Reproducibility
 

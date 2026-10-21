@@ -128,8 +128,9 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
   }
 
   /** Presentes para ESTOURAR: o código que os usar precisa de implementação real. */
-  in(): never {
-    return naoImplementado("in");
+  in(coluna: string, valores: unknown[]): this {
+    this.filtros.push(["in", coluna, valores]);
+    return this;
   }
   neq(): never {
     return naoImplementado("neq");
@@ -139,7 +140,7 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
     const valores: unknown[] = [];
     const onde = this.filtros.map(([op, c, v]) => {
       valores.push(v);
-      return `"${c}" ${op} $${valores.length}`;
+      return op === "in" ? `"${c}" = any($${valores.length})` : `"${c}" ${op} $${valores.length}`;
     });
     let texto = `select ${colunasSql(this.colunas)} from public."${this.tabela}"`;
     if (onde.length > 0) texto += ` where ${onde.join(" and ")}`;

@@ -89,7 +89,7 @@ export async function outboundPostgres() {
       active_version_id uuid,trigger_config jsonb default '{"kind":"manual"}');
     create unique index message_external on messages(organization_id,external_id);
   `);
-  for (const file of ['20261021160000_0234_followup_human_control.sql','20261021160100_0235_waha_echo_identity.sql'])
+  for (const file of ['20261021160000_0234_followup_human_control.sql','20261021160100_0235_waha_echo_identity.sql','20261021200000_0236_followup_silence_resume.sql'])
     await sql.exec(readFileSync(`supabase/migrations/${file}`, 'utf8'));
   let tail = Promise.resolve();
   async function lock() { let release!: () => void; const next = new Promise<void>((r) => { release = r; }); const old = tail; tail = next; await old; return release; }

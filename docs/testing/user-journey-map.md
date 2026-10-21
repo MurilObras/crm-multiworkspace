@@ -1950,3 +1950,7 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
   os testes do sink nem a homologação posterior de entrega pelo WhatsApp.
 - Execução e inspeção visual em andamento; esta entrada descreve o contrato
   de validação e não declara sucesso antecipadamente.
+
+## Continuação do follow-up após resposta
+
+`followup-dossie.spec.ts`: resposta encerra a sequência; novo silêncio retoma a mesma inscrição/etapa sem zerar contadores. O prazo anterior continua sendo piso. A linha do tempo mostra interrupção e retomada traduzidas (captura automática no artefato de execução do E2E). Banco isolado cobre varreduras concorrentes, isolamento de organização, pausa humana e replay antigo.

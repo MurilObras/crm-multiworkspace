@@ -557,19 +557,23 @@ async function processEnrollment(
     events = await db.loadEnrollmentEvents(enrollment.id);
   }
 
+  // O histórico permanece inteiro. Marcadores de execução anteriores à resposta
+  // não representam um turno ainda em voo após a retomada da mesma etapa.
+  const resumeIndex = events.findLastIndex((e) => e.event_type === "silence_resumed");
+  const occupationEvents = resumeIndex < 0 ? events : events.slice(resumeIndex + 1);
   if (vaiPlanejar) {
-    planEnqueued = resolveWaitPhase(events, node.id, enrollment.steps_taken);
-    planRecheckCount = events.filter((e) => e.node_id === node.id).length;
+    planEnqueued = resolveWaitPhase(occupationEvents, node.id, enrollment.steps_taken);
+    planRecheckCount = occupationEvents.filter((e) => e.node_id === node.id).length;
   }
 
   if (node.type === "wait" || node.type === "ai_classify" || node.type === "match_reply" || node.type === "action") {
-    waitElapsed = resolveWaitPhase(events, node.id, enrollment.steps_taken);
+    waitElapsed = resolveWaitPhase(node.type === "wait" ? events : occupationEvents, node.id, enrollment.steps_taken);
     // match_reply de captação: a confirmação já enfileirou um evento neste nó.
     // O claim seguinte às vezes chega com steps_taken desalinhado da chave
     // `${node}:${steps-1}` — sem isto o motor trata como 1ª visita e MANDA A
     // PERGUNTA DE NOVO em vez de ler o SIM.
     if (node.type === "match_reply") {
-      waitElapsed = waitElapsed || occupancyEventCount(events, node.id) > 0;
+      waitElapsed = waitElapsed || occupancyEventCount(occupationEvents, node.id) > 0;
     }
     if (node.type === "ai_classify" || node.type === "match_reply" || node.type === "wait") {
       const wakeKey = `${node.id}:${enrollment.steps_taken}:wake`;
@@ -577,8 +581,9 @@ async function processEnrollment(
     }
     if (node.type === "action") {
       actionEnqueued = waitElapsed;
-      actionRecheckCount = occupancyEventCount(events, node.id);
-      actionCompleted = actionTurnCompleted(events, node.id);
+      actionRecheckCount = occupancyEventCount(occupationEvents, node.id);
+      actionCompleted = actionTurnCompleted(events, node.id) || (resumeIndex >= 0 &&
+        events[resumeIndex]!.node_id === node.id && events[resumeIndex]!.payload?.confirmed === true);
     }
   }
   const textoInbound = inboundBodyOverride?.trim() ?? "";

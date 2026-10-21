@@ -85,7 +85,8 @@ export async function completeTurnForEnrollment(
   // Resultado classificado/planejado é descartado na pausa. Um envio já
   // confirmado conserva somente a prova, sem avançar nem desfazer a pausa.
   if (enrollment.status !== "active" && enrollment.status !== "waiting_reply" &&
-      !(result.kind === "sent" && ["paused_manual", "paused_handoff"].includes(enrollment.status))) return;
+      !(result.kind === "sent" && (["paused_manual", "paused_handoff"].includes(enrollment.status) ||
+        (enrollment.status === "cancelled" && enrollment.outcome === "replied" && enrollment.cancel_reason === "cancel_on_reply")))) return;
 
   const graph = await db.loadFlowGraph(orgId, enrollment.version_id);
   if (!graph) throw new Error("flow_version_not_found");

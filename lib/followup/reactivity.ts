@@ -74,6 +74,9 @@ export interface LiveEnrollmentRef {
   trigger_config: unknown;
   /** Evita aplicar backlog de um episódio anterior a uma inscrição nova. */
   started_at?: string;
+  next_eval_at?: string | null;
+  node_epoch?: number;
+  silence_anchor_at?: string | null;
 }
 
 /** Interface estreita de DB (mesma doutrina de `AdminClient`/`TurnBridgeAdminClient`
@@ -82,6 +85,7 @@ export interface LiveEnrollmentRef {
 export interface ReactivityAdminClient {
   loadConversationContactId(orgId: string, conversationId: string): Promise<string | null>;
   loadContactBlocked(orgId: string, contactId: string): Promise<boolean>;
+  loadInboundMessageTime?(orgId: string, contactId: string, messageId: string): Promise<string | null>;
   loadLiveEnrollmentsForContact(orgId: string, contactId: string): Promise<LiveEnrollmentRef[]>;
   insertEnrollmentEvent(event: {
     organization_id: string;
@@ -92,7 +96,7 @@ export interface ReactivityAdminClient {
     idempotency_key: string;
   }): Promise<{ inserted: boolean }>;
   updateEnrollment(id: string, orgId: string, patch: EnrollmentPatch,
-    expected?: Pick<LiveEnrollmentRef, "status" | "current_node_id" | "steps_taken">): Promise<void>;
+    expected?: Pick<LiveEnrollmentRef, "status" | "current_node_id" | "steps_taken" | "node_epoch">): Promise<void>;
   /**
    * O relógio do BANCO (`fn_agora()`, migration 0147).
    *
@@ -204,7 +208,11 @@ async function reactToInbound(
     return { matched: true, reacted };
   }
 
-  const live = allLive.filter((e) => !e.started_at || !row.created_at || Date.parse(row.created_at)>Date.parse(e.started_at));
+  const messageTime = row.entity_id && db.loadInboundMessageTime && allLive.some((e) => e.silence_anchor_at)
+    ? await db.loadInboundMessageTime(row.organization_id,contactId,row.entity_id) : null;
+  const live = allLive.filter((e) =>
+    (!e.started_at || !row.created_at || Date.parse(row.created_at)>Date.parse(e.started_at)) &&
+    (!e.silence_anchor_at || !messageTime || Date.parse(messageTime)>Date.parse(e.silence_anchor_at)));
   let reacted = 0;
   for (const e of live) {
     if (parseCancelOnReply(e.trigger_config)) {
@@ -215,7 +223,7 @@ async function reactToInbound(
         e,
         key,
         "reactivity_replied",
-        { reason: "cancel_on_reply" },
+        { reason: "cancel_on_reply", previous_status: e.status, next_eval_at: e.next_eval_at ?? null, node_epoch: e.node_epoch },
         cancelPatch(clock, "replied", "cancel_on_reply"),
       );
       if (applied) reacted++;
@@ -393,11 +401,17 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
       if (error) throw new Error(error.message);
       return data?.is_blocked ?? false;
     },
+    async loadInboundMessageTime(orgId, contactId, messageId) {
+      const { data,error } = await admin.from("messages").select("sent_at").eq("organization_id",orgId)
+        .eq("contact_id",contactId).eq("id",messageId).eq("direction","inbound").maybeSingle();
+      if (error) throw new Error(error.message);
+      return data?.sent_at ?? null;
+    },
     async loadLiveEnrollmentsForContact(orgId, contactId) {
       const ids = await idsDoContatoEGemeos(admin, orgId, contactId);
       const { data: enrollments, error } = await admin
         .from("followup_enrollments")
-        .select("id, status, current_node_id, steps_taken, pointer_id, started_at")
+        .select("id, status, current_node_id, steps_taken, pointer_id, started_at, silence_anchor_at, next_eval_at, node_epoch")
         .eq("organization_id", orgId)
         .in("contact_id", ids)
         .in("status", LIVE_STATUSES);
@@ -413,6 +427,18 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
       if (pErr) throw new Error(pErr.message);
       const byPointer = new Map((pointers ?? []).map((p) => [p.id, p]));
 
+      // Replays anteriores à retomada não podem cancelar o mesmo episódio outra vez.
+      const resumed = enrollments.filter((e) => e.silence_anchor_at != null);
+      const resumedAt = new Map<string, string>();
+      if (resumed.length) {
+        await Promise.all(resumed.map(async (enrollment) => {
+          const { data: events, error: eventError } = await admin.from("followup_enrollment_events")
+            .select("created_at").eq("organization_id", orgId).eq("enrollment_id", enrollment.id)
+            .eq("event_type", "silence_resumed").order("created_at", { ascending: false }).limit(1);
+          if (eventError) throw new Error(eventError.message);
+          if (events?.[0]) resumedAt.set(enrollment.id, events[0].created_at);
+        }));
+      }
       return enrollments.map((e) => {
         const p = byPointer.get(e.pointer_id);
         return {
@@ -423,7 +449,10 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
           pointer_id: e.pointer_id,
           handoff_policy: (p?.handoff_policy as LiveEnrollmentRef["handoff_policy"]) ?? "pause",
           trigger_config: p?.trigger_config ?? null,
-          started_at: e.started_at,
+          started_at: resumedAt.get(e.id) ?? e.started_at,
+          next_eval_at: e.next_eval_at,
+          node_epoch: e.node_epoch,
+          silence_anchor_at: e.silence_anchor_at,
         };
       });
     },
@@ -439,6 +468,7 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
       let query = admin.from("followup_enrollments").update(patch).eq("id", id).eq("organization_id", orgId);
       if (expected) query = query.eq("status", expected.status).eq("current_node_id", expected.current_node_id)
         .eq("steps_taken", expected.steps_taken);
+      if (expected?.node_epoch !== undefined) query = query.eq("node_epoch", expected.node_epoch);
       const { error } = await query;
       if (error) throw new Error(error.message);
     },
