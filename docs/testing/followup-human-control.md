@@ -18,7 +18,7 @@ Correção dos achados da auditoria de 21/10/2026. Sem dependência da integraç
 
 `tests/unit/followup-human-control-state.test.ts` executa as migrations reais em PostgreSQL embarcado e os adapters de produção. As suítes de banco exercitam baseline install/update, RLS e concorrência em Postgres 15; o E2E verifica a operação pelo frontend.
 
-Os tipos da inscrição e das três RPCs privadas foram copiados da saída oficial de `supabase@2.54.11 gen types` (`postgres-meta:v0.93.1`), conectada a uma cópia isolada do baseline completo. Os quatro blocos foram comparados byte a byte com a saída gerada; os demais tipos históricos foram preservados.
+Os tipos da inscrição e das quatro RPCs privadas foram copiados da saída oficial de `supabase@2.54.11 gen types` (`postgres-meta:v0.93.1`), conectada a uma cópia isolada do baseline completo. Os cinco blocos foram comparados byte a byte com a saída gerada; os demais tipos históricos foram preservados.
 
 O gate de entrega exige revisão antes dos testes e outra revisão depois dos testes/CI/E2E, antes do merge. Achado novo volta para correção, revisão e repetição dos testes afetados; não se libera merge com uma falha conhecida.
 

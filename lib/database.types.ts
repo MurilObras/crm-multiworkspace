@@ -8022,6 +8022,7 @@ export type Database = {
         Returns: {
           agent_id: string | null
           attempts: number
+          automation_run_id: string | null
           cancel_reason: string | null
           claimed_until: string | null
           completed_at: string | null
@@ -8032,6 +8033,7 @@ export type Database = {
           last_error: string | null
           max_attempts: number
           next_eval_at: string | null
+          node_epoch: number
           organization_id: string
           outcome: string | null
           pointer_id: string
