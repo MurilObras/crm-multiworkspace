@@ -26,6 +26,7 @@ create or replace function public.fn_followup_complete_step(
   p_org uuid,p_id uuid,p_expected jsonb,p_event jsonb,p_patch jsonb
 ) returns boolean language plpgsql security invoker set search_path=public,pg_temp as $$
 declare e public.followup_enrollments; n public.followup_enrollments; inserted_id uuid;
+  enqueue_at timestamptz; manual_due timestamptz;
 begin
   select * into e from public.followup_enrollments where organization_id=p_org and id=p_id for update;
   if not found or e.current_node_id is distinct from p_expected->>'current_node_id'
@@ -54,6 +55,24 @@ begin
   end if;
   if p_event->>'node_id' is distinct from e.current_node_id then return false; end if;
   n:=jsonb_populate_record(e,p_patch);
+  -- O turno pode ter começado ANTES de uma remarcação. Conserva a conclusão,
+  -- mas o próximo passo continua no último prazo escolhido pela pessoa.
+  select ev.created_at into enqueue_at from public.followup_enrollment_events ev
+    where ev.organization_id=p_org and ev.enrollment_id=p_id and ev.node_id=e.current_node_id
+      and ev.event_type in ('turn_enqueued','classify_enqueued')
+      and (p_event->'payload'->>'enrollment_action_key' is null
+        or ev.idempotency_key=p_event->'payload'->>'enrollment_action_key')
+    order by ev.created_at desc,ev.id desc limit 1;
+  if enqueue_at is not null then
+    select coalesce((ev.payload->>'next_eval_at')::timestamptz,ev.created_at+interval '30 minutes') into manual_due
+      from public.followup_enrollment_events ev where ev.organization_id=p_org and ev.enrollment_id=p_id
+        and ev.node_id=e.current_node_id and ev.created_at>enqueue_at
+        and ev.event_type in ('resumed_manual','snoozed_manual','handoff_resumed')
+      order by ev.created_at desc,ev.id desc limit 1;
+    if n.status in ('active','waiting_reply') and manual_due>clock_timestamp() then
+      n.next_eval_at:=greatest(n.next_eval_at,manual_due);
+    end if;
+  end if;
   insert into public.followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,idempotency_key)
     values(p_org,p_id,e.current_node_id,p_event->>'event_type',coalesce(p_event->'payload','{}'),p_event->>'idempotency_key')
     on conflict(enrollment_id,idempotency_key) where idempotency_key is not null do nothing returning id into inserted_id;

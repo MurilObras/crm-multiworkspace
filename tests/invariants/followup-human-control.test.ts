@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
-import { createPgAdminClient } from '@/lib/followup/turn-bridge';
+import { completeTurnForEnrollment, createPgAdminClient } from '@/lib/followup/turn-bridge';
 import { followupJobGate } from '@/lib/agent-engine/edge/crm/followup-job-gate';
 
 if (!process.env.TEST_DB_CONTAINER) throw new Error('Rode via pnpm test:db');
@@ -34,6 +34,22 @@ const patch = () => ({ current_node_id: 'end', status: 'active' as const, next_e
   steps_taken: 1, claimed_until: null, updated_at: new Date().toISOString() });
 
 describe('lock/CAS da conclusão contra intervenção humana real', () => {
+  it.each([60, -1])('conclusão mantém o próximo passo no último prazo humano (%s min)', async (minutes) => {
+    const now = new Date();
+    const latest = new Date(now.getTime() + minutes * 60_000).toISOString();
+    const older = new Date(now.getTime() + 7 * 86_400_000).toISOString();
+    await pool.query('update followup_enrollments set steps_taken=1,next_eval_at=$1 where id=$2', [latest, enrollment]);
+    await pool.query(`insert into followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,idempotency_key,created_at)
+      values($1,$2,'action','turn_enqueued','{}','action:0',now()-interval '3 seconds'),
+        ($1,$2,'action','snoozed_manual',$3,null,now()-interval '2 seconds'),
+        ($1,$2,'action','snoozed_manual',$4,null,now()-interval '1 second')`,
+    [ORG, enrollment, JSON.stringify({ next_eval_at: older }), JSON.stringify({ next_eval_at: latest })]);
+    await completeTurnForEnrollment(db, ORG, enrollment, 'action', { kind: 'sent' }, () => now,
+      { key: 'action:0', nodeEpoch: 0 });
+    const state = (await db.loadEnrollmentById(ORG, enrollment))!;
+    expect(state).toMatchObject({ current_node_id: 'end', steps_taken: 2 });
+    expect(new Date(state.next_eval_at!).toISOString()).toBe(minutes > 0 ? latest : now.toISOString());
+  });
   it.each([60, -1])('barreira usa a última remarcação, não a data mais distante (%s min)', async (minutes) => {
     const job = randomUUID();
     const latest = new Date(Date.now() + minutes * 60_000).toISOString();

@@ -144,6 +144,22 @@ describe("cancelamento e barreira do trabalho antigo", () => {
 });
 
 describe("conclusão atômica sem desfazer a pausa", () => {
+  it.each([60, -1])("conclusão em voo preserva a última remarcação sem herdar prazo antigo (%s min)", async (minutes) => {
+    const now = new Date();
+    const deadline = new Date(now.getTime() + minutes * 60_000).toISOString();
+    const older = new Date(now.getTime() + 7 * 86_400_000).toISOString();
+    await sql.query("update followup_enrollments set steps_taken=1,next_eval_at=$1", [deadline]);
+    await sql.query(`insert into followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,idempotency_key,created_at)
+      values($1,$2,'action','turn_enqueued','{}','action:0',now()-interval '3 seconds'),
+        ($1,$2,'action','snoozed_manual',$3,null,now()-interval '2 seconds'),
+        ($1,$2,'action','snoozed_manual',$4,null,now()-interval '1 second')`,
+    [ORG, ENROLLMENT, JSON.stringify({ next_eval_at: older }), JSON.stringify({ next_eval_at: deadline })]);
+    await completeTurnForEnrollment(db, ORG, ENROLLMENT, 'action', { kind: 'sent' }, () => now,
+      { key: 'action:0', nodeEpoch: 0 });
+    expect(await enrollment()).toMatchObject({ current_node_id: 'end', steps_taken: 2 });
+    const { rows } = await sql.query<{ next_eval_at: Date }>('select next_eval_at from followup_enrollments where id=$1', [ENROLLMENT]);
+    expect(rows[0]!.next_eval_at.toISOString()).toBe(minutes > 0 ? deadline : now.toISOString());
+  });
   it("avança uma vez no controle positivo", async () => {
     await completeTurnForEnrollment(db, ORG, ENROLLMENT, "action", { kind: "sent" });
     await completeTurnForEnrollment(db, ORG, ENROLLMENT, "action", { kind: "sent" });

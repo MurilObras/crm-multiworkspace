@@ -244,7 +244,11 @@ test("gerente confere a prévia e reconcilia vídeo recebido sem outro envio", a
   expect(data).toHaveLength(2);
   expect(data!.find((m) => m.id === id.original)).toMatchObject({
     status: "read",
-    external_id: `true_e2e_${id.echo}`,
+    external_id: id.echo,
+  });
+  expect(data!.find((m) => m.id === id.echo)).toMatchObject({
+    external_id: null,
+    metadata: { reconciled_into_message_id: id.original },
   });
   await page.reload();
   await expect(page.locator("video")).toHaveCount(1);
