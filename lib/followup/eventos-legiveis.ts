@@ -384,6 +384,9 @@ export function descreveEvento(
       return { titulo: "Falhou neste passo", detalhe: texto(p.error), ...motor };
     case "inbound_woke":
       return { titulo: "O cliente respondeu — o fluxo acordou na hora", detalhe: null, ...cliente };
+    case "silence_resumed":
+      return { titulo: "Retomado após novo silêncio do cliente",
+        detalhe: "continua da etapa pendente, preservando os envios e os intervalos", ...motor };
     case "reactivity_replied":
       return { titulo: "Encerrado porque o cliente respondeu", detalhe: null, ...cliente };
     case "reactivity_opted_out":

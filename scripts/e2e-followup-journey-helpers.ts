@@ -270,6 +270,33 @@ async function main(): Promise<void> {
         break;
       }
 
+      // Relógio acelerado do teste de continuação: usa o trigger e a RPC reais.
+      // Nenhum transporte é acionado; esta rotina só aceita o banco local do E2E.
+      case "resume-silence-after-reply": {
+        if (!["127.0.0.1", "localhost"].includes(new URL(DB_URL ?? "").hostname)) throw new Error("isolated_test_db_required");
+        const [orgId,enrollmentId] = args;
+        const creds = loadCreds();
+        if (orgId !== creds.org_id || !creds.followup_agent_fixtures) throw new Error("invalid_test_org");
+        const before = (await pool.query<{ id: string; pointer_id: string; version_id: string; contact_id: string;
+          current_node_id: string; steps_taken: number }>(
+          "select * from followup_enrollments where organization_id=$1 and id=$2", [orgId,enrollmentId])).rows[0];
+        if (!before) throw new Error("enrollment_not_found");
+        const session = creds.followup_agent_fixtures.channel_session_id;
+        const conversation = (await pool.query<{ id: string }>(`insert into conversations(organization_id,contact_id,channel_session_id,status,last_inbound_at)
+          values($1,$2,$3,'ai_handling',now()-interval '3 hours') returning id`, [orgId,before.contact_id,session])).rows[0]!.id;
+        await pool.query("update followup_enrollments set started_at=now()-interval '1 day' where organization_id=$1 and id=$2", [orgId,enrollmentId]);
+        await pool.query(`insert into messages(organization_id,contact_id,conversation_id,channel_session_id,type,direction,status,body,sent_at)
+          values($1,$2,$3,$4,'text','inbound','received','Voltei a avaliar',now()-interval '3 hours')`, [orgId,before.contact_id,conversation,session]);
+        const cancelled = (await pool.query<{ status: string }>('select status from followup_enrollments where organization_id=$1 and id=$2', [orgId,enrollmentId])).rows[0]!.status;
+        const resumed = (await pool.query<{ resumed: boolean }>('select fn_enroll_silence_episode($1) resumed', [JSON.stringify({
+          organization_id:orgId,pointer_id:before.pointer_id,version_id:before.version_id,contact_id:before.contact_id,
+          current_node_id:'trigger-1',next_eval_at:new Date().toISOString(),agent_id:null,
+        })])).rows[0]!.resumed;
+        const after = (await pool.query('select id,current_node_id,steps_taken,status from followup_enrollments where organization_id=$1 and id=$2', [orgId,enrollmentId])).rows[0];
+        out({ before,cancelled,resumed,after });
+        break;
+      }
+
       // ---- list-events <enrollmentId> — event_type em ordem, prova que os
       // ---- passos (action_sent, ai_classified, ...) realmente aconteceram.
       case "list-events": {
