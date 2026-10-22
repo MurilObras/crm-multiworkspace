@@ -46,7 +46,7 @@ Não usar este checkpoint como declaração de funcionalidade concluída ou vali
 - Pagamento externo divergente de registro manual gera conferência, não confirmação silenciosa.
 - Soma monetária fora do inteiro exato é recusada; aliases do mesmo fuso são reconhecidos.
 - Falha de sincronização aparece no dashboard e no diálogo de campanhas, preservando cache anterior.
-- Tipos gerados e prova do baseline completo continuam pendentes até os gates isolados.
+- Tipos regenerados e baseline completo validados em banco isolado; os gates do commit atual seguem obrigatórios.
 
 ## Sistema vivo
 
@@ -54,7 +54,7 @@ Não usar este checkpoint como declaração de funcionalidade concluída ou vali
 - Saídas: /app/dashboard e consumidor conversoes.venda em lib/conversoes/envio.handler.ts.
 - Atividade: ações dashboard.* no audit; crm.first_payment_confirmed no event_log; falhas v3 em fn_reject_obra_access.
 - Configuração: Configurar indicadores, Registrar pagamento e Vincular e sincronizar campanhas.
-- Recuperação: leases/CAS, cache preservado e consulta manual; outbox faz retry com UUID estável. Dados inválidos requerem correção no produto e reprocessamento documentado.
+- Recuperação: leases/CAS, cache preservado e consulta manual; outbox faz retry com UUID estável. Dados inválidos voltam à fila automaticamente após correção no produto, com nova tentativa em até uma hora.
 - Continuidade humana: registros manuais e correções exigem gestor; comprovante não é confirmação automática. Sem mensagem adicional ao lead.
 - Retorno: falha preserva estado anterior e aparece para corrigir conexão/dados; correção financeira recalcula indicadores sem reenviar conversão já entregue.
 - Mapa: docs/architecture/dashboard-comercial.architecture.json.
@@ -74,3 +74,10 @@ Não usar este checkpoint como declaração de funcionalidade concluída ou vali
 - IDs naturais de conta/campanha passam no metadata de auditoria, com resource_id nulo (a coluna é UUID).
 - Catálogo de suporte revisado e regenerado; artigos de primeiros passos e navegação incluem o Dashboard.
 - Build e testes do aplicativo no GitHub passaram; não mesclado, aguardando receptor CRM publicado e revisão final.
+
+## Correções durante os gates
+
+- Prova comportamental de cada uma das dez tabelas novas em dois workspaces, registrada no verificador de completude: 61 verificações passaram no PostgreSQL descartável.
+- Interface usa o idioma da sessão, com traduções em espanhol e datas no fuso válido; navegação inclui Dashboard no início: 44 testes locais passaram.
+- Catálogos que excedem o teto real do PostgREST são recusados, sem ocultar etapas silenciosamente. Fuso inválido degrada ao padrão no diálogo de campanhas: 9 verificações de API passaram.
+- Merge e deploy continuam condicionados ao CI/E2E do commit final e à revisão de integração.

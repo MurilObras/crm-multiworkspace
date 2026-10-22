@@ -9,6 +9,7 @@ import { dashboardSettingsSchema, pipelineDashboardSchema } from '@/lib/dashboar
 import { ok,fail } from '@/lib/api/wrappers';
 import { audit } from '@/lib/audit';
 import { logger } from '@/lib/logger';
+import { FUSO_PADRAO,fusoValido } from '@/lib/tempo/fusos';
 
 export const dynamic = 'force-dynamic';
 export async function GET(req:NextRequest) {
@@ -19,14 +20,17 @@ export async function GET(req:NextRequest) {
   const db=await createClient();
   const manager=roleAtLeast(auth.org.role,'manager');
   const results=await Promise.all([
-    db.from('crm_pipelines').select('id,name,is_archived,settings').eq('organization_id',auth.org.orgId).order('position').limit(1001),
-    db.from('crm_stages').select('id,name,pipeline_id,is_archived,is_won,is_lost').eq('organization_id',auth.org.orgId).order('position').limit(10001),
+    db.from('crm_pipelines').select('id,name,is_archived,settings',{count:'exact'}).eq('organization_id',auth.org.orgId).order('position').limit(1001),
+    db.from('crm_stages').select('id,name,pipeline_id,is_archived,is_won,is_lost',{count:'exact'}).eq('organization_id',auth.org.orgId).order('position').limit(10001),
     db.from('organizations').select('timezone,settings').eq('id',auth.org.orgId).single(),
-    manager?db.from('crm_campaign_assignments').select('account_id,campaign_id,campaign_name,currency,account_timezone,enabled').eq('organization_id',auth.org.orgId).order('campaign_name').limit(1001):Promise.resolve({data:[],error:null}),
-    manager?db.from('ai_agents').select('id,name').eq('organization_id',auth.org.orgId).order('name').limit(1001):Promise.resolve({data:[],error:null}),
-    manager?db.from('crm_ad_sync_accounts').select('account_id,last_attempt_at,last_success_at,last_error').eq('organization_id',auth.org.orgId).limit(1001):Promise.resolve({data:[],error:null}),
+    manager?db.from('crm_campaign_assignments').select('account_id,campaign_id,campaign_name,currency,account_timezone,enabled',{count:'exact'}).eq('organization_id',auth.org.orgId).order('campaign_name').limit(1001):Promise.resolve({data:[],error:null,count:0}),
+    manager?db.from('ai_agents').select('id,name',{count:'exact'}).eq('organization_id',auth.org.orgId).order('name').limit(1001):Promise.resolve({data:[],error:null,count:0}),
+    manager?db.from('crm_ad_sync_accounts').select('account_id,last_attempt_at,last_success_at,last_error',{count:'exact'}).eq('organization_id',auth.org.orgId).limit(1001):Promise.resolve({data:[],error:null,count:0}),
   ]);
   if (results.some(r=>r.error)) return fail('internal_error','Não foi possível carregar as configurações.',500,{requestId});
+  // O limite global do PostgREST pode ser menor que o solicitado. Nunca devolver um catálogo parcial como completo.
+  if ([results[0],results[1],results[3],results[4],results[5]].some(r=>r.count!==null&&r.count!==undefined&&r.count>(r.data?.length??0)))
+    return fail('validation_failed','A lista excede o limite de consulta desta instalação. Ajuste o limite de linhas antes de configurar o painel.',422,{requestId});
   if (results[0].data!.length>1000 || results[1].data!.length>10000 || results[3].data!.length>1000 || results[4].data!.length>1000 || results[5].data!.length>1000)
     return fail('validation_failed','Quantidade de funis ou etapas excede o limite deste painel.',422,{requestId});
   const pipelines=(results[0].data??[]).map(p=>{
@@ -36,7 +40,7 @@ export async function GET(req:NextRequest) {
   const organization=results[2].data;
   if(!organization)return fail('internal_error','Workspace não encontrado.',500,{requestId});
   return ok({pipelines,stages:results[1].data??[],campaigns:results[3].data??[],agents:results[4].data??[],
-    ad_sync_status:(results[5].data??[]).map(s=>({account_id:s.account_id,last_attempt_at:s.last_attempt_at,last_success_at:s.last_success_at,failed:s.last_error!==null})),timezone:organization.timezone,
+    ad_sync_status:(results[5].data??[]).map(s=>({account_id:s.account_id,last_attempt_at:s.last_attempt_at,last_success_at:s.last_success_at,failed:s.last_error!==null})),timezone:fusoValido(organization.timezone)?organization.timezone:FUSO_PADRAO,
     confirmed_payment_conversions:organization.settings?.dashboard?.confirmed_payment_conversions===true,
     conversions_configured:typeof organization.settings?.dashboard?.confirmed_payment_conversions==='boolean'},{requestId});
 }
