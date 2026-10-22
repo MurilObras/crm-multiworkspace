@@ -8,6 +8,14 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.6.0] — 2026-10-22
+
+### Adicionado
+
+- **Consulte responsáveis e receba respostas pelo WhatsApp** Cada workspace pode cadastrar responsáveis para receber consultas e pedidos de
+  atendimento humano. Respostas ao aviso em texto ou áudio são entregues ao cliente
+  correto, com histórico e proteção contra duplicidade. A capacidade começa desligada.
+
 ## [3.5.2] — 2026-10-21
 
 ### Corrigido
@@ -3376,7 +3384,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.2...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.2...v3.6.0
 [3.5.2]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.1...v3.5.2
 [3.5.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.4.1...v3.5.0
