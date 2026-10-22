@@ -370,6 +370,8 @@ describe("retomada de inbound no turno completo", () => {
     { revoked: false, binding: 'matching' }, { revoked: true, binding: 'matching' },
     { revoked: false, binding: 'outside' },
   ])('áudio aprovado exige contexto, etapa, não repete e retoma em texto se revogado (%j)', async ({ revoked, binding }) => {
+    const originalBody = (await pool.query('select body from messages where id=$1', [MSG])).rows[0]!.body;
+    await pool.query("update messages set body='Como funciona o aplicativo?' where id=$1", [MSG]);
     const agent = 'eeeeeeee-0000-4000-8000-000000000070';
     const version = 'eeeeeeee-0000-4000-8000-000000000071';
     const audioId = 'eeeeeeee-0000-4000-8000-000000000072';
@@ -400,14 +402,23 @@ describe("retomada de inbound no turno completo", () => {
       ...(revoked || outside ? [{ body: 'Posso explicar por texto: o aplicativo ajuda a organizar suas obras.' }] : []),
     ];
     let step = 0;
+    let classifications = 0;
     try {
       const error = await rodaTurno(montaHandler(async (opts: { prompt?: unknown }) => {
         resultadosVistos.push(opts.prompt);
+        // A escolha contextual precede a resposta. Não consumir uma chamada de
+        // send_message como se fosse a resposta JSON do classificador.
+        if (JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual')) {
+          classifications++;
+          return { content: [{ type: 'text', text: JSON.stringify({ audio_id: audioId }) }],
+            finishReason: { unified: 'stop', raw: undefined }, usage: USO, warnings: [] };
+        }
         const input = inputs[step++];
         return { content: input ? [{ type: 'tool-call', toolCallId: `audio-step-${step}`, toolName: 'send_message', input: JSON.stringify(input) }]
           : [{ type: 'text', text: CHECKPOINT }], finishReason: { unified: input ? 'tool-calls' : 'stop', raw: undefined }, usage: USO, warnings: [] };
       }, 4, revoked ? i => { if (i.media?.type === 'audio') throw new OutboundApprovalRevokedError(); } : undefined));
       expect(error).toBeNull(); expect(enviados).toHaveLength(2);
+      expect(classifications).toBe(outside ? 0 : 1);
       expect(enviados[0]?.media).toBeUndefined();
       if (revoked || outside) expect(enviados[1]?.media).toBeUndefined();
       else expect(enviados[1]).toMatchObject({ body: audio.title, media: { type: 'audio', audio_id: audioId, agent_id: agent } });
@@ -419,6 +430,7 @@ describe("retomada de inbound no turno completo", () => {
       else expect(observed).toContain('MÍDIAS APROVADAS DISPONÍVEIS');
       expect(observed).not.toContain(audio.storage_path);
     } finally {
+      await pool.query('update messages set body=$1 where id=$2', [originalBody, MSG]);
       await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1', [agent]);
       if (binding !== 'all') await pool.query('delete from crm_leads where organization_id=$1 and id=$2', [ORG, LEAD]);
     }
