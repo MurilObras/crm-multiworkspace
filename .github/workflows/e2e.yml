@@ -564,8 +564,7 @@ jobs:
 
       # A imagem do app já contém ffmpeg; a suíte roda Next fora da imagem.
       - name: Preparar conversão de áudios do app no ambiente de testes
-        run: |
-          command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+        run: bash scripts/ci/prepare-ffmpeg.sh
 
       # Os runners hospedados compartilham IPs e o GHCR aplica rate limit a
       # pulls anônimos. Autenticar antes do `supabase start` usa a cota da
