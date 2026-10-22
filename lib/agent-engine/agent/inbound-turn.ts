@@ -2534,6 +2534,10 @@ async function executarTurnoDoAgente(
       ...AGENT_TOOL_DEFS.send_message,
       execute: async ({ body: requestedBody, media }) => {
         const approvedId = media && ('audio_id' in media ? media.audio_id : 'media_id' in media ? media.media_id : undefined);
+        // Um URL avulso do material de consulta não pode acrescentar outra mídia
+        // ao turno cuja gravação gerenciada já foi escolhida.
+        if (media && selectedTurnMedia != null && !approvedId) return { ok: false,
+          error: { code: 'media_not_approved', message: 'Neste turno use somente a mídia escolhida do catálogo aprovado ou responda em texto.' } };
         const audio = approvedId ? (await freshAudios()).find(a => a.id === approvedId && a.enabled
           && ('type' in a ? a.type : 'audio') === media?.type) : undefined;
         if (audio?.required && !requiredAudioPrelude) return { ok: false, error: { code: 'audio_managed_by_rule', message: 'O CRM cuida da mídia obrigatória correspondente ao assunto após sua resposta. Não a envie por conta própria.' } };
