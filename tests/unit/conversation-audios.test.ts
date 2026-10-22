@@ -5,6 +5,7 @@ import { availableConversationAudios, assertConversationAudioAvailable, assertRa
 import { readApprovedAudios, renderApprovedAudios } from '@/lib/ai/agents/approved-audios';
 import { requiredAudioPlan, deliverRequiredAudio } from '@/lib/agent-engine/agent/required-audio';
 import type { JobRow } from '@/lib/agent-engine/queue/queue';
+import { explicitMediaPreference, requestsMediaReplay } from '@/lib/agent-engine/agent/media-preference';
 
 const AGENT = '10000000-0000-4000-8000-000000000060';
 const AUDIO = '10000000-0000-4000-8000-000000000061';
@@ -114,12 +115,35 @@ it('contexto queued impede enviar áudio adiantado; aprovação alterada preserv
 });
 
 const INBOUND = '10000000-0000-4000-8000-000000000064';
+it.each([
+  ['image', 'Quero somente repetir a foto de apresentação'],
+  ['video', 'Quero apenas repetir o vídeo de como funciona'],
+] as const)('reenvio também reconhece o formato %s', (kind, text) => {
+  expect(explicitMediaPreference(text, kind)).toBe('audio');
+  expect(requestsMediaReplay(text, kind)).toBe(true);
+});
+it.each([
+  'Chegou uma recepção junto. Quero somente repetir o áudio de conclusão de matrícula, sem outro áudio. Pode mandar?',
+  'Quero apenas reenviar o áudio de conclusão',
+  'Poderia me repetir o áudio de matrícula?',
+])('reconhece reenvio com restrição explícita: %s', text => {
+  expect(explicitAudioPreference(text)).toBe('audio');
+});
 async function repeatRequest(body: string) {
   await db.pool.query(`insert into messages(id,organization_id,conversation_id,direction,body)
     values($1,$2,$3,'inbound',$4)`,[INBOUND,ORG,CONV,body]);
   await db.pool.query('update job_queue set payload=$1 where id=$2',
     [JSON.stringify({ conversation_id: CONV, inbound_message_id: INBOUND }),JOB]);
 }
+it('reenvio de conclusão não oferece recepção inédita do mesmo formato', async () => {
+  await held('sent', 'confirmed');
+  await repeatRequest('Chegou uma recepção junto. Quero somente repetir o áudio de conclusão de matrícula, sem outro áudio. Pode mandar?');
+  const conclusion = { ...audios[0]!, title: 'Conclusão de matrícula', allow_requested_repeat: true };
+  const greeting = { ...audios[0]!, id: OTHER, title: 'Recepção', required: false };
+  expect(await availableConversationAudios(db.pool, ORG, CONV, AGENT, JOB, [conclusion, greeting], INBOUND)).toEqual([conclusion]);
+  await expect(assertConversationAudioAvailable(db.pool, ORG, CONV, AGENT, OTHER, AGENT, JOB, greeting))
+    .rejects.toMatchObject({ message: 'audio_already_used' });
+});
 it('repetir assunto recebe texto; pedido explícito permite mídia confirmada somente com opção ligada', async () => {
   await held('sent','confirmed'); await repeatRequest('Como funciona?');
   const catalog = audios.map(a => ({ ...a, allow_requested_repeat: true }));

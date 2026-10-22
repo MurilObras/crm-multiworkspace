@@ -2,7 +2,7 @@ import type { Queryable } from '../queue/queue';
 import type { ApprovedMedia as ApprovedAudio } from '@/lib/ai/agents/approved-media';
 import { mediaKind } from '@/lib/ai/agents/approved-media';
 import { conversationAllowsAudio } from './audio-preference';
-import { explicitMediaPreference, conversationAllowsMedia, refersToPreviousMedia } from './media-preference';
+import { explicitMediaPreference, conversationAllowsMedia, refersToPreviousMedia, requestsMediaReplay } from './media-preference';
 import { OutboundAudioUnavailableError } from '@/lib/channels/delivery-error';
 import { pendingAudioMessages } from './audio-rule';
 
@@ -64,6 +64,7 @@ async function requestText(db: Queryable, org: string, conversation: string, inb
 function permitted(m: ApprovedAudio, prior: HeldMedia[], agent: string, inbound: string | null, text: string): boolean {
   const used = prior.filter(p => p.agent_id === agent && p.audio_id === m.id
     || !!m.content_sha256 && p.fingerprint === m.content_sha256);
+  if (requestsMediaReplay(text, mediaKind(m)) && !used.length) return false;
   if (!used.length) return true;
   // Preferir um formato é pedido explícito de mídia; repetir apenas o assunto não é.
   if (!m.allow_requested_repeat || !inbound || explicitMediaPreference(text,mediaKind(m)) !== 'audio') return false;
