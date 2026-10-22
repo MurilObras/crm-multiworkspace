@@ -54,7 +54,7 @@
         },
         {
           "path": "app/app/dashboard/_components/DashboardClient.tsx",
-          "blob_sha": "63c9ced79c3292da0cc255f44e0454de2ce7139b"
+          "blob_sha": "e67baff30a7c4387c126b7c7b9f9825d4c57ec93"
         },
         {
           "path": "app/app/dashboard/_components/PaymentDialog.tsx",

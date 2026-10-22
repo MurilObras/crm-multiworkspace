@@ -75,6 +75,12 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  ...['crm_first_payments','crm_lead_qualifications','crm_lead_attribution','crm_campaign_assignments',
+    'crm_ad_spend_daily','crm_ad_spend_coverage','crm_ad_sync_accounts','crm_campaign_links',
+    'obra_commercial_links','obra_commercial_receipts'].map(tabela=>({
+    tabela,
+    razao:'tests/invariants/commercial-dashboard-rls.test.ts — duas organizações com dados reais em cada tabela; JWT prova leitura própria, nega vizinha e escrita direta. Filhos herdam o lead, marketing exige gestor e vínculos/recibos do produto são privados ao serviço.',
+  })),
   ...["agent_responsibles", "agent_responsible_settings", "agent_responsible_bindings", "agent_responsible_requests", "agent_responsible_deliveries"].map(tabela => ({
     tabela,
     razao: "tests/invariants/responsible-whatsapp.test.ts — registros reais nas cinco tabelas em dois workspaces; SET LOCAL ROLE authenticated + JWT mostra somente a própria organização e nega escrita direta. RPCs privadas e FKs compostas também são verificados.",

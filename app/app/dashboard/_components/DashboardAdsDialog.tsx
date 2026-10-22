@@ -7,11 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useT } from '@/hooks/i18n/useT';
+import { useTagDeIdioma } from '@/hooks/i18n/useLocaleDeData';
 import { dashboardFetch } from '@/lib/dashboard/client';
 import type { DashboardSettingsResponse } from '@/lib/dashboard/contracts';
 
 export function DashboardAdsDialog(p:{open:boolean;onOpenChange:(v:boolean)=>void;organizationId:string;settings:DashboardSettingsResponse;from:string;to:string}) {
-  const t=useT();const qc=useQueryClient();
+  const t=useT();const tagDoIdioma=useTagDeIdioma();const qc=useQueryClient();
   const [account,setAccount]=useState('');const [campaign,setCampaign]=useState('');
   const [error,setError]=useState('');const [notice,setNotice]=useState('');const [busy,setBusy]=useState(false);
   const [kind,setKind]=useState<'whatsapp'|'website'>('whatsapp');const [destination,setDestination]=useState('');
@@ -51,7 +52,7 @@ export function DashboardAdsDialog(p:{open:boolean;onOpenChange:(v:boolean)=>voi
       <div className="flex flex-wrap gap-2">{linkedAccounts.map(id=><Button key={id} variant="outline" disabled={busy} onClick={()=>mutate('sync',{account_id:id,from:p.from,to:p.to},t('Gastos sincronizados. Os indicadores foram atualizados.'))}>{busy?t('Consultando…'):`${t('Sincronizar')} ${accounts.data?.contas.find(a=>a.id===id)?.nome??id}`}</Button>)}</div></div>
     {p.settings.ad_sync_status.map(s=><div key={s.account_id} className="rounded-md border p-2 text-xs">
       <p>{s.account_id} · {s.failed?t('A última consulta falhou. Confira a conexão Meta e tente sincronizar novamente.'):t('Última consulta concluída sem erro registrado.')}</p>
-      <p>{t('Último sucesso')}: {s.last_success_at?new Date(s.last_success_at).toLocaleString('pt-BR') :t('Ainda não sincronizado')}. {t('Em caso de falha, o histórico anterior é preservado.')}</p>
+      <p>{t('Último sucesso')}: {s.last_success_at?new Date(s.last_success_at).toLocaleString(tagDoIdioma,{timeZone:p.settings.timezone}) :t('Ainda não sincronizado')}. {t('Em caso de falha, o histórico anterior é preservado.')}</p>
     </div>)}
     <div className="space-y-3 border-t pt-3"><h3 className="text-sm font-medium">{t('Links de origem da campanha')}</h3>
       <p className="text-xs text-muted-foreground">{t('Use a conta e campanha selecionadas acima. No WhatsApp, a mensagem preenchida leva a referência. No site, a integração precisa preservar o parâmetro crm_ref no cadastro.')}</p>

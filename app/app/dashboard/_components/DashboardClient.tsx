@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/auth/AuthProvider';
 import { useT } from '@/hooks/i18n/useT';
+import { useTagDeIdioma } from '@/hooks/i18n/useLocaleDeData';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,7 +22,7 @@ function Metric({label,value,note}:{label:string;value:string|number;note?:strin
 }
 
 export function DashboardClient(props:{organizationId:string;currentUserId:string;canManage:boolean;initialFrom:string;initialTo:string}) {
-  const t=useT();
+  const t=useT();const tagDoIdioma=useTagDeIdioma();
   const {activeOrg}=useAuth();
   const [from,setFrom]=useState(props.initialFrom);
   const [to,setTo]=useState(props.initialTo);
@@ -77,7 +78,7 @@ export function DashboardClient(props:{organizationId:string;currentUserId:strin
     {props.canManage?<div className="flex flex-wrap items-center gap-3 text-sm"><Label htmlFor="dashboard-owner">{t('Responsável atual')}</Label><select id="dashboard-owner" className={selectClass} value={owner} onChange={e=>setOwner(e.target.value)}><option value="">{t('Todos os responsáveis')}</option>
       {ownerOptions.map(o=><option key={o.key} value={o.key}>{o.label}{o.key===`user:${props.currentUserId}`?` (${t('você')})`:''}</option>)}</select><span className="text-muted-foreground">{t('O filtro segue a atribuição atual do negócio.')}</span></div>:null}
     <p className="text-sm text-muted-foreground">{view==='acquisition'?t('Acompanha os leads recebidos no período e seus primeiros pagamentos posteriores, até a última atualização.'):t('Mostra os primeiros pagamentos recebidos no período, mesmo de leads captados antes.')}
-      {data?` ${t('Fuso')}: ${data.timezone}. ${t('Atualizado em')}: ${new Date(data.as_of).toLocaleString('pt-BR',{timeZone:data.timezone})}.`:''}</p>
+      {data?` ${t('Fuso')}: ${data.timezone}. ${t('Atualizado em')}: ${new Date(data.as_of).toLocaleString(tagDoIdioma,{timeZone:data.timezone})}.`:''}</p>
     {result.isPending||!workspaceReady?<p role="status">{t('Carregando indicadores…')}</p>:null}
     {result.error?<div role="alert" className="rounded-lg border border-destructive p-4">{result.error.message}</div>:null}
     {settings.error?<div role="alert">{settings.error.message}</div>:null}
@@ -113,7 +114,7 @@ export function DashboardClient(props:{organizationId:string;currentUserId:strin
         <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[1100px] text-left text-sm"><thead><tr className="border-b">
           {[t('Campanha'),t('Gasto'),t('Leads'),t('Qualificados'),t('Vendas'),t('Primeiros pagamentos'),t('Custo por lead'),t('Custo por qualificado'),t('Custo por venda'),t('Retorno')].map(h=><th key={h} className="p-2 font-medium">{h}</th>)}</tr></thead>
           <tbody>{data.campaigns.map((c,i)=><tr key={`${c.account_id}:${c.campaign_id}:${c.currency}:${i}`} className="border-b"><td className="p-2">{c.label}{c.currency_conflict?<span className="block text-xs text-muted-foreground">{t('Moedas diferentes; comparação indisponível.')}</span>:null}
-            {c.oldest_sync_at?<span className="block text-xs text-muted-foreground">{t('Consulta mais antiga do período')}: {new Date(c.oldest_sync_at).toLocaleString('pt-BR',{timeZone:data.timezone})}</span>:null}</td>
+            {c.oldest_sync_at?<span className="block text-xs text-muted-foreground">{t('Consulta mais antiga do período')}: {new Date(c.oldest_sync_at).toLocaleString(tagDoIdioma,{timeZone:data.timezone})}</span>:null}</td>
             <td className="p-2">{money(c.spend_cents,c.currency)}</td><td>{c.leads}</td><td>{c.qualified}{!c.qualification_complete?'*':''}</td><td>{c.sales}</td><td>{money(c.revenue_cents,c.currency)}</td>
             <td>{money(c.cpl_cents,c.currency)}</td><td>{money(c.cplq_cents,c.currency)}</td><td>{money(c.cost_per_sale_cents,c.currency)}</td><td>{c.roas===null?'—':`${c.roas.toFixed(2)}×`}</td></tr>)}</tbody></table></div>
         {!data.campaigns.length?<p className="mt-3 text-sm text-muted-foreground">{t('Vincule campanhas e sincronize os dados para acompanhar seus resultados.')}</p>:null}
