@@ -2,7 +2,7 @@
 import { beforeAll, beforeEach, afterAll, expect, it, vi } from 'vitest';
 import { outboundPostgres, ORG, CONTACT, CONV, JOB } from '../helpers/outbound-postgres';
 import { readApprovedMedia as readApprovedAudios } from '@/lib/ai/agents/approved-media';
-import { audioIntentMessage, parseAudioIntent, decideRequiredAudio, isFirstAudioContact } from '@/lib/agent-engine/agent/audio-rule';
+import { audioIntentMessage, parseAudioIntent, decideRequiredAudio, decideTurnMedia, isFirstAudioContact } from '@/lib/agent-engine/agent/audio-rule';
 import { requiredAudioPlan, deliverRequiredAudio } from '@/lib/agent-engine/agent/required-audio';
 import type { JobRow } from '@/lib/agent-engine/queue/queue';
 
@@ -22,6 +22,40 @@ beforeEach(async () => {
 async function job() { return (await db.pool.query<JobRow>('select * from job_queue where id=$1', [JOB])).rows[0]!; }
 const decide = async (classify: (candidates: typeof audios) => Promise<string | null>, firstContact = false, catalog = audios) =>
   decideRequiredAudio({ db: db.pool, job: await job(), worker: 'audio-test', agent: AGENT, audios: catalog, firstContact, classify });
+
+it('decisão nula nova restringe o catálogo no retry, sem abandonar job legado', async () => {
+  const args = { db:db.pool,worker:'audio-test',agent:AGENT,audios,firstContact:false,includeOptional:true,classify:vi.fn(async()=>null) };
+  expect(await decideTurnMedia({ ...args,job:await job() })).toEqual({id:null,exclusive:true});
+  expect(await decideTurnMedia({ ...args,job:await job() })).toEqual({id:null,exclusive:true});
+  expect(args.classify).toHaveBeenCalledOnce();
+  await db.pool.query("update job_queue set payload=jsonb_build_object('audio_rule_decision',$1::jsonb)",
+    [JSON.stringify({agent_id:AGENT,audio_id:null})]);
+  expect(await decideTurnMedia({ ...args,job:await job() })).toEqual({id:null,exclusive:false});
+});
+
+it('escolha única inclui opcionais e não seleciona outra mídia obrigatória em paralelo', async () => {
+  const optional = { ...audios[0]!, id: OTHER, title: 'Objeção de preço', required: false };
+  const classify = vi.fn(async (catalog: typeof audios) => {
+    expect(catalog.map(m => m.id)).toEqual([AUDIO, OTHER]);
+    return OTHER;
+  });
+  const selected = await decideRequiredAudio({ db: db.pool, job: await job(), worker: 'audio-test', agent: AGENT,
+    audios: [...audios, optional], firstContact: false, includeOptional: true, classify });
+  expect(selected).toBe(OTHER);
+  expect(await requiredAudioPlan(db.pool, await job(), 'audio-test', AGENT, [optional], 6, 'after_response')).toBeNull();
+  expect(await decideRequiredAudio({ db: db.pool, job: await job(), worker: 'audio-test', agent: AGENT,
+    audios, firstContact: false, includeOptional: true, classify })).toBe(OTHER);
+  expect(classify).toHaveBeenCalledOnce();
+});
+
+it('obrigatória escolhida entre mídias opcionais fixa o mesmo plano após a resposta', async () => {
+  const greeting = { ...audios[0]!, id: OTHER, title: 'Recepção', required: false, trigger_type: 'first_contact' as const };
+  const selected = await decideRequiredAudio({ db: db.pool, job: await job(), worker: 'audio-test', agent: AGENT,
+    audios: [greeting, ...audios], firstContact: false, includeOptional: true, classify: async () => AUDIO });
+  const plan = await requiredAudioPlan(db.pool, await job(), 'audio-test', AGENT,
+    [greeting, ...audios].filter(m => m.id === selected), 6, 'after_response');
+  expect(plan).toMatchObject({ audio_id: AUDIO, delivery_phase: 'after_response' });
+});
 
 it.each(['não é JSON', '{"audio_id":"inventado"}', JSON.stringify({ audio_id: OTHER }), JSON.stringify({ audio_id: AUDIO, send: true }), '{"audio_id":null}'])('resposta inválida ou sem assunto não libera gravação: %s', text => {
   expect(parseAudioIntent(text, audios)).toBeNull();

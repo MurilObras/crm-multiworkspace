@@ -1965,3 +1965,10 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 - [P1] Resposta pelos chamados existentes continua disponível; transferência mantém atendimento humano.
 - Cobertura: `tests/invariants/responsible-whatsapp.test.ts` e `tests/e2e/ai-responsible-whatsapp.spec.ts`.
 - Laço de retorno: entregas pendentes/falhas aparecem no próprio chamado; os jobs são duráveis e usam ledger. Sem resposta não há encerramento automático.
+
+## Reenvio de mídia solicitado pelo cliente — 2026-10-22
+
+- Reenviar somente a conclusão de matrícula, sem oferecer recepção inédita.
+- Escolha única por turno para opcionais e obrigatórias; preservar a decisão no retry.
+- Negativa de áudio, entregas incertas e repetição sem pedido continuam vetando envio.
+- Regressões executáveis: `conversation-audios.test.ts` e `audio-rule.test.ts`.
