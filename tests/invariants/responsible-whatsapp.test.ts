@@ -214,6 +214,12 @@ describe("responsável por WhatsApp: transações e isolamento reais",()=>{
         expect(visible.rows.every(r=>r.organization_id===org)).toBe(true);
         expect((await db.query(`select count(*)::int n from ${table} where organization_id=$1`,[other])).rows[0]!.n).toBe(0);
       }
+      const staffTarget=(await db.query("select target_contact_id,target_conversation_id from agent_responsible_deliveries where organization_id=$1 and purpose='notification' limit 1",[org])).rows[0]!;
+      const forged=(await db.query(`insert into messages(organization_id,contact_id,conversation_id,channel_session_id,type,direction,status,body,metadata)
+        values($1,$2,$3,$4,'text','inbound','delivered','Texto não autenticado pelo canal',$5) returning id,metadata`,[org,staffTarget.target_contact_id,staffTarget.target_conversation_id,session,{responsible_internal:true,responsible_id:recipients[0]!.id}])).rows[0]!;
+      expect(forged.metadata.responsible_internal).toBeUndefined();
+      const changed=(await db.query("update messages set metadata=$3,body='Tentativa de promover a mensagem por edição' where organization_id=$1 and id=$2 returning metadata",[org,forged.id,{responsible_internal:true,responsible_id:recipients[0]!.id}])).rows[0]!;
+      expect(changed.metadata.responsible_internal).toBeUndefined(); expect(changed.metadata.responsible_id).toBeUndefined();
       await expect(db.query("insert into agent_responsibles(organization_id,name,phone) values($1,'Sem acesso','+5511988888801')",[org])).rejects.toMatchObject({code:"42501"});
     } finally { await db.query("rollback"); db.release(); }
   });
@@ -230,6 +236,18 @@ describe("responsável por WhatsApp: transações e isolamento reais",()=>{
     await pool.query("update contacts set is_blocked=false where organization_id=$1 and id=$2",[org,contact]);
     await pool.query("update messages set status='sending' where organization_id=$1 and id=$2",[org,message]);
     await expect(pool.query("update agent_cases set status='resolved' where organization_id=$1 and id=$2",[org,r.caseId])).rejects.toMatchObject({code:"55P03"});
+  });
+  it("a última barreira não permite redirecionar a resposta a outro cliente da mesma conta",async()=>{
+    const r=await open(); await acceptResponsibleReply(pool,await reply(r.request));
+    const wrong=await customer();
+    const d=(await pool.query("select id,job_id from agent_responsible_deliveries where organization_id=$1 and request_id=$2 and purpose='answer'",[org,r.request])).rows[0]!;
+    await pool.query("update agent_responsible_deliveries set target_contact_id=$3,target_conversation_id=$4 where organization_id=$1 and id=$2",[org,d.id,wrong.c,wrong.v]);
+    await pool.query("update job_queue set contact_id=$3,status='running',locked_by='proof' where organization_id=$1 and id=$2",[org,d.job_id,wrong.c]);
+    const message=randomUUID();
+    await pool.query("insert into send_ledger(id,organization_id,contact_id,job_id,seq,body_hash) values($1,$2,$3,$4,1,$5)",[message,org,wrong.c,d.job_id,'0'.repeat(64)]);
+    await pool.query(`insert into messages(id,organization_id,contact_id,conversation_id,channel_session_id,type,direction,status,body,metadata)
+      values($1,$2,$3,$4,$5,'text','outbound','queued','Não pode alcançar outro cliente',$6)`,[message,org,wrong.c,wrong.v,session,{responsible_delivery_id:d.id,responsible_recipient:{phone:null,identity:null,lid:null}}]);
+    await expect(pool.query("update messages set status='sending' where organization_id=$1 and id=$2",[org,message])).rejects.toMatchObject({code:'42501',message:'responsible_customer_mismatch'});
   });
   it("anonimização cancela a consulta e remove as cópias internas e o áudio preparado",async()=>{
     const r=await open();const a=await reply(r.request,recipients[0],"audio","");await acceptResponsibleReply(pool,a);

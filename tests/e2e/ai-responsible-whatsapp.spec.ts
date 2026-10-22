@@ -13,11 +13,18 @@ function driver(mode: string, input: Record<string, unknown>): Record<string, un
   return JSON.parse(line.slice(7));
 }
 
+const fixtures: Record<string, unknown>[]=[];
+test.beforeEach(()=>{ fixtures.length=0; });
+test.afterEach(()=>{
+  if(fixtures.length) expect(driver("cleanup",{org:fixtures[0]!.org,fixtures}).cleaned).toBe(true);
+});
+
 test("configura pelas telas e entrega texto e áudio, sem repetição ou reenvio incerto", async ({ page }) => {
   test.setTimeout(300_000);
   await loginComoAdmin(page,lerCreds());
   const creds = JSON.parse(readFileSync(".e2e-creds.json", "utf8"));
   const fixture = driver("init", { org: creds.org_id });
+  fixtures.push(fixture);
   await page.goto(`/app/ai/agents/${fixture.agent}`);
   const panel = page.getByTestId("responsible-consultation");
   await expect(panel.getByRole("switch")).not.toBeChecked();
@@ -67,6 +74,7 @@ test("configura pelas telas e entrega texto e áudio, sem repetição ou reenvio
 
   // Nova conversa/cliente para provar falha incerta sem reaproveitar o handoff humano.
   const failureFixture=driver("init",{org:creds.org_id});
+  fixtures.push(failureFixture);
   await page.goto(`/app/ai/agents/${failureFixture.agent}`);
   await panel.getByRole("checkbox",{name:new RegExp(name)}).check();
   await panel.getByRole("switch").check();

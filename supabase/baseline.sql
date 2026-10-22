@@ -21304,6 +21304,9 @@ begin
    raise exception 'responsible_delivery_invalid' using errcode='42501'; end if;
  if d.purpose='answer' and (r.status<>'answered' or r.accepted_responsible_id is distinct from d.responsible_id) then
   raise exception 'responsible_answer_cancelled' using errcode='42501'; end if;
+ if d.purpose in ('answer','wait_notice') and
+   (d.target_contact_id is distinct from r.contact_id or d.target_conversation_id is distinct from r.conversation_id) then
+  raise exception 'responsible_customer_mismatch' using errcode='42501'; end if;
  if d.purpose in ('notification','wait_notice') and r.status<>'pending' then
   raise exception 'responsible_notice_cancelled' using errcode='42501'; end if;
  if d.purpose in ('answer','wait_notice') and r.kind='consultation' and (c.force_human or v.assignee_kind='user' or v.bot_silenced_until>now()) then
@@ -21311,7 +21314,8 @@ begin
  if d.responsible_id is not null and not exists(select 1 from agent_responsibles p
   join agent_responsible_bindings b on b.organization_id=p.organization_id and b.responsible_id=p.id
   join agent_responsible_settings s on s.organization_id=b.organization_id and s.agent_id=b.agent_id
-  where p.organization_id=r.organization_id and p.id=d.responsible_id and p.enabled and s.enabled and s.agent_id=r.agent_id) then
+  where p.organization_id=r.organization_id and p.id=d.responsible_id and p.enabled and s.enabled and s.agent_id=r.agent_id
+    and (d.purpose='answer' or p.phone=target.phone_number)) then
    raise exception 'responsible_not_authorized' using errcode='42501'; end if;
  update agent_responsible_deliveries set status='sending',message_id=new.id where organization_id=new.organization_id and id=d.id;
  return new;
@@ -21454,7 +21458,7 @@ begin
 end $$;
 revoke execute on function public.fn_mark_responsible_inbound() from public,anon,authenticated;
 drop trigger if exists trg_mark_responsible_inbound on public.messages;
-create trigger trg_mark_responsible_inbound before insert on public.messages
+create trigger trg_mark_responsible_inbound before insert or update on public.messages
  for each row execute function public.fn_mark_responsible_inbound();
 
 create or replace function public.fn_queue_responsible_reply() returns trigger

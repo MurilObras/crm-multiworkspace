@@ -47,6 +47,7 @@ export function createResponsibleDeliveryHandler(deps: { crmCfg: CrmEdgeConfig; 
           and v.contact_id=r.contact_id and v.status not in ('closed','archived')
           and dest.status not in ('closed','archived') and ch.archived_at is null
           and dest.contact_id=d.target_contact_id and dest.channel_session_id=v.channel_session_id
+          and (d.purpose not in ('answer','wait_notice') or (d.target_contact_id=r.contact_id and d.target_conversation_id=r.conversation_id))
           and (d.purpose='receipt' or
             (r.status='pending' and d.purpose in ('notification','wait_notice')) or (r.status='answered' and d.purpose='answer'))
           and (d.purpose not in ('answer','wait_notice') or r.kind='handoff' or
@@ -54,7 +55,8 @@ export function createResponsibleDeliveryHandler(deps: { crmCfg: CrmEdgeConfig; 
           and (d.responsible_id is null or exists(select 1 from agent_responsibles p
             join agent_responsible_bindings b on b.responsible_id=p.id and b.organization_id=p.organization_id
             join agent_responsible_settings s on s.organization_id=b.organization_id and s.agent_id=b.agent_id
-            where p.organization_id=$1 and p.id=d.responsible_id and p.enabled and s.enabled and s.agent_id=r.agent_id))`, [org, id, job.id, ctx.workerId]);
+            where p.organization_id=$1 and p.id=d.responsible_id and p.enabled and s.enabled and s.agent_id=r.agent_id
+              and (d.purpose='answer' or p.phone=target.phone_number)))`, [org, id, job.id, ctx.workerId]);
       if (!rows.length) throw new ApiError(403, "forbidden", undefined, id, "responsible_delivery_no_longer_authorized");
     };
 

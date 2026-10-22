@@ -49,7 +49,36 @@ async function main() {
   process.env.WAHA_API_BASE_URL = `http://127.0.0.1:${address.port}`; process.env.WAHA_API_KEY = "synthetic-test-key";
   let result: Record<string, unknown> = {};
   try {
-    if (mode === "init") {
+    if (mode === "cleanup") {
+      const fixtures=input.fixtures as {agent:string;session:string}[];
+      if(!Array.isArray(fixtures) || !fixtures.length) throw new Error("Sem fixtures para limpar.");
+      const ids=fixtures.map(f=>f.agent),sessions=fixtures.map(f=>f.session),org=String(input.org);
+      const db=await pool.connect();
+      try {
+        await db.query("begin");
+        const owned=await db.query(`select a.id from ai_agents a where a.organization_id=$1 and a.id=any($2::uuid[])
+          and a.name='Agente de consulta sintético'`,[org,ids]);
+        const channels=await db.query("select id from channel_sessions where organization_id=$1 and id=any($2::uuid[]) and waha_session_name='responsible-'||id::text",[org,sessions]);
+        if(owned.rows.length!==ids.length || channels.rows.length!==sessions.length) throw new Error("Cleanup recusou fixture não sintética.");
+        const contacts=(await db.query("select distinct contact_id as id from conversations where organization_id=$1 and channel_session_id=any($2::uuid[])",[org,sessions])).rows.map(r=>r.id);
+        const names=ids.map(id=>`Responsável sintético ${id.slice(0,8)}`);
+        await db.query(`delete from job_queue where organization_id=$1 and (id in (
+          select d.job_id from agent_responsible_deliveries d join agent_responsible_requests r on r.organization_id=d.organization_id and r.id=d.request_id
+          where r.organization_id=$1 and r.agent_id=any($2::uuid[])) or (kind='responsible_reply' and source_event_id in (
+          select id from messages where organization_id=$1 and channel_session_id=any($3::uuid[]))))`,[org,ids,sessions]);
+        await db.query("delete from agent_cases where organization_id=$1 and agent_id=any($2::uuid[])",[org,ids]);
+        await db.query("delete from conversations where organization_id=$1 and channel_session_id=any($2::uuid[])",[org,sessions]);
+        await db.query("delete from agent_inbox_items where organization_id=$1 and ref_kind='contact' and ref_id=any($2::uuid[])",[org,contacts]);
+        await db.query("update ai_agents set published_version_id=null where organization_id=$1 and id=any($2::uuid[])",[org,ids]);
+        await db.query("delete from ai_agents where organization_id=$1 and id=any($2::uuid[])",[org,ids]);
+        await db.query("delete from channel_sessions where organization_id=$1 and id=any($2::uuid[])",[org,sessions]);
+        await db.query(`delete from agent_responsibles r where organization_id=$1 and name=any($2::text[])
+          and not exists(select 1 from agent_responsible_bindings b where b.organization_id=r.organization_id and b.responsible_id=r.id)`,[org,names]);
+        await db.query(`delete from contacts c where organization_id=$1 and id=any($2::uuid[])
+          and not exists(select 1 from conversations v where v.organization_id=c.organization_id and v.contact_id=c.id)`,[org,contacts]);
+        await db.query("commit"); result={cleaned:true};
+      } catch(error) { await db.query("rollback"); throw error; } finally { db.release(); }
+    } else if (mode === "init") {
       const org = String(input.org); const session = randomUUID(); const agent = randomUUID(); const version = randomUUID();
       await pool.query("insert into channel_sessions(id,organization_id,waha_session_name,status,webhook_secret_encrypted) values($1,$2,$3,'WORKING','\\x00')", [session, org, `responsible-${session}`]);
       await pool.query("insert into ai_agents(id,organization_id,name,system_prompt,kind) values($1,$2,'Agente de consulta sintético','Atenda usando somente informações aprovadas.','mcp_agent')", [agent, org]);
