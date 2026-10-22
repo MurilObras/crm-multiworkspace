@@ -456,6 +456,9 @@ export const AUDIT_ACTIONS = [
   "crm_task.created",
   "crm_task.updated",
   "crm_task.deleted",
+  "ai.responsible_settings_updated",
+  "ai.responsible_saved",
+  "ai.responsible_reply_received",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

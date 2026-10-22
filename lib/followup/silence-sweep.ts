@@ -143,7 +143,7 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
 }
 
 type ContactEmbed =
-  | { tags: string[] | null; is_blocked: boolean | null; ai_authorized_at: string | null }
+  | { tags: string[] | null; is_blocked: boolean | null; ai_authorized_at: string | null; phone_number?: string | null }
   | null;
 
 /** Production adapter: `SilenceSweepDb` sobre o client service-role real. */
@@ -193,13 +193,20 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       const { data, error } = await admin
         .from("conversations")
         .select(
-          "contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked, ai_authorized_at), sessao:channel_session_id(metadata)",
+          "contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number), sessao:channel_session_id(metadata)",
         )
         .eq("organization_id", orgId)
         .not("last_inbound_at", "is", null)
         .not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`);
       if (error) throw new Error(error.message);
 
+      const [internal, pending] = await Promise.all([
+        admin.from("agent_responsibles").select("phone").eq("organization_id",orgId),
+        admin.from("agent_responsible_requests").select("contact_id").eq("organization_id",orgId).in("status",["pending","answered","failed"]),
+      ]);
+      if (internal.error || pending.error) throw new Error("responsible_silence_filter_unavailable");
+      const internalPhones = new Set((internal.data ?? []).map((r: { phone: string }) => r.phone));
+      const pendingContacts = new Set((pending.data ?? []).map((r: { contact_id: string }) => r.contact_id));
       type Row = {
         contact_id: string;
         last_inbound_at: string;
@@ -212,6 +219,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
         { at: number; tags: string[]; blocked: boolean; gateAllowlist: boolean; autorizado: boolean }
       >();
       for (const row of (data ?? []) as unknown as Row[]) {
+        if (pendingContacts.has(row.contact_id) || internalPhones.has(row.contacts?.phone_number ?? "")) continue;
         const at = new Date(row.last_inbound_at).getTime();
         const prev = latest.get(row.contact_id);
         if (!prev || at > prev.at) {

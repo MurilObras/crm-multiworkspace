@@ -1954,3 +1954,14 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 ## Continuação do follow-up após resposta
 
 `followup-dossie.spec.ts`: resposta encerra a sequência; novo silêncio retoma a mesma inscrição/etapa sem zerar contadores. O prazo anterior continua sendo piso. A linha do tempo mostra interrupção e retomada traduzidas (captura automática no artefato de execução do E2E). Banco isolado cobre varreduras concorrentes, isolamento de organização, pausa humana e replay antigo.
+
+
+## Consulta ao responsável pelo WhatsApp
+
+- [P0] Configuração opt-in por agente: cadastrar destinatário, selecionar, salvar e reabrir a tela.
+- [P0] Chamado → pausa própria → aviso → resposta citada → entrega confirmada → liberação da consulta.
+- [P0] Texto preservado e áudio com bytes reais no Storage e receiver HTTP local. Sem chamada de modelo.
+- [P0] Corrida entre responsáveis, citação errada, outro workspace, canal desconectado e entrega incerta sem reenvio.
+- [P1] Resposta pelos chamados existentes continua disponível; transferência mantém atendimento humano.
+- Cobertura: `tests/invariants/responsible-whatsapp.test.ts` e `tests/e2e/responsible-whatsapp.spec.ts`.
+- Laço de retorno: entregas pendentes/falhas aparecem no próprio chamado; os jobs são duráveis e usam ledger. Sem resposta não há encerramento automático.

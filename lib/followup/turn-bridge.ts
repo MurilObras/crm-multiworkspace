@@ -13,6 +13,7 @@
  * rota de cron).
  */
 import type pg from "pg";
+import { waitingForResponsible } from "@/lib/responsibles/service";
 
 import type { AdminClient, EnrollmentPatch } from "./engine";
 import { flowGraphSchema } from "./graph-schema";
@@ -266,6 +267,7 @@ export function createPgAdminClient(pool: Pick<pg.Pool, 'query'>): TurnBridgeAdm
       );
       const lead = leads[0];
       return {
+        responsible_pending: await waitingForResponsible(pool,orgId,contactId),
         lead_stage: lead?.stage_id ?? null,
         // Mesma fonte da varredura de silêncio e do adapter Supabase, sem fallback ao cartão.
         tags: contacts[0]?.tags ?? [],

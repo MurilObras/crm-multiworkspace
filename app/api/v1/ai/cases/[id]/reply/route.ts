@@ -124,6 +124,11 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     });
   }
   const { conversation_id: conversationId, contact_id: contactId } = caseRow;
+  const inFlight = await pool.query(`select d.id from agent_responsible_deliveries d
+    join agent_responsible_requests r on r.organization_id=d.organization_id and r.id=d.request_id
+    join job_queue j on j.organization_id=d.organization_id and j.id=d.job_id
+    where r.organization_id=$1 and r.case_id=$2 and r.status='answered' and d.purpose='answer' and d.status='sending' and j.status='running'`, [org.orgId,caseId]);
+  if (inFlight.rows.length) return fail("invalid_state","Uma resposta do responsável está sendo enviada. Aguarde a confirmação antes de responder novamente.",409,{requestId});
 
   if (action === "escalate") {
     // AVISA O LEAD ANTES DE SILENCIAR.
@@ -194,6 +199,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
       }
     } catch (err) {
       await client.query("rollback");
+      if (typeof err === "object" && err !== null && "code" in err && err.code === "55P03") return fail("invalid_state","Uma resposta do responsável está sendo enviada. Aguarde a confirmação.",409,{requestId});
       throw err;
     } finally {
       client.release();

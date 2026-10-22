@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import type pg from "pg";
+import { installResponsiblePause } from "@/tests/helpers/responsible-postgres";
 
 import { pgComoSupabase } from "@/tests/pg-como-supabase";
 import { createSupabaseAdminClient } from "./engine";
@@ -32,6 +33,7 @@ beforeAll(async () => {
     create table crm_leads(contact_id uuid, organization_id uuid, stage_id uuid,
       tags text[], custom_fields jsonb, updated_at timestamptz default now());
   `);
+  await installResponsiblePause(sql);
 });
 afterAll(() => sql.close());
 
@@ -39,7 +41,7 @@ for (const [name, adapter] of adapters)
   describe(name, () => {
     async function seed(contactTags: string[], leadTags: string[], withLead = true) {
       await sql.exec("truncate contacts, crm_leads");
-      await sql.query("insert into contacts values($1,$2,'Cliente de teste',$3)", [
+      await sql.query("insert into contacts(id,organization_id,name,tags) values($1,$2,'Cliente de teste',$3)", [
         CONTACT,
         ORG,
         contactTags,

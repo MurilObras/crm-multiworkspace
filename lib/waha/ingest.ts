@@ -25,6 +25,7 @@ import { ackToStatus } from "@/lib/types/messaging";
 import type { WahaEnvelope, WahaPayload } from "@/lib/waha/envelope";
 import { bareWaMessageId, chatIdFromWaMessageId } from "@/lib/waha/message-id";
 import { logger } from "@/lib/logger";
+import { responsibleQuotedId } from "./responsible-reply";
 
 export type Admin = ReturnType<typeof createAdminClient>;
 
@@ -553,10 +554,10 @@ async function mensagemIngeridaPorExternalId(
   admin: Admin,
   orgId: string,
   externalId: string,
-): Promise<{ id: string; contact_id: string; body: string | null } | null> {
+): Promise<{ id: string; contact_id: string; body: string | null; metadata?: Record<string, unknown> } | null> {
   const { data, error } = await admin
     .from("messages")
-    .select("id, contact_id, body")
+    .select("id, contact_id, body, metadata")
     .eq("organization_id", orgId)
     .eq("external_id", externalId)
     .eq("direction", "inbound")
@@ -632,9 +633,9 @@ async function handleInbound(
       sent_via: "external_device",
       sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
       delivered_at: now,
-      metadata: { raw_type: p.type, ack_name: p.ackName },
+      metadata: { raw_type: p.type, ack_name: p.ackName, responsible_quoted_id: responsibleQuotedId(p) },
     })
-    .select("id")
+    .select("id,metadata")
     .maybeSingle();
 
   // Idempotência: 23505 = unique (organization_id, external_id) já ingerido.
@@ -662,6 +663,9 @@ async function handleInbound(
     // pipeline (sem re-despachar o agente) destrava o match_reply.
     const existente = await mensagemIngeridaPorExternalId(admin, session.organization_id, p.id);
     if (existente) {
+      if (existente.metadata?.responsible_internal === true) {
+        return;
+      }
       try {
         await acelerarPipelineDeEventos(admin, {
           organizationId: session.organization_id,
@@ -681,6 +685,10 @@ async function handleInbound(
   }
 
   await markConversation(admin, session.organization_id, conversationId, "inbound", previewFromMessage(p), now);
+
+  if (insertedMessage?.metadata?.responsible_internal === true) {
+    return;
+  }
 
   await audit({
     action: "message.received",

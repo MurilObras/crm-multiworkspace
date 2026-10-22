@@ -14,6 +14,7 @@
  *     de fallback: playbook por ponteiro + settings.llm da org + knobs de env).
  */
 import type pg from 'pg';
+import { consultationInstructions } from '@/lib/responsibles/config';
 import { mediaPathOwnedBy, readApprovedMedia, type ApprovedMedia as ApprovedAudio } from '@/lib/ai/agents/approved-media';
 
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
@@ -38,6 +39,7 @@ export interface PublishedAgentConfig {
   multimodalInput: boolean;
   /** tools open_human_case/provide_case_update habilitadas no turno (spec 15). */
   casesEnabled: boolean;
+  responsibleConsultation?: boolean;
   /** tool_ids do catálogo MCP habilitadas na tela (2B-tools). */
   toolIds: string[];
   /**
@@ -107,6 +109,8 @@ interface Row {
   split_max_chars: number;
   multimodal_input: boolean;
   cases_enabled: boolean;
+  responsible_enabled?: boolean;
+  responsible_conditions?: string;
   tool_ids: string[] | null;
   active_kb_version_id: string | null;
   config: Record<string, unknown> | null;
@@ -137,6 +141,8 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.id as agent_id,
             v.split_max_chars,
             v.multimodal_input,
             v.cases_enabled,
+            coalesce((select s.enabled from agent_responsible_settings s where s.organization_id=a.organization_id and s.agent_id=a.id),false) as responsible_enabled,
+            (select s.conditions from agent_responsible_settings s where s.organization_id=a.organization_id and s.agent_id=a.id) as responsible_conditions,
             v.tool_ids,
             a.active_kb_version_id,
             a.config,
@@ -170,7 +176,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     versionId: r.version_id,
     agentName: r.agent_name,
     approvedAudios: readApprovedMedia(r.config).filter(a => a.enabled && mediaPathOwnedBy(a, r.organization_id, r.agent_id)),
-    systemPrompt: r.system_prompt,
+    systemPrompt: [r.system_prompt, consultationInstructions({ enabled: r.responsible_enabled === true, conditions: r.responsible_conditions ?? '' })].filter(Boolean).join('\n\n'),
     provider: r.provider,
     model: r.model,
     credentialId: r.credential_id,
@@ -182,7 +188,8 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     splitMessages: r.split_messages,
     splitMaxChars: r.split_max_chars,
     multimodalInput: r.multimodal_input,
-    casesEnabled: r.cases_enabled,
+    casesEnabled: r.cases_enabled || r.responsible_enabled === true,
+    responsibleConsultation: r.responsible_enabled === true,
     toolIds: r.tool_ids ?? [],
     // `?? []` cobre o clone sem a 0181: sem a coluna, o agente cai no ponteiro
     // legado abaixo em vez de ficar sem material nenhum.

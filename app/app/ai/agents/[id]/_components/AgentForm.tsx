@@ -49,6 +49,7 @@ import { PainelDoOperador } from "./PainelDoOperador";
 import { PainelDeSeguranca } from "./PainelDeSeguranca";
 import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
 import { ApprovedAudios } from './ApprovedAudios';
+import { ResponsibleConsultation } from './ResponsibleConsultation';
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import {
@@ -1047,17 +1048,19 @@ export function AgentForm(props: Props) {
                 disabled={disabled}
               />
               <Label htmlFor="cases_enabled">
-                {t("Deixar o agente pedir uma tarefa a alguém e seguir conversando")}
+                {t("Deixar o agente abrir pedidos internos")}
               </Label>
             </div>
             <p className="text-xs text-muted-foreground">
               {t(
-                "Diferente de passar a conversa: aqui o agente continua atendendo. Quando esbarra em algo que só uma pessoa resolve — aprovar um desconto, por exemplo — ele abre um pedido interno e retoma assim que for respondido.",
+                "O agente pode abrir um pedido interno quando depende de uma pessoa. Com a consulta pelo WhatsApp ativada abaixo, a conversa e os follow-ups ficam pausados até a resposta ser entregue.",
               )}
             </p>
           </Card>
 
           {/* Follow-up */}
+          {props.mode === "edit" && <ResponsibleConsultation key={props.agent.id} agentId={props.agent.id} disabled={disabled} />}
+
           <Card className="space-y-3 p-4">
             <h3 className="text-sm font-medium">{t("Follow-up")}</h3>
             <p className="text-xs text-muted-foreground">

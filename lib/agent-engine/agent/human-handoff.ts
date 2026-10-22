@@ -20,6 +20,7 @@
  * O resumo vai ao inbox (é PARA o humano assumir) — mas NUNCA a log (PII fora de log, regra 8).
  */
 import { z } from 'zod';
+import { notifyHandoff } from '@/lib/responsibles/service';
 import type pg from 'pg';
 
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
@@ -136,6 +137,12 @@ export async function performHumanHandoff(
     log: Logger;
   },
 ): Promise<void> {
+  const agent = await db.query<{ id: string }>(`select coalesce(v.active_ai_agent_id,
+    (select r.agent_id from ai_agent_runs r where r.organization_id=$1 and r.conversation_id=$2 and r.agent_id is not null order by r.created_at desc limit 1),
+    (select a.id from ai_agents a join ai_agent_versions av on av.id=a.published_version_id and av.organization_id=a.organization_id
+      where a.organization_id=$1 and av.channel_session_id=v.channel_session_id and av.status='published' and a.archived_at is null order by a.priority desc,a.created_at limit 1)) as id
+    from conversations v where v.organization_id=$1 and v.id=$2`, [ids.tenantId,ids.conversationId]);
+
   // (a) FONTE DA VERDADE: force_human no contato — irrevogável pelo agente (regra dura 2).
   await db.query(`update contacts set force_human = true where organization_id = $1 and id = $2`, [
     ids.tenantId,
@@ -180,6 +187,8 @@ export async function performHumanHandoff(
       ids.leadId,
     ],
   );
+
+  await notifyHandoff(db,ids.tenantId,ids.conversationId,agent.rows[0]?.id ?? null,opts.conversationSummary);
 
   // (e) A IDA na linha do tempo do NEGÓCIO. `triggerHandoff` (o caminho do CRM)
   // já gravava `handoff_triggered`; este caminho — o do harness e o do "Assumir
