@@ -22,8 +22,8 @@ test.describe('Dashboard: pagamento confirmado e configuração persistida',()=>
     if(membership.error)throw membership.error;
     const p=await db.from('crm_pipelines').insert({organization_id:org,name:`Dashboard E2E ${suffix}`,slug:`dashboard-e2e-${suffix}`}).select('id').single();
     if(p.error)throw p.error;pipeline=p.data.id;
-    const s=await db.from('crm_stages').insert([{organization_id:org,pipeline_id:pipeline,name:'Conversa',slug:`conversa-${suffix}`,position:1000},
-      {organization_id:org,pipeline_id:pipeline,name:'Confirmado',slug:`confirmado-${suffix}`,position:2000,is_won:true}]).select('id,is_won');
+    const s=await db.from('crm_stages').insert([{organization_id:org,pipeline_id:pipeline,name:'Conversa',slug:`conversa-${suffix}`,position:1000,is_won:false,is_lost:false},
+      {organization_id:org,pipeline_id:pipeline,name:'Confirmado',slug:`confirmado-${suffix}`,position:2000,is_won:true,is_lost:false}]).select('id,is_won');
     if(s.error)throw s.error;stage=s.data.find(x=>!x.is_won)!.id;
     const l=await db.from('crm_leads').insert({organization_id:org,pipeline_id:pipeline,stage_id:stage,title:`Pagamento E2E ${suffix}`,
       value_cents:25000,currency:'BRL',position_in_stage:1000,source:'manual'}).select('id').single();

@@ -38,7 +38,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "2a5613b867f412c71f4819359bced60f9fd84586"
+          "blob_sha": "589f77068bd22f828b01355d09a68f8b9bdc2f25"
         },
         {
           "path": "tests/e2e/wizard-do-funcionario.spec.ts",
@@ -65,8 +65,8 @@
     {
       "id": "workspaces-e-acessos",
       "title": "Workspaces, navegação e acessos",
-      "body": "# Workspaces, navegação e acessos\n\nUm workspace é um espaço de operação com seus próprios números de WhatsApp, funis e agentes. Antes de procurar um contato, uma automação ou uma configuração, confira em qual workspace você está.\n\n## Trocar ou criar um workspace\n\nSe sua conta participa de mais de um workspace, o seletor mostra o nome do espaço ativo. Abra-o e escolha o destino. Quando há apenas um workspace disponível, esse seletor pode não aparecer.\n\nPara criar um espaço, abra o **Menu do usuário**, escolha **Criar workspace**, informe um nome e confirme. A criação exige permissão de administrador e inicia a preparação do novo espaço. Quem o cria recebe acesso de administrador nele.\n\nCriar um workspace não transfere automaticamente a operação anterior. Trate o novo espaço como uma configuração própria; confira números, funis, agentes e pessoas antes de começar a usá-lo.\n\n## Onde encontrar as áreas\n\n- **Visão geral:** Dashboard, no início do menu para atendentes e gestores. Os indicadores seguem o workspace ativo e o acesso da pessoa; configurações financeiras e campanhas exigem gerente ou administrador.\n- **Atendimento:** Inbox, Radar, Agenda e Respostas rápidas.\n- **CRM:** Funis e Contatos; use **Ver tudo em CRM** para encontrar as demais áreas.\n- **Agente de IA:** Agentes e outras configurações; use **Ver tudo em IA** quando necessário.\n- **Canais:** Conexões e Webhooks, conforme sua permissão.\n- **Configurações:** Equipe, Workspace, Segurança e outras opções de administração. O acesso fica no rodapé da barra lateral.\n\n## Um menu sumiu ou o acesso foi negado\n\nPrimeiro confirme o workspace selecionado. A navegação varia conforme o papel da pessoa: **Conexões**, **Workspace** e **LGPD** exigem administração; **Webhooks** exige papel de gerente ou administrador.\n\nPeça a quem administra o workspace para revisar seu acesso em **Configurações → Equipe**. O assistente pode explicar a navegação, mas não concede permissões. Informar no chat que você é administrador não modifica o acesso registrado no CRM.\n\n## Quando pedir ajuda\n\nDescreva qual menu esperava encontrar, qual papel de acesso lhe foi atribuído e se a situação ocorre em um ou em mais workspaces. Use nomes genéricos ao falar de clientes ou operações internas. Não compartilhe links de convite, códigos de acesso nem credenciais.\n",
-      "body_sha256": "89c4adcee3b64ad8bcda64562bc5ed921c24553c4586693bf68e501375ae1a8a",
+      "body": "# Workspaces, navegação e acessos\n\nUm workspace é um espaço de operação com seus próprios números de WhatsApp, funis e agentes. Antes de procurar um contato, uma automação ou uma configuração, confira em qual workspace você está.\n\n## Trocar ou criar um workspace\n\nSe sua conta participa de mais de um workspace, o seletor mostra o nome do espaço ativo. Abra-o e escolha o destino. Quando há apenas um workspace disponível, esse seletor pode não aparecer.\n\nPara criar um espaço, abra o **Menu do usuário**, escolha **Criar workspace**, informe um nome e confirme. A criação exige permissão de administrador e inicia a preparação do novo espaço. Quem o cria recebe acesso de administrador nele.\n\nCriar um workspace não transfere automaticamente a operação anterior. Trate o novo espaço como uma configuração própria; confira números, funis, agentes e pessoas antes de começar a usá-lo.\n\n## Onde encontrar as áreas\n\n- **Visão geral:** Dashboard, no início do menu para atendentes e gestores. Os indicadores seguem o workspace ativo e o acesso da pessoa; configurações financeiras e campanhas exigem gerente ou administrador.\n- **Atendimento:** Inbox, Radar, Agenda e Respostas rápidas.\n- **CRM:** Funis e Contatos; use **Ver tudo em CRM** para encontrar as demais áreas.\n- **Agente de IA:** Agentes e outras configurações; use **Ver tudo em IA** quando necessário.\n- **Canais:** Conexões e Webhooks, conforme sua permissão.\n- **Análise:** Atividades e **Ver tudo em Análise**, que reúne Desempenho, Meta Ads e as demais análises detalhadas. O Dashboard também oferece acesso às métricas detalhadas de atendimento.\n- **Configurações:** Equipe, Workspace, Segurança e outras opções de administração. O acesso fica no rodapé da barra lateral.\n\n## Um menu sumiu ou o acesso foi negado\n\nPrimeiro confirme o workspace selecionado. A navegação varia conforme o papel da pessoa: **Conexões**, **Workspace** e **LGPD** exigem administração; **Webhooks** exige papel de gerente ou administrador.\n\nPeça a quem administra o workspace para revisar seu acesso em **Configurações → Equipe**. O assistente pode explicar a navegação, mas não concede permissões. Informar no chat que você é administrador não modifica o acesso registrado no CRM.\n\n## Quando pedir ajuda\n\nDescreva qual menu esperava encontrar, qual papel de acesso lhe foi atribuído e se a situação ocorre em um ou em mais workspaces. Use nomes genéricos ao falar de clientes ou operações internas. Não compartilhe links de convite, códigos de acesso nem credenciais.\n",
+      "body_sha256": "7ea0561262288574bdb23581719b053a83eb441b6747a7e1ee58d308e71b678f",
       "sources": [
         {
           "path": "docs/architecture/workspace-e-organization.md",
@@ -86,7 +86,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "2a5613b867f412c71f4819359bced60f9fd84586"
+          "blob_sha": "589f77068bd22f828b01355d09a68f8b9bdc2f25"
         },
         {
           "path": "tests/e2e/workspace-criar-e-trocar.spec.ts",
@@ -114,7 +114,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "2a5613b867f412c71f4819359bced60f9fd84586"
+          "blob_sha": "589f77068bd22f828b01355d09a68f8b9bdc2f25"
         },
         {
           "path": "tests/unit/estado-do-canal-na-tela.test.ts",
@@ -154,7 +154,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "2a5613b867f412c71f4819359bced60f9fd84586"
+          "blob_sha": "589f77068bd22f828b01355d09a68f8b9bdc2f25"
         },
         {
           "path": "tests/e2e/automacao-diz-a-verdade.spec.ts",
@@ -194,7 +194,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "2a5613b867f412c71f4819359bced60f9fd84586"
+          "blob_sha": "589f77068bd22f828b01355d09a68f8b9bdc2f25"
         }
       ]
     }

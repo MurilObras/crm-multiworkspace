@@ -843,6 +843,10 @@ jobs:
           # Regressão da virada do mês: primeiro isolada, depois na mesma
           # instalação/build com toda a parte 2 (inclui privacidade e refetch).
           if [ "${{ matrix.parte }}" = "1" ]; then
+            # Prova rápida do fluxo financeiro e da dobra do menu antes da
+            # bateria. Os mesmos cenários continuam na lista completa.
+            pnpm exec playwright test tests/e2e/commercial-dashboard.spec.ts tests/e2e/navegacao.spec.ts --grep 'gestor configura|sidebar tem hierarquia|nenhum grupo fica fora' --workers=1 --reporter=list
+            test -s .superpowers/evidence/commercial-dashboard/pagamento-quantidade-e-configuracao.png
             # Antes dependia de conversas deixadas por outras specs e pulava
             # silenciosamente. Prova isolada primeiro; a bateria repete depois.
             pnpm exec playwright test tests/e2e/inbox-responder-citando.spec.ts --workers=1 --reporter=list

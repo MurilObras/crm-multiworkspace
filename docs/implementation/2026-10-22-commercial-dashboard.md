@@ -81,3 +81,9 @@ Não usar este checkpoint como declaração de funcionalidade concluída ou vali
 - Interface usa o idioma da sessão, com traduções em espanhol e datas no fuso válido; navegação inclui Dashboard no início: 44 testes locais passaram.
 - Catálogos que excedem o teto real do PostgREST são recusados, sem ocultar etapas silenciosamente. Fuso inválido degrada ao padrão no diálogo de campanhas: 9 verificações de API passaram.
 - Merge e deploy continuam condicionados ao CI/E2E do commit final e à revisão de integração.
+
+## Correções do E2E
+
+- A preparação do teste criava etapas em lote com chaves diferentes; PostgREST enviava is_won nulo na primeira linha. Os dois registros agora declaram is_won/is_lost explicitamente.
+- O novo grupo excedia a dobra do menu de 900px. Dashboard permanece primeiro; Desempenho e Meta Ads ficam no hub de Análise e na busca, sem reduzir alvos de clique. O teste mantém a exigência de não rolar e verifica a nova ordem.
+- Uma prova isolada dos três cenários precede a bateria completa, que mantém os mesmos arquivos e verificações. A segunda parte do E2E anterior passou.

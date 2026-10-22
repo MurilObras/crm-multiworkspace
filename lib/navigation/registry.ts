@@ -519,11 +519,11 @@ export const NAV_DESTINATIONS: NavDestination[] = [
   //
   // ── QUEM FICA NO MENU, E POR QUÊ ─────────────────────────────────────────
   //
-  // A régua é a FREQUÊNCIA de quem opera vendas por WhatsApp, não a importância
-  // da tela. As três de cima entram na rotina — o dono abre Desempenho para
-  // saber como vai o mês, Meta Ads para saber quanto custou trazer quem chegou,
-  // e Atividades para saber se a equipe (e a IA) trabalhou no período. São
-  // perguntas que se refazem toda semana, e um menu é para o que se refaz.
+  // O Dashboard, no início do menu, reúne a visão diária de vendas e campanhas.
+  // Desempenho e Meta Ads continuam no hub e na busca; o próprio Dashboard
+  // também oferece acesso às métricas detalhadas. Isso preserva a dobra de
+  // 900px ao acrescentar Visão geral, sem reduzir a altura dos alvos de clique.
+  // Atividades permanece no menu para consultar o trabalho da equipe e da IA.
   //
   // As duas de baixo são visita DELIBERADA: "Evolução da IA" é revisão do
   // agente, coisa de quando se senta para ensiná-lo — e quem senta para isso já
@@ -541,7 +541,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     icon: ChartBar,
     group: "analise",
     section: "Os números do período",
-    sidebar: true,
   },
   {
     // Logo abaixo de Desempenho porque responde a metade da MESMA pergunta: lá
@@ -557,7 +556,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     // pessoa — orçamento e criativo são da empresa inteira. Mesmo grau dos
     // outros dois vizinhos do grupo.
     minRole: "manager",
-    sidebar: true,
   },
   {
     // Irmã de "Desempenho", não a mesma coisa: lá é DESFECHO (funil agora,
