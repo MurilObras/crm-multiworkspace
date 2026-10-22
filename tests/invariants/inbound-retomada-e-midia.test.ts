@@ -418,7 +418,9 @@ describe("retomada de inbound no turno completo", () => {
           : [{ type: 'text', text: CHECKPOINT }], finishReason: { unified: input ? 'tool-calls' : 'stop', raw: undefined }, usage: USO, warnings: [] };
       }, 4, revoked ? i => { if (i.media?.type === 'audio') throw new OutboundApprovalRevokedError(); } : undefined));
       expect(error).toBeNull(); expect(enviados).toHaveLength(2);
-      expect(classifications).toBe(outside ? 0 : 1);
+      // O assunto é reconhecido antes do gate final da etapa; estar fora da
+      // etapa impede o transporte e o catálogo, não a classificação contextual.
+      expect(classifications).toBe(1);
       expect(enviados[0]?.media).toBeUndefined();
       if (revoked || outside) expect(enviados[1]?.media).toBeUndefined();
       else expect(enviados[1]).toMatchObject({ body: audio.title, media: { type: 'audio', audio_id: audioId, agent_id: agent } });
