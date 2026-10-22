@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { outboundPostgres, ORG, CONTACT, CONV, JOB } from '../helpers/outbound-postgres';
-import { availableConversationAudios, assertConversationAudioAvailable, assertRawMediaNotPreviouslyManaged, explicitAudioPreference } from '@/lib/agent-engine/agent/conversation-audios';
+import { availableConversationAudios, assertConversationAudioAvailable, assertRawMediaNotPreviouslyManaged, explicitAudioPreference, isRequestedApprovedMediaReplay } from '@/lib/agent-engine/agent/conversation-audios';
 import { readApprovedAudios, renderApprovedAudios } from '@/lib/ai/agents/approved-audios';
 import { requiredAudioPlan, deliverRequiredAudio } from '@/lib/agent-engine/agent/required-audio';
 import type { JobRow } from '@/lib/agent-engine/queue/queue';
@@ -135,6 +135,47 @@ async function repeatRequest(body: string) {
   await db.pool.query('update job_queue set payload=$1 where id=$2',
     [JSON.stringify({ conversation_id: CONV, inbound_message_id: INBOUND }),JOB]);
 }
+
+async function replayProof(body = 'Pode reenviar somente o áudio de conclusão de matrícula?') {
+  await repeatRequest(body);
+  await db.pool.query(`update job_queue set payload=payload || $1::jsonb where id=$2`,
+    [JSON.stringify({audio_rule_decision:{agent_id:AGENT,audio_id:AUDIO}}),JOB]);
+}
+const replayMedia = () => ({...audios[0]!,title:'Conclusão de matrícula',allow_requested_repeat:true});
+const proof = () => isRequestedApprovedMediaReplay(db.pool,ORG,CONV,CONTACT,AGENT,JOB,replayMedia());
+it('comprova reenvio aprovado após entrega anterior e novo pedido do contato',async () => {
+  await held('read','confirmed'); await replayProof();
+  expect(await proof()).toBe(true);
+});
+it.each(['Como concluo a matrícula?', 'Não quero áudio; só texto'])('não dispensa proteção sem pedido explícito: %s',async body => {
+  await held('read','confirmed'); await replayProof(body);
+  expect(await proof()).toBe(false);
+});
+it('primeira entrega não é reenvio, mesmo com pedido de áudio',async () => {
+  await replayProof(); expect(await proof()).toBe(false);
+});
+it.each([['queued','prepared'],['failed','uncertain'],['sending','started']])('tentativa %s/%s não autoriza exceção',async (status,phase) => {
+  await held(status,phase); await replayProof(); expect(await proof()).toBe(false);
+});
+it.each(['organization','conversation','contact','agent','media','status'])(
+  'prova é vinculada ao job e ao escopo correto: %s',async field => {
+    await held('read','confirmed'); await replayProof();
+    if(field==='organization') await db.pool.query('update job_queue set organization_id=$1 where id=$2',[OTHER,JOB]);
+    if(field==='conversation') await db.pool.query("update job_queue set payload=jsonb_set(payload,'{conversation_id}',$1) where id=$2",[JSON.stringify(OTHER),JOB]);
+    if(field==='contact') await db.pool.query('update job_queue set contact_id=$1 where id=$2',[OTHER,JOB]);
+    if(field==='agent'||field==='media') await db.pool.query('update job_queue set payload=payload || $1::jsonb where id=$2',
+      [JSON.stringify({audio_rule_decision:{agent_id:field==='agent'?OTHER:AGENT,audio_id:field==='media'?OTHER:AUDIO}}),JOB]);
+    if(field==='status') await db.pool.query("update job_queue set status='done' where id=$1",[JOB]);
+    expect(await proof()).toBe(false);
+  });
+it('opção desligada, aprovação retirada e pedido já satisfeito não liberam repetição',async () => {
+  await held('read','confirmed'); await replayProof();
+  for(const media of [{...replayMedia(),enabled:false},{...replayMedia(),allow_requested_repeat:false}])
+    expect(await isRequestedApprovedMediaReplay(db.pool,ORG,CONV,CONTACT,AGENT,JOB,media)).toBe(false);
+  await db.pool.query("update messages set metadata=metadata || $1::jsonb where id=$2",
+    [JSON.stringify({approved_media:{agent_id:AGENT,media_id:AUDIO,request_inbound_id:INBOUND}}),MESSAGE]);
+  expect(await proof()).toBe(false);
+});
 it('reenvio de conclusão não oferece recepção inédita do mesmo formato', async () => {
   await held('sent', 'confirmed');
   await repeatRequest('Chegou uma recepção junto. Quero somente repetir o áudio de conclusão de matrícula, sem outro áudio. Pode mandar?');

@@ -1972,6 +1972,9 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 - Escolha única por turno para opcionais e obrigatórias; preservar a decisão no retry.
 - Negativa de áudio, entregas incertas e repetição sem pedido continuam vetando envio.
 - Regressões executáveis: `conversation-audios.test.ts` e `audio-rule.test.ts`.
+- Reenvio autorizado é comprovado pelo job, contato, mídia e histórico de entrega; o título fixo não é julgado como nova campanha. A exceção não vem de uma ferramenta do modelo.
+- Regressões da proteção: `conversation-audios.test.ts` e `inbound-retomada-e-midia.test.ts` cobrem repetição, escopo, tentativa incerta, opção desligada, aquecimento e contato bloqueado.
+- Visibilidade e retorno: a cadeia mantém o trace no Inbox; o plano de mídia registra o resultado real, incluindo veto, sem anunciar entrega na mensagem de contexto. Nenhuma configuração nova ou migration.
 
 ## Dashboard comercial
 

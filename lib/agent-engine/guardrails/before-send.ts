@@ -213,7 +213,13 @@ export interface GateContext {
    * NÚMERO de um banimento. Um default desarmado desligaria a proteção
    * anti-ban em todo chamador que não conhece este campo.
    *
-   * O único que o desarma é o AVISO DE ESCALAÇÃO
+   * O AVISO DE ESCALAÇÃO e o reenvio de mídia aprovada comprovado pelo
+   * servidor podem dispensar esta comparação. No reenvio, o título fixo da
+   * mídia não representa uma campanha: há entrega anterior e novo pedido
+   * explícito do mesmo contato. A autorização não vem da tool do modelo;
+   * aprovação, etapa, preferência, recência e idempotência seguem no sink.
+   *
+   * No AVISO DE ESCALAÇÃO
    * (`lib/agent-engine/agent/aviso-de-escalacao.ts`), e a razão é aritmética,
    * não preferência. `decideSpinning` conta as candidatas idênticas ou
    * quase-idênticas (Jaccard ≥ 0,8) nas últimas `windowSize` (20) mensagens do

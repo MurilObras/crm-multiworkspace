@@ -60,7 +60,7 @@
       "id": "historico",
       "lane": "turno",
       "label": "messages → conversation-audios",
-      "sublabel": "Preferências duráveis; fingerprint entre agentes; reenvio só a pedido, uma vez por inbound; pendência/incerteza bloqueiam"
+      "sublabel": "Preferências duráveis; reenvio aprovado comprovado por job/contato/entrega dispensa apenas comparação do título; pendência/incerteza bloqueiam"
     },
     {
       "id": "modelo",
