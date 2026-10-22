@@ -2,7 +2,7 @@
 import { beforeAll, beforeEach, afterAll, expect, it, vi } from 'vitest';
 import { outboundPostgres, ORG, CONTACT, CONV, JOB } from '../helpers/outbound-postgres';
 import { readApprovedMedia as readApprovedAudios } from '@/lib/ai/agents/approved-media';
-import { audioIntentMessage, parseAudioIntent, decideRequiredAudio, isFirstAudioContact } from '@/lib/agent-engine/agent/audio-rule';
+import { audioIntentMessage, parseAudioIntent, decideRequiredAudio, decideTurnMedia, isFirstAudioContact } from '@/lib/agent-engine/agent/audio-rule';
 import { requiredAudioPlan, deliverRequiredAudio } from '@/lib/agent-engine/agent/required-audio';
 import type { JobRow } from '@/lib/agent-engine/queue/queue';
 
@@ -22,6 +22,16 @@ beforeEach(async () => {
 async function job() { return (await db.pool.query<JobRow>('select * from job_queue where id=$1', [JOB])).rows[0]!; }
 const decide = async (classify: (candidates: typeof audios) => Promise<string | null>, firstContact = false, catalog = audios) =>
   decideRequiredAudio({ db: db.pool, job: await job(), worker: 'audio-test', agent: AGENT, audios: catalog, firstContact, classify });
+
+it('decisão nula nova restringe o catálogo no retry, sem abandonar job legado', async () => {
+  const args = { db:db.pool,worker:'audio-test',agent:AGENT,audios,firstContact:false,includeOptional:true,classify:vi.fn(async()=>null) };
+  expect(await decideTurnMedia({ ...args,job:await job() })).toEqual({id:null,exclusive:true});
+  expect(await decideTurnMedia({ ...args,job:await job() })).toEqual({id:null,exclusive:true});
+  expect(args.classify).toHaveBeenCalledOnce();
+  await db.pool.query("update job_queue set payload=jsonb_build_object('audio_rule_decision',$1::jsonb)",
+    [JSON.stringify({agent_id:AGENT,audio_id:null})]);
+  expect(await decideTurnMedia({ ...args,job:await job() })).toEqual({id:null,exclusive:false});
+});
 
 it('escolha única inclui opcionais e não seleciona outra mídia obrigatória em paralelo', async () => {
   const optional = { ...audios[0]!, id: OTHER, title: 'Objeção de preço', required: false };

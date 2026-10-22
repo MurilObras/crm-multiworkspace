@@ -91,15 +91,16 @@ export async function isFirstAudioContact(db: Queryable, org: string, conversati
 
 /** Inclusive null persiste antes da primeira saída. Nunca introduz seq 1/2 em
  * retry antigo que já usou essas intenções sem um plano de áudio. */
-export async function decideRequiredAudio(args: {
+export async function decideTurnMedia(args: {
   db: Queryable; job: JobRow; worker: string; agent: string; audios: ApprovedAudio[];
   firstContact: boolean; classify: (candidates: ApprovedAudio[]) => Promise<string | null>;
   includeOptional?: boolean;
-}): Promise<string | null> {
+}): Promise<{ id: string | null; exclusive: boolean }> {
   const cached = args.job.payload.audio_rule_decision;
   if (cached !== undefined) {
     const decision = decisionSchema.parse(cached);
-    return decision.agent_id === args.agent ? decision.audio_id : null;
+    return { id: decision.agent_id === args.agent ? decision.audio_id : null,
+      exclusive: args.job.payload.media_catalog_decision === true || decision.audio_id !== null };
   }
   const { rows: prior } = await args.db.query('select id from send_ledger where organization_id=$1 and job_id=$2 limit 1',
     [args.job.organization_id, args.job.id]);
@@ -111,14 +112,23 @@ export async function decideRequiredAudio(args: {
   const matched = prior.length || !topics.length ? null : await args.classify(topics);
   const selected = prior.length ? null : matched ?? greeting?.id ?? null;
   const decision = { agent_id: args.agent, audio_id: required.some(a => a.id === selected) ? selected : null };
-  const { rows } = await args.db.query<{ decision: unknown }>(
+  const { rows } = await args.db.query<{ decision: unknown; exclusive: boolean }>(
     `update job_queue set payload=coalesce(payload,'{}'::jsonb) || jsonb_build_object(
-       'audio_rule_decision',coalesce(payload->'audio_rule_decision',$5::jsonb))
+       'audio_rule_decision',coalesce(payload->'audio_rule_decision',$5::jsonb),
+       'media_catalog_decision',coalesce(payload->'media_catalog_decision',$6::jsonb))
       where id=$1 and organization_id=$2 and contact_id is not distinct from $3
-        and status='running' and locked_by=$4 returning payload->'audio_rule_decision' as decision`,
-    [args.job.id, args.job.organization_id, args.job.contact_id, args.worker, JSON.stringify(decision)],
+        and status='running' and locked_by=$4 returning payload->'audio_rule_decision' as decision,
+        payload->'media_catalog_decision' as exclusive`,
+    [args.job.id, args.job.organization_id, args.job.contact_id, args.worker, JSON.stringify(decision),
+      JSON.stringify(args.includeOptional === true && prior.length === 0)],
   );
   if (!rows[0]) throw new OutboundLeaseLostError();
   const persisted = decisionSchema.parse(rows[0].decision);
-  return persisted.agent_id === args.agent ? persisted.audio_id : null;
+  return { id: persisted.agent_id === args.agent ? persisted.audio_id : null,
+    exclusive: rows[0].exclusive === true || persisted.audio_id !== null };
+}
+
+/** Contrato legado dos consumidores que só precisam da regra obrigatória. */
+export async function decideRequiredAudio(args: Parameters<typeof decideTurnMedia>[0]): Promise<string | null> {
+  return (await decideTurnMedia(args)).id;
 }

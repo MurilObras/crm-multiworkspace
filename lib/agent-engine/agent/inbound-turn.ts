@@ -71,7 +71,7 @@ import { OutboundAudioUnavailableError, OutboundLeaseLostError, OutboundPrefligh
 import { eligibleAudiosForContact } from './audio-stage-eligibility';
 import { availableConversationAudios } from './conversation-audios';
 import { requiredAudioPlan, deliverRequiredAudio, type RequiredAudioPlan } from './required-audio';
-import { AUDIO_INTENT_INSTRUCTION, audioIntentMessage, parseAudioIntent, decideRequiredAudio, isFirstAudioContact, pendingAudioSubject } from './audio-rule';
+import { AUDIO_INTENT_INSTRUCTION, audioIntentMessage, parseAudioIntent, decideTurnMedia, isFirstAudioContact, pendingAudioSubject } from './audio-rule';
 import { applyLeadStateUpdate, getLeadState, type LeadStage, type LeadStateRow } from './lead-state';
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -3452,7 +3452,7 @@ async function executarTurnoDoAgente(
       } else {
         const candidates = await availableConversationAudios(pool, tenantId, input.conversationId,
           agentConfig.agentId, job.id, agentConfig.approvedAudios ?? [], inboundAnchor, firstAudioContact);
-        const selected = await decideRequiredAudio({ db: pool, job, worker: ctx.workerId, agent: agentConfig.agentId,
+        const { id: selected, exclusive } = await decideTurnMedia({ db: pool, job, worker: ctx.workerId, agent: agentConfig.agentId,
           audios: candidates, firstContact: firstAudioContact, includeOptional: true, classify: async topics => {
             try {
               const call = await runModelCall(pool, deps.llmCfg, { tenantId, leadId, jobId: job.id,
@@ -3474,7 +3474,9 @@ async function executarTurnoDoAgente(
               return null;
             }
           } });
-        selectedTurnMedia = selected;
+        // Retomada de job anterior à escolha unificada conserva o catálogo antigo:
+        // não abandona uma mídia opcional que já estava queued no ledger.
+        selectedTurnMedia = exclusive ? selected : undefined;
         audioPlan = await requiredAudioPlan(pool, job, ctx.workerId, agentConfig.agentId,
           candidates.filter(a => a.id === selected), maxSendsPerTurn, 'after_response');
         if (selected && !audioPlan && candidates.some(a => a.id === selected && a.required)) {
