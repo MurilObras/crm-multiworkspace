@@ -8,25 +8,6 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
-## [3.7.0] — 2026-10-22
-
-### Adicionado
-
-- **Acompanhe campanhas até o primeiro pagamento confirmado** O Dashboard abre um novo destino no início do menu de cada workspace. Gestores
-  podem definir etapas de qualificação, registrar e corrigir o primeiro pagamento,
-  separar vendas de quantidade vendida e vincular campanhas de anúncios.
-
-  Gastos sem consulta completa aparecem como indisponíveis; moedas e fusos diferentes
-  não são misturados. Links de origem e o contrato adicional do aplicativo permitem
-  acompanhar a captação até o pagamento, preservando o acompanhamento de 96 horas.
-
-### Corrigido
-
-- **Reenvie somente a mídia solicitada pelo cliente** O pedido de repetir uma gravação agora preserva uma única escolha entre mídias
-  obrigatórias e opcionais. A recepção não é liberada junto com outro áudio, e
-  pedidos como “quero somente repetir o áudio de conclusão” são reconhecidos.
-  Histórico, preferência por texto e bloqueio de entregas pendentes continuam valendo.
-
 ## [3.6.0] — 2026-10-22
 
 ### Adicionado
@@ -3403,8 +3384,7 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.0...HEAD
-[3.7.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.6.0...v3.7.0
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.6.0...HEAD
 [3.6.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.2...v3.6.0
 [3.5.2]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.1...v3.5.2
 [3.5.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.0...v3.5.1
