@@ -91,6 +91,11 @@ export const CHANNEL_PROVIDER_WAHA: ChannelProvider = "waha";
 export const CHANNEL_PROVIDER_META: ChannelProvider = "meta_cloud";
 export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
 
+/** A ingestão de respostas citadas desta primeira versão está disponível no canal por QR. */
+export function supportsResponsibleReplies(provider: ChannelProvider | null | undefined): boolean {
+  return provider === CHANNEL_PROVIDER_WAHA;
+}
+
 export function capabilitiesOf(provider: ChannelProvider): ChannelCapabilities {
   const caps = CHANNEL_CAPABILITIES[provider];
   // Fail-closed: provider fora da matriz não herda o default do WAHA. O tipo

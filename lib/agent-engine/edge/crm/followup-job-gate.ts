@@ -12,9 +12,10 @@ export function followupRetryDelay(retryAt: Date | null, now = Date.now()): numb
  * da retomada vale também para um job criado antes de o humano assumir. */
 export async function followupJobGate(db: Queryable, org: string, job: string, contact: string | null, worker?: string) {
   const { rows } = await db.query<{ allowed: boolean; owned: boolean; retry_at: Date | string | null; db_now?: Date | string; flow_send_window?: unknown }>(
-    `select public.fn_followup_job_live($1,$2,$3) as allowed,
+    `select (public.fn_followup_job_live($1,$2,$3) and (j.kind <> 'followup_turn' or not public.fn_responsible_waiting($1,$3))) as allowed,
        (j.status='running' and ($4::text is null or j.locked_by=$4)) as owned,
-       case when e.current_node_id is distinct from j.payload->>'node_id'
+       case when j.kind='followup_turn' and public.fn_responsible_waiting($1,$3) then now()+interval '1 minute'
+         when e.current_node_id is distinct from j.payload->>'node_id'
          or (j.payload->>'node_epoch' is not null and e.node_epoch<>(j.payload->>'node_epoch')::integer) then null
          when e.status in ('paused_manual','paused_handoff') then now()+interval '1 minute'
          when e.status in ('active','waiting_reply') then (

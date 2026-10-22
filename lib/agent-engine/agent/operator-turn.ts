@@ -44,6 +44,7 @@ import { declaracaoDoTurnoSchema, promessasEmAberto, type DeclaracaoDoTurno } fr
 import { loadPublishedAgentConfigById } from './agent-config';
 import { AUTOMATION_AGENT_INTENT, withBindingPolicy } from '@/lib/automation/ai-binding-policy';
 import { isLeadInHandoff } from './human-handoff';
+import { waitingForResponsible } from '@/lib/responsibles/service';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
 import { insertInboxItem } from '../db/repository';
@@ -291,7 +292,7 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
     // ela — `inbound-turn` e `followup-turn` a têm, e o formato aqui é o deles
     // (registrar o motivo e sair). Persistir o desfecho de cada caminho é
     // trabalho separado, e vale para os quatro do mesmo jeito.
-    if (await isLeadInHandoff(pool, tenantId, leadId)) {
+    if (await isLeadInHandoff(pool, tenantId, leadId) || await waitingForResponsible(pool,tenantId,leadId)) {
       // Único caminho que sai SEM apurar promessa, e é deliberado: quem assumiu
       // está com a conversa aberta na frente. Abrir um item de Central para uma
       // pessoa que já está olhando é o alarme redundante que ensina a ignorar os

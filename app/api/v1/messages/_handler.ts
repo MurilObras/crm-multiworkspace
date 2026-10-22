@@ -263,7 +263,7 @@ export async function sendMessageHandler(
     channel_sessions: (ChannelSessionRef & { status: string; archived_at?: string | null }) | null;
   };
   const c = conv as unknown as Joined;
-  if (ctx.actor.type !== "user") {
+  if ((ctx.actor.type !== "user" && ctx.actor.type !== "responsible")) {
     await currentAutomaticRecipient(supabase,ctx.organization_id,c.contact_id);
   }
 
@@ -425,7 +425,7 @@ export async function sendMessageHandler(
     media_mime: input.media_mime ?? null,
     media_storage_path: input.media_storage_path ?? null,
     media_size_bytes: input.media_size_bytes ?? null,
-    sent_via: ctx.actor.type !== "user" ? ("ai" as const) : ("user" as const),
+    sent_via: (ctx.actor.type !== "user" && ctx.actor.type !== "responsible") ? ("ai" as const) : ("user" as const),
     sent_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
     sent_at: now,
     metadata: {
@@ -580,7 +580,10 @@ export async function sendMessageHandler(
   } else {
     let transportStarted = false;
     const beginTransport = async () => {
-      if (ctx.actor.type !== "user") {
+      if ((ctx.actor.type !== "user" && ctx.actor.type !== "responsible")) {
+        const pending = await supabase.rpc("fn_responsible_waiting", { p_org: ctx.organization_id, p_contact: c.contact_id });
+        if (pending.error) throw new ApiError(503,"internal_error",undefined,ctx.requestId,"responsible_pause_unavailable");
+        if (pending.data === true) throw new OutboundPreflightDeferredError("awaiting_responsible");
         const current = await currentAutomaticRecipient(supabase, ctx.organization_id, c.contact_id);
         if (current.phone_number !== c.contacts?.phone_number || current.wa_identity !== c.contacts?.wa_identity ||
             current.wa_lid !== c.contacts?.wa_lid) {
@@ -624,7 +627,7 @@ export async function sendMessageHandler(
       // método) do outro lado do seam.
       let externalId: string | null;
       if (input.type === "template") {
-        if (ctx.actor.type !== "user" && !capabilitiesOf(provider).requiresTemplates) {
+        if ((ctx.actor.type !== "user" && ctx.actor.type !== "responsible") && !capabilitiesOf(provider).requiresTemplates) {
           throw new Error("template_not_supported");
         }
         // Template é caminho próprio: não passa pelo `adapter.send` (que fala em
@@ -654,7 +657,7 @@ export async function sendMessageHandler(
           name: input.template_name ?? "",
           language: input.template_language ?? "",
           values: input.template_values ?? {},
-          requireApproved: ctx.actor.type !== "user",
+          requireApproved: (ctx.actor.type !== "user" && ctx.actor.type !== "responsible"),
         });
 
         await beginTransport();
@@ -786,7 +789,7 @@ export async function sendMessageHandler(
         "meta_credentials_lookup_failed", "meta_session_credentials_missing", "template_lookup_failed", "template_missing", "template_stale"]
         .find(reason => msg === reason || msg.startsWith(`${reason}:`));
       const code = (!transportStarted || (err instanceof DeliveryRejectedError && err.beforeTransport)) && templateFailure ? templateFailure
-        : !transportStarted && ctx.actor.type !== "user" && err instanceof ApiError && err.status === 403
+        : !transportStarted && (ctx.actor.type !== "user" && ctx.actor.type !== "responsible") && err instanceof ApiError && err.status === 403
         ? "automatic_send_blocked" : msg.startsWith("storage_sign_failed")
         ? "storage_sign_failed"
         : adapter.codes.sendFailed;
@@ -811,7 +814,7 @@ export async function sendMessageHandler(
         return message;
       }
 
-      const vetoed = !transportStarted && ctx.actor.type !== "user" && err instanceof ApiError && err.status === 403;
+      const vetoed = !transportStarted && (ctx.actor.type !== "user" && ctx.actor.type !== "responsible") && err instanceof ApiError && err.status === 403;
       const phase = vetoed ? 'rejected' : !transportStarted || (err instanceof DeliveryRejectedError && err.beforeTransport)
         ? 'prepared' : err instanceof DeliveryRejectedError ? 'rejected' : 'uncertain';
       const { data: updated } = await writeState({
@@ -892,7 +895,7 @@ export async function sendMessageHandler(
     metadata: { ...a.metadataActor, status: message.status, type: message.type },
   });
 
-  await supabase
+  if (ctx.actor.type !== "responsible" || message.metadata?.responsible_internal !== true) await supabase
     .rpc("emit_event", {
       p_event_type: "message.sent",
       p_entity_kind: "message",

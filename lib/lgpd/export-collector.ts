@@ -9,6 +9,65 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import type { Json } from "@/lib/database.types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+export interface ResponsibleConsultationExport {
+  requests: Record<string, unknown>[];
+  deliveries: Record<string, unknown>[];
+  cases: Record<string, unknown>[];
+  events: Record<string, unknown>[];
+}
+
+/** Direito de acesso também alcança a retaguarda. Nunca exportar telefones dos
+ * responsáveis, destinos internos nem URLs de Storage de outras conversas. */
+export async function collectResponsibleConsultations(admin: SupabaseClient, organizationId: string, contactId: string): Promise<ResponsibleConsultationExport> {
+  const result: ResponsibleConsultationExport={requests:[],deliveries:[],cases:[],events:[]};
+  const caseIds=new Set<string>();
+  let cursor: string | null=null;
+  for (;;) {
+    let query=admin.from("agent_responsible_requests")
+      .select("id,case_id,conversation_id,kind,status,created_at,delivered_at")
+      .eq("organization_id",organizationId).eq("contact_id",contactId).order("id").limit(500);
+    if(cursor) query=query.gt("id",cursor);
+    const {data,error}=await query;
+    if(error) throw new Error("lgpd_responsible_requests_unavailable");
+    for(const request of data ?? []) {
+      result.requests.push(request); caseIds.add(request.case_id);
+      let deliveryCursor: string | null=null;
+      for (;;) {
+        let deliveries=admin.from("agent_responsible_deliveries")
+          .select("id,request_id,purpose,status,body,created_at,message_id,media_storage_path")
+          .eq("organization_id",organizationId).eq("request_id",request.id).order("id").limit(500);
+        if(deliveryCursor) deliveries=deliveries.gt("id",deliveryCursor);
+        const rows=await deliveries;
+        if(rows.error) throw new Error("lgpd_responsible_deliveries_unavailable");
+        result.deliveries.push(...(rows.data ?? []).map(({media_storage_path,...row})=>({...row,has_media:Boolean(media_storage_path)})));
+        if((rows.data?.length ?? 0)<500) break;
+        deliveryCursor=rows.data![rows.data!.length-1]!.id;
+      }
+    }
+    if((data?.length ?? 0)<500) break;
+    cursor=data![data!.length-1]!.id;
+  }
+  for(const id of caseIds) {
+    const row=await admin.from("agent_cases").select("id,title,summary,blocker,status,context_snapshot,created_at,closed_at")
+      .eq("organization_id",organizationId).eq("id",id).maybeSingle();
+    if(row.error) throw new Error("lgpd_responsible_cases_unavailable");
+    if(row.data) result.cases.push(row.data);
+    let eventCursor: string | null=null;
+    for (;;) {
+      let events=admin.from("agent_case_events").select("id,case_id,kind,actor_kind,human_action,body,created_at")
+        .eq("organization_id",organizationId).eq("case_id",id).order("id").limit(500);
+      if(eventCursor) events=events.gt("id",eventCursor);
+      const rows=await events;
+      if(rows.error) throw new Error("lgpd_responsible_events_unavailable");
+      result.events.push(...(rows.data ?? []));
+      if((rows.data?.length ?? 0)<500) break;
+      eventCursor=rows.data![rows.data!.length-1]!.id;
+    }
+  }
+  return result;
+}
 
 /** Exporta o conteúdo de mensagem do titular, nunca URL, headers ou segredos da regra. */
 export function plannedMessageContent(rules: Json): Json[] {
@@ -232,6 +291,7 @@ export interface ExportPayload {
   obra_subscription_states?: Record<string, unknown>[];
   obra_subscription_receipts?: Record<string, unknown>[];
   obra_subscription_outreach?: Record<string, unknown>[];
+  responsible_consultations?: ResponsibleConsultationExport;
 }
 
 // ---------------------------------------------------------------------------
@@ -644,6 +704,9 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  const responsible_consultations=contactId ? await collectResponsibleConsultations(admin,organizationId,contactId)
+    : {requests:[],deliveries:[],cases:[],events:[]};
+
   // 0224: a mesma âncora durável usada para redigir, sem exportar a regra executável.
   let automation_plans: AutomationPlanExport[] = [];
   let automation_runs: AutomationRunExport[] = [];
@@ -717,6 +780,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     obra_subscription_states,
     obra_subscription_receipts,
     obra_subscription_outreach,
+    responsible_consultations,
   };
 }
 

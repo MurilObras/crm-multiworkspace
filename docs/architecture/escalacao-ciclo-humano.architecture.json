@@ -385,6 +385,38 @@
       "type": "service",
       "label": "lib/escalacao/atendimento-manual.ts",
       "sublabel": "pausarIaPorAtendimentoManual — pessoa respondeu por fora do CRM (pausa COM PRAZO)"
+    },
+    {
+      "id": "responsibleSettings",
+      "lane": "humano",
+      "col": 5,
+      "type": "frontend",
+      "label": "Consulta ao responsável",
+      "sublabel": "Destinatários e condições por workspace, desligado por padrão"
+    },
+    {
+      "id": "responsibleOutbox",
+      "lane": "dados",
+      "col": 5,
+      "type": "database",
+      "label": "Pedidos e entregas ao responsável",
+      "sublabel": "Pausa própria, primeira resposta vence, caso e outbox atômicos"
+    },
+    {
+      "id": "responsibleWorker",
+      "lane": "motor",
+      "col": 5,
+      "type": "worker",
+      "label": "responsible_delivery",
+      "sublabel": "Texto ou áudio sem modelo, fila e ledger canônicos"
+    },
+    {
+      "id": "responsibleInbound",
+      "lane": "borda",
+      "col": 5,
+      "type": "api",
+      "label": "Resposta citada do WhatsApp",
+      "sublabel": "Número autorizado + conexão + aviso correto"
     }
   ],
   "edges": [
@@ -783,6 +815,36 @@
       "from": "retomada",
       "to": "atendimentoManual",
       "label": "'Devolver ao automático' desfaz esta pausa ANTES da hora (solta a TRAVA 2, a mesma) — sem clique nenhum, o prazo vence e a IA volta sozinha"
+    },
+    {
+      "id": "responsible-e1",
+      "from": "responsibleSettings",
+      "to": "responsibleOutbox",
+      "label": "Configuração do workspace habilita consulta ao abrir chamado"
+    },
+    {
+      "id": "responsible-e2",
+      "from": "responsibleOutbox",
+      "to": "responsibleWorker",
+      "label": "Outbox e job no mesmo commit; entrega confirmada libera apenas a pausa da consulta"
+    },
+    {
+      "id": "responsible-e3",
+      "from": "responsibleWorker",
+      "to": "responsibleInbound",
+      "label": "Responsável usa Responder sobre o aviso"
+    },
+    {
+      "id": "responsible-e4",
+      "from": "responsibleInbound",
+      "to": "responsibleOutbox",
+      "label": "Primeira resposta autorizada reserva entrega; sem correlação não há envio"
+    },
+    {
+      "id": "responsible-e5",
+      "from": "chamados",
+      "to": "responsibleOutbox",
+      "label": "Status, autor e falhas visíveis no chamado; resposta pelas telas preservada"
     }
   ],
   "cards": [

@@ -270,6 +270,7 @@ aplica.
 | `20261021160000` | `0234_followup_human_control` | Cancelamento síncrono por resposta, CAS de conclusão, barreira de nó/ocupação e reinscrição por novo episódio. |
 | `20261021160100` | `0235_waha_echo_identity` | Identidade canônica do outbound WAHA e reconciliação do eco confirmado preservando referências. |
 | `20261021200000` | `0236_followup_silence_resume` | Retoma a inscrição após novo silêncio sem zerar etapas, intervalos, orçamento ou proteção de atendimento humano. |
+| `20261022010000` | `0237_responsible_whatsapp` | Consulta opt-in ao responsável por WhatsApp, destinos por workspace, outbox durável, pausa temporária e respostas em texto/áudio vinculadas ao aviso. |
 
 ## Reproducibility
 

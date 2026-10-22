@@ -225,6 +225,7 @@ export async function executeOutboundAttempt(
              join contacts c on c.id=v.contact_id and c.organization_id=v.organization_id
              where m.id=$4 and v.organization_id=$2 and exists(select 1 from owner)
                and not c.force_human and not c.is_blocked and not c.is_anonymized
+               and not public.fn_responsible_waiting($2,c.id)
                and v.assignee_kind is distinct from 'user' and v.status not in ('closed','archived')
                and (v.bot_silenced_until is null or v.bot_silenced_until<=now()) for update of v),
            eligible_contact as materialized (select c.id from contacts c join job_queue j
@@ -244,7 +245,7 @@ export async function executeOutboundAttempt(
                and payload->>'followup_enrollment_id' is not null) or exists(select 1 from eligible_flow))
              and (not exists(select 1 from job_queue where id=$1 and organization_id=$2 and kind='followup_turn')
                or exists(select 1 from eligible_contact))
-             and exists(select 1 from owner) returning id`, [job, org, owner, messageId, options.actor?.type === 'user'],
+             and exists(select 1 from owner) returning id`, [job, org, owner, messageId, (options.actor?.type === 'user' || options.actor?.type === 'responsible')],
         );
         if (!rows.length) {
           const owned = await db.query('select id from job_queue where id=$1 and organization_id=$2 and status=\'running\' and locked_by=$3',

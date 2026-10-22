@@ -140,6 +140,9 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     media_mime: media.mime,
   });
 
+  // Áudio do responsável é entrega humana, não entrada para o modelo.
+  if (msg.metadata?.responsible_internal === true) return { consumer_key, status: "ok" };
+
   // Dispara a derivação textual (Onda 3) — fire-and-forget, mesmo padrão do
   // resto do repo: falha de emit não reverte a persistência já concluída.
   const { error: emitErr } = await admin.rpc("emit_event" as never, {

@@ -8,6 +8,9 @@
 
 export type Actor =
   | { type: "user"; id: string; role?: string }
+  /** Somente o worker de consultas constrói este ator, após validar responsável,
+   * citação, pedido e lease. Não é um usuário auth nem uma decisão do modelo. */
+  | { type: "responsible"; id: string }
   /**
    * ⚠️ `id` E `agent_id` NÃO SÃO A MESMA COISA, e confundi-los custa a atividade.
    *

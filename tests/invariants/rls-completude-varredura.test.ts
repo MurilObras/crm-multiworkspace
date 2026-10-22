@@ -75,6 +75,10 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  ...["agent_responsibles", "agent_responsible_settings", "agent_responsible_bindings", "agent_responsible_requests", "agent_responsible_deliveries"].map(tabela => ({
+    tabela,
+    razao: "tests/invariants/responsible-whatsapp.test.ts — registros reais nas cinco tabelas em dois workspaces; SET LOCAL ROLE authenticated + JWT mostra somente a própria organização e nega escrita direta. RPCs privadas e FKs compostas também são verificados.",
+  })),
   ...["obra_subscription_states", "obra_subscription_receipts", "obra_subscription_outreach"].map(tabela => ({
     tabela,
     razao: "tests/invariants/obra-subscription.test.ts — controles positivos em dois tenants e SET LOCAL ROLE/JWT negam SELECT, INSERT, UPDATE, DELETE e RPC a anon/authenticated; vínculo e fechamento são escopados no serviço.",

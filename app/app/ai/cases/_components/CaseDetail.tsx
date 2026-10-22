@@ -9,6 +9,7 @@ import { useCase } from "@/hooks/ai/useCases";
 import { STATUS_BADGE_VARIANT, STATUS_LABEL, caseEventLabel } from "@/lib/ai/case-copy";
 import { useT } from "@/hooks/i18n/useT";
 import { CaseReplyPanel } from "./CaseReplyPanel";
+import { ResponsibleDeliveryStatus } from "./ResponsibleDeliveryStatus";
 
 export function CaseDetail({ caseId }: { caseId: string | null }) {
   const localeDaData = useLocaleDeData();
@@ -68,6 +69,7 @@ export function CaseDetail({ caseId }: { caseId: string | null }) {
       </div>
 
       <CaseReplyPanel caseId={data.id} status={data.status} />
+      <ResponsibleDeliveryStatus caseId={data.id} />
 
       <div>
         <h3 className="mb-2 text-sm font-semibold">{t("Linha do tempo")}</h3>

@@ -95,6 +95,7 @@ export interface AdminClient {
   loadLeadFacts(orgId: string, contactId: string): Promise<{
     lead_stage: string | null;
     tags: string[];
+    responsible_pending?: boolean;
     contact_name?: string | null;
     custom_fields?: Record<string, unknown>;
   }>;
@@ -523,6 +524,12 @@ async function processEnrollment(
   }
 
   const leadRow = await db.loadLeadFacts(enrollment.organization_id, enrollment.contact_id);
+  if (leadRow.responsible_pending) {
+    const planned=enrollment.next_eval_at ? new Date(enrollment.next_eval_at).getTime() : 0;
+    const retryAt=Math.max(clock().getTime()+60_000,Number.isFinite(planned) ? planned : 0);
+    await db.updateEnrollment(enrollment.id,enrollment.organization_id,{next_eval_at:new Date(retryAt).toISOString(),claimed_until:null},enrollment);
+    return;
+  }
   const lead: LeadFacts = {
     lead_stage: leadRow.lead_stage,
     tags: leadRow.tags,
@@ -715,7 +722,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       return flowGraphSchema.parse(data.graph);
     },
     async loadLeadFacts(orgId, contactId) {
-      const [{ data: lead, error: leadErr }, { data: contact, error: contactErr }] = await Promise.all([
+      const [{ data: lead, error: leadErr }, { data: contact, error: contactErr }, pending] = await Promise.all([
         admin
           .from("crm_leads")
           .select("stage_id, custom_fields")
@@ -725,7 +732,9 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           .limit(1)
           .maybeSingle(),
         admin.from("contacts").select("name, tags").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
+        admin.rpc("fn_responsible_waiting",{p_org:orgId,p_contact:contactId}),
       ]);
+      if (pending.error) throw new Error(pending.error.message);
       if (leadErr) throw new Error(leadErr.message);
       if (contactErr) throw new Error(contactErr.message);
       const custom =
@@ -733,6 +742,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           ? (lead.custom_fields as Record<string, unknown>)
           : {};
       return {
+        responsible_pending: pending.data === true,
         lead_stage: lead?.stage_id ?? null,
         // A condição "Etiqueta do contato" deve ler a mesma fonte do gatilho de silêncio.
         // Não unir com as tags do cartão: uma etiqueta removida do contato deve parar o fluxo.

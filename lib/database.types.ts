@@ -337,6 +337,303 @@ export type Database = {
           },
         ]
       }
+      agent_responsible_bindings: {
+        Row: {
+          agent_id: string
+          organization_id: string
+          responsible_id: string
+        }
+        Insert: {
+          agent_id: string
+          organization_id: string
+          responsible_id: string
+        }
+        Update: {
+          agent_id?: string
+          organization_id?: string
+          responsible_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_responsible_bindings_organization_id_agent_id_fkey"
+            columns: ["organization_id", "agent_id"]
+            isOneToOne: false
+            referencedRelation: "agent_responsible_settings"
+            referencedColumns: ["organization_id", "agent_id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_bindings_organization_id_responsible_id_fkey"
+            columns: ["organization_id", "responsible_id"]
+            isOneToOne: false
+            referencedRelation: "agent_responsibles"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
+      agent_responsible_deliveries: {
+        Row: {
+          body: string | null
+          created_at: string
+          id: string
+          job_id: string | null
+          media_storage_path: string | null
+          message_id: string | null
+          organization_id: string
+          purpose: string
+          request_id: string
+          responsible_id: string | null
+          source_message_id: string | null
+          status: string
+          target_contact_id: string
+          target_conversation_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          media_storage_path?: string | null
+          message_id?: string | null
+          organization_id: string
+          purpose: string
+          request_id: string
+          responsible_id?: string | null
+          source_message_id?: string | null
+          status?: string
+          target_contact_id: string
+          target_conversation_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          media_storage_path?: string | null
+          message_id?: string | null
+          organization_id?: string
+          purpose?: string
+          request_id?: string
+          responsible_id?: string | null
+          source_message_id?: string | null
+          status?: string
+          target_contact_id?: string
+          target_conversation_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_responsible_deliveries_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: true
+            referencedRelation: "job_queue"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_deliveries_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_deliveries_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_deliveries_organization_id_request_id_fkey"
+            columns: ["organization_id", "request_id"]
+            isOneToOne: false
+            referencedRelation: "agent_responsible_requests"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_deliveries_organization_id_responsible_i_fkey"
+            columns: ["organization_id", "responsible_id"]
+            isOneToOne: false
+            referencedRelation: "agent_responsibles"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_deliveries_organization_id_target_contac_fkey"
+            columns: ["organization_id", "target_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_deliveries_organization_id_target_conver_fkey"
+            columns: ["organization_id", "target_conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_deliveries_source_message_id_fkey"
+            columns: ["source_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_responsible_requests: {
+        Row: {
+          accepted_responsible_id: string | null
+          agent_id: string
+          case_id: string
+          contact_id: string
+          conversation_id: string
+          created_at: string
+          delivered_at: string | null
+          id: string
+          kind: string
+          organization_id: string
+          status: string
+        }
+        Insert: {
+          accepted_responsible_id?: string | null
+          agent_id: string
+          case_id: string
+          contact_id: string
+          conversation_id: string
+          created_at?: string
+          delivered_at?: string | null
+          id?: string
+          kind: string
+          organization_id: string
+          status?: string
+        }
+        Update: {
+          accepted_responsible_id?: string | null
+          agent_id?: string
+          case_id?: string
+          contact_id?: string
+          conversation_id?: string
+          created_at?: string
+          delivered_at?: string | null
+          id?: string
+          kind?: string
+          organization_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_responsible_requests_organization_id_accepted_respon_fkey"
+            columns: ["organization_id", "accepted_responsible_id"]
+            isOneToOne: false
+            referencedRelation: "agent_responsibles"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_requests_organization_id_agent_id_fkey"
+            columns: ["organization_id", "agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_requests_organization_id_case_id_fkey"
+            columns: ["organization_id", "case_id"]
+            isOneToOne: false
+            referencedRelation: "agent_cases"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_requests_organization_id_contact_id_fkey"
+            columns: ["organization_id", "contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_requests_organization_id_conversation_id_fkey"
+            columns: ["organization_id", "conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_requests_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_responsible_settings: {
+        Row: {
+          agent_id: string
+          conditions: string
+          enabled: boolean
+          organization_id: string
+        }
+        Insert: {
+          agent_id: string
+          conditions?: string
+          enabled?: boolean
+          organization_id: string
+        }
+        Update: {
+          agent_id?: string
+          conditions?: string
+          enabled?: boolean
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_responsible_settings_organization_id_agent_id_fkey"
+            columns: ["organization_id", "agent_id"]
+            isOneToOne: true
+            referencedRelation: "ai_agents"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "agent_responsible_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_responsibles: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          name: string
+          organization_id: string
+          phone: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          name: string
+          organization_id: string
+          phone: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          name?: string
+          organization_id?: string
+          phone?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_responsibles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_agent_runs: {
         Row: {
           abort_reason: string | null
@@ -8226,6 +8523,23 @@ export type Database = {
         }
         Returns: string
       }
+      fn_queue_responsible_delivery: {
+        Args: {
+          p_body?: string
+          p_contact: string
+          p_conv: string
+          p_org: string
+          p_purpose: string
+          p_request: string
+          p_responsible: string
+          p_source?: string
+        }
+        Returns: string
+      }
+      fn_responsible_waiting: {
+        Args: { p_contact: string; p_org: string }
+        Returns: boolean
+      }
       fn_role_at_least: {
         Args: { p_min: string; p_org: string }
         Returns: boolean
@@ -8233,6 +8547,10 @@ export type Database = {
       fn_semear_tipos_de_agendamento: {
         Args: { p_organization_id: string }
         Returns: number
+      }
+      fn_start_responsible_request: {
+        Args: { p_case: string; p_kind?: string; p_org: string }
+        Returns: string
       }
       fn_upsert_wa_contact: {
         Args: {

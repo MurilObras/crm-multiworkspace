@@ -71,6 +71,8 @@ import { createInboundTurnHandler } from '@/lib/agent-engine/agent/inbound-turn'
 import { createFollowupTurnHandler, type FollowupTurnDeps } from '@/lib/agent-engine/agent/followup-turn';
 import { createCaseReplyTurnHandler } from '@/lib/agent-engine/agent/case-reply-turn';
 import { createOperatorTurnHandler } from '@/lib/agent-engine/agent/operator-turn';
+import { createResponsibleDeliveryHandler } from '@/lib/responsibles/delivery';
+import { createResponsibleReplyHandler } from '@/lib/responsibles/reply';
 import { completeTurnForEnrollment, createPgAdminClient } from '@/lib/followup/turn-bridge';
 import { seedPlatformPlaybook } from '@/lib/agent-engine/agent/playbook-seed';
 import { runCronLoop } from '@/lib/agent-engine/cron/scheduler';
@@ -158,7 +160,7 @@ function ehVetoPermanenteDeNegocio(err: unknown): boolean {
  * só confere que o schema do harness existe e recusa subir sem ele.
  */
 async function assertHarnessSchema(pool: pg.Pool): Promise<void> {
-  const sentinels = ['job_queue', 'lead_checkpoints', 'agent_inbox_items', 'send_ledger'];
+  const sentinels = ['job_queue', 'lead_checkpoints', 'agent_inbox_items', 'send_ledger', 'agent_responsible_settings', 'agent_responsible_requests', 'agent_responsible_deliveries'];
   const { rows } = await pool.query<{ missing: string }>(
     `select t.name as missing
      from unnest($1::text[]) as t(name)
@@ -578,6 +580,8 @@ export async function main(): Promise<void> {
   handlers.set('inbound_turn', createInboundTurnHandler(turnDeps));
   handlers.set('followup_turn', createFollowupTurnHandler(turnDeps));
   handlers.set('case_reply_turn', createCaseReplyTurnHandler(turnDeps));
+  handlers.set('responsible_delivery', createResponsibleDeliveryHandler(turnDeps));
+  handlers.set('responsible_reply', createResponsibleReplyHandler(turnDeps.crmCfg.supabase));
   // Spec 16 §3.2 — o papel OPERADOR. Registrado sempre; quem decide se ele age é
   // `operator_enabled` na versão publicada (default false), lido a cada job. Um
   // worker que não conhecesse o kind faria os jobs morrerem em 'dead' sem que

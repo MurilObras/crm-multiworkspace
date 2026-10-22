@@ -2,6 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';
 import type pg from 'pg';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { installResponsiblePause } from './responsible-postgres';
 
 export const ORG = '10000000-0000-4000-8000-000000000001';
 export const CONTACT = '10000000-0000-4000-8000-000000000002';
@@ -91,6 +92,7 @@ export async function outboundPostgres() {
   `);
   for (const file of ['20261021160000_0234_followup_human_control.sql','20261021160100_0235_waha_echo_identity.sql','20261021200000_0236_followup_silence_resume.sql'])
     await sql.exec(readFileSync(`supabase/migrations/${file}`, 'utf8'));
+  await installResponsiblePause(sql);
   let tail = Promise.resolve();
   async function lock() { let release!: () => void; const next = new Promise<void>((r) => { release = r; }); const old = tail; tail = next; await old; return release; }
   const query = async (text: string, values: unknown[] = []) => {

@@ -78,10 +78,10 @@ function actorAuditPayload(actor: Actor): {
   if (actor.type === "user") {
     return { actorUserId: actor.id, metadataActor: { actor_type: "user" } };
   }
-  if (actor.type === "webhook_source") {
+  if (actor.type === "webhook_source" || actor.type === "responsible") {
     return {
       actorUserId: null,
-      metadataActor: { actor_type: "webhook_source", actor_id: actor.id },
+      metadataActor: { actor_type: actor.type, actor_id: actor.id },
     };
   }
   return {

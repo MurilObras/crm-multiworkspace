@@ -1,4 +1,5 @@
 import { loadConversationInstructions, runConversationModel } from './conversation-model';
+import { waitingForResponsible } from '@/lib/responsibles/service';
 import { MESSAGE_ORDER_DESC } from '@/lib/messaging/message-order';
 /**
  * Loop do agente v0 — handler do job `inbound_turn` (F2-09; blueprint 8.8).
@@ -1593,7 +1594,7 @@ async function executarTurnoDoAgente(
       throw error;
     }
     let interrupted: 'human_in_control' | 'followup_inactive' | null =
-      await isLeadInHandoff(pool, tenantId, leadId) ? 'human_in_control' : null;
+      (await isLeadInHandoff(pool, tenantId, leadId) || await waitingForResponsible(pool,tenantId,leadId)) ? 'human_in_control' : null;
     if (!interrupted && job.kind === 'followup_turn' && job.payload.followup_enrollment_id) {
       pausedUntil = gate.retryAt;
       if (gate.retryAt) interrupted = 'human_in_control';
@@ -1631,6 +1632,23 @@ async function executarTurnoDoAgente(
   // longe do ponto de uso, para não virar duas respostas para a mesma pergunta.
   // Nunca lança e nunca vem vazio (ver `fuso-da-org.ts`).
   const fusoDaOrg = await fusoDaOrganizacao(pool, tenantId, runLog);
+
+  if (await waitingForResponsible(pool, tenantId, leadId)) {
+    // O cliente pode pedir uma pessoa ENQUANTO espera a consulta. Isso muda a
+    // natureza da pausa, sem chamar o modelo nem ignorar o pedido por estar pausado.
+    if (job.kind === 'inbound_turn' && inboundAnchor) {
+      const latest = await pool.query<{body:string|null}>("select body from messages where organization_id=$1 and contact_id=$2 and conversation_id=$3 and id=$4 and direction='inbound'",[tenantId,leadId,input.conversationId,inboundAnchor]);
+      if (detectHumanHandoffRequest(latest.rows[0]?.body ?? '')) await performHumanHandoff(pool,{tenantId,leadId,conversationId:input.conversationId},
+        {reason:'requested_human',conversationSummary:'O cliente solicitou atendimento humano durante uma consulta ao responsável.',
+          avisoAoLead:{avisado:false,porque:'consulta_em_andamento_cliente_ja_aguardava_responsavel'},log:runLog});
+    }
+    if (job.kind === 'followup_turn') {
+      await rescheduleJob(pool,job.id,ctx.workerId,{delayMs:60_000,reason:'awaiting_responsible'});
+      throw new JobSettledError('follow-up aguardando resposta do responsável');
+    }
+    await discardPreparedOutbound(pool,{organizationId:tenantId,contactId:leadId,conversationId:input.conversationId,jobId:job.id,workerId:ctx.workerId,kind:job.kind === 'case_reply_turn' ? 'case_reply_turn' : 'inbound_turn'},{code:'human_in_control'});
+    return;
+  }
 
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
@@ -1950,7 +1968,10 @@ async function executarTurnoDoAgente(
   const eligibleAudios = await freshAudios();
   const audioBlock = renderApprovedMedia(eligibleAudios);
   if (audioBlock) blocosResidentes.push(audioBlock);
-  if (agentConfig !== null && agentConfig.casesEnabled) blocosResidentes.push(CASES_SYSTEM_BLOCK);
+  // O fluxo legado mantém a conversa ativa. A consulta pelo WhatsApp traz seu
+  // próprio bloco residente no prompt publicado e exige pausa: não combinar
+  // instruções contraditórias ensinando o modelo a continuar após abrir o caso.
+  if (agentConfig !== null && agentConfig.casesEnabled && !agentConfig.responsibleConsultation) blocosResidentes.push(CASES_SYSTEM_BLOCK);
   if (agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment')) {
     blocosResidentes.push(AGENDA_SYSTEM_BLOCK);
   }
@@ -2650,6 +2671,10 @@ async function executarTurnoDoAgente(
             }
             openedCaseThisTurn = true;
             moverParaHandoffBestEffort('case_promise_autofallback');
+            if (agentConfig?.responsibleConsultation && await waitingForResponsible(pool,tenantId,leadId)) {
+              supersededError = new OutboundSupersededError("human_in_control");
+              return {ok:true,case_id:auto.caseId,message:"Consulta aberta. O sistema avisará o cliente e os responsáveis. Encerre o turno sem enviar outras mensagens."};
+            }
             // Re-roda a cadeia INTEIRA agora que há caso aberto — o send real acontece
             // DENTRO do runBeforeSend (via args.send); nunca chamamos o canal por fora
             // (perderia pacing/lgpd/stop). ponytail: re-roda a cadeia inteira no fail-safe
@@ -3053,6 +3078,10 @@ async function executarTurnoDoAgente(
           if (!res.ok) return res;
           openedCaseThisTurn = true;
           moverParaHandoffBestEffort('open_human_case');
+          if (agentConfig.responsibleConsultation && await waitingForResponsible(pool,tenantId,leadId)) {
+            supersededError = new OutboundSupersededError("human_in_control");
+            return {ok:true,case_id:res.caseId,message:"Consulta aberta. O sistema avisará o cliente e os responsáveis. Encerre o turno sem enviar outras mensagens."};
+          }
           // ACH-03: a expectativa vai junto com a confirmação. Medido num turno
           // real: o agente abria o caso e prometia ao cliente que "alguém entra
           // em contato" sem nunca ter olhado se havia alguém — a capacidade de

@@ -280,7 +280,7 @@ describe('identidade manual nao concede privilegios de automacao', () => {
         messageId: '66666666-6666-4666-8666-666666666666', returnExistingOnConflict: true,
       })).rejects.toThrow('automation_preview_unavailable');
       expect(rpc.mock.calls.map(([name]) => name)).toEqual([
-        'fn_automation_message_live', 'fn_automation_message_preview',
+        'fn_responsible_waiting', 'fn_automation_message_live', 'fn_automation_message_preview',
       ]);
       expect(fetchMock).not.toHaveBeenCalled();
     },
