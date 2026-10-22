@@ -73,6 +73,12 @@ describe('fatos financeiros e limites de organização',()=>{
       [OTHER,LEAD,'BRL','manual',ACTOR,''])).rejects.toThrow('lead_not_found');
     expect((await sql.query('select * from crm_first_payments')).rows).toHaveLength(0);
   });
+  it('recebimento divergente do aplicativo não confirma nem sobrescreve valor manual',async()=>{
+    await record();
+    await expect(sql.query('select fn_record_crm_first_payment($1,$2,100,$3,$4,1,$5,$6,null,$7)',
+      [ORG,LEAD,'BRL','2026-10-01T12:00:00Z','integration','produto:primeiro',''])).rejects.toThrow('first_payment_event_conflict');
+    expect((await sql.query('select amount_cents from crm_first_payments')).rows[0]).toEqual({amount_cents:25000});
+  });
   it('RLS não expõe receita, referência externa nem histórico de outra organização',async()=>{
     await record();
     await sql.exec('set role authenticated');
@@ -89,6 +95,9 @@ describe('fatos financeiros e limites de organização',()=>{
     await sql.query('update crm_leads set stage_id=null where id=$1',[LEAD]);
     await sql.query('update crm_leads set stage_id=$1 where id=$2',[STAGE,LEAD]);
     await sql.query('update crm_leads set stage_id=$1 where id=$2',[STAGE,LEAD]);
+    expect((await sql.query('select * from crm_lead_qualifications')).rows).toHaveLength(1);
+    await sql.query('select fn_configure_crm_dashboard($1,$2,$3,$4,true)',[ORG,PIPE,[],'Matrículas']);
+    expect((await sql.query<{settings:{dashboard:{qualification_started_at:null}}}>('select settings from crm_pipelines')).rows[0]!.settings.dashboard.qualification_started_at).toBeNull();
     expect((await sql.query('select * from crm_lead_qualifications')).rows).toHaveLength(1);
   });
   it('anonimização apaga notas e histórico financeiro e bloqueia reintrodução',async()=>{
@@ -141,7 +150,7 @@ describe('eventos do produto sem interferir nas 96 horas',()=>{
     await sql.query('insert into crm_stages(id,organization_id,pipeline_id,is_won,position)values($1,$2,$3,true,99)',[ACTOR,ORG,PIPE]);
     expect(await receive({...registration(),event_type:'first_payment_received',has_trial:false,payment_id:ACTOR,
       amount_cents:16990,currency:'BRL',paid_at:'2026-10-01T12:00:00Z'})).toMatchObject({status:'accepted'});
-    expect((await sql.query('select stage_id from crm_leads where id=$1',[LEAD])).rows[0]?.stage_id).toBe(ACTOR);
+    expect((await sql.query<{stage_id:string}>('select stage_id from crm_leads where id=$1',[LEAD])).rows[0]?.stage_id).toBe(ACTOR);
   });
   it('cria cadastro de origem app apenas quando telefone e e-mail não conflitam',async()=>{
     await sql.exec('delete from crm_leads;delete from contacts');

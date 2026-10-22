@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Dashboard comercial: campanha até primeiro recebimento",
+    "output": "dashboard-comercial.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "entrada",
+      "label": "entrada"
+    },
+    {
+      "id": "banco",
+      "label": "banco"
+    },
+    {
+      "id": "crm",
+      "label": "crm"
+    }
+  ],
+  "mainPath": [
+    "inbound",
+    "facts",
+    "snapshot",
+    "dashboard",
+    "recovery"
+  ],
+  "nodes": [
+    {
+      "id": "inbound",
+      "lane": "entrada",
+      "col": 1,
+      "type": "api",
+      "label": "WhatsApp e links de origem"
+    },
+    {
+      "id": "product",
+      "lane": "entrada",
+      "col": 2,
+      "type": "service",
+      "label": "Outbox Obra v3"
+    },
+    {
+      "id": "manual",
+      "lane": "entrada",
+      "col": 3,
+      "type": "frontend",
+      "label": "Registro manual de pagamento"
+    },
+    {
+      "id": "facts",
+      "lane": "banco",
+      "col": 3,
+      "type": "database",
+      "label": "Primeiro pagamento e qualificação"
+    },
+    {
+      "id": "meta",
+      "lane": "entrada",
+      "col": 4,
+      "type": "api",
+      "label": "Leitura diária Meta"
+    },
+    {
+      "id": "cache",
+      "lane": "banco",
+      "col": 4,
+      "type": "database",
+      "label": "Gasto e cobertura com lease"
+    },
+    {
+      "id": "snapshot",
+      "lane": "crm",
+      "col": 4,
+      "type": "service",
+      "label": "Snapshot RLS e cálculos"
+    },
+    {
+      "id": "dashboard",
+      "lane": "crm",
+      "col": 5,
+      "type": "frontend",
+      "label": "Dashboard por workspace"
+    },
+    {
+      "id": "recovery",
+      "lane": "crm",
+      "col": 3,
+      "type": "frontend",
+      "label": "Conferência e nova sincronização"
+    },
+    {
+      "id": "conversion",
+      "lane": "crm",
+      "col": 5,
+      "type": "service",
+      "label": "Conversão confirmada"
+    }
+  ],
+  "edges": [
+    {
+      "id": "d0",
+      "from": "inbound",
+      "to": "facts",
+      "label": "dado ou ação"
+    },
+    {
+      "id": "d1",
+      "from": "product",
+      "to": "facts",
+      "label": "dado ou ação"
+    },
+    {
+      "id": "d2",
+      "from": "manual",
+      "to": "facts",
+      "label": "dado ou ação"
+    },
+    {
+      "id": "d3",
+      "from": "meta",
+      "to": "cache",
+      "label": "dado ou ação"
+    },
+    {
+      "id": "d4",
+      "from": "facts",
+      "to": "snapshot",
+      "label": "dado ou ação"
+    },
+    {
+      "id": "d5",
+      "from": "cache",
+      "to": "snapshot",
+      "label": "dado ou ação"
+    },
+    {
+      "id": "d6",
+      "from": "snapshot",
+      "to": "dashboard",
+      "label": "dado ou ação"
+    },
+    {
+      "id": "d7",
+      "from": "dashboard",
+      "to": "recovery",
+      "label": "dado ou ação"
+    },
+    {
+      "id": "d8",
+      "from": "recovery",
+      "to": "manual",
+      "label": "dado ou ação"
+    },
+    {
+      "id": "d9",
+      "from": "recovery",
+      "to": "meta",
+      "label": "dado ou ação"
+    },
+    {
+      "id": "d10",
+      "from": "facts",
+      "to": "conversion",
+      "label": "dado ou ação"
+    },
+    {
+      "id": "d11",
+      "from": "conversion",
+      "to": "dashboard",
+      "label": "dado ou ação"
+    }
+  ]
+}

@@ -41,7 +41,8 @@ export function aggregateDashboard(input: {
   const acquired = filtered.filter(l => inside(l.created_at, input.window));
   const acquiredIds = new Set(acquired.map(l => l.id));
   const rows = new Map<string, CampaignMetric>();
-  const measurementStarts = new Map(input.pipeline_measurements.map(p => [p.id,p.dashboard_settings?.qualification_started_at]));
+  const measurementStarts = new Map(input.pipeline_measurements.map(p => [p.id,
+    p.dashboard_settings?.qualified_stage_ids?.length?p.dashboard_settings.qualification_started_at:null]));
   const campaignCurrencies = new Map(input.coverage.map(s => [JSON.stringify([s.account_id,s.campaign_id]),s.currency]));
   const rowFor = (account: string | null, campaign: string | null, label: string, currency: string) => {
     const key = keyOf(account, campaign, currency);

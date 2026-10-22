@@ -39,7 +39,7 @@ export function DashboardClient(props:{organizationId:string;currentUserId:strin
   if(owner) query.set(owner.startsWith('ai:')?'owner_agent_id':'owner_user_id',owner.slice(owner.indexOf(':')+1));
   if(source) query.set('source',source);
   if(campaign) {const [accountId,campaignId]=campaign.split(':');query.set('account_id',accountId!);query.set('campaign_id',campaignId!);}
-  const settings=useQuery({queryKey:['dashboard-settings',props.organizationId],queryFn:()=>dashboardFetch<DashboardSettingsResponse>('/api/v1/metrics/dashboard/settings',undefined,props.organizationId),enabled:workspaceReady,refetchOnWindowFocus:false});
+  const settings=useQuery({queryKey:['dashboard-settings',props.organizationId],queryFn:()=>dashboardFetch<DashboardSettingsResponse>('/api/v1/metrics/dashboard/settings',undefined,props.organizationId),enabled:workspaceReady,refetchOnWindowFocus:false,refetchInterval:settingsOpen?false:60_000});
   const team=useQuery({queryKey:['dashboard-team',props.organizationId],queryFn:()=>dashboardFetch<Array<{user_id:string;full_name:string|null;email:string|null}>>('/api/v1/team',undefined,props.organizationId),
     enabled:workspaceReady&&props.canManage,staleTime:60_000});
   const result=useQuery({queryKey:['dashboard',props.organizationId,query.toString()],
@@ -59,7 +59,7 @@ export function DashboardClient(props:{organizationId:string;currentUserId:strin
   return <div className="flex min-w-0 flex-col gap-6 p-4 md:p-6" data-testid="commercial-dashboard">
     <header className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-semibold">{t('Dashboard')}</h1>
       <p className="mt-1 text-sm text-muted-foreground">{t('Do primeiro contato ao pagamento confirmado, neste workspace.')}</p></div>
-      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={()=>result.refetch()} disabled={result.isFetching}>{t('Atualizar indicadores')}</Button>
+      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={()=>Promise.all([result.refetch(),settings.refetch()])} disabled={result.isFetching}>{t('Atualizar indicadores')}</Button>
         {props.canManage?<><Button variant="outline" onClick={()=>setSettingsOpen(true)}>{t('Configurar indicadores')}</Button>
           <Button onClick={()=>setPaymentOpen(true)}>{t('Registrar pagamento')}</Button></>:null}</div></header>
     <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2 xl:grid-cols-6">
@@ -105,6 +105,7 @@ export function DashboardClient(props:{organizationId:string;currentUserId:strin
           {!data.sources.length?<p className="mt-3 text-sm text-muted-foreground">{t('Sem registros no período.')}</p>:null}</section>
       </div>
       {props.canManage?<section className="rounded-xl border bg-card p-4"><div className="flex flex-wrap justify-between gap-2"><h2 className="font-semibold">{t('Campanhas e fechamentos')}</h2><Button variant="outline" onClick={()=>setAdsOpen(true)}>{t('Vincular e sincronizar campanhas')}</Button></div>
+        {settings.data?.ad_sync_status.some(s=>s.failed)?<p role="alert" className="mt-3 text-sm">{t('A última consulta de uma conta falhou. O histórico foi preservado; abra Vincular e sincronizar campanhas para conferir e tentar novamente.')}</p>:null}
         {data.spend_incomplete?<p className="mt-3 text-sm text-muted-foreground">{t('Há campanhas sem consulta completa para o período. Sincronize os gastos antes de avaliar os custos.')}</p>:null}
         {data.timezone_mismatch?<p className="mt-3 text-sm text-muted-foreground">{t('Há contas de anúncios com fuso diferente do workspace. O gasto segue os dias da conta; custos comparativos ficam indisponíveis.')}</p>:null}
         {data.spend_not_comparable?<p className="mt-3 text-sm text-muted-foreground">{t('Retire os filtros de funil, responsável e origem para comparar o gasto total das campanhas com seus resultados.')}</p>:null}

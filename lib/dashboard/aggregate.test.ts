@@ -32,6 +32,12 @@ describe('dashboard comercial',()=>{
     const o:Options={...options(),attributions:[attribution],coverage:[coverage],query:{...options().query,pipeline_id:'p'}};
     expect(aggregateDashboard(o).campaigns[0]).toMatchObject({spend_cents:null,cpl_cents:null});
   });
+  it('reconhece aliases do mesmo fuso e recusa soma que perde centavos exatos',()=>{
+    const o:Options={...options(),attributions:[attribution],coverage:[{...coverage,account_timezone:'Brazil/East'}]};
+    expect(aggregateDashboard(o).timezone_mismatch).toBe(false);
+    const spend={account_id:'act_1',campaign_id:'2',campaign_name:'Campanha',day:'2026-10-01',currency:'BRL',amount_cents:Number.MAX_SAFE_INTEGER,updated_at:coverage.oldest_sync_at};
+    expect(()=>aggregateDashboard({...o,spend:[spend,{...spend,day:'2026-10-02',amount_cents:1}]})).toThrow('dashboard_amount_out_of_range');
+  });
   it('não compara dias de fusos diferentes nem mistura moedas',()=>{
     const o:Options={...options(),attributions:[attribution],coverage:[{...coverage,account_timezone:'UTC'}]};
     expect(aggregateDashboard(o)).toMatchObject({timezone_mismatch:true});
@@ -41,7 +47,7 @@ describe('dashboard comercial',()=>{
   });
   it('não apresenta CPL qualificado se a medição começou depois da captação',()=>{
     const o:Options={...options(),attributions:[attribution],coverage:[coverage],
-      pipeline_measurements:[{id:'p',dashboard_settings:{qualification_started_at:'2026-10-02T12:00:00Z'}}]};
+      pipeline_measurements:[{id:'p',dashboard_settings:{qualification_started_at:'2026-10-02T12:00:00Z',qualified_stage_ids:['s']}}]};
     expect(aggregateDashboard(o)).toMatchObject({qualification_incomplete:true});
     expect(aggregateDashboard(o).campaigns[0]?.cplq_cents).toBeNull();
   });

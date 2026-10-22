@@ -20,7 +20,7 @@ Status: **em implementação; não liberar merge nem deploy deste trabalho**.
 
 ## Entregas e pendências
 
-- A correção de reenvio de mídias é independente: PR #44, validação em andamento.
+- A correção de reenvio de mídias é independente: PR #44, mesclado após todos os checks passarem; deploy ainda pendente.
 - Implementação inicial: contratos, cálculos, schema, APIs de consulta/configuração/pagamento e frontend; campanhas, links de origem, sincronização e cobertura diária; contrato v3 e outbox independentes no aplicativo.
 - Testes de desenvolvimento executam as migrations reais em PostgreSQL embarcado, finanças, RLS, idempotência, corte de ativação, parser e leitura da Meta. Não substituem o baseline completo, testes multiconexão ou E2E.
 - Ainda concluir/revisar: visibilidade operacional de falhas de identidade e do outbox, arquivos de tipos gerados, matriz completa de API/RLS, E2E e QA visual, documentação e revisões finais.
@@ -28,7 +28,7 @@ Status: **em implementação; não liberar merge nem deploy deste trabalho**.
 - Antes dos testes finais: refletir a migration completa no baseline, manter manifest e documentação atualizados, atualizar a branch com a main.
 - Fazer duas revisões consecutivas sem defeitos acionáveis; depois validar as suítes locais, banco isolado, CI, E2E e build.
 - Não incluir o PR 20. Não implementar o painel de novidades nesta entrega.
-- Capacidade da VPS: a primeira consulta mostrou 99%/1 GB livre; a nova consulta mostrou 86%/9 GB livres. Nenhuma limpeza foi feita neste trabalho. Reavaliar espaço para imagens novas e rollback antes do deploy.
+- Capacidade da VPS: a primeira consulta mostrou 99%/1 GB livre; a consulta mais recente, após a limpeza do usuário, mostrou 49%/34 GB livres. Nenhuma limpeza foi feita neste trabalho. Reavaliar espaço para imagens novas e rollback antes do deploy.
 
 ## Ordem de publicação futura
 
@@ -39,3 +39,30 @@ Status: **em implementação; não liberar merge nem deploy deste trabalho**.
 5. O evento financeiro não envia mensagens de WhatsApp. Para quem passou por trial, não antecipa a movimentação/boas-vindas prevista após 96 horas. Contratação sem trial pode avançar com recebimento confirmado.
 
 Não usar este checkpoint como declaração de funcionalidade concluída ou validada.
+
+## Revisão de implementação
+
+- Anulação financeira usa o lock do contato e respeita anonimização.
+- Pagamento externo divergente de registro manual gera conferência, não confirmação silenciosa.
+- Soma monetária fora do inteiro exato é recusada; aliases do mesmo fuso são reconhecidos.
+- Falha de sincronização aparece no dashboard e no diálogo de campanhas, preservando cache anterior.
+- Tipos gerados e prova do baseline completo continuam pendentes até os gates isolados.
+
+## Sistema vivo
+
+- Entradas: WhatsApp/referral, links crm_ref, CRM manual e outbox v3 do aplicativo.
+- Saídas: /app/dashboard e consumidor conversoes.venda em lib/conversoes/envio.handler.ts.
+- Atividade: ações dashboard.* no audit; crm.first_payment_confirmed no event_log; falhas v3 em fn_reject_obra_access.
+- Configuração: Configurar indicadores, Registrar pagamento e Vincular e sincronizar campanhas.
+- Recuperação: leases/CAS, cache preservado e consulta manual; outbox faz retry com UUID estável. Dados inválidos requerem correção no produto e reprocessamento documentado.
+- Continuidade humana: registros manuais e correções exigem gestor; comprovante não é confirmação automática. Sem mensagem adicional ao lead.
+- Retorno: falha preserva estado anterior e aparece para corrigir conexão/dados; correção financeira recalcula indicadores sem reenviar conversão já entregue.
+- Mapa: docs/architecture/dashboard-comercial.architecture.json.
+
+## Evidência anterior ao PR
+
+- Banco descartável pg15 com baseline completo: install e update passaram; 10 testes de RLS/financeiro/qualificação/exclusão passaram.
+- A primeira execução real revelou nome de evento inválido; corrigido para crm.first_payment_confirmed, sem alterar a constraint global.
+- Testes selecionados: 213 passaram na primeira matriz e 54 passaram após as correções finais (conjuntos parcialmente sobrepostos).
+- Typecheck e lint focado passaram. CI completo, E2E com captura e tipos gerados ainda pendentes.
+- Aplicativo: 38 testes selecionados de comercial/96h/consulta, 3 testes comerciais após recuperação e 2 provas de PostgreSQL passaram.

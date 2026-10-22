@@ -1,4 +1,8 @@
 import { z } from 'zod';
+export type PaymentSource = 'manual' | 'integration';
+export type AttributionMethod = 'referral' | 'tracking_link' | 'manual' | 'inbound';
+export type CampaignLinkKind = 'whatsapp' | 'website';
+export type CommercialEventKind = 'lead_registered' | 'first_payment_received';
 
 export const dashboardQuerySchema = z.object({
   from: z.iso.date(),
@@ -25,6 +29,7 @@ export interface DashboardSettingsResponse {
   stages:Array<{id:string;name:string;pipeline_id:string;is_archived:boolean;is_won:boolean;is_lost:boolean}>;
   campaigns:Array<{account_id:string;campaign_id:string;campaign_name:string;currency:string;account_timezone:string;enabled:boolean}>;
   agents:Array<{id:string;name:string}>;
+  ad_sync_status:Array<{account_id:string;last_attempt_at:string|null;last_success_at:string|null;failed:boolean}>;
   timezone:string; confirmed_payment_conversions:boolean; conversions_configured:boolean;
 }
 

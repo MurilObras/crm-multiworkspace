@@ -21649,7 +21649,7 @@ create table if not exists public.crm_ad_spend_daily (
 
 -- Um dia sem linha de gasto só é zero quando a leitura COMPLETA o confirmou.
 create table if not exists public.crm_ad_spend_coverage (
- organization_id uuid not null, account_id text not null, campaign_id text not null, day date not null,
+ organization_id uuid not null references public.organizations(id) on delete cascade, account_id text not null, campaign_id text not null, day date not null,
  currency text not null check(currency ~ '^[A-Z]{3}$'), account_timezone text not null,
  synced_at timestamptz not null default now(),
  primary key(organization_id,account_id,campaign_id,day),
@@ -21681,7 +21681,7 @@ create table if not exists public.crm_lead_attribution (
 
 create table if not exists public.crm_campaign_links (
  id uuid primary key default gen_random_uuid(),
- organization_id uuid not null,account_id text not null,campaign_id text not null,
+ organization_id uuid not null references public.organizations(id) on delete cascade,account_id text not null,campaign_id text not null,
  code text not null unique check(code ~ '^[a-f0-9]{24}$'),
  destination_url text not null check(length(destination_url) between 8 and 2000),
  kind text not null check(kind in ('whatsapp','website')),
@@ -21745,8 +21745,8 @@ begin
  select * into old_payment from public.crm_first_payments where organization_id=p_org and lead_id=p_lead for update;
  if found then
    if p_source='integration' then
-     if old_payment.source='integration' and old_payment.external_id=p_external_id
-       and (old_payment.amount_cents<>p_amount or old_payment.currency<>p_currency or old_payment.paid_at<>p_paid_at or old_payment.quantity<>p_quantity) then
+     if old_payment.voided_at is not null or old_payment.amount_cents<>p_amount
+       or old_payment.currency<>p_currency or old_payment.paid_at<>p_paid_at or old_payment.quantity<>p_quantity then
        raise exception 'first_payment_event_conflict' using errcode='23505';
      end if;
      return jsonb_build_object('changed',false,'payment',to_jsonb(old_payment));
@@ -21781,7 +21781,7 @@ begin
    end if;
  end if;
  -- Só o consumidor financeiro usa este evento; status won isolado não é prova de recebimento.
- perform public.emit_event('crm.first_payment.confirmed','crm_lead',p_lead,
+ perform public.emit_event('crm.first_payment_confirmed','crm_lead',p_lead,
    jsonb_build_object('payment_id',result.id),jsonb_build_object('source','dashboard'),p_org);
  return jsonb_build_object('changed',true,'payment',to_jsonb(result),
    'funnel_closed',exists(select 1 from public.crm_leads where organization_id=p_org and id=p_lead and status='won'));
@@ -21906,9 +21906,13 @@ begin
  if (select count(*) from public.crm_stages where organization_id=p_org and pipeline_id=p_pipeline
    and id=any(p_stages) and not is_archived)<>cardinality(p_stages) then
    raise exception 'dashboard_invalid_stages' using errcode='22023'; end if;
+ -- Mudança da régua não transforma etapas anteriores em histórico medido.
+ select coalesce(array_agg(x order by x),'{}'::uuid[]) into p_stages from unnest(p_stages) as s(x);
  result:=jsonb_build_object('qualified_stage_ids',to_jsonb(p_stages),'quantity_label',btrim(p_quantity_label),
-   'qualification_started_at',coalesce(nullif(old_settings->'dashboard'->'qualification_started_at','null'::jsonb),
-     case when cardinality(p_stages)>0 then to_jsonb(clock_timestamp()) else 'null'::jsonb end));
+   'qualification_started_at',case when cardinality(p_stages)=0 then 'null'::jsonb
+     when old_settings->'dashboard'->'qualified_stage_ids'=to_jsonb(p_stages)
+       then coalesce(nullif(old_settings->'dashboard'->'qualification_started_at','null'::jsonb),to_jsonb(clock_timestamp()))
+     else to_jsonb(clock_timestamp()) end);
  update public.crm_pipelines set settings=jsonb_set(coalesce(settings,'{}'),'{dashboard}',result,true)
    where organization_id=p_org and id=p_pipeline;
  update public.organizations set settings=jsonb_set(coalesce(settings,'{}'),'{dashboard}',

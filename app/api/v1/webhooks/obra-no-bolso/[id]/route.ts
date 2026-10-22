@@ -62,10 +62,20 @@ export async function POST(req: Request, context: Context): Promise<Response> {
       if(!event.ok){await reject('invalid_commercial_event');return fail('invalid_request','Evento comercial inválido.',422,{requestId});}
       const received=await admin.rpc('fn_receive_obra_commercial',{p_org:source.organization_id,p_integration:source.id,
         p_payload:event.event,p_fingerprint:fingerprintAccessEvent(raw),p_phone_variants:event.phoneVariants,p_secret_encrypted:source.secret_encrypted});
-      if(received.error||!received.data)return fail('internal_error','Recebimento não confirmado; tente novamente.',503,{requestId});
+      if(received.error?.code==='23505') {
+        await reject('commercial_payment_conflict');
+        return fail('state_conflict','O primeiro pagamento já registrado precisa ser conferido.',409,{requestId});
+      }
+      if(received.error||!received.data) {
+        await reject('commercial_receive_failed');
+        return fail('internal_error','Recebimento não confirmado; tente novamente.',503,{requestId});
+      }
       const result=received.data;
-      if(result.status==='conflict')return fail('idempotency_conflict','ID do evento com conteúdo divergente.',409,{requestId});
-      if(!['accepted','duplicate'].includes(result.status))return fail('state_conflict','A identidade do cadastro precisa ser conferida na integração.',409,{requestId});
+      if(result.status==='conflict') {await reject('commercial_event_conflict');return fail('idempotency_conflict','ID do evento com conteúdo divergente.',409,{requestId});}
+      if(!['accepted','duplicate'].includes(result.status)) {
+        await reject(result.status==='identity_conflict'?'commercial_identity_conflict':'commercial_configuration_error');
+        return fail('state_conflict','A identidade do cadastro precisa ser conferida na integração.',409,{requestId});
+      }
       return ok(result,{requestId});
     }
     if (source.lifecycle_enabled) {

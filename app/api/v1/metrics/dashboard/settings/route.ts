@@ -24,9 +24,10 @@ export async function GET(req:NextRequest) {
     db.from('organizations').select('timezone,settings').eq('id',auth.org.orgId).single(),
     manager?db.from('crm_campaign_assignments').select('account_id,campaign_id,campaign_name,currency,account_timezone,enabled').eq('organization_id',auth.org.orgId).order('campaign_name').limit(1001):Promise.resolve({data:[],error:null}),
     manager?db.from('ai_agents').select('id,name').eq('organization_id',auth.org.orgId).order('name').limit(1001):Promise.resolve({data:[],error:null}),
+    manager?db.from('crm_ad_sync_accounts').select('account_id,last_attempt_at,last_success_at,last_error').eq('organization_id',auth.org.orgId).limit(1001):Promise.resolve({data:[],error:null}),
   ]);
   if (results.some(r=>r.error)) return fail('internal_error','Não foi possível carregar as configurações.',500,{requestId});
-  if (results[0].data!.length>1000 || results[1].data!.length>10000 || results[3].data!.length>1000 || results[4].data!.length>1000)
+  if (results[0].data!.length>1000 || results[1].data!.length>10000 || results[3].data!.length>1000 || results[4].data!.length>1000 || results[5].data!.length>1000)
     return fail('validation_failed','Quantidade de funis ou etapas excede o limite deste painel.',422,{requestId});
   const pipelines=(results[0].data??[]).map(p=>{
     const config=pipelineDashboardSchema.safeParse(p.settings?.dashboard??{});
@@ -34,7 +35,8 @@ export async function GET(req:NextRequest) {
   });
   const organization=results[2].data;
   if(!organization)return fail('internal_error','Workspace não encontrado.',500,{requestId});
-  return ok({pipelines,stages:results[1].data??[],campaigns:results[3].data??[],agents:results[4].data??[],timezone:organization.timezone,
+  return ok({pipelines,stages:results[1].data??[],campaigns:results[3].data??[],agents:results[4].data??[],
+    ad_sync_status:(results[5].data??[]).map(s=>({account_id:s.account_id,last_attempt_at:s.last_attempt_at,last_success_at:s.last_success_at,failed:s.last_error!==null})),timezone:organization.timezone,
     confirmed_payment_conversions:organization.settings?.dashboard?.confirmed_payment_conversions===true,
     conversions_configured:typeof organization.settings?.dashboard?.confirmed_payment_conversions==='boolean'},{requestId});
 }

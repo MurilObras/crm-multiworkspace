@@ -99,6 +99,23 @@ beforeEach(() => {
 });
 
 describe("as duas portas do fechamento", () => {
+  it('primeiro pagamento é consumido mesmo com acompanhamento de trial ainda aberto',async()=>{
+    vi.mocked(createAdminClient).mockReturnValue(fakeAdmin({
+      crm_leads:{...leadGanho,status:'open',value_cents:99999},
+      crm_first_payments:{id:'paid',amount_cents:15000,currency:'BRL',paid_at:new Date().toISOString(),voided_at:null},
+      organizations:{settings:{dashboard:{confirmed_payment_conversions:true}}},contacts:contatoComAnuncio,ad_platform_connections:conexaoAtiva,
+    }) as never);
+    const fetchSpy=vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response('{}',{status:200}));
+    expect((await conversaoDeVendaHandler.handle(evento('crm.first_payment_confirmed'))).status).toBe('ok');
+    expect(fetchSpy).toHaveBeenCalledOnce();expect(upserts.at(-1)?.valores.value_cents).toBe(15000);
+  });
+  it('modo confirmado não reporta won sem recebimento',async()=>{
+    vi.mocked(createAdminClient).mockReturnValue(fakeAdmin({crm_leads:leadGanho,
+      organizations:{settings:{dashboard:{confirmed_payment_conversions:true}}}}) as never);
+    const fetchSpy=vi.spyOn(globalThis,'fetch');
+    expect((await conversaoDeVendaHandler.handle(evento('lead.won'))).detail).toBe('sem_primeiro_pagamento_confirmado');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
   it("escuta lead.won E lead.stage_changed", () => {
     // Plugar só em `lead.won` perderia toda venda fechada por arrasto no kanban
     // e por mover em lote — que emitem `lead.stage_changed`.

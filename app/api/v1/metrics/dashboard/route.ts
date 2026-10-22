@@ -42,7 +42,11 @@ export async function GET(req: NextRequest) {
   }
   const input = snapshot.data as { as_of: string; leads: DashboardLead[]; payments: FirstPayment[];
     attributions: LeadAttribution[]; qualifications: Qualification[]; spend: DailySpend[]; pipeline_measurements: PipelineMeasurement[];coverage:SpendCoverage[] };
-  const result = aggregateDashboard({ query:q, window, ...input, now:input.as_of,
-    marketingVisible:roleAtLeast(auth.org.role,'manager') });
-  return ok({ ...result, timezone, timezone_fallback:!timezoneValid },{ requestId });
+  try {
+    const result = aggregateDashboard({ query:q, window, ...input, now:input.as_of,
+      marketingVisible:roleAtLeast(auth.org.role,'manager') });
+    return ok({ ...result, timezone, timezone_fallback:!timezoneValid },{ requestId });
+  } catch {
+    return fail('validation_failed','Os valores ultrapassam o limite de cálculo seguro. Reduza o período ou os filtros.',422,{requestId});
+  }
 }

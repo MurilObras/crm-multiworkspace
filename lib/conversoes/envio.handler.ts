@@ -94,7 +94,7 @@ async function handle(row: EventRow): Promise<HandlerResult> {
     contact_id: string | null;
   };
 
-  if(row.event_type!=='crm.first_payment.confirmed' && lead.status!=='won') return ok('skipped','nao_e_ganho');
+  if(row.event_type!=='crm.first_payment_confirmed' && lead.status!=='won') return ok('skipped','nao_e_ganho');
   const [financial, settings] = await Promise.all([
     admin.from('crm_first_payments').select('id,amount_cents,currency,paid_at,voided_at')
       .eq('organization_id',row.organization_id).eq('lead_id',lead.id).maybeSingle(),
@@ -106,7 +106,7 @@ async function handle(row: EventRow): Promise<HandlerResult> {
   };
   const confirmedOnly = settings.data?.settings?.dashboard?.confirmed_payment_conversions === true;
   if (financial.data?.voided_at) return ok('skipped','pagamento_invalidado');
-  if (!financial.data && (confirmedOnly || row.event_type==='crm.first_payment.confirmed'))
+  if (!financial.data && (confirmedOnly || row.event_type==='crm.first_payment_confirmed'))
     return ok('skipped','sem_primeiro_pagamento_confirmado');
   if (financial.data) {
     lead.value_cents=financial.data.amount_cents;
@@ -216,6 +216,6 @@ export const conversaoDeVendaHandler: EventHandler = {
   key: CONSUMER_KEY,
   // As duas portas. Ver o cabeçalho: `lead.stage_changed` cobre o arrasto no
   // kanban E o mover em lote, e o `status` do payload não é confiável em nenhum.
-  events: ["lead.won", "lead.stage_changed", "crm.first_payment.confirmed"],
+  events: ["lead.won", "lead.stage_changed", "crm.first_payment_confirmed"],
   handle,
 };

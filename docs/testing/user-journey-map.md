@@ -1972,3 +1972,11 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 - Escolha única por turno para opcionais e obrigatórias; preservar a decisão no retry.
 - Negativa de áudio, entregas incertas e repetição sem pedido continuam vetando envio.
 - Regressões executáveis: `conversation-audios.test.ts` e `audio-rule.test.ts`.
+
+## Dashboard comercial
+
+- [P1] Gestor configura etapas, salva e reabre; registra um pagamento com duas unidades e confere uma venda no dashboard.
+- [P0] Snapshot, financeiro e atribuição preservam RLS e isolamento entre workspaces.
+- [P0] Trial/ganho sem pagamento não contam; v3 com trial preserva o acompanhamento de 96h.
+- [P1] Cache diário completo distingue zero de ausência e não é substituído por consulta parcial ou lease antigo.
+- Provas: commercial-dashboard.spec.ts, tests/invariants/commercial-dashboard.test.ts, lib/dashboard/*.test.ts e tests/unit/dashboard-api.test.ts. Execução final ainda em andamento.
