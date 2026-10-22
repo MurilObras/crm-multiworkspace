@@ -57,7 +57,7 @@ async function main() {
       try {
         await db.query("begin");
         const owned=await db.query(`select a.id from ai_agents a where a.organization_id=$1 and a.id=any($2::uuid[])
-          and a.name='Agente de consulta sintético'`,[org,ids]);
+          and a.name='Agente de consulta sintético '||a.id::text`,[org,ids]);
         const channels=await db.query("select id from channel_sessions where organization_id=$1 and id=any($2::uuid[]) and waha_session_name='responsible-'||id::text",[org,sessions]);
         if(owned.rows.length!==ids.length || channels.rows.length!==sessions.length) throw new Error("Cleanup recusou fixture não sintética.");
         const contacts=(await db.query("select distinct contact_id as id from conversations where organization_id=$1 and channel_session_id=any($2::uuid[])",[org,sessions])).rows.map(r=>r.id);
@@ -80,14 +80,21 @@ async function main() {
       } catch(error) { await db.query("rollback"); throw error; } finally { db.release(); }
     } else if (mode === "init") {
       const org = String(input.org); const session = randomUUID(); const agent = randomUUID(); const version = randomUUID();
-      await pool.query("insert into channel_sessions(id,organization_id,waha_session_name,status,webhook_secret_encrypted) values($1,$2,$3,'WORKING','\\x00')", [session, org, `responsible-${session}`]);
-      await pool.query("insert into ai_agents(id,organization_id,name,system_prompt,kind) values($1,$2,'Agente de consulta sintético','Atenda usando somente informações aprovadas.','mcp_agent')", [agent, org]);
-      await pool.query(`insert into ai_agent_versions(id,organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status)
-        values($1,$2,$3,1,'Atenda usando somente informações aprovadas.','openai','gpt-4.1-mini',$4,'published')`, [version, org, agent, session]);
-      await pool.query("update ai_agents set published_version_id=$3 where organization_id=$1 and id=$2", [org, agent, version]);
-      const contact = (await pool.query("insert into contacts(organization_id,name,phone_number) values($1,'Cliente comercial sintético',$2) returning id", [org, `+55119${String(Date.now()).slice(-8)}`])).rows[0]!.id;
-      const conv = (await pool.query("insert into conversations(organization_id,contact_id,channel_session_id,status) values($1,$2,$3,'ai_handling') returning id", [org, contact, session])).rows[0]!.id;
-      result = { org, agent, session, contact, conv };
+      const db=await pool.connect();
+      try {
+        // As duas jornadas coexistem no mesmo workspace. O nome também é único
+        // e uma falha de preparação não deixa um canal órfão nos próximos specs.
+        await db.query("begin");
+        await db.query("insert into channel_sessions(id,organization_id,waha_session_name,status,webhook_secret_encrypted) values($1,$2,$3,'WORKING','\\x00')", [session, org, `responsible-${session}`]);
+        await db.query("insert into ai_agents(id,organization_id,name,system_prompt,kind) values($1,$2,$3,'Atenda usando somente informações aprovadas.','mcp_agent')", [agent, org, `Agente de consulta sintético ${agent}`]);
+        await db.query(`insert into ai_agent_versions(id,organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status)
+          values($1,$2,$3,1,'Atenda usando somente informações aprovadas.','openai','gpt-4.1-mini',$4,'published')`, [version, org, agent, session]);
+        await db.query("update ai_agents set published_version_id=$3 where organization_id=$1 and id=$2", [org, agent, version]);
+        const contact = (await db.query("insert into contacts(organization_id,name,phone_number) values($1,'Cliente comercial sintético',$2) returning id", [org, `+55119${String(Date.now()).slice(-8)}`])).rows[0]!.id;
+        const conv = (await db.query("insert into conversations(organization_id,contact_id,channel_session_id,status) values($1,$2,$3,'ai_handling') returning id", [org, contact, session])).rows[0]!.id;
+        await db.query("commit");
+        result = { org, agent, session, contact, conv };
+      } catch(error) { await db.query("rollback"); throw error; } finally { db.release(); }
     } else if (mode === "open") {
       if (input.handoff) {
         await performHumanHandoff(pool,{tenantId:input.org,leadId:input.contact,conversationId:input.conv},
