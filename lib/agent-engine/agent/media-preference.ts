@@ -18,6 +18,13 @@ export function refersToPreviousMedia(text: string): boolean {
     .replace(/[\s.!?,;:]+/g,'') === '';
 }
 
+/** Reenvio exige uma entrega anterior; não libera arquivos novos do mesmo formato. */
+export function requestsMediaReplay(text: string, kind: 'audio' | 'image' | 'video'): boolean {
+  const normalized = text.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+  return explicitMediaPreference(text, kind) === 'audio'
+    && /\b(?:reenvi\w*|repete|repita|repetir|de novo|novamente|aquele|aquela)\b/.test(normalized);
+}
+
 /** Preferências visuais também são duráveis, mesmo depois de a janela do modelo girar. */
 export async function conversationAllowsVisual(db: Queryable, org: string, conversation: string, kind: 'image' | 'video'): Promise<boolean> {
   for (;;) {

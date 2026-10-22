@@ -23,6 +23,30 @@ async function job() { return (await db.pool.query<JobRow>('select * from job_qu
 const decide = async (classify: (candidates: typeof audios) => Promise<string | null>, firstContact = false, catalog = audios) =>
   decideRequiredAudio({ db: db.pool, job: await job(), worker: 'audio-test', agent: AGENT, audios: catalog, firstContact, classify });
 
+it('escolha única inclui opcionais e não seleciona outra mídia obrigatória em paralelo', async () => {
+  const optional = { ...audios[0]!, id: OTHER, title: 'Objeção de preço', required: false };
+  const classify = vi.fn(async (catalog: typeof audios) => {
+    expect(catalog.map(m => m.id)).toEqual([AUDIO, OTHER]);
+    return OTHER;
+  });
+  const selected = await decideRequiredAudio({ db: db.pool, job: await job(), worker: 'audio-test', agent: AGENT,
+    audios: [...audios, optional], firstContact: false, includeOptional: true, classify });
+  expect(selected).toBe(OTHER);
+  expect(await requiredAudioPlan(db.pool, await job(), 'audio-test', AGENT, [optional], 6, 'after_response')).toBeNull();
+  expect(await decideRequiredAudio({ db: db.pool, job: await job(), worker: 'audio-test', agent: AGENT,
+    audios, firstContact: false, includeOptional: true, classify })).toBe(OTHER);
+  expect(classify).toHaveBeenCalledOnce();
+});
+
+it('obrigatória escolhida entre mídias opcionais fixa o mesmo plano após a resposta', async () => {
+  const greeting = { ...audios[0]!, id: OTHER, title: 'Recepção', required: false, trigger_type: 'first_contact' as const };
+  const selected = await decideRequiredAudio({ db: db.pool, job: await job(), worker: 'audio-test', agent: AGENT,
+    audios: [greeting, ...audios], firstContact: false, includeOptional: true, classify: async () => AUDIO });
+  const plan = await requiredAudioPlan(db.pool, await job(), 'audio-test', AGENT,
+    [greeting, ...audios].filter(m => m.id === selected), 6, 'after_response');
+  expect(plan).toMatchObject({ audio_id: AUDIO, delivery_phase: 'after_response' });
+});
+
 it.each(['não é JSON', '{"audio_id":"inventado"}', JSON.stringify({ audio_id: OTHER }), JSON.stringify({ audio_id: AUDIO, send: true }), '{"audio_id":null}'])('resposta inválida ou sem assunto não libera gravação: %s', text => {
   expect(parseAudioIntent(text, audios)).toBeNull();
 });

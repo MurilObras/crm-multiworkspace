@@ -1956,18 +1956,20 @@ async function executarTurnoDoAgente(
     && (agentConfig?.approvedAudios ?? []).some(a => a.enabled && a.trigger_type === 'first_contact')
     && await isFirstAudioContact(pool, tenantId,
     input.conversationId, job.id, inboundAnchor);
+  // Undefined conserva os turnos legados. Null é uma decisão explícita por texto.
+  // Catálogo do modelo e envio obrigatório passam pela MESMA escolha por turno.
+  let selectedTurnMedia: string | null | undefined;
   const freshAudios = async () => {
     if (!agentConfig) return [];
     const { rows } = await pool.query<{ config: unknown }>(
       'select config from ai_agents where organization_id=$1 and id=$2 and archived_at is null',
       [tenantId, agentConfig.agentId]);
-    const catalog = readApprovedMedia(rows[0]?.config).filter(a => a.enabled);
+    const catalog = readApprovedMedia(rows[0]?.config).filter(a => a.enabled
+      && (selectedTurnMedia === undefined || a.id === selectedTurnMedia));
     return availableConversationAudios(pool, tenantId, input.conversationId, agentConfig.agentId,
       job.id, await eligibleAudiosForContact(pool, tenantId, leadId, catalog), inboundAnchor, firstAudioContact);
   };
   const eligibleAudios = await freshAudios();
-  const audioBlock = renderApprovedMedia(eligibleAudios);
-  if (audioBlock) blocosResidentes.push(audioBlock);
   // O fluxo legado mantém a conversa ativa. A consulta pelo WhatsApp traz seu
   // próprio bloco residente no prompt publicado e exige pausa: não combinar
   // instruções contraditórias ensinando o modelo a continuar após abrir o caso.
@@ -1975,7 +1977,6 @@ async function executarTurnoDoAgente(
   if (agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment')) {
     blocosResidentes.push(AGENDA_SYSTEM_BLOCK);
   }
-  const system = blocosResidentes.join('\n\n');
   const previous = await latestCheckpoint(pool, tenantId, leadId);
   const leadState = await getLeadState(pool, tenantId, leadId);
   const openingContext = await getLeadContext(
@@ -3443,11 +3444,12 @@ async function executarTurnoDoAgente(
       // Plano legado continua usando as intenções originais, sem reclassificar no retry.
       if (job.payload.required_audio_plan !== undefined) {
         audioPlan = await requiredAudioPlan(pool, job, ctx.workerId, agentConfig.agentId, [], maxSendsPerTurn);
+        selectedTurnMedia = audioPlan?.audio_id ?? null;
       } else {
         const candidates = await availableConversationAudios(pool, tenantId, input.conversationId,
           agentConfig.agentId, job.id, agentConfig.approvedAudios ?? [], inboundAnchor, firstAudioContact);
         const selected = await decideRequiredAudio({ db: pool, job, worker: ctx.workerId, agent: agentConfig.agentId,
-          audios: candidates, firstContact: firstAudioContact, classify: async topics => {
+          audios: candidates, firstContact: firstAudioContact, includeOptional: true, classify: async topics => {
             try {
               const call = await runModelCall(pool, deps.llmCfg, { tenantId, leadId, jobId: job.id,
                 agentId: agentConfig.agentId, purpose: 'audio_intent', model: agentConfig.model,
@@ -3468,9 +3470,10 @@ async function executarTurnoDoAgente(
               return null;
             }
           } });
+        selectedTurnMedia = selected;
         audioPlan = await requiredAudioPlan(pool, job, ctx.workerId, agentConfig.agentId,
           candidates.filter(a => a.id === selected), maxSendsPerTurn, 'after_response');
-        if (selected && !audioPlan) {
+        if (selected && !audioPlan && candidates.some(a => a.id === selected && a.required)) {
           requiredAudioBlock = '## Mídia obrigatória pendente\nO limite não permite texto de contexto e mídia. Responda por texto e não afirme envio.';
           await emitAgentActivityForContact({ pool, organizationId: tenantId, contactId: leadId,
             type: 'send_vetoed', sourceModule: 'agent', sourceId: job.id,
@@ -3501,6 +3504,9 @@ async function executarTurnoDoAgente(
       throw error;
     }
   }
+  const audioBlock = renderApprovedMedia(await freshAudios());
+  if (audioBlock) blocosResidentes.push(audioBlock);
+  const system = blocosResidentes.join('\n\n');
   const openingSuffixes = [
     agoraBlock,
     requiredAudioBlock,

@@ -94,6 +94,7 @@ export async function isFirstAudioContact(db: Queryable, org: string, conversati
 export async function decideRequiredAudio(args: {
   db: Queryable; job: JobRow; worker: string; agent: string; audios: ApprovedAudio[];
   firstContact: boolean; classify: (candidates: ApprovedAudio[]) => Promise<string | null>;
+  includeOptional?: boolean;
 }): Promise<string | null> {
   const cached = args.job.payload.audio_rule_decision;
   if (cached !== undefined) {
@@ -102,7 +103,7 @@ export async function decideRequiredAudio(args: {
   }
   const { rows: prior } = await args.db.query('select id from send_ledger where organization_id=$1 and job_id=$2 limit 1',
     [args.job.organization_id, args.job.id]);
-  const required = args.audios.filter(a => a.enabled && a.required);
+  const required = args.audios.filter(a => a.enabled && (a.required || args.includeOptional));
   const greeting = args.firstContact ? required.find(a => a.trigger_type === 'first_contact') : undefined;
   const topics = required.filter(a => a.trigger_type === 'topic' || !args.firstContact && a.allow_requested_repeat);
   // A primeira mensagem pode já trazer uma pergunta específica: o áudio que
