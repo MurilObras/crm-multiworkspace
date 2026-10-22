@@ -21180,14 +21180,7 @@ create unique index if not exists responsible_delivery_once on public.agent_resp
 create unique index if not exists responsible_answer_once on public.agent_responsible_deliveries(request_id) where purpose='answer';
 create unique index if not exists responsible_receipt_once on public.agent_responsible_deliveries(organization_id,source_message_id) where purpose='receipt';
 
--- Reconstituir o vocabulário anterior também no bloco original do baseline:
--- update.sh reaplica o baseline sobre bancos que já têm o kind novo.
-alter table public.job_queue drop constraint if exists job_queue_kind_check;
-alter table public.job_queue add constraint job_queue_kind_check check(kind in
- ('inbound_turn','followup_turn','watchdog','flywheel','case_reply_turn','operator_turn','responsible_delivery','responsible_reply'));
-alter table public.job_queue drop constraint if exists job_queue_turn_needs_contact;
-alter table public.job_queue add constraint job_queue_turn_needs_contact check(
- (kind in ('inbound_turn','followup_turn','case_reply_turn','operator_turn','responsible_delivery','responsible_reply'))=(contact_id is not null));
+-- Os dois CHECKs de job_queue estão no bloco único original, já com o vocabulário da 0237.
 
 create or replace function public.fn_responsible_waiting(p_org uuid,p_contact uuid)
 returns boolean language sql stable security definer set search_path=public,pg_temp as $$

@@ -2670,11 +2670,11 @@ async function executarTurnoDoAgente(
               return { ok: false, error: { code: chain.code, message: chain.message } };
             }
             openedCaseThisTurn = true;
+            moverParaHandoffBestEffort('case_promise_autofallback');
             if (agentConfig?.responsibleConsultation && await waitingForResponsible(pool,tenantId,leadId)) {
               supersededError = new OutboundSupersededError("human_in_control");
               return {ok:true,case_id:auto.caseId,message:"Consulta aberta. O sistema avisará o cliente e os responsáveis. Encerre o turno sem enviar outras mensagens."};
             }
-            moverParaHandoffBestEffort('case_promise_autofallback');
             // Re-roda a cadeia INTEIRA agora que há caso aberto — o send real acontece
             // DENTRO do runBeforeSend (via args.send); nunca chamamos o canal por fora
             // (perderia pacing/lgpd/stop). ponytail: re-roda a cadeia inteira no fail-safe
@@ -3077,11 +3077,11 @@ async function executarTurnoDoAgente(
           );
           if (!res.ok) return res;
           openedCaseThisTurn = true;
+          moverParaHandoffBestEffort('open_human_case');
           if (agentConfig.responsibleConsultation && await waitingForResponsible(pool,tenantId,leadId)) {
             supersededError = new OutboundSupersededError("human_in_control");
             return {ok:true,case_id:res.caseId,message:"Consulta aberta. O sistema avisará o cliente e os responsáveis. Encerre o turno sem enviar outras mensagens."};
           }
-          moverParaHandoffBestEffort('open_human_case');
           // ACH-03: a expectativa vai junto com a confirmação. Medido num turno
           // real: o agente abria o caso e prometia ao cliente que "alguém entra
           // em contato" sem nunca ter olhado se havia alguém — a capacidade de

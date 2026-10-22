@@ -4,6 +4,8 @@ import pg from "pg";
 import { openCase, markAwaitingLead, resolveCaseFromHuman } from "@/lib/agent-engine/agent/human-cases";
 import { acceptResponsibleReply, readResponsibleSettings, saveResponsibleSettings, saveResponsible, waitingForResponsible, type Responsible } from "@/lib/responsibles/service";
 import { loadPublishedAgentConfig } from "@/lib/agent-engine/agent/agent-config";
+import { collectResponsibleConsultations } from "@/lib/lgpd/export-collector";
+import { pgComoSupabase } from "@/tests/pg-como-supabase";
 
 if (!process.env.TEST_DB_CONTAINER) throw new Error("Rode via pnpm test:db");
 const pool = new pg.Pool({ connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`, max: 6 });
@@ -196,6 +198,12 @@ describe("responsável por WhatsApp: transações e isolamento reais",()=>{
     await pool.query("select fn_queue_responsible_delivery($1,$2,$3,'notification',$4,$5)",[other,foreignRequest,staff,staffConversation,staffContact]);
     const tables=['agent_responsibles','agent_responsible_settings','agent_responsible_bindings','agent_responsible_requests','agent_responsible_deliveries'];
     for(const table of tables) expect((await pool.query(`select count(*)::int n from ${table} where organization_id=$1`,[other])).rows[0]!.n).toBeGreaterThan(0);
+    const exported=await collectResponsibleConsultations(pgComoSupabase(pool),org,contact);
+    expect(exported.requests).toHaveLength(1); expect(exported.deliveries).toHaveLength(3);
+    expect(exported.cases).toHaveLength(1); expect(exported.events.length).toBeGreaterThan(0);
+    expect(JSON.stringify(exported)).not.toContain(foreignRequest);
+    expect(JSON.stringify(exported)).not.toContain('+5511988888800');
+    expect((await collectResponsibleConsultations(pgComoSupabase(pool),other,contact)).requests).toEqual([]);
     const db=await pool.connect();
     try {
       await db.query("begin"); await db.query("set local role authenticated");
