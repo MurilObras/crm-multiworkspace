@@ -12,6 +12,7 @@ Criar um workspace não transfere automaticamente a operação anterior. Trate o
 
 ## Onde encontrar as áreas
 
+- **Visão geral:** Dashboard, no início do menu para atendentes e gestores. Os indicadores seguem o workspace ativo e o acesso da pessoa; configurações financeiras e campanhas exigem gerente ou administrador.
 - **Atendimento:** Inbox, Radar, Agenda e Respostas rápidas.
 - **CRM:** Funis e Contatos; use **Ver tudo em CRM** para encontrar as demais áreas.
 - **Agente de IA:** Agentes e outras configurações; use **Ver tudo em IA** quando necessário.

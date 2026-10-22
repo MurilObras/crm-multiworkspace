@@ -61,7 +61,7 @@ export async function POST(req:NextRequest) {
     if(result.error)return fail('internal_error','Não foi possível salvar o vínculo.',500,{requestId});
   }
   await audit({action:'dashboard.campaign_linked',actorUserId:auth.user.id,organizationId:auth.org.orgId,
-    resourceType:'ad_campaign',resourceId:p.campaign_id,requestId,bypassedRls:true,
-    metadata:{account_id:p.account_id,enabled:p.enabled}});
+    resourceType:'ad_campaign',resourceId:null,requestId,bypassedRls:true,
+    metadata:{account_id:p.account_id,campaign_id:p.campaign_id,enabled:p.enabled}});
   return ok({saved:true},{requestId});
 }

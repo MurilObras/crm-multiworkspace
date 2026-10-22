@@ -17,6 +17,8 @@ O primeiro acesso a um workspace ainda não configurado abre uma sequência de p
 
 No dia a dia, **Inbox** reúne as conversas, **Funis** mostra os quadros de vendas e **Contatos** reúne as pessoas e seu histórico. Em **Agente de IA → Agentes**, confira a configuração e a publicação do agente.
 
+Para acompanhar resultados, **Dashboard** aparece no início do menu para atendentes, gerentes e administradores. Ele separa vendas com primeiro pagamento confirmado da quantidade vendida. Gestores podem usar **Configurar indicadores**, **Registrar pagamento** e **Vincular e sincronizar campanhas**. Um trial ou card ganho, sozinho, não comprova recebimento; campanha sem consulta completa não significa gasto zero.
+
 Se o ensaio falhar, leia o motivo apresentado. Um administrador pode revisar **Credenciais** e **Provedores** na área de IA. Preencha informações de acesso somente nos campos oficiais do CRM; não as envie ao assistente.
 
 ## Quando pedir ajuda

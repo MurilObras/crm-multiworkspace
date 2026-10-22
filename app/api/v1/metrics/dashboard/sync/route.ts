@@ -26,6 +26,6 @@ export async function POST(req:NextRequest) {
   if(result.status==='busy')return fail('state_conflict','A conta já está sendo consultada ou não tem campanha ativa vinculada.',409,{requestId});
   if(result.status==='failed')return fail('state_conflict','A consulta à Meta falhou. O gasto anterior foi preservado. Confira a conexão de anúncios.',409,{requestId});
   await audit({action:'dashboard.ads_synced',actorUserId:auth.user.id,organizationId:auth.org.orgId,
-    resourceType:'ad_account',resourceId:p.account_id,requestId,bypassedRls:true,metadata:{from:p.from,to:p.to,rows:result.rows}});
+    resourceType:'ad_account',resourceId:null,requestId,bypassedRls:true,metadata:{account_id:p.account_id,from:p.from,to:p.to,rows:result.rows}});
   return ok(result,{requestId});
 }

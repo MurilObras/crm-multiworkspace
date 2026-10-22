@@ -66,3 +66,11 @@ Não usar este checkpoint como declaração de funcionalidade concluída ou vali
 - Testes selecionados: 213 passaram na primeira matriz e 54 passaram após as correções finais (conjuntos parcialmente sobrepostos).
 - Typecheck e lint focado passaram. CI completo, E2E com captura e tipos gerados ainda pendentes.
 - Aplicativo: 38 testes selecionados de comercial/96h/consulta, 3 testes comerciais após recuperação e 2 provas de PostgreSQL passaram.
+
+## Segunda rodada do gate
+
+- Tipos regenerados pelo Supabase do E2E isolado e typecheck aprovado com o arquivo gerado.
+- O teste de upgrade histórico removia o intervalo entre 0222 e a varredura terminal: os novos blocos passam a ficar antes dessa varredura, preservada no fim. A regressão original, sem alteração do teste, passou nos quatro cenários PostgreSQL.
+- IDs naturais de conta/campanha passam no metadata de auditoria, com resource_id nulo (a coluna é UUID).
+- Catálogo de suporte revisado e regenerado; artigos de primeiros passos e navegação incluem o Dashboard.
+- Build e testes do aplicativo no GitHub passaram; não mesclado, aguardando receptor CRM publicado e revisão final.

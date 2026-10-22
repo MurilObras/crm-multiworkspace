@@ -28,8 +28,8 @@ async function handle(req:NextRequest) {
   try{result=await syncDashboardAds(db,row.organization_id,row.account_id,from,to);}
   catch{return fail('internal_error','Falha ao persistir sincronização de anúncios.',500,{requestId});}
   if(result.status!=='busy')await audit({action:'dashboard.ads_synced',organizationId:row.organization_id,
-    resourceType:'ad_account',resourceId:row.account_id,requestId,bypassedRls:true,
-    metadata:{from,to,status:result.status,rows:result.rows}});
+    resourceType:'ad_account',resourceId:null,requestId,bypassedRls:true,
+    metadata:{account_id:row.account_id,from,to,status:result.status,rows:result.rows}});
   return ok({synced:result.status==='synced'?1:0,status:result.status},{requestId});
 }
 export const GET=handle;

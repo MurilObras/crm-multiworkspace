@@ -20,6 +20,7 @@ describe('contrato comercial v3 e origem',()=>{
   it('origem é referência opaca própria; não admite URL insegura ou campanha externa no body',()=>{
     const code='a'.repeat(24);
     const website=campaignLinkSchema.parse({kind:'website',account_id:'act_1',campaign_id:'2',url:'https://example.invalid/cadastro?plano=profissional'});
+    if(website.kind!=='website')throw new Error('Fixture deve ser um link de site');
     const target=new URL(campaignDestination(website,code));expect(target.searchParams.get('plano')).toBe('profissional');
     expect(target.searchParams.get('crm_ref')).toBe(code);
     expect(()=>campaignDestination({...website,url:'https://user:pass@example.invalid'},code)).toThrow();

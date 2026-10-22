@@ -5,8 +5,8 @@
     {
       "id": "primeiros-passos",
       "title": "Primeiros passos no CRM",
-      "body": "# Primeiros passos no CRM\n\nO primeiro acesso a um workspace ainda não configurado abre uma sequência de preparação. As etapas disponíveis dependem da instalação. Use os nomes que aparecem na sua tela; se forem diferentes, informe ao suporte a etapa e a versão exibida no CRM, se disponível.\n\n## Preparar o workspace\n\n1. Em **Seu negócio**, preencha o nome, descreva o que vocês fazem e selecione a região de atendimento. Leia os termos e a política de privacidade antes de aceitar e continuar.\n2. Em **O telefone dele**, conecte o número de WhatsApp seguindo a orientação da tela. Se preferir concluir isso depois, use a opção de pular quando oferecida.\n3. **Sua loja** aparece quando a integração de loja está habilitada na instalação. A ausência dessa etapa, sozinha, não indica erro.\n4. Em **Treinar**, defina o nome do atendente, seu jeito de falar e as regras da operação. Se a tela informar que ele ficou como **rascunho**, ele ainda não responde mensagens.\n5. Em **Onde ele organiza**, revise o nome do quadro e suas colunas antes de escolher **Usar este quadro**. A tela também pode oferecer um modelo pronto.\n6. Em **Ver ele atender**, escreva uma pergunta fictícia e use **Mandar mensagem** para ensaiar. Esse ensaio não envia a conversa a um cliente e não aparece no Inbox.\n7. Em **Quem trabalha com ele**, escolha quem convidar e o papel de acesso. Também é possível **Pular por enquanto**.\n8. Confira o resumo e clique em **Começar a usar**. O resumo diferencia o que foi feito do que ficou para depois.\n\n## Conferir o resultado\n\nNo dia a dia, **Inbox** reúne as conversas, **Funis** mostra os quadros de vendas e **Contatos** reúne as pessoas e seu histórico. Em **Agente de IA → Agentes**, confira a configuração e a publicação do agente.\n\nSe o ensaio falhar, leia o motivo apresentado. Um administrador pode revisar **Credenciais** e **Provedores** na área de IA. Preencha informações de acesso somente nos campos oficiais do CRM; não as envie ao assistente.\n\n## Quando pedir ajuda\n\nInforme a etapa, o texto do aviso sem dados pessoais e o que esperava que acontecesse. Não envie documentos de clientes nem conteúdo de conversas reais para testar o agente. Um passo concluído no guia não comprova que o número, a IA ou a instalação estejam funcionando agora: confirme pela tela e por um teste autorizado.\n",
-      "body_sha256": "879fe333936c1349750b516f285c2be608af53db1598dc3eb3fafafeaf6c2831",
+      "body": "# Primeiros passos no CRM\n\nO primeiro acesso a um workspace ainda não configurado abre uma sequência de preparação. As etapas disponíveis dependem da instalação. Use os nomes que aparecem na sua tela; se forem diferentes, informe ao suporte a etapa e a versão exibida no CRM, se disponível.\n\n## Preparar o workspace\n\n1. Em **Seu negócio**, preencha o nome, descreva o que vocês fazem e selecione a região de atendimento. Leia os termos e a política de privacidade antes de aceitar e continuar.\n2. Em **O telefone dele**, conecte o número de WhatsApp seguindo a orientação da tela. Se preferir concluir isso depois, use a opção de pular quando oferecida.\n3. **Sua loja** aparece quando a integração de loja está habilitada na instalação. A ausência dessa etapa, sozinha, não indica erro.\n4. Em **Treinar**, defina o nome do atendente, seu jeito de falar e as regras da operação. Se a tela informar que ele ficou como **rascunho**, ele ainda não responde mensagens.\n5. Em **Onde ele organiza**, revise o nome do quadro e suas colunas antes de escolher **Usar este quadro**. A tela também pode oferecer um modelo pronto.\n6. Em **Ver ele atender**, escreva uma pergunta fictícia e use **Mandar mensagem** para ensaiar. Esse ensaio não envia a conversa a um cliente e não aparece no Inbox.\n7. Em **Quem trabalha com ele**, escolha quem convidar e o papel de acesso. Também é possível **Pular por enquanto**.\n8. Confira o resumo e clique em **Começar a usar**. O resumo diferencia o que foi feito do que ficou para depois.\n\n## Conferir o resultado\n\nNo dia a dia, **Inbox** reúne as conversas, **Funis** mostra os quadros de vendas e **Contatos** reúne as pessoas e seu histórico. Em **Agente de IA → Agentes**, confira a configuração e a publicação do agente.\n\nPara acompanhar resultados, **Dashboard** aparece no início do menu para atendentes, gerentes e administradores. Ele separa vendas com primeiro pagamento confirmado da quantidade vendida. Gestores podem usar **Configurar indicadores**, **Registrar pagamento** e **Vincular e sincronizar campanhas**. Um trial ou card ganho, sozinho, não comprova recebimento; campanha sem consulta completa não significa gasto zero.\n\nSe o ensaio falhar, leia o motivo apresentado. Um administrador pode revisar **Credenciais** e **Provedores** na área de IA. Preencha informações de acesso somente nos campos oficiais do CRM; não as envie ao assistente.\n\n## Quando pedir ajuda\n\nInforme a etapa, o texto do aviso sem dados pessoais e o que esperava que acontecesse. Não envie documentos de clientes nem conteúdo de conversas reais para testar o agente. Um passo concluído no guia não comprova que o número, a IA ou a instalação estejam funcionando agora: confirme pela tela e por um teste autorizado.\n",
+      "body_sha256": "cd5113e895ef2b4bdefa386f56a4c62812b17d70303a5f0f0614a503769ccbed",
       "sources": [
         {
           "path": "app/onboarding/welcome/_form.tsx",
@@ -38,7 +38,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+          "blob_sha": "2a5613b867f412c71f4819359bced60f9fd84586"
         },
         {
           "path": "tests/e2e/wizard-do-funcionario.spec.ts",
@@ -51,14 +51,22 @@
         {
           "path": "lib/onboarding/passos.ts",
           "blob_sha": "5ed6cf480e2b555a48aa29526a0355ff7b5d47c9"
+        },
+        {
+          "path": "app/app/dashboard/_components/DashboardClient.tsx",
+          "blob_sha": "63c9ced79c3292da0cc255f44e0454de2ce7139b"
+        },
+        {
+          "path": "app/app/dashboard/_components/PaymentDialog.tsx",
+          "blob_sha": "edf251609a04e510519509019f16d0b06e969e19"
         }
       ]
     },
     {
       "id": "workspaces-e-acessos",
       "title": "Workspaces, navegação e acessos",
-      "body": "# Workspaces, navegação e acessos\n\nUm workspace é um espaço de operação com seus próprios números de WhatsApp, funis e agentes. Antes de procurar um contato, uma automação ou uma configuração, confira em qual workspace você está.\n\n## Trocar ou criar um workspace\n\nSe sua conta participa de mais de um workspace, o seletor mostra o nome do espaço ativo. Abra-o e escolha o destino. Quando há apenas um workspace disponível, esse seletor pode não aparecer.\n\nPara criar um espaço, abra o **Menu do usuário**, escolha **Criar workspace**, informe um nome e confirme. A criação exige permissão de administrador e inicia a preparação do novo espaço. Quem o cria recebe acesso de administrador nele.\n\nCriar um workspace não transfere automaticamente a operação anterior. Trate o novo espaço como uma configuração própria; confira números, funis, agentes e pessoas antes de começar a usá-lo.\n\n## Onde encontrar as áreas\n\n- **Atendimento:** Inbox, Radar, Agenda e Respostas rápidas.\n- **CRM:** Funis e Contatos; use **Ver tudo em CRM** para encontrar as demais áreas.\n- **Agente de IA:** Agentes e outras configurações; use **Ver tudo em IA** quando necessário.\n- **Canais:** Conexões e Webhooks, conforme sua permissão.\n- **Configurações:** Equipe, Workspace, Segurança e outras opções de administração. O acesso fica no rodapé da barra lateral.\n\n## Um menu sumiu ou o acesso foi negado\n\nPrimeiro confirme o workspace selecionado. A navegação varia conforme o papel da pessoa: **Conexões**, **Workspace** e **LGPD** exigem administração; **Webhooks** exige papel de gerente ou administrador.\n\nPeça a quem administra o workspace para revisar seu acesso em **Configurações → Equipe**. O assistente pode explicar a navegação, mas não concede permissões. Informar no chat que você é administrador não modifica o acesso registrado no CRM.\n\n## Quando pedir ajuda\n\nDescreva qual menu esperava encontrar, qual papel de acesso lhe foi atribuído e se a situação ocorre em um ou em mais workspaces. Use nomes genéricos ao falar de clientes ou operações internas. Não compartilhe links de convite, códigos de acesso nem credenciais.\n",
-      "body_sha256": "1f461d76d930e090a0f2b5113f12721686ef9e40d2f4f324fa8eeb472b7d3fc0",
+      "body": "# Workspaces, navegação e acessos\n\nUm workspace é um espaço de operação com seus próprios números de WhatsApp, funis e agentes. Antes de procurar um contato, uma automação ou uma configuração, confira em qual workspace você está.\n\n## Trocar ou criar um workspace\n\nSe sua conta participa de mais de um workspace, o seletor mostra o nome do espaço ativo. Abra-o e escolha o destino. Quando há apenas um workspace disponível, esse seletor pode não aparecer.\n\nPara criar um espaço, abra o **Menu do usuário**, escolha **Criar workspace**, informe um nome e confirme. A criação exige permissão de administrador e inicia a preparação do novo espaço. Quem o cria recebe acesso de administrador nele.\n\nCriar um workspace não transfere automaticamente a operação anterior. Trate o novo espaço como uma configuração própria; confira números, funis, agentes e pessoas antes de começar a usá-lo.\n\n## Onde encontrar as áreas\n\n- **Visão geral:** Dashboard, no início do menu para atendentes e gestores. Os indicadores seguem o workspace ativo e o acesso da pessoa; configurações financeiras e campanhas exigem gerente ou administrador.\n- **Atendimento:** Inbox, Radar, Agenda e Respostas rápidas.\n- **CRM:** Funis e Contatos; use **Ver tudo em CRM** para encontrar as demais áreas.\n- **Agente de IA:** Agentes e outras configurações; use **Ver tudo em IA** quando necessário.\n- **Canais:** Conexões e Webhooks, conforme sua permissão.\n- **Configurações:** Equipe, Workspace, Segurança e outras opções de administração. O acesso fica no rodapé da barra lateral.\n\n## Um menu sumiu ou o acesso foi negado\n\nPrimeiro confirme o workspace selecionado. A navegação varia conforme o papel da pessoa: **Conexões**, **Workspace** e **LGPD** exigem administração; **Webhooks** exige papel de gerente ou administrador.\n\nPeça a quem administra o workspace para revisar seu acesso em **Configurações → Equipe**. O assistente pode explicar a navegação, mas não concede permissões. Informar no chat que você é administrador não modifica o acesso registrado no CRM.\n\n## Quando pedir ajuda\n\nDescreva qual menu esperava encontrar, qual papel de acesso lhe foi atribuído e se a situação ocorre em um ou em mais workspaces. Use nomes genéricos ao falar de clientes ou operações internas. Não compartilhe links de convite, códigos de acesso nem credenciais.\n",
+      "body_sha256": "89c4adcee3b64ad8bcda64562bc5ed921c24553c4586693bf68e501375ae1a8a",
       "sources": [
         {
           "path": "docs/architecture/workspace-e-organization.md",
@@ -78,7 +86,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+          "blob_sha": "2a5613b867f412c71f4819359bced60f9fd84586"
         },
         {
           "path": "tests/e2e/workspace-criar-e-trocar.spec.ts",
@@ -106,7 +114,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+          "blob_sha": "2a5613b867f412c71f4819359bced60f9fd84586"
         },
         {
           "path": "tests/unit/estado-do-canal-na-tela.test.ts",
@@ -146,7 +154,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+          "blob_sha": "2a5613b867f412c71f4819359bced60f9fd84586"
         },
         {
           "path": "tests/e2e/automacao-diz-a-verdade.spec.ts",
@@ -186,7 +194,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+          "blob_sha": "2a5613b867f412c71f4819359bced60f9fd84586"
         }
       ]
     }
