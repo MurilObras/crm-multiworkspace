@@ -2,6 +2,7 @@ import type pg from "pg";
 import type { Queryable } from "@/lib/agent-engine/queue/queue";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { DEFAULT_CONSULTATION, type ConsultationSettings } from "./config";
+import { supportsResponsibleReplies, type ChannelProvider } from "@/lib/channels/capabilities";
 
 export interface Responsible { id: string; name: string; phone: string; enabled: boolean }
 
@@ -32,6 +33,12 @@ export async function saveResponsibleSettings(pool: pg.Pool, org: string, agent:
     const valid = await db.query("select id from agent_responsibles where organization_id=$1 and id=any($2::uuid[]) and enabled for share", [org, ids]);
     if (valid.rows.length !== ids.length) throw new Error("recipient_unavailable");
     if (settings.enabled) {
+      const channel = await db.query<{provider:ChannelProvider}>(`select ch.provider from ai_agents a join ai_agent_versions v
+        on v.organization_id=a.organization_id and v.id=coalesce(a.published_version_id,
+          (select draft.id from ai_agent_versions draft where draft.organization_id=a.organization_id and draft.agent_id=a.id order by draft.version_number desc limit 1))
+        join channel_sessions ch on ch.organization_id=v.organization_id and ch.id=v.channel_session_id
+        where a.organization_id=$1 and a.id=$2 and ch.archived_at is null`,[org,agent]);
+      if (!supportsResponsibleReplies(channel.rows[0]?.provider)) throw new Error("responsible_channel_unavailable");
       const self = await db.query(`select r.id from agent_responsibles r join channel_sessions s on s.organization_id=r.organization_id and s.phone_number=r.phone
         where r.organization_id=$1 and r.id=any($2::uuid[]) and s.archived_at is null`, [org, ids]);
       if (self.rows.length) throw new Error("recipient_is_channel");

@@ -35,7 +35,7 @@ test("configura pelas telas e entrega texto e áudio, sem repetição ou reenvio
   await expect(panel.getByRole("switch")).toBeChecked();
   await expect(panel.getByLabel("Situações que exigem confirmação")).toHaveValue("Condições comerciais fora da base aprovada.");
   const evidence = join(process.cwd(), ".superpowers/evidence/responsible-whatsapp"); mkdirSync(evidence, { recursive: true });
-  await page.screenshot({ path: join(evidence, "01-configuracao-salva.png"), fullPage: true });
+  await panel.screenshot({ path: join(evidence, "01-configuracao-salva.png") });
 
   const first = driver("open", fixture);
   expect(driver("drive", { ...fixture, ...first }).automatic_paused).toBe(true);

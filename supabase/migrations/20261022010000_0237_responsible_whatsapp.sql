@@ -142,6 +142,12 @@ create or replace function public.fn_redact_responsible_customer() returns trigg
 language plpgsql security definer set search_path=public,pg_temp as $$
 begin
  if not new.is_anonymized or old.is_anonymized then return new; end if;
+ -- A mesma ordem caso → pedido → entregas do transporte e da resposta humana.
+ -- Sem isso, anonimizar podia segurar uma entrega e esperar o pedido que o
+ -- transporte segurava enquanto esperava essa mesma entrega.
+ perform a.id from agent_cases a join agent_responsible_requests r on r.organization_id=a.organization_id and r.case_id=a.id
+  where r.organization_id=new.organization_id and r.contact_id=new.id order by a.id for update of a;
+ update agent_responsible_requests set status='cancelled' where organization_id=new.organization_id and contact_id=new.id;
  insert into storage_redaction_queue(organization_id,bucket,object_path,status,attempts)
   select new.organization_id,'whatsapp-media',path,'pending',0 from (
    select m.media_storage_path path from agent_responsible_deliveries d join agent_responsible_requests r on r.id=d.request_id and r.organization_id=d.organization_id
@@ -157,7 +163,6 @@ begin
     where r.organization_id=new.organization_id and r.contact_id=new.id and (m.id=d.message_id or m.id=d.source_message_id));
  update agent_responsible_deliveries d set body=null from agent_responsible_requests r
   where r.organization_id=new.organization_id and r.contact_id=new.id and d.organization_id=r.organization_id and d.request_id=r.id;
- update agent_responsible_requests set status='cancelled' where organization_id=new.organization_id and contact_id=new.id;
  update agent_case_events e set body='[redacted]',metadata='{}' from agent_responsible_requests r
   where r.organization_id=new.organization_id and r.contact_id=new.id and e.organization_id=r.organization_id and e.case_id=r.case_id;
  update agent_cases a set summary='[redacted]',blocker='[redacted]',context_snapshot='{}'

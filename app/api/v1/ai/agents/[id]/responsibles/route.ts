@@ -40,6 +40,7 @@ export async function PUT(req: Request, context: Context) {
   } catch (e) {
     const known = e instanceof Error ? e.message : "";
     if (known === "agent_not_found") return fail("not_found", "Agente não encontrado.", 404, { requestId });
+    if (known === "responsible_channel_unavailable") return fail("validation_failed", "Vincule este agente a uma conexão de WhatsApp por QR Code antes de ativar a consulta.", 422, { requestId });
     if (known === "recipient_unavailable") return fail("validation_failed", "Selecione responsáveis ativos deste workspace.", 422, { requestId });
     if (known === "recipient_is_channel") return fail("validation_failed", "O responsável precisa usar um número diferente das conexões do workspace.", 422, { requestId });
     if (known === "settings_have_pending_requests") return fail("validation_failed", "Resolva os pedidos pendentes antes de desativar a consulta ou trocar os destinatários.", 422, { requestId });

@@ -15,6 +15,7 @@
  */
 import type pg from 'pg';
 import { consultationInstructions } from '@/lib/responsibles/config';
+import { supportsResponsibleReplies, type ChannelProvider } from '@/lib/channels/capabilities';
 import { mediaPathOwnedBy, readApprovedMedia, type ApprovedMedia as ApprovedAudio } from '@/lib/ai/agents/approved-media';
 
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
@@ -111,6 +112,7 @@ interface Row {
   cases_enabled: boolean;
   responsible_enabled?: boolean;
   responsible_conditions?: string;
+  consultation_channel_provider?: ChannelProvider | null;
   tool_ids: string[] | null;
   active_kb_version_id: string | null;
   config: Record<string, unknown> | null;
@@ -143,6 +145,7 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.id as agent_id,
             v.cases_enabled,
             coalesce((select s.enabled from agent_responsible_settings s where s.organization_id=a.organization_id and s.agent_id=a.id),false) as responsible_enabled,
             (select s.conditions from agent_responsible_settings s where s.organization_id=a.organization_id and s.agent_id=a.id) as responsible_conditions,
+            (select ch.provider from channel_sessions ch where ch.organization_id=a.organization_id and ch.id=v.channel_session_id and ch.archived_at is null) as consultation_channel_provider,
             v.tool_ids,
             a.active_kb_version_id,
             a.config,
@@ -158,6 +161,7 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.id as agent_id,
 /** Mapeamento Row (snake_case do banco) → PublishedAgentConfig, compartilhado
  * pelas duas variantes de loader (por channel_session e por agent id). */
 function mapAgentConfigRow(r: Row): PublishedAgentConfig {
+  const responsibleEnabled=r.responsible_enabled === true && supportsResponsibleReplies(r.consultation_channel_provider);
   const cfg = (r.config ?? {}) as { rag_top_k?: unknown; rag_similarity_threshold?: unknown };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' && Number.isInteger(cfg.rag_top_k) && cfg.rag_top_k >= 1 && cfg.rag_top_k <= 20
@@ -176,7 +180,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     versionId: r.version_id,
     agentName: r.agent_name,
     approvedAudios: readApprovedMedia(r.config).filter(a => a.enabled && mediaPathOwnedBy(a, r.organization_id, r.agent_id)),
-    systemPrompt: [r.system_prompt, consultationInstructions({ enabled: r.responsible_enabled === true, conditions: r.responsible_conditions ?? '' })].filter(Boolean).join('\n\n'),
+    systemPrompt: [r.system_prompt, consultationInstructions({ enabled: responsibleEnabled, conditions: r.responsible_conditions ?? '' })].filter(Boolean).join('\n\n'),
     provider: r.provider,
     model: r.model,
     credentialId: r.credential_id,
@@ -188,8 +192,8 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     splitMessages: r.split_messages,
     splitMaxChars: r.split_max_chars,
     multimodalInput: r.multimodal_input,
-    casesEnabled: r.cases_enabled || r.responsible_enabled === true,
-    responsibleConsultation: r.responsible_enabled === true,
+    casesEnabled: r.cases_enabled || responsibleEnabled,
+    responsibleConsultation: responsibleEnabled,
     toolIds: r.tool_ids ?? [],
     // `?? []` cobre o clone sem a 0181: sem a coluna, o agente cai no ponteiro
     // legado abaixo em vez de ficar sem material nenhum.

@@ -1,5 +1,6 @@
 /** Textos da consulta, compartilhados por configuração e histórico dos chamados. */
 export const RESPONSIBLE_TRANSLATIONS = {
+  "Vincule este agente a uma conexão de WhatsApp por QR Code antes de ativar a consulta.": { es: "Vincule este agente a una conexión de WhatsApp por código QR antes de activar la consulta." },
   "Deixar o agente abrir pedidos internos": { es: "Permitir que el agente abra solicitudes internas" },
   "O agente pode abrir um pedido interno quando depende de uma pessoa. Com a consulta pelo WhatsApp ativada abaixo, a conversa e os follow-ups ficam pausados até a resposta ser entregue.": { es: "El agente puede abrir una solicitud interna cuando depende de una persona. Con la consulta por WhatsApp activada abajo, la conversación y los seguimientos quedan pausados hasta entregar la respuesta." },
   "Pedidos que dependem de uma pessoa aparecem aqui. Quando a consulta pelo WhatsApp está ativada, a conversa e os follow-ups aguardam a resposta do responsável.": { es: "Aquí aparecen las solicitudes que dependen de una persona. Cuando la consulta por WhatsApp está activada, la conversación y los seguimientos esperan la respuesta del responsable." },

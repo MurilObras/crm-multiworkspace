@@ -74,6 +74,13 @@ describe("responsável por WhatsApp: transações e isolamento reais",()=>{
     expect((await open()).request).toBeUndefined(); expect(await waitingForResponsible(pool,org,contact)).toBe(false);
     expect((await loadPublishedAgentConfig(pool,org,session))?.casesEnabled).toBe(false);
   });
+  it("exige conexão compatível e não injeta a consulta após trocar para outro canal",async()=>{
+    await pool.query("update channel_sessions set provider='meta_cloud',meta_phone_number_id=id::text where organization_id=$1 and id=$2",[org,session]);
+    await expect(saveResponsibleSettings(pool,org,agent,{enabled:true,recipient_ids:recipients.map(r=>r.id),conditions:""})).rejects.toThrow("responsible_channel_unavailable");
+    const config=await loadPublishedAgentConfig(pool,org,session);
+    expect(config?.responsibleConsultation).toBe(false);
+    expect(config?.systemPrompt).not.toContain("Consulta ao responsável pelo WhatsApp");
+  });
   it("ativar pelas configurações entrega instruções e tools de consulta ao agente publicado",async()=>{
     const config=await loadPublishedAgentConfig(pool,org,session);
     expect(config?.casesEnabled).toBe(true); expect(config?.responsibleConsultation).toBe(true);
@@ -170,18 +177,35 @@ describe("responsável por WhatsApp: transações e isolamento reais",()=>{
       expect(perms).toEqual({execute:false,insert:false});
     }
   });
-  it("RLS mostra somente responsáveis do workspace de quem consulta",async()=>{
+  it("RLS das cinco tabelas mostra somente registros do workspace de quem consulta",async()=>{
     const actor=randomUUID();
     await pool.query("insert into auth.users(id,email) values($1,$2)",[actor,`${actor}@example.test`]);
     await pool.query("insert into user_organizations(user_id,organization_id,role,accepted_at) values($1,$2,'agent',now())",[actor,org]);
-    await pool.query("insert into agent_responsibles(organization_id,name,phone) values($1,'Responsável de outra conta','+5511988888800')",[other]);
+    await open();
+    const staff=(await pool.query("insert into agent_responsibles(organization_id,name,phone) values($1,'Responsável de outra conta','+5511988888800') returning id",[other])).rows[0]!.id;
+    const foreignAgent=(await pool.query("insert into ai_agents(organization_id,name,system_prompt,kind) values($1,'Agente de outra conta','Base aprovada','mcp_agent') returning id",[other])).rows[0]!.id;
+    await pool.query("insert into agent_responsible_settings(organization_id,agent_id) values($1,$2)",[other,foreignAgent]);
+    await pool.query("insert into agent_responsible_bindings(organization_id,agent_id,responsible_id) values($1,$2,$3)",[other,foreignAgent,staff]);
+    const foreignSession=(await pool.query("insert into channel_sessions(organization_id,waha_session_name,status,webhook_secret_encrypted) values($1,$2,'WORKING','\\x00') returning id",[other,randomUUID()])).rows[0]!.id;
+    const foreignContact=(await pool.query("insert into contacts(organization_id,name) values($1,'Cliente de outra conta') returning id",[other])).rows[0]!.id;
+    const foreignConversation=(await pool.query("insert into conversations(organization_id,contact_id,channel_session_id) values($1,$2,$3) returning id",[other,foreignContact,foreignSession])).rows[0]!.id;
+    const foreignCase=(await pool.query("insert into agent_cases(organization_id,conversation_id,agent_id,title,summary,blocker) values($1,$2,$3,'Consulta externa','Contexto externo','Confirmação externa') returning id",[other,foreignConversation,foreignAgent])).rows[0]!.id;
+    const foreignRequest=(await pool.query("insert into agent_responsible_requests(organization_id,case_id,conversation_id,contact_id,agent_id,kind) values($1,$2,$3,$4,$5,'consultation') returning id",[other,foreignCase,foreignConversation,foreignContact,foreignAgent])).rows[0]!.id;
+    const staffContact=(await pool.query("insert into contacts(organization_id,name,phone_number) values($1,'Responsável externo','+5511988888800') returning id",[other])).rows[0]!.id;
+    const staffConversation=(await pool.query("select fn_upsert_wa_conversation($1,$2,$3) as id",[other,staffContact,foreignSession])).rows[0]!.id;
+    await pool.query("select fn_queue_responsible_delivery($1,$2,$3,'notification',$4,$5)",[other,foreignRequest,staff,staffConversation,staffContact]);
+    const tables=['agent_responsibles','agent_responsible_settings','agent_responsible_bindings','agent_responsible_requests','agent_responsible_deliveries'];
+    for(const table of tables) expect((await pool.query(`select count(*)::int n from ${table} where organization_id=$1`,[other])).rows[0]!.n).toBeGreaterThan(0);
     const db=await pool.connect();
     try {
       await db.query("begin"); await db.query("set local role authenticated");
       await db.query("select set_config('request.jwt.claim.sub',$1,true)",[actor]);
-      const visible=await db.query("select organization_id from agent_responsibles");
-      expect(visible.rows).toHaveLength(2);
-      expect(visible.rows.every(r=>r.organization_id===org)).toBe(true);
+      for(const table of tables) {
+        const visible=await db.query(`select organization_id from ${table}`);
+        expect(visible.rows.length).toBeGreaterThan(0);
+        expect(visible.rows.every(r=>r.organization_id===org)).toBe(true);
+        expect((await db.query(`select count(*)::int n from ${table} where organization_id=$1`,[other])).rows[0]!.n).toBe(0);
+      }
       await expect(db.query("insert into agent_responsibles(organization_id,name,phone) values($1,'Sem acesso','+5511988888801')",[org])).rejects.toMatchObject({code:"42501"});
     } finally { await db.query("rollback"); db.release(); }
   });
@@ -211,5 +235,26 @@ describe("responsável por WhatsApp: transações e isolamento reais",()=>{
     await pool.query("update storage_redaction_queue set status='deleted' where organization_id=$1 and object_path=$2",[org,path]);
     await pool.query("update agent_responsible_deliveries set media_storage_path=$3 where organization_id=$1 and id=$2",[org,d,path]);
     expect((await pool.query("select status from storage_redaction_queue where organization_id=$1 and object_path=$2",[org,path])).rows[0]!.status).toBe("pending");
+  });
+  it("anonimização concorrente não inverte os locks de caso, pedido e entrega",async()=>{
+    const r=await open();
+    const d=(await pool.query("select id from agent_responsible_deliveries where organization_id=$1 and request_id=$2 limit 1",[org,r.request])).rows[0]!.id;
+    const a=await pool.connect(),b=await pool.connect();
+    try {
+      await a.query("begin"); await b.query("begin");
+      await a.query("select id from agent_cases where organization_id=$1 and id=$2 for update",[org,r.caseId]);
+      await a.query("select id from agent_responsible_requests where organization_id=$1 and id=$2 for update",[org,r.request]);
+      const pid=(await b.query("select pg_backend_pid() as id")).rows[0]!.id;
+      const redaction=b.query("update contacts set is_anonymized=true,is_blocked=true,anonymized_at=now() where organization_id=$1 and id=$2",[org,contact]).then(()=>null,error=>error);
+      let blocked=false;
+      for(let n=0;n<50;n++) {
+        blocked=(await pool.query("select cardinality(pg_blocking_pids($1))>0 as blocked",[pid])).rows[0]!.blocked;
+        if(blocked) break;
+        await new Promise(resolve=>setTimeout(resolve,10));
+      }
+      expect(blocked).toBe(true);
+      await a.query("update agent_responsible_deliveries set body=body where organization_id=$1 and id=$2",[org,d]);
+      await a.query("commit"); expect(await redaction).toBeNull(); await b.query("commit");
+    } finally { await a.query("rollback"); await b.query("rollback"); a.release(); b.release(); }
   });
 });
