@@ -94,16 +94,38 @@ async function handle(row: EventRow): Promise<HandlerResult> {
     contact_id: string | null;
   };
 
+  if(row.event_type!=='crm.first_payment_confirmed' && lead.status!=='won') return ok('skipped','nao_e_ganho');
+  const [financial, settings] = await Promise.all([
+    admin.from('crm_first_payments').select('id,amount_cents,currency,paid_at,voided_at')
+      .eq('organization_id',row.organization_id).eq('lead_id',lead.id).maybeSingle(),
+    admin.from('organizations').select('settings').eq('id',row.organization_id).single(),
+  ]);
+  if (financial.error || settings.error) return {
+    consumer_key:CONSUMER_KEY,status:'retry',retry_at:new Date(Date.now()+ESPERA_PADRAO_MS).toISOString(),
+    detail:'Não foi possível verificar a confirmação financeira.',
+  };
+  const confirmedOnly = settings.data?.settings?.dashboard?.confirmed_payment_conversions === true;
+  if (financial.data?.voided_at) return ok('skipped','pagamento_invalidado');
+  if (!financial.data && (confirmedOnly || row.event_type==='crm.first_payment_confirmed'))
+    return ok('skipped','sem_primeiro_pagamento_confirmado');
+  if (financial.data) {
+    lead.value_cents=financial.data.amount_cents;
+    lead.currency=financial.data.currency;
+    lead.closed_at=financial.data.paid_at;
+  }
+
   // O filtro que faz `lead.stage_changed` valer a pena escutar: a grande maioria
   // das mudanças de etapa não é fechamento, e sai por aqui sem tocar no banco de
   // novo nem sujar o livro-razão.
-  if (lead.status !== "won") return ok("skipped", "nao_e_ganho");
+  if (lead.status !== "won" && !financial.data) return ok("skipped", "nao_e_ganho");
 
   if (await jaFoiEnviada(admin, row.organization_id, lead.id, EVENTO)) {
     return ok("skipped", "ja_enviada");
   }
 
-  const leitura = await lerAtribuicao(admin, row.organization_id, lead.contact_id);
+  const leitura = await lerAtribuicao(admin, row.organization_id, lead.contact_id,lead.id);
+  if(!leitura.temAtribuicao&&leitura.motivo==='consulta_falhou')return {consumer_key:CONSUMER_KEY,status:'retry',
+    retry_at:new Date(Date.now()+ESPERA_PADRAO_MS).toISOString(),detail:'Não foi possível consultar a atribuição da oportunidade.'};
   if (!leitura.temAtribuicao) return ok("skipped", leitura.motivo);
 
   const { plataforma, cliqueDeOrigem, telefone } = leitura.atribuicao;
@@ -194,6 +216,6 @@ export const conversaoDeVendaHandler: EventHandler = {
   key: CONSUMER_KEY,
   // As duas portas. Ver o cabeçalho: `lead.stage_changed` cobre o arrasto no
   // kanban E o mover em lote, e o `status` do payload não é confiável em nenhum.
-  events: ["lead.won", "lead.stage_changed"],
+  events: ["lead.won", "lead.stage_changed", "crm.first_payment_confirmed"],
   handle,
 };

@@ -223,6 +223,7 @@ async function efeitosDaEntrada(
   if (atribuicao) await estamparAtribuicaoDoContato(admin, contactId, atribuicao);
 
   await aplicarEfeitosPosEntrada(admin, {
+    atribuicao,
     organizationId: input.organizationId,
     contactId,
     conversationId,

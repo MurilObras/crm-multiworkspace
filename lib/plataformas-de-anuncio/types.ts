@@ -154,6 +154,8 @@ export interface ContaDeAnuncio {
   id: string;
   nome: string;
   moeda: string;
+  /** Ausência impede comparar períodos com o CRM sem adivinhar um fuso. */
+  fuso?: string | null;
   /**
    * O `account_status` cru da plataforma (1 = ativa, 2 = desativada,
    * 3 = pendência de cobrança, …). Repassado em vez de virar booleano porque a

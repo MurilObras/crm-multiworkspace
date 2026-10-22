@@ -220,19 +220,34 @@ async function buscarPaginado<T>(
   const acumulado: T[] = [];
   let url: string | null = urlInicial;
   let pagina = 0;
+  const deadline = Date.now() + 40_000;
 
   while (url && pagina < MAXIMO_DE_PAGINAS) {
     pagina += 1;
+    if (Date.now() >= deadline) return {ok:false,falha:'transitorio',detalhe:'A leitura excedeu o tempo disponível; nenhum resultado parcial foi usado.'};
+
+    // `paging.next` é entrada externa e pode carregar o próprio token. Nunca
+    // seguir outro host nem encaminhar a credencial pela URL ou por redirect.
+    let safeUrl: URL;
+    try {
+      safeUrl = new URL(url);
+      if (safeUrl.origin !== 'https://graph.facebook.com' || safeUrl.username || safeUrl.password)
+        throw new Error('origin');
+      safeUrl.searchParams.delete('access_token');
+    } catch {
+      return { ok:false, falha:'transitorio', detalhe:'Paginação inválida da plataforma.' };
+    }
 
     let resposta: Response;
     try {
-      resposta = await fetch(url, {
+      resposta = await fetch(safeUrl.toString(), {
         method: "GET",
         headers: { authorization: `Bearer ${token}` },
         // Sob demanda de verdade: a tela promete "Atualizar" e um cache aqui
         // devolveria número velho com cara de novo.
         cache: "no-store",
-        signal: AbortSignal.timeout(TEMPO_LIMITE_MS),
+        redirect: 'error',
+        signal: AbortSignal.timeout(Math.max(1,Math.min(TEMPO_LIMITE_MS,deadline-Date.now()))),
       });
     } catch (erro) {
       return {
@@ -273,10 +288,12 @@ async function buscarPaginado<T>(
       return { ok: false, falha: "transitorio", detalhe: "resposta ilegível da plataforma" };
     }
 
-    acumulado.push(...(json.data ?? []));
+    if (!Array.isArray(json.data)) return {ok:false,falha:'transitorio',detalhe:'Lista ausente na resposta da plataforma.'};
+    acumulado.push(...json.data);
     url = json.paging?.next ?? null;
   }
 
+  if (url) return {ok:false,falha:'transitorio',detalhe:'A leitura excedeu o limite de páginas; nenhum resultado parcial foi usado.'};
   return { ok: true, dados: acumulado };
 }
 
@@ -357,4 +374,68 @@ export async function lerInsights(
     limit: "500",
   });
   return buscarPaginado<LinhaDeInsightCrua>(url, token, "insights");
+}
+
+/** Apenas o gasto diário, com todas as páginas antes de confirmar a cobertura. */
+export async function lerGastoDiario(token:string,contaId:string,de:string,ate:string):Promise<ResultadoDeLeitura<Array<{
+  campaign_id:string;campaign_name:string;day:string;amount_cents:number;currency:string;
+}>>> {
+  const result=await buscarPaginado<{campaign_id?:string;campaign_name?:string;date_start?:string;spend?:string;account_currency?:string}>(
+    montarUrl(`${encodeURIComponent(contaId)}/insights`,{level:'campaign',fields:'campaign_id,campaign_name,date_start,spend,account_currency',
+      time_range:JSON.stringify({since:de,until:ate}),time_increment:'1',limit:'500'}),token,'daily_spend');
+  if(!result.ok)return result;
+  const rows=[];
+  const keys=new Set<string>();
+  for(const row of result.dados) {
+    // Não converter dinheiro com parseFloat silencioso nem aceitar uma moeda presumida.
+    if(!row.campaign_id || !/^\d+$/.test(row.campaign_id) || !row.campaign_name
+      || !row.date_start || !/^\d{4}-\d{2}-\d{2}$/.test(row.date_start) || row.date_start<de || row.date_start>ate
+      || !row.account_currency || !/^[A-Z]{3}$/.test(row.account_currency) || !row.spend || !/^\d+(?:\.\d{1,2})?$/.test(row.spend))
+      return {ok:false,falha:'transitorio',detalhe:'Gasto diário incompleto ou inválido; o cache anterior foi preservado.'};
+    const [whole,decimal='']=row.spend.split('.');
+    const cents=Number(whole)*100+Number(decimal.padEnd(2,'0'));
+    const key=`${row.campaign_id}:${row.date_start}`;
+    if(!Number.isSafeInteger(cents) || keys.has(key))return {ok:false,falha:'transitorio',detalhe:'Gasto diário duplicado ou fora do limite.'};
+    keys.add(key);
+    rows.push({campaign_id:row.campaign_id,campaign_name:row.campaign_name,day:row.date_start,amount_cents:cents,currency:row.account_currency});
+  }
+  return {ok:true,dados:rows};
+}
+
+/** Identidade real do anúncio; título e clique não são IDs de campanha. */
+export async function lerIdentidadeDeAnuncio(token:string,adId:string):Promise<ResultadoDeLeitura<{
+  ad_id:string;account_id:string;campaign_id:string;adset_id:string;
+}>> {
+  if(!/^\d+$/.test(adId))return {ok:false,falha:'campo_invalido',detalhe:'Identificador de anúncio inválido.'};
+  const result=await lerObjeto<{id?:string;account_id?:string;campaign_id?:string;adset_id?:string}>(
+    token,adId,'id,account_id,campaign_id,adset_id');
+  if(!result.ok)return result;
+  const ad=result.dados;
+  if(ad.id!==adId || !ad.account_id || !/^\d+$/.test(ad.account_id) || !ad.campaign_id || !/^\d+$/.test(ad.campaign_id)
+    || !ad.adset_id || !/^\d+$/.test(ad.adset_id))return {ok:false,falha:'campo_invalido',detalhe:'Anúncio não identificado com segurança.'};
+  return {ok:true,dados:{ad_id:adId,account_id:`act_${ad.account_id}`,campaign_id:ad.campaign_id,adset_id:ad.adset_id}};
+}
+
+async function lerObjeto<T>(token:string,id:string,fields:string):Promise<ResultadoDeLeitura<T>> {
+  try {
+    const response=await fetch(montarUrl(encodeURIComponent(id),{fields}),{headers:{authorization:`Bearer ${token}`},
+      cache:'no-store',redirect:'error',signal:AbortSignal.timeout(TEMPO_LIMITE_MS)});
+    const json=await response.json();
+    if(!response.ok)return {ok:false,falha:classificarErroGraph(response.status,json?.error?.code??null),detalhe:'A plataforma recusou a consulta.'};
+    if(!json || typeof json!=='object' || Array.isArray(json))throw new Error('invalid');
+    return {ok:true,dados:json as T};
+  }catch{return {ok:false,falha:'transitorio',detalhe:'Não foi possível consultar a plataforma.'};}
+}
+
+export async function lerContaDoDashboard(token:string,accountId:string):Promise<ResultadoDeLeitura<{
+  account_id:string;currency:string;timezone:string;
+}>> {
+  if(!/^act_\d+$/.test(accountId))return {ok:false,falha:'campo_invalido',detalhe:'Conta inválida.'};
+  const result=await lerObjeto<{account_id?:string;currency?:string;timezone_name?:string}>(token,accountId,'account_id,currency,timezone_name');
+  if(!result.ok)return result;
+  const row=result.dados;
+  if(`act_${row.account_id}`!==accountId || !row.currency || !/^[A-Z]{3}$/.test(row.currency) || !row.timezone_name)
+    return {ok:false,falha:'campo_invalido',detalhe:'A plataforma não confirmou a moeda e o fuso da conta.'};
+  try{new Intl.DateTimeFormat('en',{timeZone:row.timezone_name});}catch{return {ok:false,falha:'campo_invalido',detalhe:'Fuso da conta inválido.'};}
+  return {ok:true,dados:{account_id:accountId,currency:row.currency,timezone:row.timezone_name}};
 }

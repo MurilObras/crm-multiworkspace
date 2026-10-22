@@ -36,7 +36,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+          "blob_sha": "589f77068bd22f828b01355d09a68f8b9bdc2f25"
         },
         {
           "path": "tests/e2e/wizard-do-funcionario.spec.ts",
@@ -49,6 +49,14 @@
         {
           "path": "lib/onboarding/passos.ts",
           "blob_sha": "5ed6cf480e2b555a48aa29526a0355ff7b5d47c9"
+        },
+        {
+          "path": "app/app/dashboard/_components/DashboardClient.tsx",
+          "blob_sha": "e67baff30a7c4387c126b7c7b9f9825d4c57ec93"
+        },
+        {
+          "path": "app/app/dashboard/_components/PaymentDialog.tsx",
+          "blob_sha": "edf251609a04e510519509019f16d0b06e969e19"
         }
       ]
     },
@@ -74,7 +82,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+          "blob_sha": "589f77068bd22f828b01355d09a68f8b9bdc2f25"
         },
         {
           "path": "tests/e2e/workspace-criar-e-trocar.spec.ts",
@@ -100,7 +108,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+          "blob_sha": "589f77068bd22f828b01355d09a68f8b9bdc2f25"
         },
         {
           "path": "tests/unit/estado-do-canal-na-tela.test.ts",
@@ -138,7 +146,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+          "blob_sha": "589f77068bd22f828b01355d09a68f8b9bdc2f25"
         },
         {
           "path": "tests/e2e/automacao-diz-a-verdade.spec.ts",
@@ -176,7 +184,7 @@
         },
         {
           "path": "lib/navigation/registry.ts",
-          "blob_sha": "1d3d09313727ce35522d7bfecfa9e3f11f231bd6"
+          "blob_sha": "589f77068bd22f828b01355d09a68f8b9bdc2f25"
         }
       ]
     }

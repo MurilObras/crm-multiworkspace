@@ -89,12 +89,14 @@ test.describe("navegação agrupada", () => {
     // rodapé fixo — ver o teste de dobra abaixo.
     const titulos = sidebar(page).getByRole("heading");
     await expect(titulos).toHaveText([
+      "Visão geral",
       "Atendimento",
       "CRM",
       "Agente de IA",
       "Canais",
       "Análise",
     ]);
+    await expect(sidebar(page).getByRole("link").first()).toHaveAttribute("href", "/app/dashboard");
 
     await page.screenshot({
       path: path.join(EVIDENCE, "nav-sidebar-agrupado.png"),

@@ -273,6 +273,7 @@ jobs:
     # e devolvem ~9 min de relógio a cada uma.
     env:
       SPECS_PARTE_1: >-
+        commercial-dashboard.spec.ts
         smoke.spec.ts auth.spec.ts error-pages.spec.ts
         icone-da-marca.spec.ts
         password-recovery.spec.ts signup-journey.spec.ts
@@ -611,6 +612,19 @@ jobs:
           psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
             -v ON_ERROR_STOP=1 -q -f supabase/baseline.sql
 
+      - name: Gerar tipos do banco isolado para conferência do dashboard
+        if: ${{ matrix.parte == 1 }}
+        run: supabase gen types typescript --local --schema graphql_public,public > /tmp/commercial-database.types.ts
+
+      - name: Guardar tipos gerados do banco isolado
+        if: ${{ matrix.parte == 1 }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: commercial-database-types
+          path: /tmp/commercial-database.types.ts
+          if-no-files-found: error
+          retention-days: 7
+
       # ⚠️ O REALTIME PRECISA REINICIAR DEPOIS DO BASELINE — senão ele assina e
       # não entrega, em silêncio.
       #
@@ -829,6 +843,10 @@ jobs:
           # Regressão da virada do mês: primeiro isolada, depois na mesma
           # instalação/build com toda a parte 2 (inclui privacidade e refetch).
           if [ "${{ matrix.parte }}" = "1" ]; then
+            # Prova rápida do fluxo financeiro e da dobra do menu antes da
+            # bateria. Os mesmos cenários continuam na lista completa.
+            pnpm exec playwright test tests/e2e/commercial-dashboard.spec.ts tests/e2e/navegacao.spec.ts --grep 'gestor configura|sidebar tem hierarquia|nenhum grupo fica fora' --workers=1 --reporter=list
+            test -s .superpowers/evidence/commercial-dashboard/pagamento-quantidade-e-configuracao.png
             # Antes dependia de conversas deixadas por outras specs e pulava
             # silenciosamente. Prova isolada primeiro; a bateria repete depois.
             pnpm exec playwright test tests/e2e/inbox-responder-citando.spec.ts --workers=1 --reporter=list
@@ -904,6 +922,16 @@ jobs:
           name: evidencias-midias-aprovadas
           include-hidden-files: true
           path: .superpowers/evidence/midias-aprovadas/*.png
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Guardar captura do dashboard comercial
+        if: ${{ always() && matrix.parte == 1 }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidencias-dashboard-comercial
+          include-hidden-files: true
+          path: .superpowers/evidence/commercial-dashboard/*.png
           if-no-files-found: warn
           retention-days: 7
 

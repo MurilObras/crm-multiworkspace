@@ -18,6 +18,7 @@
 import { randomUUID } from "node:crypto";
 
 import { requireRole } from "@/lib/auth/require-role";
+import { workspaceRequestGuard } from '@/lib/auth/workspace-request';
 import { listarContas } from "@/lib/plataformas-de-anuncio/meta/insights";
 import { lerCredencialDeLeitura } from "@/lib/plataformas-de-anuncio/credenciais-de-leitura";
 import { ok } from "@/lib/api/wrappers";
@@ -27,12 +28,13 @@ import { respostaDeFalha, respostaSemConexao } from "../_falha";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(req?: Request): Promise<Response> {
   const requestId = randomUUID();
 
   const authz = await requireRole("manager", { requestId, resource: "ads_insights" });
   if (!authz.ok) return authz.response;
   const { org } = authz;
+  const guard=workspaceRequestGuard(req,org.orgId,requestId);if(guard)return guard;
 
   // Admin client: `ad_insights_connections` tem RLS ligada e ZERO policies
   // (0214). Pelo client de sessão isto devolveria vazio, sem erro.

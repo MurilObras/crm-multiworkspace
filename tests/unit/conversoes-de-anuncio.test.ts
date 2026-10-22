@@ -20,6 +20,9 @@ const LEAD = "22222222-2222-2222-2222-222222222222";
 const CONTATO = "33333333-3333-3333-3333-333333333333";
 
 interface Tabelas {
+  organizations?:unknown;
+  crm_first_payments?:unknown;
+  crm_lead_attribution?:unknown;
   crm_leads?: unknown;
   contacts?: unknown;
   ad_platform_connections?: unknown;
@@ -42,6 +45,7 @@ function fakeAdmin(tabelas: Tabelas) {
           data: (tabelas as Record<string, unknown>)[tabela] ?? null,
           error: null,
         }),
+        single:async()=>({data:(tabelas as Record<string,unknown>)[tabela]??{},error:null}),
         upsert: async (valores: Record<string, unknown>) => {
           upserts.push({ tabela, valores });
           return { error: null };
@@ -64,7 +68,7 @@ const leadGanho = {
 
 const contatoComAnuncio = {
   phone_number: "+55 (11) 98888-7777",
-  source_metadata: { ad_platform: "meta_ads", ad_source_id: "CLIQUE_ABC" },
+  source_metadata: { ad_platform: "meta_ads", ad_source_id: "CLIQUE_ABC",ad_click_id:'CLIQUE_ABC' },
 };
 
 const conexaoAtiva = {
@@ -95,6 +99,23 @@ beforeEach(() => {
 });
 
 describe("as duas portas do fechamento", () => {
+  it('primeiro pagamento é consumido mesmo com acompanhamento de trial ainda aberto',async()=>{
+    vi.mocked(createAdminClient).mockReturnValue(fakeAdmin({
+      crm_leads:{...leadGanho,status:'open',value_cents:99999},
+      crm_first_payments:{id:'paid',amount_cents:15000,currency:'BRL',paid_at:new Date().toISOString(),voided_at:null},
+      organizations:{settings:{dashboard:{confirmed_payment_conversions:true}}},contacts:contatoComAnuncio,ad_platform_connections:conexaoAtiva,
+    }) as never);
+    const fetchSpy=vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response('{}',{status:200}));
+    expect((await conversaoDeVendaHandler.handle(evento('crm.first_payment_confirmed'))).status).toBe('ok');
+    expect(fetchSpy).toHaveBeenCalledOnce();expect(upserts.at(-1)?.valores.value_cents).toBe(15000);
+  });
+  it('modo confirmado não reporta won sem recebimento',async()=>{
+    vi.mocked(createAdminClient).mockReturnValue(fakeAdmin({crm_leads:leadGanho,
+      organizations:{settings:{dashboard:{confirmed_payment_conversions:true}}}}) as never);
+    const fetchSpy=vi.spyOn(globalThis,'fetch');
+    expect((await conversaoDeVendaHandler.handle(evento('lead.won'))).detail).toBe('sem_primeiro_pagamento_confirmado');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
   it("escuta lead.won E lead.stage_changed", () => {
     // Plugar só em `lead.won` perderia toda venda fechada por arrasto no kanban
     // e por mover em lote — que emitem `lead.stage_changed`.
@@ -359,7 +380,7 @@ describe("a matriz de plataformas é exaustiva", () => {
         crm_leads: leadGanho,
         contacts: {
           phone_number: "+5511988887777",
-          source_metadata: { ad_platform: "google_ads", ad_source_id: "GCLID_X" },
+          source_metadata: { ad_platform: "google_ads", ad_source_id: "GCLID_X",ad_click_id:'GCLID_X' },
         },
       }) as never,
     );

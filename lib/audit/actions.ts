@@ -459,6 +459,12 @@ export const AUDIT_ACTIONS = [
   "ai.responsible_settings_updated",
   "ai.responsible_saved",
   "ai.responsible_reply_received",
+  'dashboard.payment_confirmed',
+  'dashboard.payment_corrected',
+  'dashboard.payment_voided',
+  'dashboard.settings_updated',
+  'dashboard.campaign_linked',
+  'dashboard.ads_synced',
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

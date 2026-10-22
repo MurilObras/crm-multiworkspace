@@ -28,6 +28,15 @@ function dest(href: string) {
 }
 
 describe("integridade do registro", () => {
+  it("Dashboard vem primeiro e as análises detalhadas preservam acesso pelo hub e busca", () => {
+    for (const role of ["agent", "manager", "admin"] as const)
+      expect(sidebarGroups(false, role)[0]?.items[0]?.href).toBe("/app/dashboard");
+    const hub = hubSections("analise", false, "manager").flatMap(s => s.items.map(d => d.href));
+    const busca = searchable(false, "manager").map(d => d.href);
+    expect(hub).toEqual(expect.arrayContaining(["/app/metrics", "/app/ads/meta"]));
+    expect(busca).toEqual(expect.arrayContaining(["/app/metrics", "/app/ads/meta"]));
+  });
+
   it("não tem href duplicado", () => {
     const vistos = new Map<string, number>();
     for (const d of NAV_DESTINATIONS) vistos.set(d.href, (vistos.get(d.href) ?? 0) + 1);
