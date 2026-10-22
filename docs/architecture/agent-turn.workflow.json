@@ -298,6 +298,24 @@
       "label": "Fechamento durável",
       "sublabel": "reconcilia ledger sob lease; retry só da memória; incerto impede conclusão",
       "tag": "turn_closing"
+    },
+    {
+      "id": "responsible-delivery",
+      "lane": "humano",
+      "col": 4,
+      "type": "backend",
+      "label": "Aviso e resposta direta",
+      "sublabel": "responsible_delivery · fila + ledger · texto/áudio sem modelo",
+      "tag": "responsible_delivery"
+    },
+    {
+      "id": "responsible-reply",
+      "lane": "humano",
+      "col": 5,
+      "type": "backend",
+      "label": "Resposta do responsável",
+      "sublabel": "responsible_reply · citação + remetente + workspace",
+      "tag": "responsible_reply"
     }
   ],
   "edges": [
@@ -684,6 +702,30 @@
       "to": "turnclosing",
       "label": "falha → backoff só do fechamento; sem canal",
       "variant": "dashed"
+    },
+    {
+      "id": "turn-responsible-delivery",
+      "from": "turn",
+      "to": "responsible-delivery",
+      "label": "consulta pausa o cliente"
+    },
+    {
+      "id": "responsible-delivery-send",
+      "from": "responsible-delivery",
+      "to": "send",
+      "label": "último CAS autoriza o transporte"
+    },
+    {
+      "id": "ingest-responsible-reply",
+      "from": "ingest",
+      "to": "responsible-reply",
+      "label": "mensagem interna: job durável"
+    },
+    {
+      "id": "responsible-reply-delivery",
+      "from": "responsible-reply",
+      "to": "responsible-delivery",
+      "label": "primeira resposta válida vence"
     }
   ],
   "cards": [

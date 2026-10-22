@@ -234,7 +234,7 @@ describe("POST /api/v1/ai/cases/:id/reply", () => {
       release: vi.fn(),
     };
     const pool = {
-      query: vi.fn(async () => ({ rows: caseRow ? [caseRow] : [] })),
+      query: vi.fn(async (text: string) => ({ rows: text.includes("from agent_responsible_deliveries") ? [] : caseRow ? [caseRow] : [] })),
       connect: vi.fn(async () => client),
       __client: client,
     };

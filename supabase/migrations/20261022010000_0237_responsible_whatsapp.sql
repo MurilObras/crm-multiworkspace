@@ -314,6 +314,7 @@ end $$;
 create or replace function public.fn_guard_responsible_case_open() returns trigger
 language plpgsql security definer set search_path=public,pg_temp as $$
 begin
+ if current_setting('role',true) in ('anon','authenticated') then return new; end if;
  if exists(select 1 from agent_responsible_settings where organization_id=new.organization_id and agent_id=new.agent_id and enabled) then
   perform 1 from conversations where organization_id=new.organization_id and id=new.conversation_id for update;
   if exists(select 1 from agent_cases where organization_id=new.organization_id and conversation_id=new.conversation_id and status in ('awaiting_human','awaiting_lead')) then return null; end if;
@@ -329,7 +330,7 @@ create trigger trg_guard_responsible_case_open before insert on public.agent_cas
 -- resolvido pelo webhook; nem o texto nem o payload do modelo concedem permissão.
 create or replace function public.fn_mark_responsible_inbound() returns trigger
 language plpgsql security definer set search_path=public,pg_temp as $$
-declare v_id uuid;
+declare v_id uuid; v_internal boolean;
 begin
  if new.direction='inbound' then
   new.metadata:=coalesce(new.metadata,'{}'::jsonb)-'responsible_internal'-'responsible_id';
@@ -339,6 +340,17 @@ begin
    where c.organization_id=new.organization_id and c.id=new.contact_id;
   if v_id is not null then new.metadata:=new.metadata||
    jsonb_build_object('responsible_internal',true,'responsible_id',v_id); end if;
+ elsif new.direction='outbound' then
+  -- A marca interna não é uma autorização recebida do payload. Só o vínculo
+  -- durável ledger → outbox pode suprimir eventos comerciais de uma saída.
+  new.metadata:=coalesce(new.metadata,'{}'::jsonb)-'responsible_internal'-'responsible_id';
+  if current_setting('role',true) not in ('anon','authenticated') then
+   select d.responsible_id,d.purpose in ('notification','receipt') into v_id,v_internal
+    from agent_responsible_deliveries d join send_ledger l on l.organization_id=d.organization_id and l.job_id=d.job_id
+    where d.organization_id=new.organization_id and l.id=new.id and l.seq=1
+      and d.target_conversation_id=new.conversation_id and d.target_contact_id=new.contact_id;
+   if found then new.metadata:=new.metadata||jsonb_build_object('responsible_internal',v_internal,'responsible_id',v_id); end if;
+  end if;
  end if;
  return new;
 end $$;

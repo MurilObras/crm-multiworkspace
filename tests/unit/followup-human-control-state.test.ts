@@ -7,7 +7,8 @@ import { pgComoSupabase } from "@/tests/pg-como-supabase";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
 import { createSupabaseSilenceSweepDb } from "@/lib/followup/silence-sweep";
-import { runFollowupTick, type FollowupJobRequest } from "@/lib/followup/engine";
+import { runFollowupTick, avancarEnrollmentAtivo, type FollowupJobRequest } from "@/lib/followup/engine";
+import type { EnrollmentRow } from "@/lib/followup/node-handlers";
 import { followupJobGate } from "@/lib/agent-engine/edge/crm/followup-job-gate";
 import { installResponsiblePause } from "@/tests/helpers/responsible-postgres";
 
@@ -37,8 +38,9 @@ beforeAll(async () => {
   // O baseline completo, RLS e locks entre conexões são cobertos pelo test:db.
   await sql.exec(`
     create role anon; create role authenticated; create role service_role;
-    create table contacts(id uuid primary key,organization_id uuid,tags text[] default '{}',
+    create table contacts(id uuid primary key,organization_id uuid,name text,tags text[] default '{}',
       is_blocked boolean default false,is_anonymized boolean default false,force_human boolean default false);
+    create table crm_leads(organization_id uuid,contact_id uuid,stage_id uuid,custom_fields jsonb,updated_at timestamptz default now());
     create table channel_sessions(id uuid primary key,organization_id uuid,provider text);
     create table conversations(id uuid primary key,organization_id uuid,contact_id uuid,status text default 'open',
       last_inbound_at timestamptz,bot_silenced_until timestamptz,assignee_kind text,
@@ -71,7 +73,7 @@ beforeAll(async () => {
 }, 30_000);
 afterAll(() => sql.close());
 beforeEach(async () => {
-  await sql.exec("truncate contacts,channel_sessions,conversations,followup_flow_versions,followup_flow_pointers,followup_enrollments,followup_enrollment_events,job_queue,messages,send_ledger,agent_responsible_requests,agent_responsibles");
+  await sql.exec("truncate contacts,crm_leads,channel_sessions,conversations,followup_flow_versions,followup_flow_pointers,followup_enrollments,followup_enrollment_events,job_queue,messages,send_ledger,agent_responsible_requests,agent_responsibles");
   await sql.query("insert into contacts(id,organization_id) values($1,$2)", [CONTACT, ORG]);
   await sql.query("insert into channel_sessions values($1,$2,'waha')", [SESSION, ORG]);
   await sql.query("insert into conversations(id,organization_id,contact_id,last_inbound_at) values($1,$2,$3,now()-interval '3 hours')", [CONV, ORG, CONTACT]);
@@ -98,6 +100,17 @@ async function live() {
 }
 
 describe("consulta ao responsável preserva a sequência de follow-up",()=>{
+  it("uma consulta não adianta um retorno que já tinha prazo maior",async()=>{
+    const due=new Date(Date.now()+5*3_600_000).toISOString();
+    await sql.query("update followup_enrollments set next_eval_at=$1",[due]);
+    await sql.query("insert into agent_responsible_requests values($1,$2,'pending')",[ORG,CONTACT]);
+    const row=(await sql.query<EnrollmentRow>("select * from followup_enrollments")).rows[0]!;
+    const jobs:FollowupJobRequest[]=[];
+    await avancarEnrollmentAtivo({db,clock:()=>new Date(),enqueueJob:async(job)=>{jobs.push(job);}},row);
+    const after=(await sql.query<{next_eval_at:Date;current_node_id:string;steps_taken:number}>("select * from followup_enrollments")).rows[0]!;
+    expect(after.next_eval_at.toISOString()).toBe(due);
+    expect(after).toMatchObject({current_node_id:'action',steps_taken:0}); expect(jobs).toEqual([]);
+  });
   it("pausa o job sem avançar etapa e libera após a entrega confirmada",async()=>{
     await sql.query("insert into agent_responsible_requests values($1,$2,'pending')",[ORG,CONTACT]);
     const before=await enrollment();

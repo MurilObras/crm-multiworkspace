@@ -45,7 +45,7 @@ export function createResponsibleDeliveryHandler(deps: { crmCfg: CrmEdgeConfig; 
         where r.organization_id=$1 and d.id=$2 and j.id=$3 and j.status='running' and j.locked_by=$4
           and not c.is_blocked and not c.is_anonymized and not target.is_blocked and not target.is_anonymized
           and v.contact_id=r.contact_id and v.status not in ('closed','archived')
-          and dest.status not in ('closed','archived') and ch.archived_at is null and ch.provider='waha'
+          and dest.status not in ('closed','archived') and ch.archived_at is null
           and dest.contact_id=d.target_contact_id and dest.channel_session_id=v.channel_session_id
           and (d.purpose='receipt' or
             (r.status='pending' and d.purpose in ('notification','wait_notice')) or (r.status='answered' and d.purpose='answer'))

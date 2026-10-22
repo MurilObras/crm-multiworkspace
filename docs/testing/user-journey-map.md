@@ -1963,5 +1963,5 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 - [P0] Texto preservado e áudio com bytes reais no Storage e receiver HTTP local. Sem chamada de modelo.
 - [P0] Corrida entre responsáveis, citação errada, outro workspace, canal desconectado e entrega incerta sem reenvio.
 - [P1] Resposta pelos chamados existentes continua disponível; transferência mantém atendimento humano.
-- Cobertura: `tests/invariants/responsible-whatsapp.test.ts` e `tests/e2e/responsible-whatsapp.spec.ts`.
+- Cobertura: `tests/invariants/responsible-whatsapp.test.ts` e `tests/e2e/ai-responsible-whatsapp.spec.ts`.
 - Laço de retorno: entregas pendentes/falhas aparecem no próprio chamado; os jobs são duráveis e usam ledger. Sem resposta não há encerramento automático.

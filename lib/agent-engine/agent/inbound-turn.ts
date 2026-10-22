@@ -1639,7 +1639,8 @@ async function executarTurnoDoAgente(
     if (job.kind === 'inbound_turn' && inboundAnchor) {
       const latest = await pool.query<{body:string|null}>("select body from messages where organization_id=$1 and contact_id=$2 and conversation_id=$3 and id=$4 and direction='inbound'",[tenantId,leadId,input.conversationId,inboundAnchor]);
       if (detectHumanHandoffRequest(latest.rows[0]?.body ?? '')) await performHumanHandoff(pool,{tenantId,leadId,conversationId:input.conversationId},
-        {reason:'requested_human',conversationSummary:'O cliente solicitou atendimento humano durante uma consulta ao responsável.',log:runLog});
+        {reason:'requested_human',conversationSummary:'O cliente solicitou atendimento humano durante uma consulta ao responsável.',
+          avisoAoLead:{avisado:false,porque:'consulta_em_andamento_cliente_ja_aguardava_responsavel'},log:runLog});
     }
     if (job.kind === 'followup_turn') {
       await rescheduleJob(pool,job.id,ctx.workerId,{delayMs:60_000,reason:'awaiting_responsible'});

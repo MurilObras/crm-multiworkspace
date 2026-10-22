@@ -525,7 +525,9 @@ async function processEnrollment(
 
   const leadRow = await db.loadLeadFacts(enrollment.organization_id, enrollment.contact_id);
   if (leadRow.responsible_pending) {
-    await db.updateEnrollment(enrollment.id,enrollment.organization_id,{next_eval_at:new Date(clock().getTime()+60_000).toISOString(),claimed_until:null},enrollment);
+    const planned=enrollment.next_eval_at ? new Date(enrollment.next_eval_at).getTime() : 0;
+    const retryAt=Math.max(clock().getTime()+60_000,Number.isFinite(planned) ? planned : 0);
+    await db.updateEnrollment(enrollment.id,enrollment.organization_id,{next_eval_at:new Date(retryAt).toISOString(),claimed_until:null},enrollment);
     return;
   }
   const lead: LeadFacts = {

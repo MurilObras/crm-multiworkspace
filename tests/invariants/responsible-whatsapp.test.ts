@@ -141,6 +141,10 @@ describe("responsável por WhatsApp: transações e isolamento reais",()=>{
     const fake=(await pool.query(`insert into messages(organization_id,contact_id,conversation_id,channel_session_id,type,direction,status,body,metadata)
       values($1,$2,$3,$4,'text','inbound','delivered','Texto de cliente',$5) returning metadata`,[org,contact,conv,session,{responsible_id:recipients[0]!.id,responsible_internal:true}])).rows[0]!.metadata;
     expect(fake.responsible_internal).toBeUndefined(); expect(fake.responsible_id).toBeUndefined();
+    const outgoing=(await pool.query(`insert into messages(organization_id,contact_id,conversation_id,channel_session_id,type,direction,status,body,metadata)
+      values($1,$2,$3,$4,'text','outbound','sent','Mensagem comum',$5) returning id,metadata`,[org,contact,conv,session,{responsible_internal:true,responsible_id:recipients[0]!.id}])).rows[0]!;
+    expect(outgoing.metadata.responsible_internal).toBeUndefined();
+    expect((await pool.query("select count(*)::int n from event_log where organization_id=$1 and payload->>'message_id'=$2",[org,outgoing.id])).rows[0]!.n).toBeGreaterThan(0);
   });
   it("responder pelas telas invalida a consulta externa e permite continuar o caso",async()=>{
     const r=await open();const a=await reply(r.request);
