@@ -28,6 +28,9 @@ export interface AtribuicaoDeAnuncio {
   plataforma: PlataformaDeAnuncio;
   /** `ctwa_clid` — identifica o clique específico que abriu a conversa. */
   sourceId: string | null;
+  /** Separados: ID do anúncio resolve campanha; clique é prova para conversão. */
+  anuncioId?:string|null;
+  cliqueId?:string|null;
   /** Título/headline do anúncio, quando o payload o traz. */
   titulo: string | null;
   corpo: string | null;
@@ -64,6 +67,8 @@ export async function estamparAtribuicaoDoContato(
     p_metadata: {
       ad_platform: atribuicao.plataforma,
       ad_source_id: atribuicao.sourceId,
+      ad_id:atribuicao.anuncioId??null,
+      ad_click_id:atribuicao.cliqueId??null,
       ad_title: atribuicao.titulo,
       ad_body: atribuicao.corpo,
       ad_source_url: atribuicao.sourceUrl,

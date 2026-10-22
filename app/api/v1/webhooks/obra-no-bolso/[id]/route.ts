@@ -7,6 +7,7 @@ import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { fingerprintAccessEvent, readAccessBody, validateAccessEvent, verifyAccessSignature } from "@/lib/obra-no-bolso/access-event";
 import { processObraAccessReceipt } from "@/lib/obra-no-bolso/process-receipt";
 import { validateSubscriptionEvent } from "@/lib/obra-no-bolso/subscription-event";
+import { validateCommercialEvent } from '@/lib/obra-no-bolso/commercial-event';
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +55,18 @@ export async function POST(req: Request, context: Context): Promise<Response> {
     catch {
       await reject("invalid_json");
       return fail("invalid_request", "JSON inválido.", 400, { requestId });
+    }
+    if(input&&typeof input==='object'&&'version' in input&&input.version===3) {
+      if(!source.lifecycle_enabled)return fail('invalid_request','Acompanhamento do produto não está ativo.',422,{requestId});
+      const event=validateCommercialEvent(input);
+      if(!event.ok){await reject('invalid_commercial_event');return fail('invalid_request','Evento comercial inválido.',422,{requestId});}
+      const received=await admin.rpc('fn_receive_obra_commercial',{p_org:source.organization_id,p_integration:source.id,
+        p_payload:event.event,p_fingerprint:fingerprintAccessEvent(raw),p_phone_variants:event.phoneVariants,p_secret_encrypted:source.secret_encrypted});
+      if(received.error||!received.data)return fail('internal_error','Recebimento não confirmado; tente novamente.',503,{requestId});
+      const result=received.data;
+      if(result.status==='conflict')return fail('idempotency_conflict','ID do evento com conteúdo divergente.',409,{requestId});
+      if(!['accepted','duplicate'].includes(result.status))return fail('state_conflict','A identidade do cadastro precisa ser conferida na integração.',409,{requestId});
+      return ok(result,{requestId});
     }
     if (source.lifecycle_enabled) {
       const subscription = validateSubscriptionEvent(input);

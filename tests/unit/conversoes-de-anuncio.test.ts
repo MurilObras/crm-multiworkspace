@@ -20,6 +20,9 @@ const LEAD = "22222222-2222-2222-2222-222222222222";
 const CONTATO = "33333333-3333-3333-3333-333333333333";
 
 interface Tabelas {
+  organizations?:unknown;
+  crm_first_payments?:unknown;
+  crm_lead_attribution?:unknown;
   crm_leads?: unknown;
   contacts?: unknown;
   ad_platform_connections?: unknown;
@@ -42,6 +45,7 @@ function fakeAdmin(tabelas: Tabelas) {
           data: (tabelas as Record<string, unknown>)[tabela] ?? null,
           error: null,
         }),
+        single:async()=>({data:(tabelas as Record<string,unknown>)[tabela]??{},error:null}),
         upsert: async (valores: Record<string, unknown>) => {
           upserts.push({ tabela, valores });
           return { error: null };
@@ -64,7 +68,7 @@ const leadGanho = {
 
 const contatoComAnuncio = {
   phone_number: "+55 (11) 98888-7777",
-  source_metadata: { ad_platform: "meta_ads", ad_source_id: "CLIQUE_ABC" },
+  source_metadata: { ad_platform: "meta_ads", ad_source_id: "CLIQUE_ABC",ad_click_id:'CLIQUE_ABC' },
 };
 
 const conexaoAtiva = {
@@ -359,7 +363,7 @@ describe("a matriz de plataformas é exaustiva", () => {
         crm_leads: leadGanho,
         contacts: {
           phone_number: "+5511988887777",
-          source_metadata: { ad_platform: "google_ads", ad_source_id: "GCLID_X" },
+          source_metadata: { ad_platform: "google_ads", ad_source_id: "GCLID_X",ad_click_id:'GCLID_X' },
         },
       }) as never,
     );

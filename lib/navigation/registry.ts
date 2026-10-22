@@ -55,7 +55,7 @@ import {
  * Doutrina: docs/doctrine/sistema-vivo.md — "por qual porta se chega até mim?"
  */
 
-export type NavGroupId = "atendimento" | "crm" | "ia" | "canais" | "analise" | "organizacao";
+export type NavGroupId = "inicio" | "atendimento" | "crm" | "ia" | "canais" | "analise" | "organizacao";
 
 export interface NavGroup {
   id: NavGroupId;
@@ -106,6 +106,7 @@ export interface NavDestination {
  * mesma conversa para a sexta tela.
  */
 export const NAV_GROUPS: NavGroup[] = [
+  { id: "inicio", label: "Visão geral" },
   { id: "atendimento", label: "Atendimento" },
   { id: "crm", label: "CRM", hub: { href: "/app/crm", label: "Ver tudo em CRM" } },
   { id: "ia", label: "Agente de IA", hub: { href: "/app/ai", label: "Ver tudo em IA" } },
@@ -143,6 +144,8 @@ export const GRUPO_NO_RODAPE: NavGroupId = "organizacao";
  * fechada e por isso não vira `minRole`.
  */
 export const NAV_DESTINATIONS: NavDestination[] = [
+  { href: "/app/dashboard", label: "Dashboard", description: "Funil, pagamentos confirmados e retorno das campanhas neste workspace.",
+    icon: Gauge, group: "inicio", minRole: "agent", sidebar: true },
   // ---- Atendimento — onde o operador passa o dia ----
   {
     href: "/app/inbox",

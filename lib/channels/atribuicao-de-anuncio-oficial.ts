@@ -38,6 +38,8 @@ export function extrairAtribuicaoMeta(referral: unknown): AtribuicaoDeAnuncio | 
   return {
     plataforma: "meta_ads",
     sourceId,
+    anuncioId:str(r.source_id)??str(r.sourceId),
+    cliqueId:str(r.ctwa_clid)??str(r.ctwaClid),
     titulo,
     corpo: str(r.body),
     sourceUrl,

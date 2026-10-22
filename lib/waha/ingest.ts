@@ -710,6 +710,7 @@ async function handleInbound(
   // comportamento aqui é o MESMO de antes, campo a campo — o que mudou é quem o
   // executa.
   await aplicarEfeitosPosEntrada(admin, {
+    atribuicao,
     organizationId: session.organization_id,
     contactId,
     conversationId,

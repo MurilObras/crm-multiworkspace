@@ -21,6 +21,7 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { workspaceRequestGuard } from '@/lib/auth/workspace-request';
 import { lerCredencialDeLeitura } from "@/lib/plataformas-de-anuncio/credenciais-de-leitura";
 import { lerCampanhas, lerInsights } from "@/lib/plataformas-de-anuncio/meta/insights";
 import { montarTabelaDeCampanhas } from "@/lib/plataformas-de-anuncio/meta/tabela-de-campanhas";
@@ -72,6 +73,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const authz = await requireRole("manager", { requestId, resource: "ads_insights" });
   if (!authz.ok) return authz.response;
   const { org } = authz;
+  const guard=workspaceRequestGuard(req,org.orgId,requestId);if(guard)return guard;
 
   const parsed = querySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams));
   if (!parsed.success) {

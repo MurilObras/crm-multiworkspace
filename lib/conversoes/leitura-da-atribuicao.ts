@@ -25,7 +25,7 @@ export interface AtribuicaoParaEnvio {
 
 export type LeituraDeAtribuicao =
   | { temAtribuicao: true; atribuicao: AtribuicaoParaEnvio }
-  | { temAtribuicao: false; motivo: "sem_contato" | "sem_atribuicao" | "plataforma_desconhecida" };
+  | { temAtribuicao: false; motivo: "sem_contato" | "sem_atribuicao" | "plataforma_desconhecida" | 'consulta_falhou' | 'contato_anonimizado' };
 
 /**
  * ⚠️ FILTRA `organization_id` MESMO TENDO O ID DO CONTATO. O chamador é um
@@ -38,17 +38,20 @@ export async function lerAtribuicao(
   admin: SupabaseClient,
   organizationId: string,
   contactId: string | null,
+  leadId?:string,
 ): Promise<LeituraDeAtribuicao> {
   if (!contactId) return { temAtribuicao: false, motivo: "sem_contato" };
 
-  const { data } = await admin
+  const { data,error } = await admin
     .from("contacts")
-    .select("phone_number, source_metadata")
+    .select("phone_number, source_metadata, is_anonymized")
     .eq("id", contactId)
     .eq("organization_id", organizationId)
     .maybeSingle();
 
+  if(error)return {temAtribuicao:false,motivo:'consulta_falhou'};
   if (!data) return { temAtribuicao: false, motivo: "sem_contato" };
+  if(data.is_anonymized)return {temAtribuicao:false,motivo:'contato_anonimizado'};
 
   const linha = data as { phone_number: string | null; source_metadata: unknown };
   const meta =
@@ -56,7 +59,18 @@ export async function lerAtribuicao(
       ? (linha.source_metadata as Record<string, unknown>)
       : {};
 
-  const clique = typeof meta.ad_source_id === "string" ? meta.ad_source_id.trim() : "";
+  let plataforma=meta.ad_platform;
+  const raw=meta.ad_raw&&typeof meta.ad_raw==='object'?meta.ad_raw as Record<string,unknown>:{};
+  // O campo legado ad_source_id misturava anúncio e clique. Só um clique
+  // comprovado pelo payload original pode alimentar a conversão da plataforma.
+  let proof=meta.ad_click_id??raw.ctwa_clid??raw.ctwaClid;
+  if(leadId) {
+    const snapshot=await admin.from('crm_lead_attribution').select('source,click_id').eq('organization_id',organizationId)
+      .eq('lead_id',leadId).maybeSingle();
+    if(snapshot.error)return {temAtribuicao:false,motivo:'consulta_falhou'};
+    if(snapshot.data){plataforma=snapshot.data.source;proof=snapshot.data.click_id;}
+  }
+  const clique=typeof proof==='string'?proof.trim():'';
   // Sem o clique não há atribuição utilizável: é ele que liga a venda ao anúncio.
   // Ter `ad_platform` sem `ad_source_id` acontece quando o payload trouxe o
   // referral sem o identificador — a 0164 grava os dois como vieram.
@@ -65,14 +79,14 @@ export async function lerAtribuicao(
   // Plataforma que não está no vocabulário significa dado gravado por uma versão
   // futura (ou corrompido). Recusar explicitamente é melhor que assumir a Meta e
   // reportar a venda na conta errada.
-  if (!ehPlataformaConhecida(meta.ad_platform)) {
+  if (!ehPlataformaConhecida(plataforma)) {
     return { temAtribuicao: false, motivo: "plataforma_desconhecida" };
   }
 
   return {
     temAtribuicao: true,
     atribuicao: {
-      plataforma: meta.ad_platform,
+      plataforma,
       cliqueDeOrigem: clique,
       // Só dígitos: a plataforma exige E.164 sem `+` nem separadores ANTES do
       // hash. Normalizar depois do hash seria tarde — o hash já estaria errado.

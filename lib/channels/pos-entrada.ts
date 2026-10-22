@@ -46,6 +46,8 @@ import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
+import type { AtribuicaoDeAnuncio } from '@/lib/leads/atribuicao-de-anuncio';
+import { captureLeadAttribution } from '@/lib/dashboard/attribution';
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -79,6 +81,7 @@ type Admin = ReturnType<typeof createAdminClient>;
  */
 
 export interface EntradaDeMensagem {
+  atribuicao?:AtribuicaoDeAnuncio|null;
   organizationId: string;
   contactId: string;
   conversationId: string;
@@ -255,6 +258,7 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
       conversationId: entrada.conversationId,
       nomeDoContato: entrada.nomeDoContato,
     });
+    if(entrada.messageId)await captureLeadAttribution(admin,entrada,nascimento.criado?nascimento.leadId:null);
 
     // Os DOIS desfechos viram log. Sem a linha do "não criou", o silêncio de
     // "já existia" e o de "a organização não tem funil configurado" têm a mesma

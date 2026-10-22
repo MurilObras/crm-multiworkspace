@@ -11,6 +11,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { workspaceRequestGuard } from "@/lib/auth/workspace-request";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isServiceRoleConfigured } from "@/lib/audit";
@@ -38,6 +39,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const authz = await requireRole("manager", { requestId, resource: "team" });
   if (!authz.ok) return authz.response;
   const { org: activeOrg } = authz;
+  const workspaceError=workspaceRequestGuard(_req,activeOrg.orgId,requestId);if(workspaceError)return workspaceError;
 
   const supabase = await createClient();
   const { data: rows, error } = await supabase

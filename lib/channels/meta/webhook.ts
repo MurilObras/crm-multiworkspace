@@ -115,6 +115,7 @@ export interface InboundMessageEvent {
   text: string | null;
   /** Preenchido quando `type === "contact"` (cartão compartilhado). */
   sharedContact?: SharedContact | null;
+  referral?:unknown;
   media: {
     id: string;
     /** A Meta manda URL pronta, com `ext=` de expiração — baixe na hora, não guarde. */
@@ -226,6 +227,7 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
                 ? str((raw.text as Record<string, unknown>)?.body)
                 : sharedContact?.name ?? null,
             ...(sharedContact ? { sharedContact } : {}),
+            ...(raw.referral && typeof raw.referral==='object'?{referral:raw.referral}:{}),
             media:
               corpoMidia && str(corpoMidia.id)
                 ? {

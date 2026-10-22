@@ -49,6 +49,8 @@ export function extrairAtribuicaoWaha(messageRaw: unknown): AtribuicaoDeAnuncio 
   return {
     plataforma: "meta_ads",
     sourceId,
+    anuncioId:str(ad.sourceId)??str(ad.source_id),
+    cliqueId:str(ad.ctwaClid)??str(ad.ctwa_clid),
     titulo,
     corpo: str(ad.body),
     sourceUrl,

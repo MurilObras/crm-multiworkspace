@@ -29,6 +29,7 @@ import { encontrarContatoPorTelefone } from "../contato-por-telefone";
 import { canonicalPhoneBR, phoneLookupVariants } from "../phone-variants";
 import type { ChannelTenantScope } from "../types";
 import type { InboundMessageEvent } from "./webhook";
+import { extrairAtribuicaoMeta } from '../atribuicao-de-anuncio-oficial';
 
 type Admin = SupabaseClient;
 
@@ -209,6 +210,7 @@ export async function ingestMetaInbound(
 
   const messageId = (inserida as { id: string } | null)?.id ?? "";
   await aplicarEfeitosPosEntrada(admin, {
+    atribuicao:extrairAtribuicaoMeta(e.referral),
     organizationId: orgId,
     contactId: contactId as string,
     conversationId: conversationId as string,

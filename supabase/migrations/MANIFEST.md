@@ -271,6 +271,8 @@ aplica.
 | `20261021160100` | `0235_waha_echo_identity` | Identidade canônica do outbound WAHA e reconciliação do eco confirmado preservando referências. |
 | `20261021200000` | `0236_followup_silence_resume` | Retoma a inscrição após novo silêncio sem zerar etapas, intervalos, orçamento ou proteção de atendimento humano. |
 | `20261022010000` | `0237_responsible_whatsapp` | Consulta opt-in ao responsável por WhatsApp, destinos por workspace, outbox durável, pausa temporária e respostas em texto/áudio vinculadas ao aviso. |
+| `20261022170000` | `0238_commercial_dashboard` | Primeiro pagamento auditável, quantidade vendida, qualificação por etapa, atribuição por oportunidade, gastos diários e snapshot com RLS do dashboard. |
+| `20261022180000` | `0239_obra_commercial_events` | Recebe cadastro e primeiro pagamento do backend do aplicativo por contrato v3, sem alterar o acompanhamento de 96 horas. |
 
 ## Reproducibility
 

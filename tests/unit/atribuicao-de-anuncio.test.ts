@@ -17,6 +17,7 @@ describe("extrairAtribuicaoMeta — referral do webhook oficial", () => {
     expect(r).toEqual({
       plataforma: "meta_ads",
       sourceId: "AfE...clid",
+      anuncioId:'120210000000000',cliqueId:'AfE...clid',
       titulo: "Agende sua consulta",
       corpo: "Clique e fale com a gente",
       sourceUrl: "https://fb.me/anuncio123",
@@ -74,6 +75,7 @@ describe("extrairAtribuicaoWaha — externalAdReplyInfo do Baileys", () => {
     expect(r).toEqual({
       plataforma: "meta_ads",
       sourceId: "clid-999",
+      anuncioId:'ad-999',cliqueId:'clid-999',
       titulo: "Agende sua consulta",
       corpo: "Clique e fale com a gente",
       sourceUrl: "https://fb.me/anuncio123",

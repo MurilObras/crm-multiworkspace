@@ -292,6 +292,7 @@ export interface ExportPayload {
   obra_subscription_receipts?: Record<string, unknown>[];
   obra_subscription_outreach?: Record<string, unknown>[];
   responsible_consultations?: ResponsibleConsultationExport;
+  commercial_dashboard?:{payments:Record<string,unknown>[];attributions:Record<string,unknown>[];product_links?:Record<string,unknown>[];receipts?:Record<string,unknown>[]};
 }
 
 // ---------------------------------------------------------------------------
@@ -754,6 +755,14 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  let commercial_dashboard:ExportPayload['commercial_dashboard'];
+  if(contactId) {
+    const snapshot=await admin.rpc('fn_export_dashboard_contact',{p_org:organizationId,p_contact:contactId});
+    if(snapshot.error)throw new Error('lgpd_dashboard_export_unavailable');
+    const commercial=await admin.rpc('fn_export_obra_commercial',{p_org:organizationId,p_contact:contactId});
+    if(commercial.error)throw new Error('lgpd_commercial_export_unavailable');
+    commercial_dashboard={...snapshot.data,...commercial.data};
+  }
   return {
     request_id: requestId,
     organization_id: organizationId,
@@ -781,6 +790,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     obra_subscription_receipts,
     obra_subscription_outreach,
     responsible_consultations,
+    commercial_dashboard,
   };
 }
 
