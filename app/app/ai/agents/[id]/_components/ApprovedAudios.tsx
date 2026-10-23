@@ -36,6 +36,7 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [needsRefresh, setNeedsRefresh] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const preview = useMemo(() => file ? URL.createObjectURL(file) : null, [file]);
   const [title, setTitle] = useState('');
@@ -48,14 +49,14 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
 
   const fetchAudios = useCallback(async (signal?: AbortSignal): Promise<{ audios: AudioPreview[]; stages: AudioStageOption[] }> => {
     const res = await fetch(endpoint, { signal, cache: 'no-store' });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error?.message ?? 'Não foi possível carregar as mídias.');
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !Array.isArray(json?.data)) throw responseError(res, json, 'Não foi possível carregar as mídias.');
     return { audios: json.data, stages: json.meta?.stage_options ?? [] };
   }, [endpoint]);
   const load = useCallback(async () => {
     try {
       const data = await fetchAudios(); setAudios(data.audios); setStages(data.stages);
-      setError('');
+      setError(''); setNeedsRefresh(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar mídias.');
     } finally { setLoading(false); }
@@ -63,7 +64,7 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
   useEffect(() => {
     const abort = new AbortController();
     void fetchAudios(abort.signal).then(data => {
-      if (!abort.signal.aborted) { setAudios(data.audios); setStages(data.stages); setError(''); }
+      if (!abort.signal.aborted) { setAudios(data.audios); setStages(data.stages); setError(''); setNeedsRefresh(false); }
     }).catch(err => {
       if (!abort.signal.aborted) setError(err instanceof Error ? err.message : 'Erro ao carregar mídias.');
     }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
@@ -71,19 +72,59 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
   }, [fetchAudios]);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
-  async function mutate(method: 'POST' | 'PATCH' | 'DELETE', body: FormData | Record<string, unknown>) {
-    setBusy(true); setError(''); setNotice('');
+  async function mutate(
+    method: "POST" | "PATCH" | "DELETE",
+    body: FormData | Record<string, unknown>,
+  ) {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    let receivedResponse = false;
     try {
-      const res = await fetch(endpoint, { method,
-        ...(body instanceof FormData ? { body } : { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }) });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error?.message ?? 'Não foi possível salvar a mídia.');
-      if (method === 'POST') { setFile(null); setTitle(''); setUseWhen(''); setStageIds([]); setRestricted(false); setRequired(true); setAllowRepeat(true); setTrigger('topic'); setSendWhen(''); setFileKey(k => k + 1); }
+      const res = await fetch(endpoint, {
+        method,
+        ...(body instanceof FormData
+          ? { body }
+          : { body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }),
+      });
+      receivedResponse = true;
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.data?.saved !== true) {
+        if (res.ok || res.status === 409 || res.status >= 500 || !json) setNeedsRefresh(true);
+        throw responseError(
+          res,
+          json,
+          "Não foi possível confirmar o salvamento. Atualize a lista antes de tentar novamente.",
+        );
+      }
+      if (method === "POST") {
+        setFile(null);
+        setTitle("");
+        setUseWhen("");
+        setStageIds([]);
+        setRestricted(false);
+        setRequired(true);
+        setAllowRepeat(true);
+        setTrigger("topic");
+        setSendWhen("");
+        setFileKey((k) => k + 1);
+      }
       setEditing(null);
-      setNotice(t('Alteração salva. Vale para os próximos turnos deste agente.'));
-      setLoading(true); await load();
-    } catch (err) { setError(err instanceof Error ? err.message : t('Erro ao salvar mídia.')); }
-    finally { setBusy(false); }
+      setNotice(t("Alteração salva. Vale para os próximos turnos deste agente."));
+      setLoading(true);
+      await load();
+    } catch (err) {
+      if (!receivedResponse) setNeedsRefresh(true);
+      setError(
+        receivedResponse && err instanceof Error
+          ? err.message
+          : t(
+              "Não foi possível confirmar o salvamento. Atualize a lista antes de tentar novamente.",
+            ),
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   function approve() {
@@ -105,7 +146,7 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
     if (editTrigger === 'topic' && editSendWhen.trim().length < 10) { setError(t('Descreva a condição de envio e exemplos (mínimo 10 caracteres).')); return; }
     void mutate('PATCH', { audio_id: id, title: editTitle, use_when: editWhen, stage_ids: editRestricted ? editStageIds : [], required: editRequired, allow_requested_repeat: editAllowRepeat, trigger_type: editTrigger, send_when: editSendWhen });
   }
-  const disabled = readOnly || busy || loading;
+  const disabled = readOnly || busy || loading || needsRefresh;
   return <Card className="space-y-4 p-4" data-testid="approved-audios">
     <div>
       <h3 className="text-sm font-medium">{t('Mídias aprovadas')}</h3>
@@ -169,6 +210,16 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
       <Button type="button" disabled={disabled || !file} onClick={approve}>{busy ? t('Preparando mídia…') : t('Aprovar mídia para o agente')}</Button>
     </div>}
   </Card>;
+}
+
+function responseError(
+  res: Response,
+  json: { error?: { message?: string } } | null,
+  fallback: string,
+): Error {
+  const id = res.headers.get("X-Request-Id");
+  const reference = id && /^[0-9a-f-]{36}$/i.test(id) ? ` Referência: ${id}.` : "";
+  return new Error((json?.error?.message ?? fallback) + reference);
 }
 
 function MediaPreview({ kind, src, title }: { kind: 'audio' | 'image' | 'video'; src: string; title: string }) {

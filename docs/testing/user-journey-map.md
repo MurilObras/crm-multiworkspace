@@ -1941,8 +1941,8 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 - [P1] Administrador aprova áudio, foto PNG e vídeo MP4 sintéticos no editor,
   confere a prévia decodificada, edita a regra de reenvio, recarrega e remove.
 - `audios-pre-gravados.spec.ts` usa Supabase local e nenhum WhatsApp real.
-  O CI executa os três casos isolados antes da parte 2 completa e exige as
-  uma captura de cada formato, disponibilizadas no artefato
+  O CI executa a spec isolada e junto da suíte E2E; exige
+  uma captura de cada formato, disponibilizada no artefato
   `evidencias-midias-aprovadas` inclusive quando a execução passa.
 - Reenvio por pedido explícito, mesma inbound, tentativas pendentes/incertas,
   preferência por texto, fingerprint, catálogo legado e isolamento de
@@ -1983,3 +1983,11 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 - [P0] Trial/ganho sem pagamento não contam; v3 com trial preserva o acompanhamento de 96h.
 - [P1] Cache diário completo distingue zero de ausência e não é substituído por consulta parcial ou lease antigo.
 - Provas: commercial-dashboard.spec.ts, tests/invariants/commercial-dashboard.test.ts, lib/dashboard/*.test.ts e tests/unit/dashboard-api.test.ts. Execução final ainda em andamento.
+
+## Salvamento de catálogo grande — 2026-10-23
+
+- [P1] `audios-pre-gravados.spec.ts`: pré-cadastro sintético com regras longas; administrador aprova a 20ª mídia, desativa, recarrega, reativa e remove pela tela. Áudio, foto e vídeo continuam cobertos nos demais casos.
+- `agent-config-http.test.ts`: receiver HTTP real recusa URL acima de 8 KB; configuração maior que 27 KB continua editável e não entra na URL. Testa conflito e perda de resposta antes/depois do commit, sem WhatsApp real.
+- `agent-config-revision.test.ts`: banco controla a revisão, duas conexões disputam a mesma versão e só uma salva; migration e baseline são reaplicáveis.
+- Retorno operacional: `ApprovedAudios` mantém formulário e mostra referência, exige atualizar após falha; `agent_media_save_failed` registra categoria e requestId sem JSON ou dados pessoais. Nenhum arquivo referenciado é apagado por resposta incerta.
+- Validação pendente nesta etapa; não representa aprovação antecipada.

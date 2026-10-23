@@ -47,6 +47,65 @@ it('seleciona etapa de suporte no cadastro e altera para todas as etapas pela te
   expect(screen.getByText('Envio opcional', { exact: true })).toBeVisible();
 });
 afterEach(() => vi.unstubAllGlobals());
+it.each([503, 409, 422])(
+  "erro %i preserva formulário e referência; só conflito/incerteza exigem recarga",
+  async (status) => {
+    const normalFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, options?: RequestInit) =>
+        options?.method === "POST"
+          ? new Response(
+              JSON.stringify({
+                error: {
+                  message:
+                    "Não foi possível confirmar o salvamento. Atualize a lista antes de tentar novamente.",
+                },
+              }),
+              {
+                status,
+                headers: { "X-Request-Id": "10000000-0000-4000-8000-000000000099" },
+              },
+            )
+          : normalFetch(url, options),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<ApprovedAudios agentId="agent-1" readOnly={false} />);
+    await screen.findByText("Nenhuma mídia aprovada. O atendimento continua em texto.");
+    await user.upload(
+      screen.getByLabelText("Arquivo"),
+      new File(["audio"], "a.mp3", { type: "audio/mpeg" }),
+    );
+    await user.type(screen.getByLabelText("Título da mídia"), "Apresentação");
+    await user.type(
+      screen.getByLabelText("Conteúdo e finalidade da mídia"),
+      "Demonstração sobre o serviço",
+    );
+    await user.type(
+      screen.getByLabelText("Condição e exemplos de perguntas"),
+      "Quando pedir uma demonstração",
+    );
+    await user.click(screen.getByRole("button", { name: "Aprovar mídia para o agente" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Referência: 10000000-0000-4000-8000-000000000099",
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Título da mídia")).toHaveValue("Apresentação");
+    expect(screen.getByLabelText("Arquivo")).not.toHaveValue("");
+    if (status === 422) {
+      expect(screen.getByRole("button", { name: "Aprovar mídia para o agente" })).toBeEnabled();
+      return;
+    }
+    expect(screen.getByRole("button", { name: "Aprovar mídia para o agente" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Atualizar lista" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Aprovar mídia para o agente" })).toBeEnabled(),
+    );
+    expect(screen.getByLabelText("Título da mídia")).toHaveValue("Apresentação");
+  },
+);
+
 it('anexa, ouve antes de aprovar, salva e permite retirar a aprovação', async () => {
   const user = userEvent.setup();
   render(<ApprovedAudios agentId="agent-1" readOnly={false} />);
