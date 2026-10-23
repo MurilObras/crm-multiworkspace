@@ -7148,6 +7148,12 @@ export const DICIONARIO: Traducoes = {
   "Não houve resposta final para avaliar neste ensaio.": { es: "No hubo una respuesta final para evaluar en esta simulación." },
 
   "Erro ao salvar mídia.": { es: "Error al guardar el archivo multimedia." },
+  "Não foi possível confirmar o salvamento. Atualize a lista antes de tentar novamente.": { es: "No se pudo confirmar el guardado. Actualiza la lista antes de volver a intentarlo." },
+  "Não foi possível salvar o catálogo de mídias. Atualize a lista e tente novamente.": { es: "No se pudo guardar el catálogo de archivos multimedia. Actualiza la lista y vuelve a intentarlo." },
+  "O agente foi alterado em outra aba. Atualize a lista e tente novamente.": { es: "El agente se modificó en otra pestaña. Actualiza la lista y vuelve a intentarlo." },
+  "Não foi possível carregar as mídias.": { es: "No se pudieron cargar los archivos multimedia." },
+  "Não foi possível confirmar a atualização do agente. Atualize a tela antes de tentar novamente.": { es: "No se pudo confirmar la actualización del agente. Actualiza la pantalla antes de volver a intentarlo." },
+  "Referência": { es: "Referencia" },
   "Escolha um arquivo, informe um título e descreva seu conteúdo (mínimo 10 caracteres).": { es: "Elija un archivo, indique un título y describa su contenido (mínimo 10 caracteres)." },
   "Escolha um arquivo válido de até 16 MB.": { es: "Elija un archivo válido de hasta 16 MB." },
   "Mídias aprovadas": { es: "Archivos multimedia aprobados" },

@@ -50,9 +50,9 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
   const fetchAudios = useCallback(async (signal?: AbortSignal): Promise<{ audios: AudioPreview[]; stages: AudioStageOption[] }> => {
     const res = await fetch(endpoint, { signal, cache: 'no-store' });
     const json = await res.json().catch(() => null);
-    if (!res.ok || !Array.isArray(json?.data)) throw responseError(res, json, 'Não foi possível carregar as mídias.');
+    if (!res.ok || !Array.isArray(json?.data)) throw responseError(res, json, 'Não foi possível carregar as mídias.', t);
     return { audios: json.data, stages: json.meta?.stage_options ?? [] };
-  }, [endpoint]);
+  }, [endpoint, t]);
   const load = useCallback(async () => {
     try {
       const data = await fetchAudios(); setAudios(data.audios); setStages(data.stages);
@@ -95,6 +95,7 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
           res,
           json,
           "Não foi possível confirmar o salvamento. Atualize a lista antes de tentar novamente.",
+          t,
         );
       }
       if (method === "POST") {
@@ -216,10 +217,11 @@ function responseError(
   res: Response,
   json: { error?: { message?: string } } | null,
   fallback: string,
+  t: (texto: string) => string,
 ): Error {
   const id = res.headers.get("X-Request-Id");
-  const reference = id && /^[0-9a-f-]{36}$/i.test(id) ? ` Referência: ${id}.` : "";
-  return new Error((json?.error?.message ?? fallback) + reference);
+  const reference = id && /^[0-9a-f-]{36}$/i.test(id) ? ` ${t('Referência')}: ${id}.` : "";
+  return new Error(t(json?.error?.message ?? fallback) + reference);
 }
 
 function MediaPreview({ kind, src, title }: { kind: 'audio' | 'image' | 'video'; src: string; title: string }) {

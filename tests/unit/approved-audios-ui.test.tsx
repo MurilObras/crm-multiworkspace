@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { ApprovedAudios } from '@/app/app/ai/agents/[id]/_components/ApprovedAudios';
 import { AttachmentPreviewDialog } from '@/components/inbox/composer/AttachmentPreviewDialog';
+import { IdiomaProvider } from '@/lib/i18n/IdiomaProvider';
 
 let entries: unknown[];
 let calls: { method: string; body: unknown }[];
@@ -47,6 +48,15 @@ it('seleciona etapa de suporte no cadastro e altera para todas as etapas pela te
   expect(screen.getByText('Envio opcional', { exact: true })).toBeVisible();
 });
 afterEach(() => vi.unstubAllGlobals());
+it('traduz o erro operacional e a referência para espanhol', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: {
+    message: 'Não foi possível confirmar o salvamento. Atualize a lista antes de tentar novamente.',
+  } }), { status: 503, headers: { 'X-Request-Id': '10000000-0000-4000-8000-000000000099' } })));
+  render(<IdiomaProvider locale="es"><ApprovedAudios agentId="agent-1" readOnly={false} /></IdiomaProvider>);
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('No se pudo confirmar el guardado.');
+  expect(alert).toHaveTextContent('Referencia: 10000000-0000-4000-8000-000000000099');
+});
 it.each([503, 409, 422])(
   "erro %i preserva formulário e referência; só conflito/incerteza exigem recarga",
   async (status) => {
