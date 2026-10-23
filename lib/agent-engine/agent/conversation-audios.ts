@@ -72,6 +72,32 @@ function permitted(m: ApprovedAudio, prior: HeldMedia[], agent: string, inbound:
   return used.every(p => ['sent','delivered','read'].includes(p.status) && p.phase !== 'uncertain' && p.request_id !== inbound);
 }
 
+/** Exceção de cópia repetida só para reenvio solicitado e comprovado pelo servidor.
+ * O título da mídia é metadado fixo, não um texto que o modelo possa variar.
+ * Não libera primeira entrega, campanha, outro contato ou tentativa incerta.
+ * Aprovação/etapa são conferidas pelo catálogo fresco e novamente no transporte. */
+export async function isRequestedApprovedMediaReplay(
+  db: Queryable, org: string, conversation: string, contact: string, agent: string, job: string, media: ApprovedAudio,
+): Promise<boolean> {
+  if (!media.enabled || !media.allow_requested_repeat) return false;
+  const { rows } = await db.query<{ inbound: string | null }>(
+    `select payload->>'inbound_message_id' as inbound from job_queue
+     where organization_id=$1 and id=$2 and contact_id=$3 and kind='inbound_turn' and status='running'
+       and payload->>'conversation_id'=$4
+       and payload->'audio_rule_decision'->>'agent_id'=$5
+       and payload->'audio_rule_decision'->>'audio_id'=$6`,
+    [org,job,contact,conversation,agent,media.id]);
+  const inbound = rows[0]?.inbound;
+  if (!inbound) return false;
+  const prior = (await history(db,org,conversation)).filter(p => p.job_id !== job);
+  const used = prior.filter(p => p.agent_id === agent && p.audio_id === media.id
+    || !!media.content_sha256 && p.fingerprint === media.content_sha256);
+  if (!used.length) return false;
+  const text = await requestText(db,org,conversation,inbound,job);
+  return permitted(media,prior,agent,inbound,text)
+    && await conversationAllowsMedia(db,org,conversation,mediaKind(media));
+}
+
 export async function availableConversationAudios(
   db: Queryable, org: string, conversation: string, agent: string, job: string,
   audios: ApprovedAudio[], inbound: string | null, firstContact?: boolean,

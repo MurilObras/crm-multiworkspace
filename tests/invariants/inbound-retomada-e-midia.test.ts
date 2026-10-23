@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { OutboundApprovalRevokedError } from '@/lib/channels/delivery-error';
+import { recordCopy } from '@/lib/agent-engine/spinning/store';
 
 import type * as InboundTurn from "@/lib/agent-engine/agent/inbound-turn";
 import type * as Providers from "@/lib/agent-engine/edge/llm/providers";
@@ -635,6 +636,64 @@ it.each(['reception-burst','text-preference-burst'])(
       await pool.query('update messages set body=$1,metadata=$2 where id=$3',[original.body,original.metadata,MSG]);
       await pool.query('delete from messages where organization_id=$1 and id=$2',[ORG,earlier]);
       await pool.query('delete from crm_leads where organization_id=$1 and id=$2',[ORG,LEAD]);
+      await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1',[agent]);
+    }
+  });
+
+const REPLAY_PROTECTION_CASES=['required','optional','warmup','blocked','no-request','repeat-off'];
+it.each(REPLAY_PROTECTION_CASES)(
+  'reenvio solicitado atravessa a cadeia real sem dispensar aquecimento: %s',async behavior => {
+    const agent='eeeeeeee-0000-4000-8000-000000000070';
+    const version=randomUUID(), audioId=randomUUID(), previous=randomUUID();
+    const original=(await pool.query('select body,metadata from messages where id=$1',[MSG])).rows[0]!;
+    const audio={id:audioId,title:'Conclusão de matrícula',use_when:'Orientações aprovadas para concluir matrícula',
+      send_when:'Quando solicitar a conclusão de matrícula',trigger_type:'topic',required:behavior!=='optional',
+      allow_requested_repeat:behavior!=='repeat-off',enabled:true,mime:'audio/ogg',size_bytes:17,stage_ids:[],
+      storage_path:`${ORG}/agent-audios/${agent}/${audioId}.ogg`};
+    await pool.query(`insert into ai_agents(id,organization_id,name,system_prompt,kind,config)
+      values($1,$2,'Agente de reenvio','Gravações aprovadas','mcp_agent',$3)
+      on conflict(id) do update set config=excluded.config,archived_at=null`,[agent,ORG,JSON.stringify({approved_audios:[audio]})]);
+    await pool.query(`insert into ai_agent_versions(id,organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,max_steps)
+      values($1,$2,$3,$5,'Atenda ao pedido atual.','anthropic','claude-sonnet-4-6',$4,'published',12)`,[version,ORG,agent,SESSION,200+REPLAY_PROTECTION_CASES.indexOf(behavior)]);
+    await pool.query('update ai_agents set published_version_id=$1 where id=$2',[version,agent]);
+    await pool.query(`insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_at,created_at,metadata)
+      select $1,organization_id,conversation_id,channel_session_id,contact_id,'audio','outbound','read',$2,
+      sent_at-interval '1 minute',created_at-interval '1 minute',$3::jsonb from messages where id=$4`,
+      [previous,audio.title,JSON.stringify({approved_audio:{agent_id:agent,audio_id:audioId},outbound_attempt:{phase:'confirmed'}}),MSG]);
+    await pool.query("update messages set body='Pode reenviar somente o áudio de conclusão de matrícula?',metadata='{}' where id=$1",[MSG]);
+    if(behavior==='no-request') await pool.query("update messages set body='Como concluo a matrícula?' where id=$1",[MSG]);
+    for(let i=0;i<2;i++) await recordCopy(pool,ORG,SESSION,audio.title,new Date('2026-07-28T17:59:00Z'));
+    if(behavior==='warmup') await pool.query(`insert into pacing_ledger(organization_id,channel_session_id,sent_at)
+      select $1::uuid,$2::uuid,'2026-07-28T17:59:00Z'::timestamptz from generate_series(1,20)`,[ORG,SESSION]);
+    if(behavior==='blocked') await pool.query('update contacts set is_blocked=true where organization_id=$1 and id=$2',[ORG,CONTACT]);
+    let calls=0;
+    try {
+      await rodaTurno(montaHandler(async (opts:{prompt?:unknown})=>{
+        if(JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual'))
+          return {content:[{type:'text',text:JSON.stringify({audio_id:audioId})}],finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[]};
+        const call=calls++;
+        if(call===0 || behavior==='optional' && call===1)
+          return {content:[{type:'tool-call',toolCallId:`resposta-${call}`,toolName:'send_message',
+            input:JSON.stringify(call===0?{body:'Sobre os próximos passos da matrícula:'}:{body:audio.title,media:{type:'audio',audio_id:audioId}})}],
+            finishReason:{unified:'tool-calls',raw:undefined},usage:USO,warnings:[]};
+        return {content:[{type:'text',text:CHECKPOINT}],finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[]};
+      },3));
+      const delivered=enviados.filter(e=>e.media?.type==='audio');
+      expect(delivered).toHaveLength(['required','optional'].includes(behavior)?1:0);
+      const currentJob=(await pool.query("select id from job_queue where organization_id=$1 and contact_id=$2 and kind='inbound_turn' order by created_at desc limit 1",[ORG,CONTACT])).rows[0]!.id;
+      const traces=(await pool.query('select trace,vetoed_code from before_send_traces where organization_id=$1 and job_id=$2 order by created_at desc',[ORG,currentJob])).rows;
+      if(['required','optional'].includes(behavior)) {
+        expect(delivered[0]?.media?.audio_id).toBe(audioId);
+        expect(traces.some(t=>t.trace.some((g:{gate:string;verdict:string})=>g.gate==='spinning' && g.verdict==='skipped'))).toBe(true);
+        expect((await pool.query('select count(*)::int as n from pacing_ledger where organization_id=$1 and channel_session_id=$2',[ORG,SESSION])).rows[0]?.n).toBe(2);
+      }
+      if(behavior==='warmup') expect(traces.some(t=>t.vetoed_code==='warmup_cap')).toBe(true);
+      if(behavior==='no-request'||behavior==='repeat-off')
+        expect(traces.some(t=>t.trace.some((g:{gate:string;verdict:string})=>g.gate==='spinning' && g.verdict==='skipped'))).toBe(false);
+    } finally {
+      await pool.query('update messages set body=$1,metadata=$2 where id=$3',[original.body,original.metadata,MSG]);
+      await pool.query('delete from messages where organization_id=$1 and id=$2',[ORG,previous]);
+      await pool.query('update contacts set is_blocked=false where organization_id=$1 and id=$2',[ORG,CONTACT]);
       await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1',[agent]);
     }
   });

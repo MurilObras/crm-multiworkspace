@@ -69,7 +69,7 @@ import { readApprovedMedia, renderApprovedMedia } from '@/lib/ai/agents/approved
 import { guardCurrentInboundTools } from './current-inbound-tools';
 import { OutboundAudioUnavailableError, OutboundLeaseLostError, OutboundPreflightDeferredError, OutboundSupersededError } from '@/lib/channels/delivery-error';
 import { eligibleAudiosForContact } from './audio-stage-eligibility';
-import { availableConversationAudios } from './conversation-audios';
+import { availableConversationAudios, isRequestedApprovedMediaReplay } from './conversation-audios';
 import { requiredAudioPlan, deliverRequiredAudio, type RequiredAudioPlan } from './required-audio';
 import { AUDIO_INTENT_INSTRUCTION, audioIntentMessage, parseAudioIntent, decideTurnMedia, isFirstAudioContact, pendingAudioSubject } from './audio-rule';
 import { applyLeadStateUpdate, getLeadState, type LeadStage, type LeadStateRow } from './lead-state';
@@ -2546,6 +2546,8 @@ async function executarTurnoDoAgente(
           return { ok: false, error: { code: 'audio_not_ready', message: 'Envie primeiro uma mensagem curta de texto com o contexto. Não repita a mídia neste turno.' } };
         }
         const body = audio?.title ?? requestedBody;
+        const requestedMediaReplay = audio !== undefined && await isRequestedApprovedMediaReplay(
+          pool,tenantId,input.conversationId,leadId,agentConfig!.agentId,job.id,audio);
         const outboundMedia: ChannelSendInput['media'] = !media ? undefined : media.type === 'audio'
           ? { ...media, agent_id: agentConfig!.agentId }
           : 'media_id' in media ? { ...media, agent_id: agentConfig!.agentId } : media;
@@ -2584,6 +2586,10 @@ async function executarTurnoDoAgente(
             jobId: job.id,
             channelSessionId: input.channelSessionId,
             body,
+            // O modelo não pode pedir esta exceção. O servidor provou mídia já
+            // entregue, nova solicitação deste contato e permissão de reenvio.
+            // Só a comparação do título fixo é dispensada; pacing/STOP continuam.
+            ...(requestedMediaReplay ? { enforceSpinning: false } : {}),
             optedOutThisTurn,
             // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
             // no runtime — null cai nos degraus de warm-up (conservadores). Injetar
@@ -3422,7 +3428,11 @@ async function executarTurnoDoAgente(
           payload: { reason_code: 'required_audio_no_longer_eligible' },
         });
       }
-      runLog.info('plano de áudio obrigatório executado', { audio_id: plan.audio_id, after_response: afterResponse });
+      const delivery = requiredAudioResult as { result?: { ok?: boolean; status?: string; error?: { code?: string } }; status?: string };
+      runLog.info('plano de áudio obrigatório avaliado', { audio_id: plan.audio_id, after_response: afterResponse,
+        sent: delivery.result?.ok === true && delivery.result.status === 'enviada',
+        status: delivery.status ?? delivery.result?.status ?? null,
+        veto_code: delivery.result?.error?.code ?? null });
       if (supersededError !== null) await settleSuperseded();
       if (runError !== null) throw runError;
       if (outcomes.some(o => o.kind === 'failed')) throw new Error('áudio obrigatório com envio falho — recuperação pela fila');
@@ -3496,7 +3506,7 @@ async function executarTurnoDoAgente(
         const selected = agentConfig.approvedAudios?.find(a => a.id === audioPlan!.audio_id);
         requiredAudioBlock = `## Mídia correspondente ao assunto atual\n${JSON.stringify({ title: selected?.title, type: selected && ('type' in selected ? selected.type : 'audio'), content_description: selected?.use_when, stage_permitted_now: eligibleAudios.some(a => a.id === audioPlan!.audio_id) })}\n`
           + 'O CRM tentará enviá-lo após sua resposta nesta interação, conferindo novamente a etapa permitida. '
-          + 'Envie uma mensagem curta de contexto. Não diga que já enviou ou que será entregue com certeza. '
+          + 'Envie uma mensagem curta sobre o assunto, sem anunciar o envio: evite "segue o áudio", "vou enviar" ou "já enviei". A tentativa ainda pode ser bloqueada. '
           + 'Se a etapa já permite a mídia, evite repetir o conteúdo aprovado. Se ainda não permite, responda ao pedido por texto. Não mova o card só para liberar a mídia. '
           + `Restam no máximo ${sendCapacity()} mensagens para sua resposta.`;
       } else if (audioPlan) {
