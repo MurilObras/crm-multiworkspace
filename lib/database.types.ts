@@ -964,6 +964,7 @@ export type Database = {
           active_kb_version_id: string | null;
           archived_at: string | null;
           config: NonNullable<Json>;
+          config_revision: number;
           created_at: string;
           created_by: string | null;
           description: string | null;
@@ -985,6 +986,7 @@ export type Database = {
           active_kb_version_id?: string | null;
           archived_at?: string | null;
           config?: NonNullable<Json>;
+          config_revision?: number;
           created_at?: string;
           created_by?: string | null;
           description?: string | null;
@@ -1005,6 +1007,7 @@ export type Database = {
           active_kb_version_id?: string | null;
           archived_at?: string | null;
           config?: NonNullable<Json>;
+          config_revision?: number;
           created_at?: string;
           created_by?: string | null;
           description?: string | null;

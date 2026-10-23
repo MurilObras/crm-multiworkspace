@@ -158,5 +158,5 @@ export async function outboundPostgres() {
       {id:'end',type:'end',label:'Fim',position:{x:0,y:0},config:{outcome:'exhausted'}},
     ],edges:[{id:'edge',source:'node',target:'end',priority:0,condition:{type:'always'}}]})]);
   }
-  return { pool, supabase, seed, close: () => sql.close() };
+  return { pool, supabase, seed, exec: (text: string) => sql.exec(text), close: () => sql.close() };
 }

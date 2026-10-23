@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { NextRequest } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type * as AudioModule from '@/lib/messaging/media/prerecorded-audio';
@@ -30,6 +31,7 @@ let db: Awaited<ReturnType<typeof outboundPostgres>>;
 beforeAll(async () => {
   db = await outboundPostgres();
   await db.pool.query('create table ai_agents(id uuid primary key,organization_id uuid,kind text,archived_at timestamptz,config jsonb)');
+  await db.exec(readFileSync('supabase/migrations/20261023190000_0240_agent_config_revision.sql', 'utf8'));
   state.admin = { ...db.supabase, storage: { from: () => ({ upload: state.upload, remove: state.remove,
     createSignedUrl: async (path: string) => ({ data: { signedUrl: `https://private.example/${path}` } }) }) } } as unknown as SupabaseClient;
 }, 60_000);
@@ -38,7 +40,7 @@ beforeEach(async () => {
   vi.clearAllMocks(); state.org = ORG; state.authorized = true;
   await db.seed();
   await db.pool.query('delete from ai_agents');
-  await db.pool.query("insert into ai_agents values($1,$2,'mcp_agent',null,$3)", [AGENT, ORG, JSON.stringify({ rag_top_k: 8 })]);
+  await db.pool.query("insert into ai_agents(id,organization_id,kind,archived_at,config) values($1,$2,'mcp_agent',null,$3)", [AGENT, ORG, JSON.stringify({ rag_top_k: 8 })]);
 });
 const ctx = { params: Promise.resolve({ id: AGENT }) };
 function request(method: string, body?: unknown) {
@@ -53,6 +55,14 @@ async function add() {
   expect((await POST(request('POST', form()), ctx)).status).toBe(200);
   const res = await GET(request('GET'), ctx); return (await res.json()).data[0];
 }
+it('aprova mídia quando a configuração original é nula', async () => {
+  await db.pool.query('update ai_agents set config=null');
+  const audio = await add();
+  expect(audio.enabled).toBe(true);
+  const config = (await db.pool.query('select config from ai_agents')).rows[0]!.config;
+  expect(config.approved_media).toHaveLength(1);
+  expect(config.approved_audios).toHaveLength(1);
+});
 it('aprova, ouve, desativa e remove no workspace, preservando os knobs existentes', async () => {
   const audio = await add();
   expect(audio).toMatchObject({ enabled: true, required: true, mime: 'audio/ogg', title: 'Apresentação' });

@@ -22103,6 +22103,39 @@ revoke execute on function public.fn_export_obra_commercial(uuid,uuid) from publ
 grant execute on function public.fn_export_obra_commercial(uuid,uuid) to service_role;
 notify pgrst,'reload schema';
 
+-- ---- Revisão curta de configuração do agente (migration 0240) ----
+-- CAS curto: config inteiro na query do PostgREST excedia os limites HTTP.
+-- A revisão pertence ao banco e cobre também escritores antigos da configuração.
+alter table public.ai_agents
+  add column if not exists config_revision bigint not null default 0;
+
+create or replace function public.fn_ai_agent_config_revision()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if TG_OP = 'INSERT' then
+    NEW.config_revision := 0;
+  elsif NEW.config is distinct from OLD.config then
+    NEW.config_revision := OLD.config_revision + 1;
+  else
+    NEW.config_revision := OLD.config_revision;
+  end if;
+  return NEW;
+end;
+$$;
+
+revoke execute on function public.fn_ai_agent_config_revision() from public, anon, authenticated;
+
+-- PostgreSQL 15+: substituir atomicamente, inclusive no baseline em autocommit.
+create or replace trigger trg_ai_agent_config_revision
+before insert or update on public.ai_agents
+for each row execute function public.fn_ai_agent_config_revision();
+
+comment on column public.ai_agents.config_revision is
+  'Revisão de config controlada pelo banco para CAS sem JSON na URL do PostgREST.';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES

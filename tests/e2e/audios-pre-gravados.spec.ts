@@ -16,6 +16,93 @@ function wav(): Buffer {
 }
 test.describe.configure({ timeout: 240_000 });
 test.beforeAll(() => { execFileSync('npx', ['tsx', 'scripts/seed-e2e-capacidades.ts'], { stdio: 'inherit' }); });
+test("catálogo grande continua editável e aceita a 20ª mídia pela tela", async ({ page }, info) => {
+  const creds = await loginComoAdmin(page, lerCreds());
+  const agent = creds.capacidades?.agent_id;
+  if (!agent) throw new Error("Fixture mcp_agent ausente.");
+  const endpoint = `/api/v1/ai/agents/${agent}/media`;
+  const prefix = "E2E catálogo grande";
+  const cleanup = async () => {
+    const list = await page.request.get(endpoint);
+    expect(list.ok()).toBe(true);
+    for (const media of (await list.json()).data)
+      if (media.title.startsWith(prefix))
+        expect((await page.request.delete(endpoint, { data: { audio_id: media.id } })).ok()).toBe(
+          true,
+        );
+  };
+  await cleanup();
+  const image = execFileSync("ffmpeg", [
+    "-nostdin",
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=blue:s=64x64",
+    "-frames:v",
+    "1",
+    "-c:v",
+    "png",
+    "-f",
+    "image2pipe",
+    "pipe:1",
+  ]);
+  try {
+    const initial = await page.request.get(endpoint);
+    const count = (await initial.json()).data.length;
+    for (let i = count; i < 19; i++) {
+      const response = await page.request.post(endpoint, {
+        multipart: {
+          file: { name: "fixture.png", mimeType: "image/png", buffer: image },
+          title: `${prefix} ${i}`,
+          use_when: "Conteúdo sintético. ".repeat(49),
+          send_when: "Pergunta sintética. ".repeat(49),
+          required: "false",
+        },
+      });
+      expect(response.status()).toBe(200);
+    }
+    await page.goto(`/app/ai/agents/${agent}`);
+    await page.getByTestId("papel-conversa").click();
+    const library = page.getByTestId("approved-audios");
+    await expect(library.getByLabel("Arquivo")).toBeEnabled();
+    await library
+      .getByLabel("Arquivo")
+      .setInputFiles({ name: "ultimo.png", mimeType: "image/png", buffer: image });
+    await library.getByLabel("Título da mídia").fill(`${prefix} último`);
+    await library
+      .getByLabel("Conteúdo e finalidade da mídia")
+      .fill("Demonstração sintética do último item permitido.");
+    await library
+      .getByLabel("Condição e exemplos de perguntas")
+      .fill("Quando perguntar sobre o último exemplo.");
+    await library.getByRole("button", { name: "Aprovar mídia para o agente" }).click();
+    await expect(library.getByRole("status")).toContainText("Alteração salva");
+    const toggle = library.getByRole("switch", { name: `Ativar mídia: ${prefix} último` });
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await expect(toggle).not.toBeChecked();
+    await page.reload();
+    await page.getByTestId("papel-conversa").click();
+    await expect(toggle).not.toBeChecked();
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    const item = library.locator("div.rounded-md").filter({ hasText: `${prefix} último` });
+    await mkdir(".superpowers/evidence/midias-aprovadas", { recursive: true });
+    await info.attach("catalogo-grande-salvo", {
+      body: await item.screenshot({
+        path: ".superpowers/evidence/midias-aprovadas/catalogo-grande.png",
+      }),
+      contentType: "image/png",
+    });
+    await item.getByRole("button", { name: "Remover mídia", exact: true }).click();
+    await expect(library.getByText(`${prefix} último`, { exact: true })).toHaveCount(0);
+  } finally {
+    await cleanup();
+  }
+});
+
 test('aprovar gravação → ouvir → recarregar → desativar → remover pela tela real', async ({ page }, info) => {
   const creds = await loginComoAdmin(page, lerCreds());
   const agent = creds.capacidades?.agent_id;

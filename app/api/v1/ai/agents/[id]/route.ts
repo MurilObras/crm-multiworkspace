@@ -13,6 +13,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logger } from "@/lib/logger";
 import {
   agentPatchSchema,
   AGENT_CONFIG_DEFAULTS,
@@ -116,7 +117,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   // Carrega o agent atual (filtrando org explicitamente — service role bypassa RLS).
   const { data: existing, error: loadErr } = await admin
     .from("ai_agents")
-    .select(AGENT_COLUMNS)
+    .select(`${AGENT_COLUMNS}, config_revision`)
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -179,7 +180,8 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   }
 
   if (Object.keys(update).length === 0) {
-    return ok(existing, { requestId });
+    const { config_revision: _revision, ...publicAgent } = existing;
+    return ok(publicAgent, { requestId });
   }
 
   let updateQuery = admin
@@ -188,14 +190,14 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId);
   // O editor de áudios também escreve config: não perder aprovação concorrente.
-  if (patch.config !== undefined) updateQuery = existing.config == null
-    ? updateQuery.is('config', null) : updateQuery.filter('config', 'eq', JSON.stringify(existing.config));
+  if (patch.config !== undefined) updateQuery = updateQuery.eq('config_revision', existing.config_revision);
   const { data: updated, error: updErr } = await updateQuery
     .select(AGENT_COLUMNS)
     .maybeSingle();
 
   if (updErr) {
-    return fail("internal_error", "Erro ao atualizar agent.", 500, { requestId });
+    logger.warn('agent_config_save_failed', { requestId, category: 'database_error' });
+    return fail("internal_error", "Não foi possível confirmar a atualização do agente. Atualize a tela antes de tentar novamente.", 500, { requestId });
   }
   if (!updated) return fail('state_conflict', 'Configuração alterada em outra aba. Atualize e tente novamente.', 409, { requestId });
 

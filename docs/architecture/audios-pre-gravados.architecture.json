@@ -30,7 +30,7 @@
       "id": "api",
       "lane": "config",
       "label": "API agents/:id/media (+ /audios legado)",
-      "sublabel": "RBAC, org da sessão, CAS e audit"
+      "sublabel": "RBAC, org da sessão, CAS por config_revision e audit; JSON somente no corpo"
     },
     {
       "id": "storage",
@@ -42,7 +42,7 @@
       "id": "catalogo",
       "lane": "turno",
       "label": "ai_agents.config.approved_media",
-      "sublabel": "Canônico; projeção approved_audios para compatibilidade, CAS único"
+      "sublabel": "Canônico; approved_audios legado; revisão controlada por trigger em qualquer alteração de config"
     },
     {
       "id": "etapas",
@@ -114,7 +114,7 @@
       "id": "e4",
       "from": "api",
       "to": "catalogo",
-      "label": "CAS da configuração operacional"
+      "label": "CAS curto por revisão; nunca configuração completa na URL"
     },
     {
       "id": "e5",
@@ -223,6 +223,12 @@
       "from": "modelo",
       "to": "recepcao",
       "label": "conclui resposta e avanço de etapa antes do áudio; sem nova pergunta"
+    },
+    {
+      "id": "e23",
+      "from": "api",
+      "to": "editor",
+      "label": "409 exige recarga; erro tem referência; resultado incerto mantém arquivo e bloqueia repetição até atualizar lista"
     }
   ]
 }

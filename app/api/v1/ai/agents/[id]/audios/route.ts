@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { fail, ok } from '@/lib/api/wrappers';
@@ -29,7 +30,7 @@ async function handle(req: NextRequest, ctx: Context, mode: 'read' | 'add' | 'ed
   if (!z.string().uuid().safeParse(id).success) return fail('invalid_request', 'Agente inválido.', 400, { requestId });
   const org = auth.org.orgId;
   const admin = createAdminClient();
-  const { data: agent, error } = await admin.from('ai_agents').select('id,config')
+  const { data: agent, error } = await admin.from('ai_agents').select('id,config,config_revision')
     .eq('organization_id', org).eq('id', id).eq('kind', 'mcp_agent').is('archived_at', null).maybeSingle();
   if (error) return fail('internal_error', 'Erro ao carregar mídias.', 500, { requestId });
   if (!agent) return fail('not_found', 'Agente não encontrado neste workspace.', 404, { requestId });
@@ -124,17 +125,64 @@ async function handle(req: NextRequest, ctx: Context, mode: 'read' | 'add' | 'ed
         ...(edit?.allow_requested_repeat !== undefined ? { allow_requested_repeat: edit.allow_requested_repeat } : {}),
         ...(edit?.stage_ids !== undefined ? { stage_ids: edit.stage_ids } : {}) } : a);
   }
-  // CAS sobre o JSON lido: duas abas nunca sobrescrevem silenciosamente o catálogo.
-  let update = admin.from('ai_agents').update({ config: { ...(agent.config as Record<string, unknown> ?? {}),
-    approved_media: next, approved_audios: legacyAudioProjection(next) } })
-    .eq('id', id).eq('organization_id', org).is('archived_at', null);
-  update = agent.config == null ? update.is('config', null) : update.filter('config', 'eq', JSON.stringify(agent.config));
-  const { data: saved, error: saveError } = await update.select('id').maybeSingle();
+  // O corpo carrega o JSON; a URL contém somente a revisão curta controlada pelo banco.
+  const update = admin
+    .from("ai_agents")
+    .update({
+      config: {
+        ...((agent.config as Record<string, unknown>) ?? {}),
+        approved_media: next,
+        approved_audios: legacyAudioProjection(next),
+      },
+    })
+    .eq("id", id)
+    .eq("organization_id", org)
+    .is("archived_at", null)
+    .eq("config_revision", agent.config_revision);
+  const { data: saved, error: saveError } = await update.select("id").maybeSingle();
   if (saveError || !saved) {
-    if (uploaded) await admin.storage.from('whatsapp-media').remove([uploaded]);
-    return fail(saveError ? 'internal_error' : 'state_conflict',
-      saveError ? 'Erro ao salvar mídia.' : 'O agente foi alterado em outra aba. Atualize a lista e tente novamente.',
-      saveError ? 500 : 409, { requestId });
+    // Uma resposta perdida pode esconder um commit. Nunca apagar o arquivo nesse caso.
+    // 08xxx/40003 e erros do gateway não provam rollback: reconciliar, nunca apagar.
+    // Só rejeições inequívocas de dados/constraint/sintaxe e rollback explícito são terminais.
+    // SQLSTATE: https://www.postgresql.org/docs/15/errcodes-appendix.html
+    const rejected = !saveError || /^(?:(?:22|23|42)[0-9A-Z]{3}|40001|40P01)$/.test(saveError.code ?? "");
+    let confirmed = false;
+    if (!rejected) {
+      const check = await admin
+        .from("ai_agents")
+        .select("config")
+        .eq("id", id)
+        .eq("organization_id", org)
+        .is("archived_at", null)
+        .maybeSingle();
+      confirmed =
+        !check.error &&
+        !!check.data &&
+        isDeepStrictEqual(readApprovedMedia(check.data.config), next);
+    }
+    if (!confirmed) {
+      if (uploaded && rejected) {
+        const cleanup = await admin.storage.from("whatsapp-media").remove([uploaded]);
+        if (cleanup.error)
+          logger.warn("agent_media_cleanup_failed", { requestId, operation: mode });
+      }
+      logger.warn("agent_media_save_failed", {
+        requestId,
+        operation: mode,
+        category: !saveError ? "conflict" : rejected ? "database_rejected" : "outcome_unknown",
+        database_code: saveError && rejected ? saveError.code : undefined,
+      });
+      return fail(
+        !saveError ? "state_conflict" : "internal_error",
+        !saveError
+          ? "O agente foi alterado em outra aba. Atualize a lista e tente novamente."
+          : rejected
+            ? "Não foi possível salvar o catálogo de mídias. Atualize a lista e tente novamente."
+            : "Não foi possível confirmar o salvamento. Atualize a lista antes de tentar novamente.",
+        !saveError ? 409 : rejected ? 500 : 503,
+        { requestId },
+      );
+    }
   }
   void audit({ action: 'ai_agent.updated', actorUserId: auth.user.id, organizationId: org,
     resourceType: 'ai_agent', resourceId: id, requestId, metadata: { audio_action: mode, audio_id: audioId, media_action: mode, media_id: audioId } });
