@@ -22,8 +22,8 @@ $$;
 
 revoke execute on function public.fn_ai_agent_config_revision() from public, anon, authenticated;
 
-drop trigger if exists trg_ai_agent_config_revision on public.ai_agents;
-create trigger trg_ai_agent_config_revision
+-- PostgreSQL 15+: substituir atomicamente, inclusive no baseline em autocommit.
+create or replace trigger trg_ai_agent_config_revision
 before insert or update on public.ai_agents
 for each row execute function public.fn_ai_agent_config_revision();
 

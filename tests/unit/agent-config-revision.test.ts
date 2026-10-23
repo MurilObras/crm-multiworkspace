@@ -15,6 +15,7 @@ it("a revisão é do banco, cobre null/ABA e reaplicar a migration não altera d
       "create role anon; create role authenticated; create table ai_agents(id int primary key, config jsonb, name text)",
     );
     await db.exec(migration);
+    const triggerOid = (await db.query("select oid from pg_trigger where tgname='trg_ai_agent_config_revision'")).rows[0];
     await db.exec(`insert into ai_agents values(1,null,'Inicial',999)`);
     const read = async () =>
       BigInt(
@@ -39,6 +40,7 @@ it("a revisão é do banco, cobre null/ABA e reaplicar a migration não altera d
       ).rows,
     ).toEqual([]);
     await db.exec(migration);
+    expect((await db.query("select oid from pg_trigger where tgname='trg_ai_agent_config_revision'")).rows[0]).toEqual(triggerOid);
     expect(await read()).toBe(2n);
     expect(
       (
