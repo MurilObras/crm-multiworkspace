@@ -142,7 +142,10 @@ async function handle(req: NextRequest, ctx: Context, mode: 'read' | 'add' | 'ed
   const { data: saved, error: saveError } = await update.select("id").maybeSingle();
   if (saveError || !saved) {
     // Uma resposta perdida pode esconder um commit. Nunca apagar o arquivo nesse caso.
-    const rejected = !saveError || /^(?:[0-9A-Z]{5}|PGRST\d+)$/.test(saveError.code ?? "");
+    // 08xxx/40003 e erros do gateway não provam rollback: reconciliar, nunca apagar.
+    // Só rejeições inequívocas de dados/constraint/sintaxe e rollback explícito são terminais.
+    // SQLSTATE: https://www.postgresql.org/docs/15/errcodes-appendix.html
+    const rejected = !saveError || /^(?:(?:22|23|42)[0-9A-Z]{3}|40001|40P01)$/.test(saveError.code ?? "");
     let confirmed = false;
     if (!rejected) {
       const check = await admin

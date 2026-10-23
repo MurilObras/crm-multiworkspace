@@ -28,6 +28,7 @@ let failRead: boolean;
 let conflict: boolean;
 let patchSeen: boolean;
 let rejectWrite: boolean;
+let uncertainCode: string | null;
 const remove = vi.fn(async () => ({ error: null }));
 const ctx = { params: Promise.resolve({ id: ID }) };
 const request = (method: string, body?: FormData | Record<string, unknown>) =>
@@ -81,7 +82,8 @@ beforeAll(async () => {
       Object.assign(row, JSON.parse(raw));
       row.config_revision = Number(row.config_revision) + 1;
       if (loseResponse === "after") {
-        res.writeHead(502).end("{}");
+        res.writeHead(uncertainCode ? 500 : 502).end(uncertainCode
+          ? JSON.stringify({ code: uncertainCode, message: 'Resultado da transação desconhecido' }) : '{}');
         return;
       }
     } else if (failRead && patchSeen) {
@@ -130,6 +132,7 @@ beforeEach(() => {
   conflict = false;
   patchSeen = false;
   rejectWrite = false;
+  uncertainCode = null;
   remove.mockClear();
 });
 function form() {
@@ -190,6 +193,14 @@ it("resposta perdida depois do commit recupera sucesso e mantém arquivo referen
   loseResponse = "after";
   expect((await POST(request("POST", form()), ctx)).status).toBe(200);
   expect(remove).not.toHaveBeenCalled();
+});
+
+it.each(['08006', '08007', '40003', 'PGRST001'])('SQLSTATE/gateway %s não permite apagar um upload já referenciado', async code => {
+  loseResponse = 'after'; uncertainCode = code;
+  const response = await POST(request('POST', form()), ctx);
+  expect((row.config as { approved_media: unknown[] }).approved_media).toHaveLength(1);
+  expect(remove).not.toHaveBeenCalled();
+  expect(response.status).toBe(200);
 });
 it("resultado desconhecido nunca remove arquivo nem afirma falha definitiva", async () => {
   loseResponse = "before";
