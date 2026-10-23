@@ -8,6 +8,16 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.7.2] — 2026-10-23
+
+### Corrigido
+
+- **Catálogos maiores de mídias continuam podendo ser salvos** O cadastro, a edição e a ativação de mídias deixam de falhar quando a configuração
+  do agente cresce. O salvamento mantém a proteção contra edições simultâneas e os
+  limites de 20 mídias por agente e 16 MB por arquivo. A tela preserva o formulário
+  em caso de erro e apresenta uma referência para investigação. A atualização aplica
+  a revisão interna automaticamente, sem recadastrar os arquivos existentes.
+
 ## [3.7.1] — 2026-10-23
 
 ### Corrigido
@@ -3409,7 +3419,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.1...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.2...HEAD
+[3.7.2]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.1...v3.7.2
 [3.7.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.0...v3.7.1
 [3.7.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.2...v3.6.0
