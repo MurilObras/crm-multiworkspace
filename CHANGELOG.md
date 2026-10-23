@@ -8,6 +8,12 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.7.1] — 2026-10-23
+
+### Corrigido
+
+- **Reenvio de mídia aprovada a pedido do cliente** O reenvio de uma mídia já entregue, solicitado novamente pelo mesmo cliente, respeita a opção configurada sem tratar o título fixo como uma campanha repetitiva. Aquecimento, limites, atendimento humano, aprovação e prevenção de duplicação continuam ativos. Você não precisa alterar configurações.
+
 ## [3.7.0] — 2026-10-22
 
 ### Adicionado
@@ -3403,7 +3409,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.0...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.1...HEAD
+[3.7.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.0...v3.7.1
 [3.7.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.2...v3.6.0
 [3.5.2]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.5.1...v3.5.2
