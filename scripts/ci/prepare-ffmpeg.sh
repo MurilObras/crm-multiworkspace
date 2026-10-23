@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Primeiro tentamos os índices do runner. Se o mirror dele falhar ou ficar lento,
-# o fallback usa os repositórios oficiais do Ubuntu com a mesma assinatura APT,
-# sem alterar as fontes da máquina nem consultar repositórios de terceiros.
+# O Playwright também usa APT mais tarde. No runner descartável do GitHub,
+# substituímos apenas o mirror Azure conhecido pelo arquivo oficial do Ubuntu:
+# o mirror lento já bloqueou o ffmpeg e a instalação do browser no mesmo run.
+# As fontes, suítes e chaves assinantes continuam sendo as do runner.
+if [[ "${GITHUB_ACTIONS:-}" == true && -f /etc/apt/apt-mirrors.txt ]]; then
+  sudo sed -i -E 's#https?://azure.archive.ubuntu.com/ubuntu/?#https://archive.ubuntu.com/ubuntu/#g' /etc/apt/apt-mirrors.txt
+fi
+
+# Primeiro tentamos os índices do runner. Se falharem, o fallback usa índices
+# novos dos repositórios oficiais com assinatura APT e fontes temporárias.
 if ! command -v ffmpeg >/dev/null 2>&1; then
   apt_options=(
     -o Acquire::ForceIPv4=true
