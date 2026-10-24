@@ -14,6 +14,7 @@
  *     de fallback: playbook por ponteiro + settings.llm da org + knobs de env).
  */
 import type pg from 'pg';
+import { readMediaReplayPolicy, type MediaReplayPolicy } from '@/lib/ai/agents/media-replay-policy';
 import { consultationInstructions } from '@/lib/responsibles/config';
 import { supportsResponsibleReplies, type ChannelProvider } from '@/lib/channels/capabilities';
 import { mediaPathOwnedBy, readApprovedMedia, type ApprovedMedia as ApprovedAudio } from '@/lib/ai/agents/approved-media';
@@ -25,6 +26,8 @@ export interface PublishedAgentConfig {
   versionId: string;
   agentName: string;
   approvedAudios?: ApprovedAudio[];
+  mediaReplayPolicy?: MediaReplayPolicy;
+  managedMediaConfigured?: boolean;
   systemPrompt: string;
   provider: string;
   model: string;
@@ -177,6 +180,8 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
 
   return {
     agentId: r.agent_id,
+    mediaReplayPolicy: readMediaReplayPolicy(r.config),
+    managedMediaConfigured: readApprovedMedia(r.config).length > 0,
     versionId: r.version_id,
     agentName: r.agent_name,
     approvedAudios: readApprovedMedia(r.config).filter(a => a.enabled && mediaPathOwnedBy(a, r.organization_id, r.agent_id)),

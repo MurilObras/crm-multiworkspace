@@ -26,6 +26,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { testRunSchema } from "@/lib/ai/agents/validation";
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
+import type { MediaSimulation } from '@/lib/ai/agents/media-simulation';
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +118,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
         runId: runRow.id,
         agentId: id,
         history: parsed.data.sample_history,
+        mediaContext: parsed.data.sample_media_context,
         orgId: activeOrg.orgId,
         versionId: vid,
         sampleMessage: parsed.data.sample_message,
@@ -253,6 +255,7 @@ async function callInternalRuntime(args: {
   sampleMessage: string;
   sampleContact?: { name?: string; phone?: string };
   history?: Array<{ direction: "inbound" | "outbound"; body: string }>;
+  mediaContext?: MediaSimulation;
 }): Promise<Record<string, unknown>> {
   const { getRequestPool } = await import("@/lib/agent-engine/db/request-pool");
   const { loadAgentConfigForTest } = await import("@/lib/agent-engine/agent/agent-config");
@@ -267,6 +270,7 @@ async function callInternalRuntime(args: {
     message: args.sampleMessage,
     contact: args.sampleContact,
     history: args.history,
+    mediaContext: args.mediaContext,
   });
   const { error } = await createAdminClient()
     .from("ai_agent_runs")

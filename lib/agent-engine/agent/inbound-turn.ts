@@ -64,14 +64,17 @@ import { detectUrgencySignal } from '../guardrails/sinal-de-urgencia';
 import { buildNativeMediaParts } from './media-parts';
 import { enqueueJob, rescheduleJob, completeJob, withJobLease, type JobRow, type Queryable } from '../queue/queue';
 import { isCurrentInbound } from '../queue/inbound-pending';
-import { collectApprovedMediaUrls } from './approved-media';
+import { collectApprovedMediaUrls, containsMediaLink } from './approved-media';
 import { readApprovedMedia, renderApprovedMedia } from '@/lib/ai/agents/approved-media';
 import { guardCurrentInboundTools } from './current-inbound-tools';
 import { OutboundAudioUnavailableError, OutboundLeaseLostError, OutboundPreflightDeferredError, OutboundSupersededError } from '@/lib/channels/delivery-error';
 import { eligibleAudiosForContact } from './audio-stage-eligibility';
 import { availableConversationAudios, isRequestedApprovedMediaReplay } from './conversation-audios';
 import { requiredAudioPlan, deliverRequiredAudio, type RequiredAudioPlan } from './required-audio';
-import { AUDIO_INTENT_INSTRUCTION, audioIntentMessage, parseAudioIntent, decideTurnMedia, isFirstAudioContact, pendingAudioSubject } from './audio-rule';
+import { audioIntentMessage, decideTurnMedia, isFirstAudioContact, pendingAudioSubject } from './audio-rule';
+import { MEDIA_INTENT_INSTRUCTION, NO_MEDIA_INTENT, parseMediaIntent } from './media-intent';
+import { loadTurnMediaDecision, persistTurnMediaDecision } from './media-intent-store';
+import { recentTurnMediaIds } from './conversation-audios';
 import { applyLeadStateUpdate, getLeadState, type LeadStage, type LeadStateRow } from './lead-state';
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -1946,6 +1949,7 @@ async function executarTurnoDoAgente(
   let audioContextSent = false;
   let requiredAudioPrelude = false;
   const audiosSentThisTurn = new Set<string>();
+  let mediaResponseCompleted = false;
   // Spec 15 §5.2: bloco das tools de caso SEMPRE residente (não invalida o prefixo
   // cacheável — mesmo espírito do índice de skills) quando a tela habilita. O bloco da
   // Agenda segue o mesmo padrão, condicionado a `crm_book_appointment` estar entre as
@@ -1969,7 +1973,7 @@ async function executarTurnoDoAgente(
     return availableConversationAudios(pool, tenantId, input.conversationId, agentConfig.agentId,
       job.id, await eligibleAudiosForContact(pool, tenantId, leadId, catalog), inboundAnchor, firstAudioContact);
   };
-  const eligibleAudios = await freshAudios();
+  let eligibleAudios = await freshAudios();
   // O fluxo legado mantém a conversa ativa. A consulta pelo WhatsApp traz seu
   // próprio bloco residente no prompt publicado e exige pausa: não combinar
   // instruções contraditórias ensinando o modelo a continuar após abrir o caso.
@@ -2534,10 +2538,16 @@ async function executarTurnoDoAgente(
       ...AGENT_TOOL_DEFS.send_message,
       execute: async ({ body: requestedBody, media }) => {
         const approvedId = media && ('audio_id' in media ? media.audio_id : 'media_id' in media ? media.media_id : undefined);
+        const managedMedia = agentConfig?.managedMediaConfigured || agentConfig?.approvedAudios?.length || agentConfig?.mediaReplayPolicy === 'explicit_repeat';
+        if (!media && selectedTurnMedia !== undefined && managedMedia && containsMediaLink(requestedBody)) return { ok:false,
+          error:{ code:'media_url_fallback_forbidden',message:'Não substitua a mídia gerenciada por um link. Use o item autorizado do catálogo ou responda por texto, sem contornar o veto.' } };
         // Um URL avulso do material de consulta não pode acrescentar outra mídia
         // ao turno cuja gravação gerenciada já foi escolhida.
-        if (media && selectedTurnMedia != null && !approvedId) return { ok: false,
+        if (media && selectedTurnMedia !== undefined && !approvedId
+          && managedMedia) return { ok: false,
           error: { code: 'media_not_approved', message: 'Neste turno use somente a mídia escolhida do catálogo aprovado ou responda em texto.' } };
+        if (!media && mediaResponseCompleted) return { ok: false,
+          error: { code: 'media_response_completed', message: 'A resposta com mídia já foi concluída. Encerre sem outra explicação, pergunta ou promessa de envio.' } };
         const audio = approvedId ? (await freshAudios()).find(a => a.id === approvedId && a.enabled
           && ('type' in a ? a.type : 'audio') === media?.type) : undefined;
         if (audio?.required && !requiredAudioPrelude) return { ok: false, error: { code: 'audio_managed_by_rule', message: 'O CRM cuida da mídia obrigatória correspondente ao assunto após sua resposta. Não a envie por conta própria.' } };
@@ -2763,14 +2773,14 @@ async function executarTurnoDoAgente(
             case 'sent':
             case 'already_sent':
               if (media === undefined) audioContextSent = true;
-              if (approvedId) audiosSentThisTurn.add(approvedId);
+              if (approvedId) { audiosSentThisTurn.add(approvedId); mediaResponseCompleted = true; }
               return { ok: true, status: 'enviada', message_id: outcome.messageId };
             case 'queued':
               return {
                 ok: true,
                 status: 'aceita_aguardando_canal',
                 message:
-                  'o canal aceitou a mensagem e vai enviá-la quando a sessão voltar — não reenvie.',
+                  'O envio ficou pendente no CRM, aguardando conexão do canal. Não reenvie, não afirme entrega nem prometa um horário de envio.',
               };
             case 'blocked':
               return {
@@ -2786,7 +2796,7 @@ async function executarTurnoDoAgente(
                 ok: false,
                 error: {
                   code: 'envio_falhou',
-                  message: 'o canal falhou ao enviar — não tente de novo neste turno; o sistema fará retry.',
+                  message: 'Não há confirmação segura deste envio. Não tente novamente neste turno, não afirme entrega e não ofereça URL como alternativa; o estado deve ser conferido no CRM.',
                 },
               };
             case 'unavailable':
@@ -2805,7 +2815,7 @@ async function executarTurnoDoAgente(
           if (err === sendLimitError) return sendLimitResult();
           if (err instanceof OutboundAudioUnavailableError) {
             if (approvedId) audiosSentThisTurn.add(approvedId);
-            return { ok: false, error: { code: err.message, message: 'O áudio não está disponível ou já foi usado nesta conversa. Não tente reenviá-lo; continue em texto.' } };
+            return { ok: false, error: { code: err.message, message: 'Esta mídia não está autorizada para envio nesta resposta. Continue por texto, sem afirmar entrega, oferecer o link ou prometer procurar material que já está cadastrado.' } };
           }
           // bug de programação no adapter: ensina o modelo a encerrar E derruba o job.
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -3398,10 +3408,15 @@ async function executarTurnoDoAgente(
   let requiredAudioBlock = '';
   let audioPlan: RequiredAudioPlan | null = null;
   let requiredAudioResult: unknown;
-  const discardAudioPlan = () => discardPreparedOutbound(pool, { organizationId: tenantId, contactId: leadId,
-    conversationId: input.conversationId, jobId: job.id, workerId: ctx.workerId,
-    kind: job.kind === 'followup_turn' || job.kind === 'case_reply_turn' ? job.kind : 'inbound_turn' },
-  { code: 'required_audio_no_longer_eligible', maxSequence: 2 });
+  const discardAudioPlan = async () => {
+    await pool.query(`update job_queue set payload=jsonb_set(payload,'{media_intent_decision,reason}',to_jsonb('required_audio_no_longer_eligible'::text))
+      where id=$1 and organization_id=$2 and contact_id=$3 and status='running' and locked_by=$4
+        and payload ? 'media_intent_decision'`,[job.id,tenantId,leadId,ctx.workerId]);
+    return discardPreparedOutbound(pool, { organizationId: tenantId, contactId: leadId,
+      conversationId: input.conversationId, jobId: job.id, workerId: ctx.workerId,
+      kind: job.kind === 'followup_turn' || job.kind === 'case_reply_turn' ? job.kind : 'inbound_turn' },
+    { code: 'required_audio_no_longer_eligible', maxSequence: 2 });
+  };
   const executeAudioPlan = async (plan: RequiredAudioPlan, afterResponse: boolean) => {
     const execute = tools.send_message?.execute;
     if (!execute || !agentConfig) throw new Error('required_audio_send_tool_missing');
@@ -3460,36 +3475,62 @@ async function executarTurnoDoAgente(
         audioPlan = await requiredAudioPlan(pool, job, ctx.workerId, agentConfig.agentId, [], maxSendsPerTurn);
         selectedTurnMedia = audioPlan?.audio_id ?? null;
       } else {
-        const candidates = await availableConversationAudios(pool, tenantId, input.conversationId,
-          agentConfig.agentId, job.id, agentConfig.approvedAudios ?? [], inboundAnchor, firstAudioContact);
-        const { id: selected, exclusive } = await decideTurnMedia({ db: pool, job, worker: ctx.workerId, agent: agentConfig.agentId,
-          audios: candidates, firstContact: firstAudioContact, includeOptional: true, classify: async topics => {
+        // Interpretar ANTES de preferências/histórico: retirar a mídia antes da
+        // classificação fazia um pedido espontâneo parecer não ter material.
+        const catalog = (agentConfig.approvedAudios ?? []).filter(m => m.enabled);
+        let mediaDecision = await loadTurnMediaDecision(pool,tenantId,input.conversationId,agentConfig.agentId,job.id);
+        if (!mediaDecision && inboundAnchor && job.payload.audio_rule_decision === undefined) {
+          const subject = await pendingAudioSubject(pool,tenantId,input.conversationId,job.id,inboundAnchor);
+          let intent = { ...NO_MEDIA_INTENT };
+          let classificationReason: string | undefined;
+          if (catalog.length) {
             try {
               const call = await runModelCall(pool, deps.llmCfg, { tenantId, leadId, jobId: job.id,
                 agentId: agentConfig.agentId, purpose: 'audio_intent', model: agentConfig.model,
                 llmOverride: { provider: agentConfig.provider, credentialId: agentConfig.credentialId },
-                system: AUDIO_INTENT_INSTRUCTION,
-                messages: [{ role: 'user', content: audioIntentMessage(
-                  await pendingAudioSubject(pool, tenantId, input.conversationId, job.id, inboundAnchor) || skillSignal, topics) }],
+                system: MEDIA_INTENT_INSTRUCTION,
+                messages: [{ role: 'user', content: audioIntentMessage(subject, catalog,
+                  await recentTurnMediaIds(pool,tenantId,input.conversationId,job.id,agentConfig.agentId,catalog),firstAudioContact) }],
               }, { registry: deps.registry, log: runLog });
-              return parseAudioIntent(call.result.text, topics);
+              intent = parseMediaIntent(call.result.text,catalog,subject,reason => { classificationReason = reason; },agentConfig.mediaReplayPolicy ?? 'explicit_media_request');
             } catch (error) {
               if (error instanceof LlmBudgetExceededError) throw error;
+              classificationReason = 'classifier_unavailable';
               runLog.warn('classificação de áudio indisponível — atendimento segue por texto');
               await emitAgentActivityForContact({ pool, organizationId: tenantId, contactId: leadId,
                 type: 'send_vetoed', sourceModule: 'agent', sourceId: job.id,
                 reason: 'Não foi possível identificar a condição do áudio. Atendimento segue por texto.',
                 payload: { reason_code: 'audio_intent_unavailable' },
               });
-              return null;
             }
-          } });
+          }
+          let blockReason = 'stage_not_permitted';
+          mediaDecision = await persistTurnMediaDecision({ db: pool, job, worker: ctx.workerId,
+            agent: agentConfig.agentId, conversation: input.conversationId, inbound: inboundAnchor, subject,
+            policy: agentConfig.mediaReplayPolicy ?? 'explicit_media_request', intent,
+            selected: catalog.find(m => m.id === intent.audio_id) ?? null,
+            blockReason: () => blockReason,
+            noMatchReason: classificationReason,
+            authorize: async decision => availableConversationAudios(pool,tenantId,input.conversationId,
+              agentConfig.agentId,job.id,catalog,inboundAnchor,firstAudioContact,decision,
+              reason => { blockReason = reason; }),
+          });
+        }
+        const candidates = await availableConversationAudios(pool, tenantId, input.conversationId,
+          agentConfig.agentId, job.id, catalog, inboundAnchor, firstAudioContact);
+        const { id: selected, exclusive } = await decideTurnMedia({ db: pool, job, worker: ctx.workerId, agent: agentConfig.agentId,
+          audios: candidates, firstContact: firstAudioContact, includeOptional: true,
+          classify: async () => mediaDecision?.authorized_id ?? null });
         // Retomada de job anterior à escolha unificada conserva o catálogo antigo:
         // não abandona uma mídia opcional que já estava queued no ledger.
         selectedTurnMedia = exclusive ? selected : undefined;
+        eligibleAudios = await freshAudios();
         audioPlan = await requiredAudioPlan(pool, job, ctx.workerId, agentConfig.agentId,
           candidates.filter(a => a.id === selected), maxSendsPerTurn, 'after_response');
         if (selected && !audioPlan && candidates.some(a => a.id === selected && a.required)) {
+          await pool.query(`update job_queue set payload=jsonb_set(payload,'{media_intent_decision,reason}',to_jsonb('turn_send_limit'::text))
+            where id=$1 and organization_id=$2 and contact_id=$3 and status='running' and locked_by=$4
+              and payload ? 'media_intent_decision'`,[job.id,tenantId,leadId,ctx.workerId]);
           requiredAudioBlock = '## Mídia obrigatória pendente\nO limite não permite texto de contexto e mídia. Responda por texto e não afirme envio.';
           await emitAgentActivityForContact({ pool, organizationId: tenantId, contactId: leadId,
             type: 'send_vetoed', sourceModule: 'agent', sourceId: job.id,

@@ -20,6 +20,7 @@ import {
 import { useT } from "@/hooks/i18n/useT";
 
 import { RunTrace } from "./RunTrace";
+import { MediaDecisionDetail } from './MediaDecisionDetail';
 import type { AgentRunRow } from "@/hooks/ai/useAgentRuns";
 
 interface Props {
@@ -84,7 +85,7 @@ export function RunDetailDrawer({ run, open, onOpenChange }: Props) {
               </Cell>
               <Cell label={t("Custo")}>{fmtCost(run.cost_cents)}</Cell>
               <Cell label={t("Latência")}>{fmtLatency(run.latency_ms)}</Cell>
-              <Cell label={t("Steps")}>{run.steps_count ?? 0}</Cell>
+              <Cell label={t("Steps")}>{run.steps_count ?? '—'}</Cell>
             </dl>
 
             {run.error_code || run.error_message ? (
@@ -101,7 +102,7 @@ export function RunDetailDrawer({ run, open, onOpenChange }: Props) {
             <div className="flex flex-wrap gap-2">
               {run.conversation_id ? (
                 <Button variant="outline" size="sm" asChild>
-                  <Link href={`/app/inbox?conversation=${run.conversation_id}`}>
+                  <Link href={`/app/inbox?id=${run.conversation_id}`}>
                     {t("Ver conversa")}
                   </Link>
                 </Button>
@@ -115,6 +116,7 @@ export function RunDetailDrawer({ run, open, onOpenChange }: Props) {
               ) : null}
             </div>
 
+            {run.media_decision && <MediaDecisionDetail decision={run.media_decision} />}
             <div>
               <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {t("Trace")}

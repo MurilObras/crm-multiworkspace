@@ -3,6 +3,7 @@
  * Importado por backend (route handlers) e frontend (editor) — não duplicar.
  */
 import { z } from "zod";
+import { mediaReplayPolicySchema } from "./agents/media-replay-policy";
 
 // ---------------------------------------------------------------------------
 // Models permitidos (Vercel AI Gateway)
@@ -82,6 +83,7 @@ export type Guardrails = z.infer<typeof guardrailsSchema>;
 // ---------------------------------------------------------------------------
 
 export const agentConfigSchema = z.object({
+  media_replay_policy: mediaReplayPolicySchema.default("explicit_media_request"),
   temperature: z.number().min(0).max(2).default(0.4),
   max_tokens: z.number().int().min(64).max(4096).default(1024),
   context_message_window: z.number().int().min(1).max(50).default(20),
@@ -91,7 +93,22 @@ export const agentConfigSchema = z.object({
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
+// No Zod 4, .partial() conserva defaults internos e preenche chaves ausentes.
+// PATCH precisa validar só as chaves enviadas, sem restaurar outros ajustes.
+const agentConfigPatchSchema = z.object({
+  media_replay_policy: agentConfigSchema.shape.media_replay_policy.removeDefault().optional(),
+  temperature: agentConfigSchema.shape.temperature.removeDefault().optional(),
+  max_tokens: agentConfigSchema.shape.max_tokens.removeDefault().optional(),
+  context_message_window: agentConfigSchema.shape.context_message_window.removeDefault().optional(),
+  rag_top_k: agentConfigSchema.shape.rag_top_k.removeDefault().optional(),
+  rag_similarity_threshold: agentConfigSchema.shape.rag_similarity_threshold
+    .removeDefault()
+    .optional(),
+  confidence_threshold: agentConfigSchema.shape.confidence_threshold.removeDefault().optional(),
+});
+
 export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
+  media_replay_policy: "explicit_media_request",
   temperature: 0.4,
   max_tokens: 1024,
   context_message_window: 20,
@@ -111,7 +128,7 @@ export const agentPatchSchema = z
     is_active: z.boolean().optional(),
     model: agentModelSchema.optional(),
     system_prompt: z.string().min(20).max(10000).optional(),
-    config: agentConfigSchema.partial().optional(),
+    config: agentConfigPatchSchema.optional(),
     guardrails: guardrailsSchema.optional(),
   })
   .strict();
@@ -141,7 +158,10 @@ export const SYSTEM_PROMPT_PLACEHOLDERS: Array<{ token: string; description: str
   { token: "{{vocabulary.lead}}", description: "Vocabulário do tenant para 'lead' (ex: cliente)" },
   { token: "{{vocabulary.deal}}", description: "Vocabulário do tenant para 'deal' (ex: pedido)" },
   { token: "{{vocabulary.won}}", description: "Vocabulário do tenant para 'won' (ex: pago)" },
-  { token: "{{vocabulary.lost}}", description: "Vocabulário do tenant para 'lost' (ex: cancelado)" },
+  {
+    token: "{{vocabulary.lost}}",
+    description: "Vocabulário do tenant para 'lost' (ex: cancelado)",
+  },
   { token: "{{contact_name}}", description: "Nome do contato em atendimento" },
   { token: "{{contact_locale}}", description: "Locale do contato (ex: pt-BR)" },
   { token: "{{recent_messages}}", description: "Últimas N mensagens da conversa" },

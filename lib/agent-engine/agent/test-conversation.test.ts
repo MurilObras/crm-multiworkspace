@@ -5,10 +5,17 @@ import { searchKnowledge } from "./search-knowledge";
 import { getToolByName } from "@/lib/mcp/tools";
 import type { PublishedAgentConfig } from "./agent-config";
 import { testRunSchema } from "@/lib/ai/agents/validation";
+import { runModelCall } from "../edge/llm/run-model-call";
+import type * as ModelCallModule from "../edge/llm/run-model-call";
+import { readApprovedMedia } from "@/lib/ai/agents/approved-media";
 
 vi.mock("./conversation-model", () => ({
   loadConversationInstructions: vi.fn(),
   runConversationModel: vi.fn(),
+}));
+vi.mock("../edge/llm/run-model-call", async (importOriginal) => ({
+  ...(await importOriginal<typeof ModelCallModule>()),
+  runModelCall: vi.fn(),
 }));
 vi.mock("./search-knowledge", () => ({ searchKnowledge: vi.fn() }));
 vi.mock("../guardrails/promise/table", () => ({ loadPromiseTable: vi.fn(async () => null) }));
@@ -52,6 +59,212 @@ const config = {
 const pool = {} as never;
 const options = { toolCallId: "test", messages: [], context: undefined };
 afterEach(() => vi.unstubAllEnvs());
+
+describe("planejamento contextual sem entrega inventada", () => {
+  it("expõe indisponibilidade do classificador sem inventar falha de transporte ou custo zero", async () => {
+    vi.mocked(runModelCall).mockRejectedValue(new Error("provider indisponível"));
+    vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
+      await input.tools!.send_message!.execute!({ body: "Posso explicar por texto." }, options);
+      return { usage: { inputTokens: 1, outputTokens: 1 }, costCents: 0, latencyMs: 1 } as never;
+    });
+    const result = await testConversation(
+      pool,
+      {},
+      {
+        organizationId: "org",
+        agent: { ...config, approvedAudios: catalog("video") },
+        message: "Mostrar na prática",
+      },
+    );
+    expect(result.media_decision).toMatchObject({
+      reason: "classifier_unavailable",
+      transport: "not_attempted",
+      authorized: false,
+    });
+    expect(result.cost_cents).toBeNull();
+  });
+  const id = "10000000-0000-4000-8000-000000000061";
+  const stage = "10000000-0000-4000-8000-000000000062";
+  function catalog(kind: "audio" | "image" | "video", required = false) {
+    return readApprovedMedia({
+      approved_media: [
+        {
+          id,
+          ...(kind === "audio" ? {} : { type: kind }),
+          title: "Demonstração sintética",
+          use_when: "Explica funcionamento em exemplo visual.",
+          send_when: "Quando perguntar como funciona.",
+          storage_path: "arquivo-sintetico",
+          mime: kind === "audio" ? "audio/ogg" : kind === "image" ? "image/png" : "video/mp4",
+          size_bytes: 10,
+          enabled: true,
+          required,
+          allow_requested_repeat: true,
+        },
+      ],
+    });
+  }
+  function classifier(kind: "audio" | "image" | "video", intent = "show", textOnly = false) {
+    vi.mocked(runModelCall).mockResolvedValue({
+      result: { text: JSON.stringify({ audio_id: id, intent, format: kind, text_only: textOnly }) },
+      usage: { inputTokens: 2, outputTokens: 2 },
+      costCents: 1,
+      latencyMs: 1,
+    } as never);
+  }
+  for (const kind of ["audio", "image", "video"] as const)
+    it(`${kind}: aceita plano, não dispara fallback e não duplica na mesma resposta`, async () => {
+      classifier(kind);
+      vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
+        await input.tools!.send_message!.execute!({ body: "Veja o exemplo." }, options);
+        const media =
+          kind === "audio" ? { type: kind, audio_id: id } : { type: kind, media_id: id };
+        expect(
+          await input.tools!.send_message!.execute!({ body: "Demonstração", media }, options),
+        ).toMatchObject({ ok: true, status: "planned", delivered: false });
+        expect(
+          await input.tools!.send_message!.execute!({ body: "Demonstração", media }, options),
+        ).toMatchObject({ ok: false });
+        expect(
+          await input.tools!.send_message!.execute!({ body: "Explicação repetida" }, options),
+        ).toMatchObject({ ok: false });
+        return { usage: { inputTokens: 1, outputTokens: 1 }, costCents: 1, latencyMs: 1 } as never;
+      });
+      const result = await testConversation(
+        pool,
+        {},
+        {
+          organizationId: "org",
+          agent: { ...config, approvedAudios: catalog(kind), mediaReplayPolicy: "explicit_repeat" },
+          message: "Consegue me mostrar na prática como funciona?",
+        },
+      );
+      expect(result.media_decision).toMatchObject({
+        authorized: true,
+        transport: "planned",
+        media_id: id,
+      });
+      expect(result.messages).toEqual(["Veja o exemplo."]);
+      expect(runModelCall).toHaveBeenCalledWith(
+        pool,
+        {},
+        expect.objectContaining({
+          purpose: "agent_test",
+          model: config.model,
+          messages: [
+            expect.objectContaining({
+              content: expect.stringContaining("Consegue me mostrar na prática"),
+            }),
+          ],
+        }),
+        undefined,
+      );
+    });
+  it.each(["delivered", "text_preference"] as const)(
+    "cenário %s usa a mesma autorização e restringe o catálogo",
+    async (scenario) => {
+      classifier("video");
+      if (scenario === "text_preference")
+        vi.mocked(runModelCall).mockResolvedValue({
+          result: {
+            text: JSON.stringify({ audio_id: id, intent: "show", format: null, text_only: false }),
+          },
+          usage: { inputTokens: 1, outputTokens: 1 },
+          costCents: 0,
+          latencyMs: 1,
+        } as never);
+      vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
+        expect(input.system).not.toContain("MÍDIAS APROVADAS DISPONÍVEIS");
+        await input.tools!.send_message!.execute!({ body: "Resposta somente em texto." }, options);
+        return { usage: { inputTokens: 1, outputTokens: 1 }, costCents: 0, latencyMs: 1 } as never;
+      });
+      const result = await testConversation(
+        pool,
+        {},
+        {
+          organizationId: "org",
+          agent: {
+            ...config,
+            approvedAudios: catalog("video"),
+            mediaReplayPolicy: "explicit_repeat",
+          },
+          message: "Como funciona?",
+          mediaContext: { scenario, delivered_ids: [], stage_id: null },
+        },
+      );
+      expect(result.media_decision).toMatchObject({
+        authorized: false,
+        transport: "not_attempted",
+      });
+    },
+  );
+  it("repetição natural liberada e pergunta sobre gasto por áudio não pede gravação", async () => {
+    classifier("video", "repeat");
+    vi.mocked(runConversationModel).mockResolvedValue({
+      usage: { inputTokens: 1, outputTokens: 1 },
+      costCents: 0,
+      latencyMs: 1,
+    } as never);
+    let result = await testConversation(
+      pool,
+      {},
+      {
+        organizationId: "org",
+        agent: {
+          ...config,
+          approvedAudios: catalog("video", true),
+          mediaReplayPolicy: "explicit_repeat",
+        },
+        message: "Mostra de novo para meu sócio?",
+        mediaContext: { scenario: "delivered", delivered_ids: [id], stage_id: null },
+      },
+    );
+    expect(result.media_decision).toMatchObject({ authorized: true, transport: "planned" });
+    classifier("audio", "none");
+    result = await testConversation(
+      pool,
+      {},
+      {
+        organizationId: "org",
+        agent: { ...config, approvedAudios: catalog("audio") },
+        message: "Registrar gastos por áudio funciona?",
+      },
+    );
+    expect(result.media_decision).toMatchObject({ authorized: false, transport: "not_attempted" });
+  });
+  it("só texto atual e etapa fictícia errada impedem plano obrigatório", async () => {
+    vi.mocked(runConversationModel).mockResolvedValue({
+      usage: { inputTokens: 1, outputTokens: 1 },
+      costCents: 0,
+      latencyMs: 1,
+    } as never);
+    classifier("video", "show", true);
+    let result = await testConversation(
+      pool,
+      {},
+      {
+        organizationId: "org",
+        agent: { ...config, approvedAudios: catalog("video", true) },
+        message: "Nesta resposta, só texto",
+      },
+    );
+    expect(result.media_decision?.reason).toBe("text_preference");
+    classifier("video");
+    result = await testConversation(
+      pool,
+      {},
+      {
+        organizationId: "org",
+        agent: {
+          ...config,
+          approvedAudios: catalog("video", true).map((m) => ({ ...m, stage_ids: [stage] })),
+        },
+        message: "Mostrar na prática",
+      },
+    );
+    expect(result.media_decision?.reason).toBe("stage_not_permitted");
+  });
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -167,7 +380,11 @@ describe("ensaio do Conversador sem efeitos reais", () => {
     expect(result.tool_calls[0]?.tool_name).toBe("send_message");
     expect(result.gates.some((g) => g.gate === "internal_vocabulary" && g.pass)).toBe(true);
     expect(result.gates.map((g) => g.gate)).toEqual([
-      "promise", "case_promise", "internal_vocabulary", "agenda_stall", "disclosure",
+      "promise",
+      "case_promise",
+      "internal_vocabulary",
+      "agenda_stall",
+      "disclosure",
     ]);
   });
 

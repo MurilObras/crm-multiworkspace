@@ -21,6 +21,9 @@
     }
   ],
   "nodes": [
+    { "id": "intent", "lane": "turno", "label": "media-intent → media_intent_decision", "sublabel": "Assunto, formato e repetição antes dos filtros; escopo, hash e lease em JSON existente" },
+    { "id": "simulation", "lane": "config", "label": "TestPanel → testConversation", "sublabel": "Cenários fictícios; autorização compartilhada; planned sem transporte" },
+    { "id": "diagnostic", "lane": "entrega", "label": "Runs → job_id → ledger → messages", "sublabel": "Intenção, arquivo, autorização, motivo e transporte; sem backfill inventado" },
     {
       "id": "editor",
       "lane": "config",
@@ -92,6 +95,13 @@
     }
   ],
   "edges": [
+    { "id": "e24", "from": "catalogo", "to": "intent", "label": "Classifica catálogo ativo antes da exclusão por preferência/histórico" },
+    { "id": "e25", "from": "intent", "to": "historico", "label": "Mesma decisão e política na autorização de repetição" },
+    { "id": "e26", "from": "intent", "to": "sink", "label": "Prova conferida imediatamente antes do transporte; nenhuma guarda liberada" },
+    { "id": "e27", "from": "intent", "to": "simulation", "label": "Contrato compartilhado de classificação e elegibilidade" },
+    { "id": "e28", "from": "sink", "to": "diagnostic", "label": "Estado real associado pelo job, sem aproximar contatos por horário" },
+    { "id": "e29", "from": "diagnostic", "to": "editor", "label": "Operador ajusta condições ou política e retesta" },
+    { "id": "e30", "from": "simulation", "to": "editor", "label": "Planejamento e bloqueio visíveis; não fabrica entrega" },
     {
       "id": "e1",
       "from": "editor",

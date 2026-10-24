@@ -16,6 +16,34 @@ function wav(): Buffer {
 }
 test.describe.configure({ timeout: 240_000 });
 test.beforeAll(() => { execFileSync('npx', ['tsx', 'scripts/seed-e2e-capacidades.ts'], { stdio: 'inherit' }); });
+test('política de reenvio é configurável pela tela e persiste sem alterar o catálogo',async ({ page },info) => {
+  const creds = await loginComoAdmin(page,lerCreds());
+  const agent = creds.capacidades?.agent_id;
+  if (!agent) throw new Error('Fixture ausente');
+  const endpoint = `/api/v1/ai/agents/${agent}`;
+  const initial = (await (await page.request.get(endpoint)).json()).data.config;
+  expect((await page.request.patch(endpoint,{ data:{ config:{ temperature:0.73,max_tokens:777 } } })).ok()).toBe(true);
+  const before = (await (await page.request.get(endpoint)).json()).data.config;
+  try {
+    await page.goto(`/app/ai/agents/${agent}`); await page.getByTestId('papel-conversa').click();
+    const select = page.getByLabel('Política de reenvio de áudio, foto e vídeo');
+    await expect(select).toBeEnabled();
+    await select.selectOption('explicit_repeat');
+    await page.getByRole('button',{ name:'Salvar política de reenvio',exact:true }).click();
+    await expect(page.getByText('Política de reenvio salva e conferida.')).toBeVisible();
+    await page.reload(); await page.getByTestId('papel-conversa').click();
+    await expect(select).toHaveValue('explicit_repeat');
+    const after = (await (await page.request.get(endpoint)).json()).data.config;
+    expect(after.approved_media).toEqual(before?.approved_media);
+    for (const [key,value] of Object.entries(before ?? {})) if (key !== 'media_replay_policy') expect(after[key]).toEqual(value);
+    expect(after.temperature).toBe(0.73); expect(after.max_tokens).toBe(777);
+    await mkdir('.superpowers/evidence/contextual-media-intent',{ recursive:true });
+    await info.attach('politica-salva',{ body:await select.locator('..').screenshot({ path:'.superpowers/evidence/contextual-media-intent/politica.png' }),contentType:'image/png' });
+  } finally {
+    expect((await page.request.patch(endpoint,{ data:{ config:{ media_replay_policy:initial?.media_replay_policy ?? 'explicit_media_request',
+      temperature:initial?.temperature ?? 0.4,max_tokens:initial?.max_tokens ?? 1024 } } })).ok()).toBe(true);
+  }
+});
 test("catálogo grande continua editável e aceita a 20ª mídia pela tela", async ({ page }, info) => {
   const creds = await loginComoAdmin(page, lerCreds());
   const agent = creds.capacidades?.agent_id;
