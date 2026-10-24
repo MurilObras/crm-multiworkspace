@@ -296,7 +296,8 @@ test("simulação mostra planejamento e conserva cenário sem fabricar transport
   let calls = 0;
   await page.route(`**/api/v1/ai/agents/${id.agent}/versions/*/test`, async (route) => {
     const body = route.request().postDataJSON();
-    if (calls++ === 0)
+    const first = calls++ === 0;
+    if (first)
       expect(body.sample_media_context).toMatchObject({ scenario: "fresh", delivered_ids: [] });
     else expect(body.sample_media_context.delivered_ids).toContain(mediaId);
     await route.fulfill({
@@ -306,7 +307,7 @@ test("simulação mostra planejamento e conserva cenário sem fabricar transport
         data: {
           run_id: randomUUID(),
           status: "completed",
-          messages: ["Aqui está o exemplo em contexto."],
+          messages: [first ? "Aqui está o exemplo em contexto." : "Podemos continuar por texto."],
           runtime: "conversation_engine",
           tool_calls: [],
           media_decision: {
@@ -314,9 +315,9 @@ test("simulação mostra planejamento e conserva cenário sem fabricar transport
             format: "video",
             media_id: mediaId,
             title: "Demonstração sintética",
-            authorized: true,
-            reason: "first_delivery",
-            transport: "planned",
+            authorized: first,
+            reason: first ? "first_delivery" : "repeat_intent_required",
+            transport: first ? "planned" : "not_attempted",
           },
         },
       }),
@@ -333,10 +334,13 @@ test("simulação mostra planejamento e conserva cenário sem fabricar transport
   await expect(page.getByTestId("media-decision")).toContainText(
     "Nenhum arquivo foi transportado nem entregue",
   );
+  await page.screenshot({ path: path.join(evidence, "media-planejada.png"), fullPage: true });
   await page.getByLabel("Mensagem do cliente (sample)").fill("Como funciona mesmo?");
   await page.getByRole("button", { name: "Executar teste", exact: true }).click();
   await expect.poll(() => calls).toBe(2);
-  await page.screenshot({ path: path.join(evidence, "media-planejada.png"), fullPage: true });
+  await expect(page.getByTestId("media-decision")).toContainText("repeat_intent_required");
+  await expect(page.getByTestId("media-decision")).toContainText("not_attempted");
+  await page.screenshot({ path: path.join(evidence, "media-repeticao-bloqueada.png"), fullPage: true });
 });
 
 test("execução associa decisão e confirmação à conversa pelo job e pelo ledger", async ({
@@ -412,7 +416,7 @@ test("execução associa decisão e confirmação à conversa pelo job e pelo le
       job_id: id.job,
       seq: 2,
       body_hash: "a".repeat(64),
-      status: "sent",
+      status: "accepted",
       crm_message_id: message,
     });
     await insert("llm_calls", {
