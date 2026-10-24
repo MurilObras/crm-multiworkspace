@@ -313,6 +313,16 @@ it("preferência temporária expira no próximo pedido e a preferência geral co
     await availableConversationAudios(db.pool, ORG, CONV, AGENT, JOB, [media()], INBOUND),
   ).toEqual([]);
 });
+it("só texto nesta resposta não bloqueia um follow-up futuro sem nova inbound", async () => {
+  await db.pool.query("update messages set body='Nesta resposta, só texto' where id=$1", [INBOUND]);
+  expect(
+    await availableConversationAudios(db.pool, ORG, CONV, AGENT, JOB, [media()], INBOUND),
+  ).toEqual([]);
+  await db.pool.query("update job_queue set status='done' where id=$1", [JOB]);
+  expect(
+    await availableConversationAudios(db.pool, ORG, CONV, AGENT, OLD, [media()], null),
+  ).toHaveLength(1);
+});
 it("retry não permite segunda entrega da mesma inbound nem pendência incerta com outro ID", async () => {
   const d = await persist();
   await db.pool.query(

@@ -1,5 +1,5 @@
 import type { Queryable } from '../queue/queue';
-import { latestTemporaryPreference, temporaryMediaPreference } from './media-preference-scope';
+import { temporaryMediaPreference } from './media-preference-scope';
 
 export function explicitAudioPreference(text: string): 'text' | 'audio' | null {
   let preference: 'text' | 'audio' | null = null;
@@ -67,6 +67,5 @@ export async function conversationAllowsAudio(db: Queryable, org: string, conver
         and metadata->>'agent_audio_preference' in ('text','audio')
       order by coalesce(sent_at,created_at) desc,created_at desc,id desc limit 1`, [org, conversation],
   );
-  const temporary = await latestTemporaryPreference(db,org,conversation,explicitAudioPreference);
-  return (temporary ?? rows[0]?.preference) !== 'text';
+  return rows[0]?.preference !== 'text';
 }

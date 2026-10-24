@@ -1,6 +1,6 @@
 import type { Queryable } from '../queue/queue';
 import { conversationAllowsAudio, explicitAudioPreference } from './audio-preference';
-import { latestTemporaryPreference, temporaryMediaPreference } from './media-preference-scope';
+import { temporaryMediaPreference } from './media-preference-scope';
 
 export function explicitMediaPreference(text: string, kind: 'audio' | 'image' | 'video'): 'text' | 'audio' | null {
   if (kind === 'audio') return explicitAudioPreference(text);
@@ -54,8 +54,13 @@ export async function conversationAllowsVisual(db: Queryable, org: string, conve
   const { rows } = await db.query<{ preference: string }>(`select metadata->>$3 as preference from messages
     where organization_id=$1 and conversation_id=$2 and direction='inbound' and metadata->>$3 in ('text','audio')
     order by coalesce(sent_at,created_at) desc,created_at desc,id desc limit 1`, [org,conversation,key]);
-  const temporary = await latestTemporaryPreference(db,org,conversation,text => explicitMediaPreference(text,kind));
-  return (temporary ?? rows[0]?.preference) !== 'text';
+  return rows[0]?.preference !== 'text';
+}
+
+/** Preferência de uma resposta pertence ao turno, não à conversa inteira. */
+export function withTurnMediaPreference(durable: boolean, text: string, kind: 'audio' | 'image' | 'video'): boolean {
+  const preference = temporaryMediaPreference(text) ? explicitMediaPreference(text,kind) : null;
+  return preference === null ? durable : preference !== 'text';
 }
 
 export const conversationAllowsMedia = (db: Queryable, org: string, conversation: string, kind: 'audio' | 'image' | 'video') =>

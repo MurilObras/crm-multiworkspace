@@ -54,6 +54,7 @@ import { audioIntentMessage } from "./audio-rule";
 import { explicitMediaPreference } from "./media-preference";
 import { temporaryMediaPreference } from "./media-preference-scope";
 import type { MediaDiagnostic, MediaSimulation } from "@/lib/ai/agents/media-simulation";
+import { renderMediaDecisionInstruction } from "@/lib/ai/agents/media-simulation";
 
 export interface TestConversationInput {
   organizationId: string;
@@ -565,8 +566,8 @@ export async function testConversation(
     chosen?.required && eligibility.allowed
       ? `Mídia obrigatória correspondente será somente PLANEJADA após a resposta: ${JSON.stringify({ id: chosen.id, title: chosen.title })}. Responda com contexto breve, sem anunciar envio, repetir a explicação ou oferecer URL alternativa.`
       : "",
-    !audios.length
-      ? "Nesta interação responda por texto. Não invente entrega nem ofereça URL alternativa de material bloqueado."
+    agent.managedMediaConfigured || catalog.length || agent.mediaReplayPolicy === "explicit_repeat"
+      ? renderMediaDecisionInstruction(mediaDiagnostic)
       : "",
     agent.casesEnabled ? CASES_SYSTEM_BLOCK : "",
     agent.toolIds.includes("crm_book_appointment") ? AGENDA_SYSTEM_BLOCK : "",

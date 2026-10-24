@@ -75,6 +75,7 @@ import { audioIntentMessage, decideTurnMedia, isFirstAudioContact, pendingAudioS
 import { MEDIA_INTENT_INSTRUCTION, NO_MEDIA_INTENT, parseMediaIntent } from './media-intent';
 import { loadTurnMediaDecision, persistTurnMediaDecision } from './media-intent-store';
 import { recentTurnMediaIds } from './conversation-audios';
+import { renderMediaDecisionInstruction } from '@/lib/ai/agents/media-simulation';
 import { applyLeadStateUpdate, getLeadState, type LeadStage, type LeadStateRow } from './lead-state';
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -3518,6 +3519,10 @@ async function executarTurnoDoAgente(
         }
         const candidates = await availableConversationAudios(pool, tenantId, input.conversationId,
           agentConfig.agentId, job.id, catalog, inboundAnchor, firstAudioContact);
+        if (mediaDecision && (agentConfig.managedMediaConfigured || catalog.length || agentConfig.mediaReplayPolicy === 'explicit_repeat'))
+          blocosResidentes.push(renderMediaDecisionInstruction({ intent:mediaDecision.intent,format:mediaDecision.format,
+            title:mediaDecision.selected_title,media_id:mediaDecision.audio_id,authorized:mediaDecision.authorized_id !== null,
+            reason:mediaDecision.reason,transport:'not_attempted' }));
         const { id: selected, exclusive } = await decideTurnMedia({ db: pool, job, worker: ctx.workerId, agent: agentConfig.agentId,
           audios: candidates, firstContact: firstAudioContact, includeOptional: true,
           classify: async () => mediaDecision?.authorized_id ?? null });

@@ -2,7 +2,7 @@ import type { Queryable } from '../queue/queue';
 import type { ApprovedMedia as ApprovedAudio } from '@/lib/ai/agents/approved-media';
 import { mediaKind } from '@/lib/ai/agents/approved-media';
 import { conversationAllowsAudio } from './audio-preference';
-import { explicitMediaPreference, conversationAllowsMedia, refersToPreviousMedia, requestsMediaReplay } from './media-preference';
+import { explicitMediaPreference, conversationAllowsMedia, refersToPreviousMedia, requestsMediaReplay, withTurnMediaPreference } from './media-preference';
 import { OutboundAudioUnavailableError } from '@/lib/channels/delivery-error';
 import { pendingAudioMessages } from './audio-rule';
 import { authorizeMediaIntent, mediaApprovalHash, type MediaDecision } from './media-intent';
@@ -110,7 +110,7 @@ export async function isRequestedApprovedMediaReplay(
   const decision = await loadTurnMediaDecision(db,org,conversation,agent,job);
   const text = await requestText(db,org,conversation,inbound,job,!!decision);
   return permitted(media,prior,agent,inbound,text,decision)
-    && (decision?.authorized_id === media.id || await conversationAllowsMedia(db,org,conversation,mediaKind(media)));
+    && (decision?.authorized_id === media.id || withTurnMediaPreference(await conversationAllowsMedia(db,org,conversation,mediaKind(media)),text,mediaKind(media)));
 }
 
 export async function availableConversationAudios(
@@ -123,7 +123,8 @@ export async function availableConversationAudios(
   const decision = provisional ?? await loadTurnMediaDecision(db,org,conversation,agent,job);
   const text = await requestText(db,org,conversation,inbound,job,!!decision);
   const allowed = new Map<string,boolean>();
-  for (const kind of new Set(audios.map(mediaKind))) allowed.set(kind,await conversationAllowsMedia(db,org,conversation,kind));
+  for (const kind of new Set(audios.map(mediaKind))) allowed.set(kind,
+    withTurnMediaPreference(await conversationAllowsMedia(db,org,conversation,kind),text,kind));
   let candidates = audios;
   if (decision) {
     const item = candidates.find(m => m.id === decision.audio_id);
@@ -157,9 +158,17 @@ export async function assertConversationAudioAvailable(
   db: Queryable, org: string, conversation: string, agent: string, audio: string, ownMessage: string, job?: string, approved?: ApprovedAudio,
 ): Promise<void> {
   const prior = (await history(db,org,conversation)).filter(p => p.id !== ownMessage);
+  let inbound: string | null = null;
+  if (job) {
+    const { rows: jobs } = await db.query<{ inbound: string | null }>(
+      `select payload->>'inbound_message_id' as inbound from job_queue where organization_id=$1 and id=$2
+       and kind='inbound_turn' and payload->>'conversation_id'=$3`,[org,job,conversation]);
+    inbound = jobs[0]?.inbound ?? null;
+  }
   // Contrato legado: aprovação é verificada pelo chamador; sem catálogo não há exceção de reenvio.
   if (!approved) {
-    if (!(await conversationAllowsAudio(db,org,conversation))) throw new OutboundAudioUnavailableError('audio_text_preference');
+    if (!withTurnMediaPreference(await conversationAllowsAudio(db,org,conversation),await requestText(db,org,conversation,inbound,job),'audio'))
+      throw new OutboundAudioUnavailableError('audio_text_preference');
     if (prior.some(p => p.agent_id === agent && p.audio_id === audio)) throw new OutboundAudioUnavailableError('audio_already_used');
     return;
   }
@@ -177,18 +186,12 @@ export async function assertConversationAudioAvailable(
     if (!rows[0] || readMediaReplayPolicy(rows[0].config) !== decision.policy || mediaApprovalHash(m) !== decision.approval_sha256)
       throw new OutboundAudioUnavailableError('audio_approval_revoked');
   }
-  const currentText = await requestText(db,org,conversation,decision?.inbound_message_id ?? null,job,!!decision);
+  const currentText = await requestText(db,org,conversation,inbound,job,!!decision);
+  const allows = withTurnMediaPreference(await conversationAllowsMedia(db,org,conversation,mediaKind(m)),currentText,mediaKind(m));
   if (decision ? decision.text_only || decision.authorized_id !== m.id || explicitMediaPreference(currentText,mediaKind(m)) === 'text'
-      || (decision.format !== mediaKind(m) && decision.intent !== 'repeat' && !(await conversationAllowsMedia(db,org,conversation,mediaKind(m))))
-    : !(await conversationAllowsMedia(db,org,conversation,mediaKind(m))))
+      || (decision.format !== mediaKind(m) && decision.intent !== 'repeat' && !allows)
+    : !allows)
     throw new OutboundAudioUnavailableError('audio_text_preference');
-  let inbound: string | null = null;
-  if (job) {
-    const { rows: jobs } = await db.query<{ inbound: string | null }>(
-      `select payload->>'inbound_message_id' as inbound from job_queue where organization_id=$1 and id=$2
-       and kind='inbound_turn' and payload->>'conversation_id'=$3`,[org,job,conversation]);
-    inbound = jobs[0]?.inbound ?? null;
-  }
-  if (!permitted(m,prior,agent,inbound,await requestText(db,org,conversation,inbound,job,!!decision),decision))
+  if (!permitted(m,prior,agent,inbound,currentText,decision))
     throw new OutboundAudioUnavailableError('audio_already_used');
 }
