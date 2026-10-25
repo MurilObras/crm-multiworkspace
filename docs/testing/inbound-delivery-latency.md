@@ -38,6 +38,10 @@ O observador read-only não encontrou espera longa no banco nessa nova amostra.
   ou credenciais. Erro lendo body aparece na fase da tentativa.
 - Nenhuma guarda de opt-out, humano, recência, aprovação ou tenant foi removida.
   ACK confirmado prevalece; incerteza não autoriza repetição automática.
+- Falha/indisponibilidade de envio encerra os próximos steps do modelo e bloqueia
+  tools já emitidas no mesmo lote antes dos efeitos. Erros de ensino (ex.: mídia
+  não aprovada) continuam permitindo correção por texto. A lane só é liberada
+  após `execution.drain`; a recuperação permanece com a fila e o ledger.
 
 ## Validação
 
@@ -47,6 +51,10 @@ escrita e upload manual preservado (`service-fetch.test.ts`). Timeout pré-rede
 retoma a mesma mensagem uma vez; timeout após confirmação não duplica
 (`followup-inline-ledger.test.ts`). Os testes existentes cobrem ACK, lease,
 humano, mídias e isolamento.
+
+`inbound-retomada-e-midia.test.ts` exercita turno completo contra banco: falha,
+indisponibilidade e exceção no primeiro envio não podem abrir outra sequência,
+alterar o lead com uma tool do mesmo lote ou gerar outro step/checkpoint.
 
 Checagens locais, suíte unitária, baseline install/update/invariantes em pg15 e
 E2E de Inbox, catálogo e diagnóstico em Supabase descartável. Resultados serão

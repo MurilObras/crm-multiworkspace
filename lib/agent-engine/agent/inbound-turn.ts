@@ -2289,6 +2289,8 @@ async function executarTurnoDoAgente(
   const noteRunError = (err: Error): void => {
     runError ??= err;
   };
+  const deliveryFailed = (): boolean => runError !== null
+    || outcomes.some(outcome => outcome.kind === 'failed' || outcome.kind === 'unavailable');
 
   // Guideline-matching if-then (F3-09): o SINAL do turno (última mensagem inbound) decide
   // quais skills disparam. Corpos casados vão no SUFIXO da abertura (situacional, por-lead —
@@ -3269,7 +3271,14 @@ async function executarTurnoDoAgente(
     readOnlyTools: READ_ONLY_TOOLS,
     log: runLog, // os warns dos gates do breaker saem carimbados com o run
   });
-  const execution = guardCurrentInboundTools(breakerTools, assertCurrentInbound);
+  const execution = guardCurrentInboundTools(breakerTools, async () => {
+    // O resultado de envio não é só uma instrução para o modelo "encerrar".
+    // Bloqueia também tools já emitidas no MESMO step, antes de qualquer efeito.
+    // A fila retoma o ledger; outra tool não ganha nova sequência para contornar
+    // timeout/falha, nem muda o estado do lead sem ter entregue a resposta.
+    if (deliveryFailed()) throw runError ?? new Error('outbound_attempt_failed');
+    await assertCurrentInbound();
+  });
   const tools = execution.tools;
   const stopAfterLeaseLoss = async () => {
     if (!leaseLostError) return;
@@ -3620,7 +3629,7 @@ async function executarTurnoDoAgente(
         messages: openingMessages,
         tools,
         maxSteps,
-        shouldStop: () => supersededError !== null,
+        shouldStop: () => supersededError !== null || deliveryFailed(),
         ...(agentConfig !== null
           ? {
               model: agentConfig.model,

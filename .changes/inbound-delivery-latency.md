@@ -8,6 +8,8 @@ O envio do agente podia permanecer esperando consultas ou assinatura de mídia n
 Supabase durante minutos, mantendo o canal ocupado. Consultas do serviço agora
 têm prazo e não acumulam retentativas HTTP ocultas. A preparação e o pós-envio
 também têm orçamentos de espera independentes do transporte do arquivo.
+Depois de uma falha de envio, o modelo encerra o turno sem tentar outras
+mensagens ou alterações pendentes; a fila mantém a recuperação da tentativa.
 
 O diagnóstico registra tempos de preparação, transporte e reconciliação por
 tentativa, sem conteúdo ou credenciais. Uma entrega confirmada continua sem ser
