@@ -8,6 +8,8 @@ O classificador considera o catálogo ativo antes dos filtros de histórico/pref
 
 Recepção não concorre com uma mídia específica. Pedidos sobre usar áudio para registrar dados não significam receber uma gravação. Preferência temporária é aplicada à mensagem atual sem substituir a preferência durável. Os marcadores JSON existentes têm versão para reconciliar preferências antigas.
 
+A interpretação de preferências separa orações: “A partir de agora só texto. Nesta resposta pode mandar vídeo” permite o vídeo nesta resposta e preserva texto para as próximas. Um introdutor separado por quebra de linha continua temporário. Comentários sobre uma resposta anterior não tornam temporária uma nova regra geral. Produção e ensaio consideram também a preferência explícita da mensagem atual; os marcadores anteriores são reavaliados sem migration.
+
 Após a mídia, `send_message` veta explicações adicionais. Texto de contexto deve preceder o arquivo. URLs avulsas não contornam decisões de catálogos gerenciados. Turnos legados sem catálogo conservam o contrato anterior de URLs aprovadas.
 
 ## Telas
@@ -62,3 +64,9 @@ Validação com Node 22 e pnpm 9.15.9, sem canal WhatsApp real conectado ao ambi
 O E2E revelou um status inválido na fixture de `send_ledger`; a preparação foi corrigida para `accepted` e a spec inteira passou novamente. Nenhum limite de tempo foi ampliado e nenhuma exclusão foi adicionada. A revisão após os testes não encontrou outra falha relevante neste escopo.
 
 As capturas de política salva, planejamento, repetição bloqueada e diagnóstico foram inspecionadas. O cenário da interface do ensaio usa uma resposta HTTP controlada para conferir apresentação e continuidade do estado fictício; classificação/autorização e ferramentas são exercitadas separadamente com adaptadores controlados nos testes do runtime e banco. Esses resultados não comprovam acurácia de um provedor de IA ao vivo nem entrega real no WhatsApp. Logs e capturas locais ficam no diretório ignorado `.superpowers/evidence/contextual-media-intent` e nos diretórios das specs. O CI deverá conferir novamente a fonte do PR, incluindo ambas as partes do E2E.
+
+## Revisão adicional do PR
+
+Dois achados foram reproduzidos antes da correção: uma exceção temporária descartava a regra geral da mesma inbound; no ensaio, uma solicitação atual de formato podia continuar bloqueada pela preferência do histórico quando o classificador não repetia esse formato. A correção separa as orações, reavalia marcadores anteriores e usa a preferência atual também no ensaio. Há regressões para áudio, foto e vídeo, incluindo introdutor em outra linha e registros calculados anteriormente.
+
+Após a correção e nova revisão: 143 testes afetados e 47 de banco isolado aprovados, sem exclusões novas; typecheck e lint dos arquivos alterados aprovados. O CI completo deve validar o novo commit. As evidências da revisão usam o prefixo `review-51-` no diretório local ignorado.

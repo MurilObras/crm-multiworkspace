@@ -51,8 +51,8 @@ import {
   parseMediaIntent,
 } from "./media-intent";
 import { audioIntentMessage } from "./audio-rule";
-import { explicitMediaPreference } from "./media-preference";
-import { temporaryMediaPreference } from "./media-preference-scope";
+import { explicitMediaPreference, withTurnMediaPreference } from "./media-preference";
+import { durableMediaPreference } from "./media-preference-scope";
 import type { MediaDiagnostic, MediaSimulation } from "@/lib/ai/agents/media-simulation";
 import { renderMediaDecisionInstruction } from "@/lib/ai/agents/media-simulation";
 
@@ -251,9 +251,14 @@ export async function testConversation(
   const scenario = input.mediaContext;
   let durableText = scenario?.scenario === "text_preference";
   if (chosen)
-    for (const message of input.history ?? []) {
-      if (message.direction !== "inbound" || temporaryMediaPreference(message.body)) continue;
-      const pref = explicitMediaPreference(message.body, mediaKind(chosen));
+    for (const message of [
+      ...(input.history ?? []),
+      { direction: "inbound", body: input.message },
+    ]) {
+      if (message.direction !== "inbound") continue;
+      const pref = durableMediaPreference(message.body, (clause) =>
+        explicitMediaPreference(clause, mediaKind(chosen)),
+      );
       if (pref) durableText = pref === "text";
     }
   const usedIds = new Set(scenario?.delivered_ids ?? []);
@@ -266,7 +271,9 @@ export async function testConversation(
         legacyRequest: explicitMediaPreference(input.message, mediaKind(chosen)) === "audio",
         allowsFormat:
           explicitMediaPreference(input.message, mediaKind(chosen)) !== "text" &&
-          (!durableText || intent.format === mediaKind(chosen) || intent.intent === "repeat"),
+          (withTurnMediaPreference(!durableText, input.message, mediaKind(chosen)) ||
+            intent.format === mediaKind(chosen) ||
+            intent.intent === "repeat"),
         inbound: "simulation-current-request",
         used: [
           ...catalog

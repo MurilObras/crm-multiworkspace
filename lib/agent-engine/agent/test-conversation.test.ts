@@ -198,6 +198,79 @@ describe("planejamento contextual sem entrega inventada", () => {
       });
     },
   );
+  it.each(["audio", "image", "video"] as const)(
+    "%s: ensaio preserva a regra geral após exceção temporária na mesma mensagem",
+    async (kind) => {
+      const format = { audio: "áudio", image: "foto", video: "vídeo" }[kind];
+      vi.mocked(runModelCall).mockResolvedValue({
+        result: {
+          text: JSON.stringify({ audio_id: id, intent: "show", format: null, text_only: false }),
+        },
+        usage: { inputTokens: 1, outputTokens: 1 },
+        costCents: 0,
+        latencyMs: 1,
+      } as never);
+      vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
+        await input.tools!.send_message!.execute!({ body: "Posso explicar por texto." }, options);
+        return { usage: { inputTokens: 1, outputTokens: 1 }, costCents: 0, latencyMs: 1 } as never;
+      });
+      const result = await testConversation(
+        pool,
+        {},
+        {
+          organizationId: "org",
+          agent: { ...config, approvedAudios: catalog(kind) },
+          history: [
+            {
+              direction: "inbound",
+              body: `A partir de agora, somente texto. Nesta resposta pode mandar ${format}.`,
+            },
+            { direction: "outbound", body: "Contexto do material." },
+          ],
+          message: "Como funciona?",
+        },
+      );
+      expect(result.media_decision).toMatchObject({
+        authorized: false,
+        reason: "text_preference",
+        transport: "not_attempted",
+      });
+    },
+  );
+  it.each(["audio", "image", "video"] as const)(
+    "%s: pedido atual de formato prevalece no ensaio mesmo sem formato auxiliar",
+    async (kind) => {
+      const format = { audio: "áudio", image: "foto", video: "vídeo" }[kind];
+      vi.mocked(runModelCall).mockResolvedValue({
+        result: {
+          text: JSON.stringify({ audio_id: id, intent: "show", format: null, text_only: false }),
+        },
+        usage: { inputTokens: 1, outputTokens: 1 },
+        costCents: 0,
+        latencyMs: 1,
+      } as never);
+      vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
+        await input.tools!.send_message!.execute!({ body: "Veja o exemplo em contexto." }, options);
+        return { usage: { inputTokens: 1, outputTokens: 1 }, costCents: 0, latencyMs: 1 } as never;
+      });
+      for (const scope of ["A partir de agora", "Nesta resposta"]) {
+        const result = await testConversation(
+          pool,
+          {},
+          {
+            organizationId: "org",
+            agent: { ...config, approvedAudios: catalog(kind, true) },
+            history: [
+              { direction: "inbound", body: "Prefiro somente texto." },
+              { direction: "outbound", body: "Certo." },
+            ],
+            message: `${scope}, pode mandar ${format}.`,
+          },
+        );
+        expect(result.media_decision).toMatchObject({ authorized: true, transport: "planned" });
+      }
+    },
+  );
   it("repetição natural liberada e pergunta sobre gasto por áudio não pede gravação", async () => {
     classifier("video", "repeat");
     vi.mocked(runConversationModel).mockResolvedValue({

@@ -1,9 +1,9 @@
 import type { Queryable } from '../queue/queue';
-import { temporaryMediaPreference } from './media-preference-scope';
+import { durableMediaPreference, mediaPreferenceClauses } from './media-preference-scope';
 
 export function explicitAudioPreference(text: string): 'text' | 'audio' | null {
   let preference: 'text' | 'audio' | null = null;
-  for (const clause of text.split(/\b(?:mas|por[eé]m|but|pero)\b|[.;\n]/iu)) {
+  for (const clause of mediaPreferenceClauses(text)) {
     const current = audioPreferenceClause(clause.trim().replace(/^(?:agora|hoje)\s*,?\s*/iu,''));
     if (current !== null) preference = current;
   }
@@ -40,7 +40,7 @@ export async function conversationAllowsAudio(db: Queryable, org: string, conver
       `select id,body,media_derived_text,md5(jsonb_build_array(body,media_derived_text)::text) as source
         from messages where organization_id=$1 and conversation_id=$2 and direction='inbound'
         and (metadata->>'agent_audio_preference_checked' is distinct from 'true'
-          or metadata->>'agent_audio_preference_version' is distinct from '2'
+          or metadata->>'agent_audio_preference_version' is distinct from '3'
           or metadata->>'agent_audio_preference_source' is distinct from md5(jsonb_build_array(body,media_derived_text)::text))
         order by coalesce(sent_at,created_at),created_at,id limit 100`, [org, conversation],
     );
@@ -48,17 +48,16 @@ export async function conversationAllowsAudio(db: Queryable, org: string, conver
     await db.query(
       `update messages m set metadata=(case when m.metadata ? 'agent_audio_preference_source'
           then m.metadata - 'agent_audio_preference' else coalesce(m.metadata,'{}'::jsonb) end)
-        || jsonb_build_object('agent_audio_preference_checked',true,'agent_audio_preference_source',p.source,'agent_audio_preference_version','2')
+        || jsonb_build_object('agent_audio_preference_checked',true,'agent_audio_preference_source',p.source,'agent_audio_preference_version','3')
         || case when p.preference in ('text','audio') then jsonb_build_object('agent_audio_preference',p.preference) else '{}'::jsonb end
         from jsonb_to_recordset($3::jsonb) as p(id uuid,source text,preference text)
         where m.organization_id=$1 and m.conversation_id=$2 and m.id=p.id and m.direction='inbound'
           and md5(jsonb_build_array(m.body,m.media_derived_text)::text)=p.source
           and (m.metadata->>'agent_audio_preference_checked' is distinct from 'true'
-            or m.metadata->>'agent_audio_preference_version' is distinct from '2'
+            or m.metadata->>'agent_audio_preference_version' is distinct from '3'
             or m.metadata->>'agent_audio_preference_source' is distinct from p.source)`,
       [org, conversation, JSON.stringify(pending.map(m => ({ id: m.id, source: m.source,
-        preference: temporaryMediaPreference([m.body, m.media_derived_text].filter(Boolean).join('\n')) ? null
-          : explicitAudioPreference([m.body, m.media_derived_text].filter(Boolean).join('\n')) })))],
+        preference: durableMediaPreference([m.body, m.media_derived_text].filter(Boolean).join('\n'), explicitAudioPreference) })))],
     );
   }
   const { rows } = await db.query<{ preference: string }>(

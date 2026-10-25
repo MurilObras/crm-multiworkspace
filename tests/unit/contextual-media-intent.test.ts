@@ -18,8 +18,15 @@ import {
 } from "@/lib/agent-engine/agent/media-intent-store";
 import { readMediaReplayPolicy } from "@/lib/ai/agents/media-replay-policy";
 import type { JobRow } from "@/lib/agent-engine/queue/queue";
-import { temporaryMediaPreference } from "@/lib/agent-engine/agent/media-preference-scope";
-import { explicitMediaPreference } from "@/lib/agent-engine/agent/media-preference";
+import {
+  durableMediaPreference,
+  temporaryMediaPreference,
+} from "@/lib/agent-engine/agent/media-preference-scope";
+import {
+  conversationAllowsMedia,
+  explicitMediaPreference,
+  withTurnMediaPreference,
+} from "@/lib/agent-engine/agent/media-preference";
 import { agentPatchSchema } from "@/lib/ai/guardrails-schema";
 
 const AGENT = "10000000-0000-4000-8000-000000000060";
@@ -120,6 +127,24 @@ describe("contrato semântico e política de repetição", () => {
     expect(readMediaReplayPolicy({ media_replay_policy: "explicit_repeat" })).toBe(
       "explicit_repeat",
     );
+  });
+  it("escopo temporário não atravessa uma nova regra geral nem transforma comentário em preferência", () => {
+    for (const kind of ["audio", "image", "video"] as const) {
+      const parse = (clause: string) => explicitMediaPreference(clause, kind);
+      expect(
+        durableMediaPreference(
+          "Nesta resposta pode mandar vídeo. A partir de agora só texto.",
+          parse,
+        ),
+      ).toBe("text");
+      expect(
+        durableMediaPreference("Essa resposta ficou confusa. Prefiro somente texto.", parse),
+      ).toBe("text");
+      expect(durableMediaPreference("Nesta resposta:\n\nSó texto", parse)).toBeNull();
+      expect(durableMediaPreference("Só texto, mas nesta resposta pode mandar vídeo.", parse)).toBe(
+        "text",
+      );
+    }
   });
   it.each([
     "Consegue me mostrar na prática como funciona?",
@@ -323,6 +348,29 @@ it("só texto nesta resposta não bloqueia um follow-up futuro sem nova inbound"
     await availableConversationAudios(db.pool, ORG, CONV, AGENT, OLD, [media()], null),
   ).toHaveLength(1);
 });
+it.each(["audio", "image", "video"] as const)(
+  "%s: exceção temporária não apaga regra geral da mesma mensagem nem cache antigo",
+  async (kind) => {
+    const format = { audio: "áudio", image: "foto", video: "vídeo" }[kind];
+    const text = `A partir de agora, somente texto. Nesta resposta, pode mandar ${format}.`;
+    await db.pool.query("update messages set body=$1 where id=$2", [text, INBOUND]);
+    // Versão anterior descartava a regra geral por enxergar a exceção na mensagem inteira.
+    await db.pool.query(
+      `update messages set metadata=jsonb_build_object(
+    'agent_audio_preference_checked',true,'agent_audio_preference_version','2',
+    'agent_audio_preference_source',md5(jsonb_build_array(body,media_derived_text)::text),
+    'agent_visual_preference_version','2',
+    'agent_visual_preference_source',md5(jsonb_build_array(body,media_derived_text)::text)) where id=$1`,
+      [INBOUND],
+    );
+    const durable = await conversationAllowsMedia(db.pool, ORG, CONV, kind);
+    expect(durable).toBe(false);
+    expect(withTurnMediaPreference(durable, text, kind)).toBe(true);
+    expect(
+      await availableConversationAudios(db.pool, ORG, CONV, AGENT, OLD, [media(kind)], null),
+    ).toEqual([]);
+  },
+);
 it("retry não permite segunda entrega da mesma inbound nem pendência incerta com outro ID", async () => {
   const d = await persist();
   await db.pool.query(

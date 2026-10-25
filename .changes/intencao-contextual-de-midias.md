@@ -8,4 +8,6 @@ O atendimento interpreta assunto, formato e repetição antes de filtrar o catá
 
 A configuração de mídias oferece uma política por agente para exigir intenção clara de repetição. Agentes existentes mantêm a política anterior até alteração pelas telas. Uma preferência por texto limitada à resposta atual não vira bloqueio permanente.
 
+Regras gerais e exceções temporárias na mesma mensagem são preservadas separadamente, inclusive ao reavaliar registros existentes. O ensaio também respeita um pedido atual de formato após uma preferência anterior por texto.
+
 A tela de testes permite cenários fictícios e distingue planejamento de transporte. Execuções novas mostram intenção, arquivo, autorização, motivo e estado da tentativa, vinculados ao job e à conversa; registros antigos não recebem dados reconstruídos.
