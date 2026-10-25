@@ -283,4 +283,37 @@ describe('protocolo único sobre snapshots persistidos no PostgreSQL', () => {
     await expect(sendTurnMessage(db.pool,{supabase:db.supabase},{...input('worker'),tenantId:'20000000-0000-4000-8000-000000000001'})).rejects.toThrow('outbound_lease_lost');
     expect(transport).not.toHaveBeenCalled();
   });
+  it('timeout antes da rede conserva a identidade preparada e permite uma única retomada', async () => {
+    await claim('worker');
+    const rpc = db.supabase.rpc.bind(db.supabase);
+    let fail = true;
+    vi.spyOn(db.supabase, 'rpc').mockImplementation((async (...args: Parameters<typeof rpc>) => {
+      if (args[0] === 'fn_responsible_waiting' && fail) {
+        fail = false;
+        throw new DOMException('Synthetic timeout', 'TimeoutError');
+      }
+      return rpc(...args);
+    }) as typeof rpc);
+    expect((await worker('worker')).kind).toBe('failed');
+    expect(transport).not.toHaveBeenCalled();
+    const first = (await db.pool.query('select id,metadata from messages')).rows;
+    expect(first).toHaveLength(1);
+    expect(first[0].metadata.outbound_attempt.phase).toBe('prepared');
+    expect((await worker('worker')).kind).toBe('sent');
+    expect((await worker('worker')).kind).toBe('already_sent');
+    expect(transport).toHaveBeenCalledOnce();
+    expect((await db.pool.query('select id from messages')).rows).toEqual([{ id: first[0].id }]);
+  });
+  it('timeout da prévia depois do envio confirmado não repete o transporte', async () => {
+    await claim('worker');
+    const rpc = db.supabase.rpc.bind(db.supabase);
+    vi.spyOn(db.supabase, 'rpc').mockImplementation((async (...args: Parameters<typeof rpc>) => {
+      if (args[0] === 'fn_automation_message_preview') throw new DOMException('Synthetic timeout', 'TimeoutError');
+      return rpc(...args);
+    }) as typeof rpc);
+    expect((await worker('worker')).kind).toBe('sent');
+    expect((await worker('worker')).kind).toBe('already_sent');
+    expect(transport).toHaveBeenCalledOnce();
+    expect((await db.pool.query('select status from send_ledger')).rows).toEqual([{ status: 'accepted' }]);
+  });
 });

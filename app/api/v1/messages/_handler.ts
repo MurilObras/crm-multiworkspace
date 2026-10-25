@@ -35,6 +35,7 @@ import type { ListMessagesQuery, SendMessageInput } from "@/lib/schemas";
 import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
+import type { OutboundSendPhase } from '@/lib/channels/outbound-timing';
 import { currentAutomaticRecipient } from "@/lib/automation/current-recipient";
 import { decidirElegibilidade, normalizarInstante } from "@/lib/ai/elegibilidade/gate";
 
@@ -208,6 +209,7 @@ export async function sendMessageHandler(
     beforeSend?: (message: Message) => Promise<void>;
     beforeTransport?: (message: Message) => Promise<void>;
     writeAttemptState?: (message: Message, change: OutboundAttemptWrite) => Promise<Message>;
+    onPhase?: (phase: OutboundSendPhase) => void;
     /**
      * Idempotência de escrita MANUAL: quando o INSERT colide (23505) porque já
      * existe uma linha com o MESMO `messageId` e a MESMA `idempotency_key`,
@@ -218,6 +220,7 @@ export async function sendMessageHandler(
     returnExistingOnConflict?: boolean;
   },
 ): Promise<Message> {
+  options?.onPhase?.('recipient');
   // Um ID deterministico manual nao vincula a mensagem a um plano de automacao.
   // As RPCs do plano sao exclusivas de service_role; o envio manual conserva
   // o client autenticado, as guardas do sink e sua atualizacao normal de previa.
@@ -434,6 +437,7 @@ export async function sendMessageHandler(
     },
   };
 
+  options?.onPhase?.('persist_message');
   let { data: created, error: insErr } = await supabase
     .from("messages")
     .insert(insertRow)
@@ -472,6 +476,7 @@ export async function sendMessageHandler(
   let message = created as unknown as Message;
   if (options?.messageId && ['sent', 'delivered', 'read'].includes(message.status) && message.external_id) return message;
 
+  options?.onPhase?.('prepare_transport');
   // Tentativas do ledger escrevem pelo fence transacional do executor. Uma
   // checagem antes deste UPDATE não bastaria: o lease pode mudar durante o await.
   const writeState = async (
@@ -580,6 +585,7 @@ export async function sendMessageHandler(
   } else {
     let transportStarted = false;
     const beginTransport = async () => {
+      options?.onPhase?.('preflight');
       if ((ctx.actor.type !== "user" && ctx.actor.type !== "responsible")) {
         const pending = await supabase.rpc("fn_responsible_waiting", { p_org: ctx.organization_id, p_contact: c.contact_id });
         if (pending.error) throw new ApiError(503,"internal_error",undefined,ctx.requestId,"responsible_pause_unavailable");
@@ -620,6 +626,7 @@ export async function sendMessageHandler(
       }
       await options?.beforeTransport?.(message);
       transportStarted = true;
+      options?.onPhase?.('transport');
     };
     try {
       // O que separa mídia de texto é a presença de `media` no envelope — o
@@ -753,6 +760,7 @@ export async function sendMessageHandler(
           replyToExternalId: citada?.external_id ?? null,
         }));
       }
+      options?.onPhase?.('persist_result');
       const { data: updated } = await writeState({
           status: "sent",
           external_id: externalId,
@@ -765,6 +773,7 @@ export async function sendMessageHandler(
         }, 'started');
       if (updated) message = updated as unknown as Message;
     } catch (err) {
+      if (transportStarted) options?.onPhase?.('persist_result');
       if (err instanceof OutboundLeaseLostError) throw err;
       if (!transportStarted && (err instanceof OutboundSupersededError || err instanceof OutboundAudioUnavailableError)) {
         // Veto antes da rede: a mensagem sai de queued e não pode ser retomada.
@@ -831,6 +840,7 @@ export async function sendMessageHandler(
     }
   }
 
+  options?.onPhase?.('finalize');
   const conversationUpdate: {
     last_outbound_at: string;
     last_message_at: string;
