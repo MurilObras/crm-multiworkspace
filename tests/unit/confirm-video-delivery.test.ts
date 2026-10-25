@@ -27,14 +27,14 @@ beforeEach(async () => {
   db = new PGlite();
   // PostgreSQL real via WASM; sem CRM, WAHA ou dados de produção.
   await db.exec(`create table channel_sessions(id uuid,organization_id uuid,provider text);
-    create table job_queue(id uuid,organization_id uuid,status text,locked_by text);
+    create table job_queue(id uuid,organization_id uuid,status text,locked_by text,kind text,payload jsonb default '{}');
     create table send_ledger(id uuid,organization_id uuid,job_id uuid,crm_message_id uuid,status text,last_error text,updated_at timestamptz);
     create table messages(id uuid primary key,organization_id uuid,conversation_id uuid,contact_id uuid,channel_session_id uuid,
       external_id text,type text,direction text,status text,sent_via text,error_code text,error_message text,
       metadata jsonb,ack integer,created_at timestamptz,sent_at timestamptz,delivered_at timestamptz,read_at timestamptz,
       edited_at timestamptz,revoked_at timestamptz,reply_to_message_id uuid,body text,media_derived_text text,unique(organization_id,external_id));
     insert into channel_sessions values('${session}','${org}','waha');
-    insert into job_queue values('${job}','${org}','failed',null);
+    insert into job_queue(id,organization_id,status,locked_by) values('${job}','${org}','failed',null);
     insert into send_ledger values('${original}','${org}','${job}','${original}','failed','outbound_delivery_uncertain',now());
     insert into messages(id,organization_id,conversation_id,contact_id,channel_session_id,type,direction,status,sent_via,
       error_code,error_message,metadata,created_at,sent_at)

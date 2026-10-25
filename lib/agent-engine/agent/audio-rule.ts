@@ -22,9 +22,9 @@ export function parseAudioIntent(text: string, candidates: ApprovedAudio[]): str
   } catch { return null; }
 }
 
-export function audioIntentMessage(message: string, candidates: ApprovedAudio[]): string {
-  return JSON.stringify({ mensagem_atual: message, regras: candidates.map(a => ({
-    audio_id: a.id, tipo: 'type' in a ? a.type : 'audio', titulo: a.title, conteudo: a.use_when, condicao: a.send_when || a.use_when,
+export function audioIntentMessage(message: string, candidates: ApprovedAudio[], previousMediaIds?: string[], firstContact?: boolean): string {
+  return JSON.stringify({ mensagem_atual: message, ...(firstContact !== undefined ? { primeiro_atendimento:firstContact } : {}), ...(previousMediaIds ? { midias_anteriores_mais_recentes: previousMediaIds.filter(id => candidates.some(m => m.id === id)) } : {}), regras: candidates.map(a => ({
+    audio_id: a.id, tipo: 'type' in a ? a.type : 'audio', titulo: a.title, conteudo: a.use_when, condicao: a.send_when || a.use_when, trigger_type:a.trigger_type,
   })) });
 }
 

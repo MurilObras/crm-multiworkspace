@@ -13,6 +13,7 @@ import { useT } from '@/hooks/i18n/useT';
 import { AudioStagePicker } from './AudioStagePicker';
 import { AudioDeliveryMode } from './AudioDeliveryMode';
 import { AudioRuleSettings } from './AudioRuleSettings';
+import { MediaReplayPolicy } from './MediaReplayPolicy';
 
 /** Configuração operacional: aprovação não depende de republicar o prompt. */
 export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnly: boolean }) {
@@ -153,6 +154,7 @@ export function ApprovedAudios({ agentId, readOnly }: { agentId: string; readOnl
       <h3 className="text-sm font-medium">{t('Mídias aprovadas')}</h3>
       <p className="text-xs text-muted-foreground">{t('Cadastre áudio, foto ou vídeo e configure assunto, etapas, obrigatoriedade e reenvio a pedido. Vale nos próximos turnos, sem republicar o agente.')}</p>
     </div>
+    <MediaReplayPolicy agentId={agentId} readOnly={readOnly} />
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
     {loading ? <p className="text-sm">{t('Carregando mídias…')}</p> : audios.length === 0 && <p className="text-sm text-muted-foreground">{t('Nenhuma mídia aprovada. O atendimento continua em texto.')}</p>}

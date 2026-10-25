@@ -3,6 +3,7 @@ import type pg from "pg";
 import { z } from "zod";
 import {
   tool,
+  runModelCall,
   type ToolSet,
   type LlmEdgeConfig,
   type RunModelCallDeps,
@@ -28,7 +29,7 @@ import {
   catalogoEntregueAoOperador,
 } from "./entrega-de-capacidade";
 import { renderApprovedMedia } from "@/lib/ai/agents/approved-media";
-import { collectApprovedMediaUrls } from "./approved-media";
+import { collectApprovedMediaUrls, containsMediaLink } from "./approved-media";
 import { projetarContexto, projetarRetornoDeTool } from "./projecao";
 import { BEFORE_SEND_GATES, type GateContext } from "../guardrails/before-send";
 import { loadPromiseTable } from "../guardrails/promise/table";
@@ -42,6 +43,18 @@ import { fusoDaOrganizacao } from "./fuso-da-org";
 import { renderAgora } from "@/lib/tempo/agora";
 import type { LeadContext } from "../edge/crm/get-lead-context";
 import { fitLeadContextToBudget } from "../edge/crm/get-lead-context";
+import { mediaKind } from "@/lib/ai/agents/approved-media";
+import {
+  authorizeMediaIntent,
+  MEDIA_INTENT_INSTRUCTION,
+  NO_MEDIA_INTENT,
+  parseMediaIntent,
+} from "./media-intent";
+import { audioIntentMessage } from "./audio-rule";
+import { explicitMediaPreference, withTurnMediaPreference } from "./media-preference";
+import { durableMediaPreference } from "./media-preference-scope";
+import type { MediaDiagnostic, MediaSimulation } from "@/lib/ai/agents/media-simulation";
+import { renderMediaDecisionInstruction } from "@/lib/ai/agents/media-simulation";
 
 export interface TestConversationInput {
   organizationId: string;
@@ -49,6 +62,7 @@ export interface TestConversationInput {
   message: string;
   contact?: { name?: string; phone?: string };
   history?: Array<{ direction: "inbound" | "outbound"; body: string }>;
+  mediaContext?: MediaSimulation;
 }
 
 const CONTENT_GATES = new Set([
@@ -76,12 +90,12 @@ export const TEST_LIMITATIONS = [
   {
     gate: "audio",
     porque:
-      "Catálogo aprovado é carregado; disparo obrigatório, etapa e deduplicação de áudio exigem uma conversa real.",
+      "A decisão e a elegibilidade são simuladas com o catálogo aprovado e o cenário fictício. Não confirmam entrega nem o estado de um contato real.",
   },
   {
     gate: "routing",
     porque:
-      "Ensaio do agente escolhido: não testa roteador, Operador, compactação, referências de skills nem classificadores auxiliares do worker.",
+      "Ensaio do agente escolhido: inclui o classificador de mídia, mas não testa roteador, Operador, compactação ou referências de skills.",
   },
   {
     gate: "transport_guards",
@@ -109,6 +123,7 @@ export interface TestConversationResult {
   runtime: "conversation_engine";
   limitations: ReadonlyArray<{ gate: string; porque: string }>;
   gates: Array<{ gate: string; pass: boolean; code?: string }>;
+  media_decision?: MediaDiagnostic;
 }
 
 export async function testConversation(
@@ -176,7 +191,133 @@ export async function testConversation(
   const catalogIds = agent.toolIds.filter(
     (id) => !BLOCKED_TOOL_IDS.has(id) && !catalogDelivered.includes(id),
   );
-  const audios = agent.approvedAudios ?? [];
+  const catalog = agent.approvedAudios ?? [];
+  let intent = { ...NO_MEDIA_INTENT };
+  let classificationReason: string | undefined;
+  let classifierCost: number | null = 0;
+  let classifierTokensIn = 0,
+    classifierTokensOut = 0,
+    classifierLatency = 0;
+  const handoff =
+    detectHumanHandoffRequest(input.message) ||
+    matchesHandoffKeyword(input.message, agent.handoffKeywords) ||
+    detectAmbiguousOptOut(input.message);
+  if (catalog.some((m) => m.enabled) && !handoff) {
+    try {
+      const decision = await runModelCall(
+        pool,
+        llm,
+        {
+          tenantId,
+          agentId: agent.agentId,
+          purpose: "agent_test",
+          model: agent.model,
+          llmOverride: { provider: agent.provider, credentialId: agent.credentialId },
+          system: MEDIA_INTENT_INSTRUCTION,
+          messages: [
+            {
+              role: "user",
+              content: audioIntentMessage(
+                input.message,
+                catalog.filter((m) => m.enabled),
+                [...(input.mediaContext?.delivered_ids ?? [])].reverse(),
+                !input.history?.some((m) => m.direction === "outbound"),
+              ),
+            },
+          ],
+        },
+        deps,
+      );
+      intent = parseMediaIntent(
+        decision.result.text,
+        catalog,
+        input.message,
+        (reason) => {
+          classificationReason = reason;
+        },
+        agent.mediaReplayPolicy ?? "explicit_media_request",
+      );
+      classifierCost = decision.costCents;
+      classifierTokensIn = decision.usage.inputTokens;
+      classifierTokensOut = decision.usage.outputTokens;
+      classifierLatency = decision.latencyMs;
+    } catch {
+      classificationReason = "classifier_unavailable";
+      classifierCost = null;
+      /* Sem classificação confiável: só texto, sem inventar envio. */
+    }
+  }
+  const chosen = catalog.find((m) => m.id === intent.audio_id);
+  const scenario = input.mediaContext;
+  let durableText = scenario?.scenario === "text_preference";
+  if (chosen)
+    for (const message of [
+      ...(input.history ?? []),
+      { direction: "inbound", body: input.message },
+    ]) {
+      if (message.direction !== "inbound") continue;
+      const pref = durableMediaPreference(message.body, (clause) =>
+        explicitMediaPreference(clause, mediaKind(chosen)),
+      );
+      if (pref) durableText = pref === "text";
+    }
+  const usedIds = new Set(scenario?.delivered_ids ?? []);
+  if (scenario?.scenario === "delivered" && chosen) usedIds.add(chosen.id);
+  const eligibility = chosen
+    ? authorizeMediaIntent({
+        item: chosen,
+        intent,
+        policy: agent.mediaReplayPolicy ?? "explicit_media_request",
+        legacyRequest: explicitMediaPreference(input.message, mediaKind(chosen)) === "audio",
+        allowsFormat:
+          explicitMediaPreference(input.message, mediaKind(chosen)) !== "text" &&
+          (withTurnMediaPreference(!durableText, input.message, mediaKind(chosen)) ||
+            intent.format === mediaKind(chosen) ||
+            intent.intent === "repeat"),
+        inbound: "simulation-current-request",
+        used: [
+          ...catalog
+            .filter((m) => usedIds.has(m.id))
+            .map((m) => ({ id: m.id, fingerprint: m.content_sha256, confirmed: true })),
+          ...(scenario?.delivered_fingerprints ?? []).map((fingerprint) => ({
+            id: "simulation-fingerprint",
+            fingerprint,
+            confirmed: true,
+          })),
+        ],
+      })
+    : {
+        allowed: false,
+        reason: intent.text_only
+          ? "text_preference"
+          : (classificationReason ?? "no_matching_media"),
+      };
+  if (
+    chosen?.stage_ids.length &&
+    (!scenario?.stage_id || !chosen.stage_ids.includes(scenario.stage_id))
+  ) {
+    eligibility.allowed = false;
+    eligibility.reason = "stage_not_permitted";
+  }
+  if (
+    chosen?.trigger_type === "first_contact" &&
+    input.history?.some((m) => m.direction === "outbound") &&
+    intent.intent !== "repeat"
+  ) {
+    eligibility.allowed = false;
+    eligibility.reason = "first_contact_only";
+  }
+  const audios = chosen && eligibility.allowed ? [chosen] : [];
+  const mediaDiagnostic: MediaDiagnostic = {
+    intent: intent.intent,
+    format: intent.format,
+    media_id: chosen?.id ?? null,
+    title: chosen?.title ?? null,
+    authorized: eligibility.allowed,
+    reason: handoff ? "human_handoff" : eligibility.reason,
+    transport: "not_attempted",
+    fingerprint: chosen?.content_sha256 ?? null,
+  };
   const mediaUrls = new Set(collectApprovedMediaUrls(playbook.prompt));
   const promise = await loadPromiseTable(pool, tenantId);
   const disclosure = await loadDisclosureTemplate(pool, tenantId);
@@ -191,6 +332,12 @@ export async function testConversation(
     .positive()
     .catch(DEFAULT_MAX_SENDS_PER_TURN)
     .parse(process.env.MAX_SENDS_PER_TURN);
+  if (chosen?.required && maxSends < 2) {
+    eligibility.allowed = false;
+    eligibility.reason = "turn_send_limit";
+    mediaDiagnostic.authorized = false;
+    mediaDiagnostic.reason = "turn_send_limit";
+  }
   const tools: ToolSet = {};
   const mountedCatalog: string[] = [];
   const simulated = (_name: string) => {
@@ -207,26 +354,81 @@ export async function testConversation(
   };
   const executeSend = async (raw: unknown) => {
     const parsed = AGENT_TOOL_DEFS.send_message.inputSchema.parse(raw);
-    if (sendCount >= maxSends)
+    if (sendCount >= maxSends - (chosen?.required && eligibility.allowed && !parsed.media ? 1 : 0))
       return {
         ok: false,
         error: { code: "turn_send_limit", message: "Limite de mensagens deste turno atingido." },
       };
     const media = parsed.media;
-    if (media) {
-      const approved =
-        media.type === "audio"
-          ? audios.some((a) => a.id === media.audio_id && a.enabled && !('type' in a))
-          : 'media_id' in media ? audios.some(a => a.id === media.media_id && a.enabled && 'type' in a && a.type === media.type) : mediaUrls.has(media.url);
+    if (
+      !media &&
+      (agent.managedMediaConfigured ||
+        catalog.length ||
+        agent.mediaReplayPolicy === "explicit_repeat") &&
+      containsMediaLink(parsed.body)
+    )
       return {
         ok: false,
         simulated: true,
         error: {
-          code: approved ? "media_simulation_only" : "media_not_approved",
-          message: approved
-            ? "Mídia aprovada; entrega e elegibilidade final não são simuladas. Não afirme que enviou."
-            : "Mídia não aprovada para este agente.",
+          code: "media_url_fallback_forbidden",
+          message:
+            "Não use link como alternativa à mídia gerenciada. Responda por texto sem contornar o veto.",
         },
+      };
+    if (!media && mediaDiagnostic.transport === "planned")
+      return {
+        ok: false,
+        simulated: true,
+        error: {
+          code: "media_response_completed",
+          message:
+            "A resposta com mídia já está planejada. Encerre sem explicação repetida ou promessa de entrega.",
+        },
+      };
+    if (media) {
+      if (chosen?.required)
+        return {
+          ok: false,
+          simulated: true,
+          error: {
+            code: "audio_managed_by_rule",
+            message:
+              "O CRM cuida do planejamento da mídia obrigatória após o contexto. Não a envie por conta própria.",
+          },
+        };
+      const approved =
+        media.type === "audio"
+          ? audios.some((a) => a.id === media.audio_id && a.enabled && !("type" in a))
+          : "media_id" in media
+            ? audios.some(
+                (a) => a.id === media.media_id && a.enabled && "type" in a && a.type === media.type,
+              )
+            : mediaUrls.has(media.url);
+      if (
+        !approved ||
+        mediaDiagnostic.transport === "planned" ||
+        !audios.length ||
+        "url" in media ||
+        !messages.length
+      )
+        return {
+          ok: false,
+          simulated: true,
+          error: {
+            code: "media_not_authorized",
+            message: "Mídia indisponível nesta resposta. Não afirme envio nem contorne por URL.",
+          },
+        };
+      mediaDiagnostic.transport = "planned";
+      sendCount++;
+      return {
+        ok: true,
+        simulated: true,
+        status: "planned",
+        delivered: false,
+        message:
+          "Mídia planejada no ensaio, sem transporte real. Não acrescente fallback nem afirme entrega.",
       };
     }
     const gateContext: GateContext = {
@@ -368,6 +570,12 @@ export async function testConversation(
     systemWithMemory,
     TRANSPARENCIA_SYSTEM_BLOCK,
     renderApprovedMedia(audios),
+    chosen?.required && eligibility.allowed
+      ? `Mídia obrigatória correspondente será somente PLANEJADA após a resposta: ${JSON.stringify({ id: chosen.id, title: chosen.title })}. Responda com contexto breve, sem anunciar envio, repetir a explicação ou oferecer URL alternativa.`
+      : "",
+    agent.managedMediaConfigured || catalog.length || agent.mediaReplayPolicy === "explicit_repeat"
+      ? renderMediaDecisionInstruction(mediaDiagnostic)
+      : "",
     agent.casesEnabled ? CASES_SYSTEM_BLOCK : "",
     agent.toolIds.includes("crm_book_appointment") ? AGENDA_SYSTEM_BLOCK : "",
   ]
@@ -400,6 +608,7 @@ export async function testConversation(
       runtime: "conversation_engine",
       limitations: TEST_LIMITATIONS,
       gates: gateTrace,
+      media_decision: mediaDiagnostic,
     };
   }
   // O SDK pode chamar tools em paralelo. Preserve a fila local usada no worker
@@ -428,18 +637,54 @@ export async function testConversation(
   } finally {
     await execution.drain();
   }
+  if (chosen?.required && eligibility.allowed && !messages.length && !bodyRejected && maxSends >= 2)
+    await executeSend({ body: chosen.title });
+  if (
+    chosen?.required &&
+    eligibility.allowed &&
+    mediaDiagnostic.transport !== "planned" &&
+    !bodyRejected &&
+    messages.length &&
+    sendCount < maxSends
+  ) {
+    mediaDiagnostic.transport = "planned";
+    trace.push({
+      step: trace.length + 1,
+      tool_name: "media_plan",
+      args: { media_id: chosen.id },
+      result: {
+        ok: true,
+        simulated: true,
+        status: "planned",
+        delivered: false,
+        media_decision: mediaDiagnostic,
+      },
+      started_at: new Date().toISOString(),
+      ended_at: new Date().toISOString(),
+    });
+  }
+  trace.push({
+    step: trace.length + 1,
+    tool_name: "media_decision",
+    args: {},
+    result: mediaDiagnostic,
+    started_at: new Date().toISOString(),
+    ended_at: new Date().toISOString(),
+  });
   // Igual ao worker: texto fora de send_message NÃO vira resposta ao cliente.
   return {
     final_text: messages.join("\n\n"),
     messages,
     tool_calls: trace,
     status: messages.length && !bodyRejected ? "completed" : "aborted",
-    tokens_in: call.usage.inputTokens,
-    tokens_out: call.usage.outputTokens,
-    cost_cents: call.costCents,
-    latency_ms: call.latencyMs,
+    tokens_in: call.usage.inputTokens + classifierTokensIn,
+    tokens_out: call.usage.outputTokens + classifierTokensOut,
+    cost_cents:
+      call.costCents == null || classifierCost == null ? null : call.costCents + classifierCost,
+    latency_ms: call.latencyMs + classifierLatency,
     runtime: "conversation_engine",
     limitations: TEST_LIMITATIONS,
     gates: gateTrace,
+    media_decision: mediaDiagnostic,
   };
 }

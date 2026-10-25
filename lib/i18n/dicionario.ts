@@ -34,12 +34,14 @@
 import type { Idioma } from "./idiomas";
 import { KIWIFY_HISTORY_TRANSLATIONS, KIWIFY_OPERATOR_TRANSLATIONS } from "./kiwify";
 import { RESPONSIBLE_TRANSLATIONS } from "./responsibles";
+import { MEDIA_INTENT_TRANSLATIONS } from './media-intent';
 import { DASHBOARD_TRANSLATIONS } from "./dashboard";
 
 /** `pt-BR` não aparece: é a chave. Só o que DIFERE precisa de linha. */
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  ...MEDIA_INTENT_TRANSLATIONS,
   ...RESPONSIBLE_TRANSLATIONS,
   ...DASHBOARD_TRANSLATIONS,
   "Domingo": { es: "Domingo" },

@@ -288,3 +288,175 @@ test("erro na tela de teste permanece visível e não vira resultado vazio", asy
   await expect(page.getByText("Nenhum teste executado ainda.", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: path.join(evidence, "teste-erro-visivel.png"), fullPage: true });
 });
+
+test("simulação mostra planejamento e conserva cenário sem fabricar transporte", async ({
+  page,
+}) => {
+  const mediaId = randomUUID();
+  let calls = 0;
+  await page.route(`**/api/v1/ai/agents/${id.agent}/versions/*/test`, async (route) => {
+    const body = route.request().postDataJSON();
+    const first = calls++ === 0;
+    if (first)
+      expect(body.sample_media_context).toMatchObject({ scenario: "fresh", delivered_ids: [] });
+    else expect(body.sample_media_context.delivered_ids).toContain(mediaId);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          run_id: randomUUID(),
+          status: "completed",
+          messages: [first ? "Aqui está o exemplo em contexto." : "Podemos continuar por texto."],
+          runtime: "conversation_engine",
+          tool_calls: [],
+          media_decision: {
+            intent: "show",
+            format: "video",
+            media_id: mediaId,
+            title: "Demonstração sintética",
+            authorized: first,
+            reason: first ? "first_delivery" : "repeat_intent_required",
+            transport: first ? "planned" : "not_attempted",
+          },
+        },
+      }),
+    });
+  });
+  await page.goto(`/app/ai/agents/${id.agent}`);
+  await page.getByRole("tab", { name: "Teste", exact: true }).click();
+  await page.getByLabel("Cenário fictício de mídia").selectOption("fresh");
+  await page
+    .getByLabel("Mensagem do cliente (sample)")
+    .fill("Consegue me mostrar na prática como funciona?");
+  await page.getByRole("button", { name: "Executar teste", exact: true }).click();
+  await expect(page.getByTestId("media-decision")).toContainText("planned");
+  await expect(page.getByTestId("media-decision")).toContainText(
+    "Nenhum arquivo foi transportado nem entregue",
+  );
+  await page.screenshot({ path: path.join(evidence, "media-planejada.png"), fullPage: true });
+  await page.getByLabel("Mensagem do cliente (sample)").fill("Como funciona mesmo?");
+  await page.getByRole("button", { name: "Executar teste", exact: true }).click();
+  await expect.poll(() => calls).toBe(2);
+  await expect(page.getByTestId("media-decision")).toContainText("repeat_intent_required");
+  await expect(page.getByTestId("media-decision")).toContainText("not_attempted");
+  await page.screenshot({ path: path.join(evidence, "media-repeticao-bloqueada.png"), fullPage: true });
+});
+
+test("execução associa decisão e confirmação à conversa pelo job e pelo ledger", async ({
+  page,
+}) => {
+  const call = randomUUID(),
+    inbound = randomUUID(),
+    media = randomUUID(),
+    message = randomUUID(),
+    ledger = randomUUID();
+  const org = creds.org_id;
+  try {
+    await insert("messages", {
+      id: inbound,
+      organization_id: org,
+      conversation_id: id.conversation,
+      contact_id: id.contact,
+      channel_session_id: id.session,
+      type: "text",
+      direction: "inbound",
+      body: "Consegue me mostrar na prática?",
+      status: "delivered",
+    });
+    const decision = {
+      version: 1,
+      organization_id: org,
+      agent_id: id.agent,
+      conversation_id: id.conversation,
+      inbound_message_id: inbound,
+      subject_sha256: "a".repeat(64),
+      approval_sha256: "b".repeat(64),
+      policy: "explicit_repeat",
+      audio_id: media,
+      authorized_id: media,
+      intent: "show",
+      format: "video",
+      text_only: false,
+      selected_title: "Demonstração sintética E2E",
+      reason: "authorized",
+    };
+    const update = await db
+      .from("job_queue")
+      .update({
+        payload: {
+          conversation_id: id.conversation,
+          inbound_message_id: inbound,
+          media_intent_decision: decision,
+        },
+      })
+      .eq("organization_id", org)
+      .eq("id", id.job);
+    expect(update.error).toBeNull();
+    await insert("messages", {
+      id: message,
+      organization_id: org,
+      conversation_id: id.conversation,
+      contact_id: id.contact,
+      channel_session_id: id.session,
+      type: "video",
+      direction: "outbound",
+      body: "Demonstração sintética E2E",
+      status: "read",
+      external_id: `controlled-e2e-${message}`,
+      metadata: {
+        approved_media: { media_id: media, agent_id: id.agent },
+        outbound_attempt: { phase: "confirmed" },
+      },
+    });
+    await insert("send_ledger", {
+      id: ledger,
+      organization_id: org,
+      contact_id: id.contact,
+      job_id: id.job,
+      seq: 2,
+      body_hash: "a".repeat(64),
+      status: "accepted",
+      crm_message_id: message,
+    });
+    await insert("llm_calls", {
+      id: call,
+      organization_id: org,
+      agent_id: id.agent,
+      contact_id: id.contact,
+      job_id: id.job,
+      purpose: "agent_turn",
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      status: "ok",
+    });
+    await page.goto(`/app/ai/agents/${id.agent}`);
+    await page.getByRole("tab", { name: /execuções/i }).click();
+    const row = page.getByRole("row").filter({ hasText: "produção" });
+    await row.getByRole("button", { name: "Detalhes" }).click();
+    const panel = page.getByTestId("media-decision");
+    await expect(panel).toContainText("Demonstração sintética E2E");
+    await expect(panel).toContainText("confirmed");
+    await expect(page.getByRole("link", { name: "Ver conversa", exact: true })).toHaveAttribute(
+      "href",
+      `/app/inbox?id=${id.conversation}`,
+    );
+    await page.screenshot({ path: path.join(evidence, "media-diagnostico.png"), fullPage: true });
+  } finally {
+    for (const [table, key] of [
+      ["llm_calls", call],
+      ["send_ledger", ledger],
+      ["messages", message],
+      ["messages", inbound],
+    ] as const) {
+      const result = await db.from(table).delete().eq("organization_id", org).eq("id", key);
+      expect(result.error).toBeNull();
+    }
+    const result = await db
+      .from("job_queue")
+      .update({ payload: { conversation_id: id.conversation } })
+      .eq("organization_id", org)
+      .eq("id", id.job);
+    expect(result.error).toBeNull();
+  }
+});

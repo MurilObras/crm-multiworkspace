@@ -138,7 +138,7 @@ it('anexa, ouve antes de aprovar, salva e permite retirar a aprovação', async 
   expect(JSON.parse(calls.find(c => c.method === 'PATCH')!.body as string)).toEqual({ audio_id: 'audio-1', enabled: false });
 });
 it('expõe falha de leitura e não oferece escrita a quem só pode consultar', async () => {
-  vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'Sem permissão.' } }), { status: 403 }));
+  vi.mocked(fetch).mockImplementation(async () => new Response(JSON.stringify({ error: { message: 'Sem permissão.' } }), { status: 403 }));
   render(<ApprovedAudios agentId="agent-1" readOnly />);
   expect(await screen.findByRole('alert')).toHaveTextContent('Sem permissão.');
   expect(screen.queryByLabelText('Arquivo')).toBeNull();

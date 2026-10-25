@@ -1,5 +1,6 @@
 import type { Queryable } from '../queue/queue';
 import { conversationAllowsAudio, explicitAudioPreference } from './audio-preference';
+import { durableMediaPreference, temporaryMediaPreference } from './media-preference-scope';
 
 export function explicitMediaPreference(text: string, kind: 'audio' | 'image' | 'video'): 'text' | 'audio' | null {
   if (kind === 'audio') return explicitAudioPreference(text);
@@ -31,20 +32,22 @@ export async function conversationAllowsVisual(db: Queryable, org: string, conve
     const { rows } = await db.query<{ id: string; body: string | null; media_derived_text: string | null; source: string }>(
       `select id,body,media_derived_text,md5(jsonb_build_array(body,media_derived_text)::text) as source
        from messages where organization_id=$1 and conversation_id=$2 and direction='inbound'
-        and metadata->>'agent_visual_preference_source' is distinct from md5(jsonb_build_array(body,media_derived_text)::text)
+        and (metadata->>'agent_visual_preference_version' is distinct from '3'
+          or metadata->>'agent_visual_preference_source' is distinct from md5(jsonb_build_array(body,media_derived_text)::text))
        order by coalesce(sent_at,created_at),created_at,id limit 100`, [org, conversation]);
     if (!rows.length) break;
     await db.query(`update messages m set metadata=coalesce(m.metadata,'{}'::jsonb)
         - 'agent_image_preference' - 'agent_video_preference'
-        || jsonb_strip_nulls(jsonb_build_object('agent_visual_preference_source',p.source,
+        || jsonb_strip_nulls(jsonb_build_object('agent_visual_preference_source',p.source,'agent_visual_preference_version','3',
            'agent_image_preference',p.image,'agent_video_preference',p.video))
        from jsonb_to_recordset($3::jsonb) as p(id uuid,source text,image text,video text)
        where m.organization_id=$1 and m.conversation_id=$2 and m.id=p.id and m.direction='inbound'
         and md5(jsonb_build_array(m.body,m.media_derived_text)::text)=p.source
-        and m.metadata->>'agent_visual_preference_source' is distinct from p.source`,
+        and (m.metadata->>'agent_visual_preference_version' is distinct from '3' or m.metadata->>'agent_visual_preference_source' is distinct from p.source)`,
     [org, conversation, JSON.stringify(rows.map(m => {
       const text = [m.body,m.media_derived_text].filter(Boolean).join('\n');
-      return { id: m.id, source: m.source, image: explicitMediaPreference(text,'image'), video: explicitMediaPreference(text,'video') };
+      return { id: m.id, source: m.source, image: durableMediaPreference(text,clause => explicitMediaPreference(clause,'image')),
+        video: durableMediaPreference(text,clause => explicitMediaPreference(clause,'video')) };
     }))]);
   }
   const key = kind === 'image' ? 'agent_image_preference' : 'agent_video_preference';
@@ -52,6 +55,12 @@ export async function conversationAllowsVisual(db: Queryable, org: string, conve
     where organization_id=$1 and conversation_id=$2 and direction='inbound' and metadata->>$3 in ('text','audio')
     order by coalesce(sent_at,created_at) desc,created_at desc,id desc limit 1`, [org,conversation,key]);
   return rows[0]?.preference !== 'text';
+}
+
+/** Preferência de uma resposta pertence ao turno, não à conversa inteira. */
+export function withTurnMediaPreference(durable: boolean, text: string, kind: 'audio' | 'image' | 'video'): boolean {
+  const preference = temporaryMediaPreference(text) ? explicitMediaPreference(text,kind) : null;
+  return preference === null ? durable : preference !== 'text';
 }
 
 export const conversationAllowsMedia = (db: Queryable, org: string, conversation: string, kind: 'audio' | 'image' | 'video') =>

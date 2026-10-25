@@ -1991,3 +1991,12 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 - `agent-config-revision.test.ts`: banco controla a revisão, duas conexões disputam a mesma versão e só uma salva; migration e baseline são reaplicáveis.
 - Retorno operacional: `ApprovedAudios` mantém formulário e mostra referência, exige atualizar após falha; `agent_media_save_failed` registra categoria e requestId sem JSON ou dados pessoais. Nenhum arquivo referenciado é apagado por resposta incerta.
 - Validação pendente nesta etapa; não representa aprovação antecipada.
+
+## Intenção contextual de mídia — 2026-10-24
+
+- [P1] Administrador altera a política de reenvio do agente, salva, recarrega e confere o catálogo preservado (`audios-pre-gravados.spec.ts`).
+- [P1] Ensaio distingue primeira interação, mídia utilizada e preferência por texto; conserva IDs planejados no histórico fictício e mostra `planned`, sem confirmação de entrega (`video-test-executions.spec.ts`).
+- [P0] Prova por organização/agente/conversa/inbound, aprovação, hash, lease e histórico; não duplica entrega pendente/incerta ou mesma inbound. Regras puras e SQL executável em `contextual-media-intent.test.ts`.
+- [P0] Pausa humana, alteração de etapa e nova inbound no transporte continuam nos invariantes de turno e nos testes de outbound.
+- Diagnóstico: `llm_calls.job_id` associa a decisão persistida ao ledger e à mensagem correta. Registros antigos sem decisão permanecem sem esse dado.
+- Laço de retorno: gestor vê o motivo, altera condições/política pelas telas e repete o cenário fictício. Detalhes e matriz: `docs/testing/contextual-media-intent.md`.

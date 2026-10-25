@@ -204,6 +204,13 @@ function modeloDeEnvio(antes?: () => Promise<void>, media?: { type: string; url:
   let chamadas = 0;
   return async (opts: { prompt?: unknown }) => {
     resultadosVistos.push(opts.prompt);
+    if (JSON.stringify(opts.prompt ?? '').includes('Classifique somente o assunto da mensagem atual')) {
+      const prompt = opts.prompt as Array<{ role:string;content:Array<{ type:string;text?:string }> }>;
+      const raw = prompt.find(p => p.role === 'user')?.content.find(p => p.type === 'text')?.text;
+      const input = JSON.parse(raw ?? '{}');
+      return { content:[{ type:'text' as const,text:JSON.stringify({ audio_id:input.regras?.[0]?.audio_id ?? null,intent:'show',format:null,text_only:false }) }],
+        finishReason:{ unified:'stop' as const,raw:undefined },usage:USO,warnings:[] };
+    }
     if (chamadas++ === 0) {
       await antes?.();
       return {
@@ -336,7 +343,7 @@ describe("retomada de inbound no turno completo", () => {
         const error = await rodaTurno(montaHandler(async (opts: { prompt?: unknown }) => {
           if (JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual')) {
             classifications++;
-            const text = behavior === 'invalid' ? 'não sei' : JSON.stringify({ audio_id: behavior === 'price' ? null : audioId });
+            const text = behavior === 'invalid' ? 'não sei' : JSON.stringify({ audio_id: behavior === 'price' ? null : audioId,intent:behavior === 'price' ? 'none' : 'show',format:null,text_only:false });
             return { content: [{ type: 'text', text }], finishReason: { unified: 'stop', raw: undefined }, usage: USO, warnings: [] };
           }
           const result = await main(opts);
@@ -411,7 +418,7 @@ describe("retomada de inbound no turno completo", () => {
         // send_message como se fosse a resposta JSON do classificador.
         if (JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual')) {
           classifications++;
-          return { content: [{ type: 'text', text: JSON.stringify({ audio_id: audioId }) }],
+          return { content: [{ type: 'text', text: JSON.stringify({ audio_id: audioId,intent:'show',format:null,text_only:false }) }],
             finishReason: { unified: 'stop', raw: undefined }, usage: USO, warnings: [] };
         }
         const input = inputs[step++];
@@ -627,7 +634,7 @@ it.each(['reception-burst','text-preference-burst'])(
     try {
       const error=await rodaTurno(montaHandler(async (opts:{prompt?:unknown})=>{
         if(JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual'))
-          return {content:[{type:'text',text:JSON.stringify({audio_id:audioId})}],finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[]};
+          return {content:[{type:'text',text:JSON.stringify({audio_id:audioId,intent:'show',format:null,text_only:false})}],finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[]};
         return main(opts);
       },3));
       expect(error).toBeNull();
@@ -670,7 +677,7 @@ it.each(REPLAY_PROTECTION_CASES)(
     try {
       await rodaTurno(montaHandler(async (opts:{prompt?:unknown})=>{
         if(JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual'))
-          return {content:[{type:'text',text:JSON.stringify({audio_id:audioId})}],finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[]};
+          return {content:[{type:'text',text:JSON.stringify({audio_id:audioId,intent:behavior==='no-request'?'show':'repeat',format:'audio',text_only:false})}],finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[]};
         const call=calls++;
         if(call===0 || behavior==='optional' && call===1)
           return {content:[{type:'tool-call',toolCallId:`resposta-${call}`,toolName:'send_message',
@@ -754,8 +761,8 @@ it.each(AUDIO_REGRESSION_SCENARIOS)(
           const user = prompt.find(message => message.role === 'user');
           const content = user?.content.find(part => part.type === 'text')?.text;
           classifierText = content ? JSON.parse(content).mensagem_atual : '';
-          const match = classifierText?.includes('Como funciona?');
-          return { content: [{type:'text',text:JSON.stringify({audio_id:match ? audioId : null})}],
+          const match = classifierText?.includes('Como funciona?') || split || scenario === 'reception-rejected';
+          return { content: [{type:'text',text:JSON.stringify({audio_id:match ? audioId : null,intent:match?'show':'none',format:null,text_only:false})}],
             finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[] };
         }
         if (calls++ === 0) return {

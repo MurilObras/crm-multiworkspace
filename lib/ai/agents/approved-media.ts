@@ -50,5 +50,6 @@ export function renderApprovedMedia(media: ApprovedMedia[]): string {
     + 'Não envie só pela etapa. Respeite só texto, humano e recusas. Primeiro envie contexto curto em texto, sem anunciar gravação ou envio futuro; '
     + 'depois send_message com media={type:"audio",audio_id:"ID"} para áudio ou media={type:"image|video",media_id:"ID"} para foto/vídeo. '
     + 'O catálogo já considera o histórico: sem pedido explícito e permissão configurada, uma mídia utilizada não fica disponível. '
-    + 'Não duplique a explicação gravada nem confirme entrega antes do resultado real.';
+    + 'Não duplique a explicação gravada nem confirme entrega antes do resultado real. Após o resultado da mídia, encerre a resposta sem outra explicação. '
+    + 'Se houver uma pergunta comercial realmente útil, inclua-a no contexto breve anterior ao arquivo. Se houver veto, não ofereça URL para contornar nem prometa consultar material que já consta no catálogo.';
 }

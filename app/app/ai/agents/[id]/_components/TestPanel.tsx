@@ -25,6 +25,9 @@ import type { AgentRow } from "@/hooks/ai/useAgent";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 
 import { RunTrace } from "./RunTrace";
+import { MediaDecisionDetail } from "./MediaDecisionDetail";
+import type { MediaDiagnostic, MediaSimulation } from "@/lib/ai/agents/media-simulation";
+import type { AudioStageOption } from "@/lib/ai/agents/approved-audios";
 
 interface Props {
   agent: AgentRow;
@@ -49,6 +52,7 @@ interface TestResponse {
     runtime?: string;
     limitations?: Array<{ gate: string; porque: string }>;
     gates?: Array<{ gate: string; pass: boolean; code?: string }>;
+    media_decision?: MediaDiagnostic;
     /** Ver lib/ai/agents/avaliar-resposta-de-teste.ts. */
     guardrails?: {
       passou: boolean;
@@ -151,6 +155,24 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
   const [pending, setPending] = React.useState(false);
   const [result, setResult] = React.useState<TestResponse["data"] | null>(null);
   const [runError, setRunError] = React.useState<string | null>(null);
+  const [scenario, setScenario] = React.useState<MediaSimulation["scenario"]>("fresh");
+  const [deliveredIds, setDeliveredIds] = React.useState<string[]>([]);
+  const [deliveredFingerprints, setDeliveredFingerprints] = React.useState<string[]>([]);
+  const [stageId, setStageId] = React.useState("");
+  const [stageOptions, setStageOptions] = React.useState<AudioStageOption[]>([]);
+  React.useEffect(() => {
+    const abort = new AbortController();
+    void fetch(`/api/v1/ai/agents/${agent.id}/media`, { signal: abort.signal, cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const json = await response.json();
+        if (!abort.signal.aborted) setStageOptions(json.meta?.stage_options ?? []);
+      })
+      .catch(() => {
+        /* O ensaio ainda pode testar a ausência de etapa. */
+      });
+    return () => abort.abort();
+  }, [agent.id]);
 
   if (!target) {
     return (
@@ -178,6 +200,12 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
       const body: Record<string, unknown> = {
         sample_message: message.trim(),
         sample_history: history,
+        sample_media_context: {
+          scenario,
+          delivered_ids: deliveredIds,
+          delivered_fingerprints: deliveredFingerprints,
+          stage_id: stageId || null,
+        },
       };
       if (contactName.trim() || contactPhone.trim()) {
         body.sample_contact = {
@@ -191,6 +219,14 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
         { timeoutMs: 120_000, maxAttempts: 1 },
       );
       setResult(res.data);
+      if (res.data.media_decision?.transport === "planned" && res.data.media_decision.media_id)
+        setDeliveredIds((previous) => [
+          ...new Set([...previous, res.data.media_decision!.media_id!]),
+        ]);
+      if (res.data.media_decision?.transport === "planned" && res.data.media_decision.fingerprint)
+        setDeliveredFingerprints((previous) => [
+          ...new Set([...previous, res.data.media_decision!.fingerprint!]),
+        ]);
       if (!res.data.stub) {
         const replies = (res.data.messages ?? []).map((body) => ({
           direction: "outbound" as const,
@@ -272,12 +308,54 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
               setResult(null);
               setRunError(null);
               setMessage("");
+              setDeliveredIds([]);
+              setDeliveredFingerprints([]);
+              setScenario("fresh");
+              setStageId("");
             }}
           >
             {t("Nova conversa de teste")}
           </Button>
         </div>
 
+        <div className="space-y-2 rounded-md border p-3">
+          <Label htmlFor="test-media-scenario">{t("Cenário fictício de mídia")}</Label>
+          <select
+            id="test-media-scenario"
+            className="w-full rounded-md border bg-background p-2 text-sm"
+            value={scenario}
+            disabled={pending || readOnly}
+            onChange={(e) => setScenario(e.target.value as MediaSimulation["scenario"])}
+          >
+            <option value="fresh">{t("Primeira solicitação")}</option>
+            <option value="delivered">{t("Mídia correspondente já entregue")}</option>
+            <option value="text_preference">{t("Preferência anterior por texto")}</option>
+          </select>
+          {!!stageOptions.length && (
+            <>
+              <Label htmlFor="test-media-stage">{t("Etapa fictícia permitida")}</Label>
+              <select
+                id="test-media-stage"
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                value={stageId}
+                disabled={pending || readOnly}
+                onChange={(e) => setStageId(e.target.value)}
+              >
+                <option value="">{t("Sem etapa definida")}</option>
+                {stageOptions.map((stage) => (
+                  <option key={stage.id} value={stage.id}>
+                    {stage.pipeline_name} › {stage.name}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Arquivos planejados ficam como já utilizados neste histórico fictício. Nova conversa limpa esse estado. Nenhum contato real é alterado.",
+            )}
+          </p>
+        </div>
         <div className="space-y-2">
           <Label htmlFor="test-message">{t("Mensagem do cliente (sample)")}</Label>
           <Textarea
@@ -368,6 +446,7 @@ function ConversationTestPanel({ agent, draft, published, readOnly }: Props) {
                 )}
               </p>
             ) : null}
+            {result.media_decision && <MediaDecisionDetail decision={result.media_decision} />}
             {result.status === "aborted" ? (
               <p className="text-xs text-destructive">
                 {t(

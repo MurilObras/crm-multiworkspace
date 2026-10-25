@@ -52,13 +52,18 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { runsListQuerySchema } from "@/lib/ai/agents/validation";
 import { compareMessages } from "@/lib/messaging/message-order";
+import {
+  mediaRunDiagnostic,
+  type MediaRunJob,
+  type MediaRunMessage,
+} from "@/lib/ai/agents/media-run-diagnostic";
 
 export const dynamic = "force-dynamic";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const CALL_COLUMNS =
-  "id, organization_id, agent_id, contact_id, purpose, status, error_code, error_message, " +
+  "id, organization_id, agent_id, contact_id, job_id, purpose, status, error_code, error_message, " +
   "input_tokens, output_tokens, cost_cents, latency_ms, created_at";
 
 /**
@@ -78,6 +83,7 @@ const STATUS_DA_TELA_PARA_O_BANCO: Record<string, string> = {
 };
 
 interface LlmCallRow {
+  job_id?: string | null;
   id: string;
   organization_id: string;
   agent_id: string | null;
@@ -230,8 +236,54 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { data: testRuns, error: testError } = await testsQuery;
   if (testError)
     return fail("internal_error", "Erro ao listar testes do agente.", 500, { requestId });
+  const calls = (data ?? []) as unknown as LlmCallRow[];
+  const jobIds = [...new Set(calls.flatMap((c) => (c.job_id ? [c.job_id] : [])))];
+  const diagnostics = new Map<string, ReturnType<typeof mediaRunDiagnostic>>();
+  if (jobIds.length) {
+    const jobs = await supabase
+      .from("job_queue")
+      .select("id,organization_id,contact_id,payload")
+      .eq("organization_id", activeOrg.orgId)
+      .in("id", jobIds);
+    const ledger = await supabase
+      .from("send_ledger")
+      .select("job_id,crm_message_id")
+      .eq("organization_id", activeOrg.orgId)
+      .in("job_id", jobIds);
+    if (jobs.error || ledger.error)
+      return fail("internal_error", "Erro ao consultar diagnóstico de mídia.", 500, { requestId });
+    const ids = [
+      ...new Set((ledger.data ?? []).flatMap((l) => (l.crm_message_id ? [l.crm_message_id] : []))),
+    ];
+    const messages = ids.length
+      ? await supabase
+          .from("messages")
+          .select("id,organization_id,conversation_id,status,external_id,error_code,metadata")
+          .eq("organization_id", activeOrg.orgId)
+          .in("id", ids)
+      : { data: [], error: null };
+    if (messages.error)
+      return fail("internal_error", "Erro ao consultar transporte de mídia.", 500, { requestId });
+    for (const call of calls) {
+      const job = (jobs.data ?? []).find((j) => j.id === call.job_id) as MediaRunJob | undefined;
+      if (!job) continue;
+      const ownIds = new Set(
+        (ledger.data ?? []).filter((l) => l.job_id === job.id).map((l) => l.crm_message_id),
+      );
+      diagnostics.set(
+        call.id,
+        mediaRunDiagnostic(
+          activeOrg.orgId,
+          id,
+          call.contact_id,
+          job,
+          ((messages.data ?? []) as MediaRunMessage[]).filter((m) => ownIds.has(m.id)),
+        ),
+      );
+    }
+  }
   const rows = [
-    ...((data ?? []) as unknown as LlmCallRow[]).map(paraLinhaDeExecucao),
+    ...calls.map((c) => ({ ...paraLinhaDeExecucao(c), ...(diagnostics.get(c.id) ?? {}) })),
     ...(testRuns ?? []),
   ].sort((a, b) =>
     // Date sozinho perde microssegundos e pode produzir um cursor que pula

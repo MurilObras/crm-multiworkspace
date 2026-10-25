@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useT } from "@/hooks/i18n/useT";
+import type { MediaDiagnostic } from '@/lib/ai/agents/media-simulation';
 
 export type RunStatus =
   "pending" | "running" | "completed" | "failed" | "aborted" | "handoff" | "timeout";
@@ -39,6 +40,7 @@ export interface AgentRunRow {
   latency_ms: number | null;
   steps_count: number | null;
   tool_calls: unknown;
+  media_decision?: MediaDiagnostic;
   is_dry_run: boolean;
   started_at: string;
   completed_at: string | null;
