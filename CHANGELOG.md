@@ -8,6 +8,18 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.8.0] — 2026-10-25
+
+### Corrigido
+
+- **Pedidos naturais de mídia, reenvio configurável e planejamento visível no teste** O atendimento interpreta assunto, formato e repetição antes de filtrar o catálogo por histórico. O agente pode reconhecer pedidos como “mostrar na prática”, escolhendo um único arquivo aprovado. As regras de etapa, atendimento humano, texto, aprovação e tentativas pendentes continuam no pré-voo.
+
+  A configuração de mídias oferece uma política por agente para exigir intenção clara de repetição. Agentes existentes mantêm a política anterior até alteração pelas telas. Uma preferência por texto limitada à resposta atual não vira bloqueio permanente.
+
+  Regras gerais e exceções temporárias na mesma mensagem são preservadas separadamente, inclusive ao reavaliar registros existentes. O ensaio também respeita um pedido atual de formato após uma preferência anterior por texto.
+
+  A tela de testes permite cenários fictícios e distingue planejamento de transporte. Execuções novas mostram intenção, arquivo, autorização, motivo e estado da tentativa, vinculados ao job e à conversa; registros antigos não recebem dados reconstruídos.
+
 ## [3.7.2] — 2026-10-23
 
 ### Corrigido
@@ -3419,7 +3431,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.2...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.8.0...HEAD
+[3.8.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.2...v3.8.0
 [3.7.2]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.1...v3.7.2
 [3.7.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.0...v3.7.1
 [3.7.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.6.0...v3.7.0
