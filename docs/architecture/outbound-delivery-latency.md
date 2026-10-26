@@ -43,3 +43,14 @@ fila, consultas SQL e transporte também compõem a latência.
 
 Diagnóstico, prazos, evidências e checklist:
 [Esperas no caminho de envio](../testing/inbound-delivery-latency.md).
+
+## Observação e instalação nova
+
+As políticas privadas entregam `postgres_changes` somente aos papéis da
+aplicação: uma inscrição anônima não invoca helpers privados nem interrompe o
+lote autenticado. O hook invalida a consulta do Inbox quando recebe o evento.
+No wizard, a escolha de pular WhatsApp conserva o agente em rascunho, mesmo
+que a tela do QR tenha criado uma sessão pendente.
+
+Reprodução, matriz de segurança e telas:
+[Complemento de homologação](../testing/pr53-validation-completion.md).

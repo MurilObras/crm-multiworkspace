@@ -95,16 +95,16 @@ Resultados locais até esta revisão:
   também no retorno por indisponibilidade. Depois desse ajuste, typecheck,
   472 testes unitários afetados e 56 invariantes de turno/template passaram
   novamente. Não houve alteração de UI; o CI verificará o build/E2E do HEAD final.
-- A exploração adicional de instalação fresca parou no bloqueio correto de
-  chave de IA ausente neste QA; cinco casos seguintes não executaram. Não foi
-  considerada aprovada nem foi alterado o fluxo de onboarding para contorná-la.
-  Essa spec já é excluída do gate do CI. O teste opcional de Inbox em tempo real,
-  também já excluído por instabilidade, falhou novamente após reinício do
-  Realtime de QA: assinatura ativa, mas bolha ausente sem reload. O serviço de
-  QA registrou `permission denied for function fn_can_view_conversation` na
-  aplicação da RLS da replicação. Nenhuma permissão foi ampliada para fazer o
-  teste passar. Browser, token, RLS e Realtime não foram alterados neste PR;
-  esta falha adicional não foi apresentada como corrigida pelo limite HTTP.
+- No primeiro HEAD (`5e818864`), a instalação fresca parou por falta de chave
+  e o Inbox falhou apesar de a assinatura estar ativa. Os limites HTTP não
+  foram apresentados como correção dessas pendências. A investigação seguinte
+  identificou a sessão de QR ignorando a escolha de pular e o erro de helper
+  privado no lote RLS de um assinante anônimo.
+- O complemento corrige esses caminhos com a migration 0241 e a escolha de
+  vínculo do onboarding: **13 cenários de instalação** e **três rodadas do
+  Inbox** aprovados, sem liberação de funções privadas. O teste de Inbox volta
+  ao gate do CI e comprova o frame real, sem aprovação falsa por refetch.
+  Evidências e limites em [Complemento de homologação](pr53-validation-completion.md).
 
 O ambiente usa dados sintéticos, sem chaves reais de IA/e-mail ou sessão de
 WhatsApp conectada. A única mensagem real desta investigação foi a reprodução
