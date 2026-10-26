@@ -56,7 +56,7 @@ O observador read-only não encontrou espera longa no banco nessa nova amostra.
 
 ## Validação
 
-Planejada, antes da execução: receiver HTTP real com headers/body travados,
+Executada com receiver HTTP real com headers/body travados,
 503 sem retry oculto, orçamento acumulado e isolamento de escopos; sucesso de
 escrita e upload manual preservado (`service-fetch.test.ts`). Timeout pré-rede
 retoma a mesma mensagem uma vez; timeout após confirmação não duplica
@@ -66,10 +66,32 @@ humano, mídias e isolamento.
 `inbound-retomada-e-midia.test.ts` exercita turno completo contra banco: falha,
 indisponibilidade e exceção no primeiro envio não podem abrir outra sequência,
 alterar o lead com uma tool do mesmo lote ou gerar outro step/checkpoint.
+`agent-send-template-turn.test.ts` confirma a mesma interrupção para template
+indisponível: não gera outro step nem fecha memória como sucesso.
 
-Checagens locais, suíte unitária, baseline install/update/invariantes em pg15 e
-E2E de Inbox, catálogo e diagnóstico em Supabase descartável. Resultados serão
-acrescentados após execução. Nenhuma suíte usa dados ou clientes reais.
+Resultados locais até esta revisão:
+
+- Typecheck aprovado; lint completo sem erros (324 avisos preexistentes),
+  `lint:channels`, `lint:role-rank` e `release:conferir` aprovados. Este último
+  apenas calculou a próxima versão; não gerou release, tag ou publicação.
+- 26 arquivos unitários afetados: 472 testes aprovados. O reteste focal dos
+  limites, ledger e handler passou com 65 testes (subconjunto, não soma).
+- Baseline install/update e sete arquivos de invariantes em pg15 descartável:
+  111 testes aprovados. Reteste de turno/template: 56 testes aprovados, com
+  sobreposição aos anteriores; inclui a interrupção em template indisponível.
+- A execução local ampla foi interrompida por recursos do ambiente de QA;
+  isso não equivale a aprovação da suíte completa. O CI executará as suítes
+  completas de unitários/invariantes e as duas partes obrigatórias do E2E.
+- Build de interface local com Webpack, um worker e source maps externos
+  desativados apenas no diretório descartável de QA. A configuração versionada
+  não foi alterada; o build padrão com Turbopack continua obrigatório no CI.
+- E2E focal em Supabase descartável: em execução; resultado e revisão posterior
+  serão registrados antes da entrega do PR.
+
+O ambiente usa dados sintéticos, sem chaves reais de IA/e-mail ou sessão de
+WhatsApp conectada. A única mensagem real desta investigação foi a reprodução
+diagnóstica anterior à correção. Não há validação desta versão na VPS nem
+promessa de duração total do atendimento; isso exige publicação autorizada.
 
 ## Living System Checklist
 

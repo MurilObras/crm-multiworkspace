@@ -3460,7 +3460,7 @@ async function executarTurnoDoAgente(
         veto_code: delivery.result?.error?.code ?? null });
       if (supersededError !== null) await settleSuperseded();
       if (runError !== null) throw runError;
-      if (outcomes.some(o => o.kind === 'failed')) throw new Error('áudio obrigatório com envio falho — recuperação pela fila');
+      if (deliveryFailed()) throw new Error('áudio obrigatório com envio falho — recuperação pela fila');
       const deferred = outcomes.find(o => o.kind === 'queued' || o.kind === 'blocked');
       if (deferred) {
         await execution.drain();
@@ -3669,10 +3669,11 @@ async function executarTurnoDoAgente(
     await mcpCleanup?.();
     throw runError; // job falha → retry da fila; o ledger segura duplicata de envio
   }
-  if (outcomes.some((o) => o.kind === 'failed')) {
-    // ponytail: retry re-roda o run inteiro (LLM incluso); seq N re-encontra a
-    // linha do ledger — 'accepted' pula, 'failed' rotaciona a key (F2-06).
-    throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
+  if (deliveryFailed()) {
+    // A identidade (job, seq) é preservada. O ledger distingue confirmação,
+    // preparação retomável e entrega incerta: timeout não autoriza nova key
+    // nem repetição de um transporte que pode ter ocorrido.
+    throw new Error('envio não confirmado pelo CRM — recuperação conforme ledger');
   }
 
   // Mesmo inbound, depois das ferramentas que podem avançar a etapa. Nunca
