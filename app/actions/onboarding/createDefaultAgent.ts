@@ -128,10 +128,19 @@ async function publishFirstVersion(
   agent: AgenteDoOnboarding,
   systemPrompt: string,
   userId: string,
+  whatsappPulado: boolean | undefined,
 ): Promise<PublishOutcome> {
   // Já publicado numa passagem anterior: republicar colidiria com
   // `ai_agent_versions_unique_number` sem ganhar nada.
   if (agent.published_version_id) return { published: true };
+  if (whatsappPulado === undefined) {
+    return { published: false, reason: "failed", message: "Não foi possível ler a escolha de conexão do onboarding." };
+  }
+
+  // Gerar o QR já cria uma sessão no banco. "Pular" escolhe NÃO vinculá-la:
+  // sua mera existência não pode forçar publicação ou cobrar chave de IA.
+  // Um agente já publicado acima continua intacto nas reentradas do wizard.
+  if (whatsappPulado) return { published: false, reason: "no_channel" };
 
   // Mesma lista que os seletores das telas de IA: canal arquivado não é destino
   // válido de agente, e publicar uma versão apontando para um deixaria o
@@ -343,13 +352,14 @@ export async function createDefaultAgent(formData: FormData): Promise<CreateAgen
 
   const admin = createAdminClient();
 
-  // O ramo que o dono escreveu no primeiro passo. Falha de leitura NÃO derruba o
-  // passo: o funcionário nasce sem essa frase, que é degradação honesta — o
-  // contrário seria travar a contratação por causa de um adjetivo.
+  // A descrição pode degradar; a escolha de conexão governa a publicação.
+  // Se a leitura falhar, não assumir que o dono autorizou vincular um canal.
   let oQueFaz: string | undefined;
+  let whatsappPulado: boolean | undefined;
   try {
     const { state } = await loadOnboardingState(ctx.orgId);
     oQueFaz = state.welcome?.o_que_faz;
+    whatsappPulado = state.whatsapp?.skipped === true;
   } catch {
     oQueFaz = undefined;
   }
@@ -429,7 +439,7 @@ export async function createDefaultAgent(formData: FormData): Promise<CreateAgen
     if (!pub.ok) regrasNaoSalvas = pub.mensagem;
   }
 
-  const publicacao = await publishFirstVersion(admin, ctx.orgId, agent, systemPrompt, ctx.userId);
+  const publicacao = await publishFirstVersion(admin, ctx.orgId, agent, systemPrompt, ctx.userId, whatsappPulado);
 
   // Estado, audit e evento saem em QUALQUER desfecho da publicação: o agente
   // existe, e o passo do onboarding é "configurar IA", não "publicar". Deixar
