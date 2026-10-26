@@ -3665,15 +3665,13 @@ async function executarTurnoDoAgente(
     }
   }
 
-  if (runError !== null) {
-    await mcpCleanup?.();
-    throw runError; // job falha → retry da fila; o ledger segura duplicata de envio
-  }
   if (deliveryFailed()) {
+    await execution.drain();
+    await mcpCleanup?.();
     // A identidade (job, seq) é preservada. O ledger distingue confirmação,
     // preparação retomável e entrega incerta: timeout não autoriza nova key
     // nem repetição de um transporte que pode ter ocorrido.
-    throw new Error('envio não confirmado pelo CRM — recuperação conforme ledger');
+    throw runError ?? new Error('envio não confirmado pelo CRM — recuperação conforme ledger');
   }
 
   // Mesmo inbound, depois das ferramentas que podem avançar a etapa. Nunca
