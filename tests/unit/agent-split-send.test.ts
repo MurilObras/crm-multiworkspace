@@ -42,6 +42,21 @@ describe("sendInBubbles", () => {
     expect(out.kind).toBe("blocked");
     expect(send).toHaveBeenCalledTimes(2); // parou na 2ª
   });
+
+  it("não ultrapassa uma parte queued mesmo que o canal volte antes da próxima", async () => {
+    const send = vi.fn()
+      .mockResolvedValueOnce({ kind: "queued", messageId: "pendente" })
+      .mockResolvedValueOnce({ kind: "sent", messageId: "fora-de-ordem" });
+    const prepare = vi.fn(async (_parts: string[]) => undefined);
+    const sleep = vi.fn(async () => undefined);
+    const text = "Primeira parte.\n\nSegunda parte.";
+    const out = await sendInBubbles(text, { enabled: true, maxChars: 16, prepare,
+      send, sleep, jitter: () => 0 });
+    expect(prepare).toHaveBeenCalledWith(["Primeira parte.", "Segunda parte."]);
+    expect(out.kind).toBe("queued");
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
 });
 
 it('não reagrupa partes já aprovadas quando o limite muda na retomada',async()=>{

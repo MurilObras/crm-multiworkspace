@@ -6,6 +6,8 @@ A chave response_key identifica uma resposta lógica, não uma entidade nova: a 
 
 O snapshot guarda texto privado e próximas chamadas de envio do mesmo lote para evitar regeneração. As partes aprovadas não são reagrupadas se o limite mudar. O marcador de fechamento remove esse conteúdo quando termina o atendimento. A migration 0242 remove-o quando o contato é anonimizado ou excluído. Nenhum corpo, token ou URL assinada entra no log. Registros antigos sem chave permanecem históricos, sem reconstituição fictícia.
 
+Uma parte queued interrompe a sequência: as próximas permanecem no plano aprovado para retomada, mesmo se o canal voltar antes do intervalo entre partes. Somente confirmação de envio permite avançar.
+
 Tempo mínimo é uma configuração do agente, editável junto ao Estilo de resposta, desligada por padrão. Processamento conta no piso; aguardar devolve o job à fila depois que modelo/tools cessam. O número inteiro não fica sob lock durante essa espera.
 
 Living System Checklist:

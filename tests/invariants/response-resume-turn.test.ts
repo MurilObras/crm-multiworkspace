@@ -85,6 +85,23 @@ async function accept(f:Awaited<ReturnType<typeof fixture>>,input:ChannelSendInp
  await pool.query(`insert into send_ledger(id,organization_id,contact_id,job_id,seq,body_hash,status,crm_message_id) values($1,$2,$3,$4,$5,$6,'accepted',$7)`,[key,f.org,f.contact,f.job.id,input.seq,createHash('sha256').update(input.body).digest('hex'),mid]);
  return {kind:'sent',idempotencyKey:key,messageId:mid};
 }
+it('parte queued preserva o plano e só libera a seguinte na retomada confirmada',async()=>{
+ const f=await fixture(),job=await f.claim('queued');const calls={model:0},responseKey=randomUUID();
+ const bodies=['Primeira parte aprovada.','Segunda parte aprovada.'];
+ await saveDelivery(pool,job,'queued',{version:1,responseKey,agentId:null,agentVersionId:null,firstSeq:1,
+  body:bodies.join(' '),approvedBody:bodies.join(' '),bubbles:bodies,approved:true,waitUntil:null});
+ const attempted:string[]=[];
+ await expect(handler(async input=>{attempted.push(input.body);return {kind:'queued',idempotencyKey:randomUUID(),messageId:null};},calls)
+  (job,pool,{workerId:'queued'})).rejects.toBeInstanceOf(JobSettledError);
+ expect(attempted).toEqual([bodies[0]]);expect(calls.model).toBe(0);
+ const saved=(await pool.query('select status,payload from job_queue where id=$1',[job.id])).rows[0];
+ expect(saved.status).toBe('pending');expect(saved.payload.response_delivery.bubbles).toEqual(bodies);
+ expect((await pool.query('select count(*)::int n from lead_checkpoints where organization_id=$1 and job_id=$2',[f.org,job.id])).rows[0].n).toBe(0);
+ await pool.query('update job_queue set run_after=now() where id=$1',[job.id]);const resumed=await f.claim('queued-resume');
+ const confirmed:string[]=[];
+ await handler(async input=>{confirmed.push(input.body);return accept(f,input);},calls)(resumed,pool,{workerId:'queued-resume'});
+ expect(confirmed).toEqual(bodies);expect(calls.model).toBe(1);
+});
 it('conserva segunda chamada de envio do mesmo step sem repetir modelo nem mutações',async()=>{
  const f=await fixture(),job=await f.claim('first');let model=0;const calls={model:0};
  const parts=['Funciona com seus registros pelo WhatsApp.','Qual gasto pesa mais na sua obra?'];

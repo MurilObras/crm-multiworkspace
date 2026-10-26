@@ -120,7 +120,7 @@ export interface SendInBubblesOpts<T extends BubbleOutcome = BubbleOutcome> {
 /**
  * Envia o corpo em bolhas quando `enabled`; senão um envio só. Cada bolha passa
  * pelo mesmo `send` (que no runtime é o channel.send pós-guardrails, com seq++).
- * Para no 1º outcome que não seja de sucesso ('sent'/'already_sent'/'queued')
+ * Para no 1º outcome que não seja confirmado ('sent'/'already_sent')
  * e o devolve — não segue mandando bolha após veto/bloqueio/falha.
  *
  * LIMITAÇÃO CONHECIDA: o contador de cap diário do pacing anti-ban (recordSend)
@@ -128,7 +128,7 @@ export interface SendInBubblesOpts<T extends BubbleOutcome = BubbleOutcome> {
  * em 1, não N — aceitável por ora (doutrina: "anti-ban gateia uma vez"); revisitar
  * se o warm-up precisar de precisão por mensagem física.
  */
-const OK_KINDS = new Set(["sent", "already_sent", "queued"]);
+const OK_KINDS = new Set(["sent", "already_sent"]);
 
 export async function sendInBubbles<T extends BubbleOutcome>(
   body: string,
