@@ -8,6 +8,31 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.8.1] — 2026-10-26
+
+### Corrigido
+
+- **Esperas do serviço deixam de prender o envio por tempo indefinido** O envio do agente podia permanecer esperando consultas ou assinatura de mídia no
+  Supabase durante minutos, mantendo o canal ocupado. Consultas do serviço agora
+  têm prazo e não acumulam retentativas HTTP ocultas. A preparação
+  possui orçamento conjunto; o pós-envio conserva um prazo por requisição,
+  independente do transporte do arquivo.
+  Depois de uma falha de envio, o modelo encerra o turno sem tentar outras
+  mensagens ou alterações pendentes; a fila mantém a recuperação da tentativa.
+
+  O diagnóstico registra tempos de preparação, transporte e reconciliação por
+  tentativa, sem conteúdo ou credenciais. Uma entrega confirmada continua sem ser
+  reenviada; uma entrega incerta continua exigindo conferência. Uploads manuais de
+  mídia mantêm seu comportamento.
+
+- **Inbox atualiza com segurança e pular WhatsApp preserva o rascunho** Uma inscrição anônima não interrompe mais a entrega Realtime aos usuários
+  autenticados. As políticas de dados privados se aplicam aos papéis corretos,
+  preservando as regras de acesso por organização e as funções privadas.
+
+  No primeiro acesso, pular o WhatsApp depois de gerar um QR mantém o agente
+  em rascunho. A sessão pendente não força publicação nem bloqueia esse caminho
+  por falta de chave de IA. Agentes já publicados permanecem intactos.
+
 ## [3.8.0] — 2026-10-25
 
 ### Corrigido
@@ -3431,7 +3456,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.8.0...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.8.1...HEAD
+[3.8.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.8.0...v3.8.1
 [3.8.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.2...v3.8.0
 [3.7.2]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.1...v3.7.2
 [3.7.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.0...v3.7.1
