@@ -120,6 +120,7 @@ verify, build-and-size, invariants, e2e, imagens-ok
   secret) → query com `organization_id` explícito → `audit()` se mutação → `ok()` / `fail()`.
 - Erro: `fail(code, message, status)` com código de `lib/api/errors.ts`. Nunca `throw` cru na borda.
 - JSON **snake_case** na API. Dinheiro em `_cents` + `currency`. Datas ISO-8601 UTC.
+- Políticas privadas de leitura que usam helpers de autorização se aplicam a `authenticated, service_role`, preservando papéis explícitos adicionais. Não use `PUBLIC` nem libere EXECUTE anônimo para contornar erro do Realtime.
 - Log: `lib/logger.ts` (estruturado). **`console.log` é proibido** em código merged.
 - Testes ao lado do código (`lib/foo/bar.test.ts`) ou em `tests/{unit,api,invariants,e2e}/`.
 - Comentários em PT-BR são a norma neste repo — mantenha o idioma do arquivo que editar.
