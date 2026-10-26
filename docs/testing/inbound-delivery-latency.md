@@ -85,8 +85,26 @@ Resultados locais até esta revisão:
 - Build de interface local com Webpack, um worker e source maps externos
   desativados apenas no diretório descartável de QA. A configuração versionada
   não foi alterada; o build padrão com Turbopack continua obrigatório no CI.
-- E2E focal em Supabase descartável: em execução; resultado e revisão posterior
-  serão registrados antes da entrega do PR.
+- E2E focal em Supabase descartável: os 12 cenários de catálogo/mídias, Inbox
+  com citação e diagnóstico de execuções passaram após retestes afetados. O teste
+  de foto/vídeo recarregava antes do ACK e cancelava o PATCH; agora aguarda a
+  confirmação. O de áudio também passou a selecionar seu item específico,
+  permitindo um catálogo já populado. Uma queda do túnel de QA interrompeu o
+  último login; o caso de vídeo passou isolado após restabelecer a conexão.
+- A revisão posterior encontrou a necessidade de drenar as tools e fechar MCP
+  também no retorno por indisponibilidade. Depois desse ajuste, typecheck,
+  472 testes unitários afetados e 56 invariantes de turno/template passaram
+  novamente. Não houve alteração de UI; o CI verificará o build/E2E do HEAD final.
+- A exploração adicional de instalação fresca parou no bloqueio correto de
+  chave de IA ausente neste QA; cinco casos seguintes não executaram. Não foi
+  considerada aprovada nem foi alterado o fluxo de onboarding para contorná-la.
+  Essa spec já é excluída do gate do CI. O teste opcional de Inbox em tempo real,
+  também já excluído por instabilidade, falhou novamente após reinício do
+  Realtime de QA: assinatura ativa, mas bolha ausente sem reload. O serviço de
+  QA registrou `permission denied for function fn_can_view_conversation` na
+  aplicação da RLS da replicação. Nenhuma permissão foi ampliada para fazer o
+  teste passar. Browser, token, RLS e Realtime não foram alterados neste PR;
+  esta falha adicional não foi apresentada como corrigida pelo limite HTTP.
 
 O ambiente usa dados sintéticos, sem chaves reais de IA/e-mail ou sessão de
 WhatsApp conectada. A única mensagem real desta investigação foi a reprodução
