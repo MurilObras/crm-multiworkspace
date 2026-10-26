@@ -10,6 +10,7 @@ export function outboundTiming(scope: { organization_id: string; job_id: string;
   const started = performance.now();
   let since = started;
   let phase: OutboundSendPhase = 'ledger';
+  let caughtErrorPhase: OutboundSendPhase | null = null;
   const phases: Partial<Record<OutboundSendPhase, number>> = {};
   const record = () => {
     const now = performance.now();
@@ -18,10 +19,12 @@ export function outboundTiming(scope: { organization_id: string; job_id: string;
   };
   return {
     phase(next: OutboundSendPhase) { record(); phase = next; },
+    fault() { caughtErrorPhase ??= phase; },
     finish(outcome: string) {
       record();
       logger.info('outbound_attempt_timing', {
         ...scope, outcome, elapsed_ms: Math.round(performance.now() - started), phases_ms: phases,
+        ...(caughtErrorPhase ? { caught_error_phase: caughtErrorPhase } : {}),
       });
     },
   };

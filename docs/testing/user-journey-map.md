@@ -1996,6 +1996,7 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 
 - [P0] Serviço HTTP travado é interrompido incluindo body, sem multiplicar retries de GET; orçamento não vaza entre tentativas (`service-fetch.test.ts`).
 - [P0] Timeout antes da rede preserva identidade; depois de confirmação não duplica o envio (`followup-inline-ledger.test.ts`).
+- [P0] Falha de envio impede novas mensagens, tools mutantes no mesmo lote e novos steps do modelo (`inbound-retomada-e-midia.test.ts`).
 - [P1] Inbox, catálogo e execuções seguem acessíveis após fix de transporte; E2E existentes medem o frontend real no ambiente isolado.
 - Mapa do caminho e limites: `docs/testing/inbound-delivery-latency.md`. Medições técnicas ficam no log operacional; o estado de entrega continua na mensagem/ledger.
 

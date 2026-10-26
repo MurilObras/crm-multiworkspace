@@ -17,7 +17,7 @@ import { prepareAgentMedia } from './prepare-media';
 import { followupJobGate } from './followup-job-gate';
 import { currentAutomaticRecipient } from '@/lib/automation/current-recipient';
 import { outboundTiming } from '@/lib/channels/outbound-timing';
-import { OUTBOUND_PREPARATION_BUDGET_MS, OUTBOUND_FINALIZATION_BUDGET_MS,
+import { OUTBOUND_PREPARATION_BUDGET_MS,
   withServiceRequestBudget, resetServiceRequestBudget } from '@/lib/supabase/service-fetch';
 
 export interface OutboundAttemptOptions {
@@ -175,7 +175,6 @@ async function executeAttempt(
   const approvalMetadata = () => audioSource ? { approved_media: audioSource,
     ...((audioSource as { media_type?: string }).media_type === 'audio' ? { approved_audio: audioSource } : {}) } : {};
   const messageId = previous?.id ?? key;
-  let finalizationBudgetStarted = false;
   try {
     timing.phase('prepare_media');
     await assertAudioApproved();
@@ -206,12 +205,9 @@ async function executeAttempt(
       onPhase: phase => {
         timing.phase(phase);
         // O transporte possui deadline específico do adapter (vídeo pode levar
-        // mais que texto). Só depois começa o orçamento de pós-envio HTTP.
+        // mais que texto). Depois dele cada request mantém seu teto: auditoria
+        // lenta não pode esgotar antecipadamente o prazo do evento de negócio.
         if (phase === 'transport') resetServiceRequestBudget(null);
-        if (phase === 'persist_result' && !finalizationBudgetStarted) {
-          finalizationBudgetStarted = true;
-          resetServiceRequestBudget(OUTBOUND_FINALIZATION_BUDGET_MS);
-        }
       },
       writeAttemptState: (message, change) => writeAttemptState(message.id, change),
       beforeSend: async () => {
@@ -293,6 +289,7 @@ async function executeAttempt(
       },
     });
   } catch (error) {
+    timing.fault();
     timing.phase('reconcile');
     if (error instanceof OutboundLeaseLostError) throw error;
     if (error instanceof OutboundSupersededError || error instanceof OutboundAudioUnavailableError) {

@@ -14,6 +14,13 @@ O código fazia leituras/escritas REST sem prazo explícito, em série, durante 
 exclusão do canal em `runBeforeSend`. O SDK também habilitava retries de GET.
 Isso amplifica uma degradação do serviço e retém os outros envios do canal.
 
+O histórico identifica a origem dessa lacuna no código: `0fc4dc9d` (fusão de
+17/07/2026) removeu `CRM_MCP_TIMEOUT_MS`, antes declarado com padrão de 15 s,
+e criou a borda direta com `sendMessageHandler`/client Supabase sem timeout
+equivalente. O comentário de `runBeforeSend` ainda citava o ajuste removido.
+Portanto a falta desse limite antecede a correção de intenção de mídia; esta
+entrega repõe limites no caminho que efetivamente está em execução.
+
 **Limite da evidência:** não havia duração por request/etapa. Não é possível
 atribuir cada minuto a um endpoint ou provar a causa interna dos 504 do serviço
 hospedado. `agent_turn` inclui tools; não mede só inferência. Não foi demonstrada
@@ -28,7 +35,8 @@ O observador read-only não encontrou espera longa no banco nessa nova amostra.
   continuam governando a retomada e a identidade de mensagem.
 - Assinatura de URL: 20 s. Cópia de mídia no worker: até 60 s por request.
 - A tentativa compartilha orçamento HTTP pré-transporte de 60 s. O transporte
-  usa o prazo do adapter. Pós-envio: outros 20 s. Não é timeout global de turno,
+  usa o prazo do adapter. Pós-envio: 20 s por request, sem orçamento compartilhado
+  que faça uma etapa auxiliar consumir o prazo das seguintes. Não é timeout global de turno,
   não limita inferência e não substitui os fences SQL.
 - O sinal cancela o fetch real, inclusive body; não usa Promise.race para liberar
   a fila deixando efeitos ativos. Timeout não prova rollback no servidor.
@@ -36,6 +44,9 @@ O observador read-only não encontrou espera longa no banco nessa nova amostra.
 - `outbound_attempt_timing` discrimina fases, resultado, job e sequência. Logs HTTP
   registram categoria e tempo até headers. Nada de URL, filtros, telefone, corpo
   ou credenciais. Erro lendo body aparece na fase da tentativa.
+  `caught_error_phase` conserva a fase do erro mesmo se um ACK permite reconciliar
+  o resultado como enviado. Isso não prova que todos os efeitos auxiliares foram
+  gravados; continua valendo a política existente de erros desses efeitos.
 - Nenhuma guarda de opt-out, humano, recência, aprovação ou tenant foi removida.
   ACK confirmado prevalece; incerteza não autoriza repetição automática.
 - Falha/indisponibilidade de envio encerra os próximos steps do modelo e bloqueia
@@ -74,4 +85,6 @@ acrescentados após execução. Nenhuma suíte usa dados ou clientes reais.
 8. Continuidade: pausas humana/responsável e follow-ups conservam seus fences.
 9. Retorno: fases separam espera do serviço, arquivo e reconciliação; recuperação
    existente informa o operador, sem mascarar falha como entrega.
-10. Mapa: `user-journey-map.md`; entradas/saídas estão nomeadas acima.
+10. Mapa: `docs/architecture/outbound-delivery-latency.md` declara os consumidores,
+    a saída para o serviço, a fila e o retorno operacional; jornadas em
+    `user-journey-map.md`.

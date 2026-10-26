@@ -6,7 +6,6 @@ import { logger } from '@/lib/logger';
 export const SERVICE_DATABASE_TIMEOUT_MS = 20_000;
 export const WORKER_STORAGE_TIMEOUT_MS = 60_000;
 export const OUTBOUND_PREPARATION_BUDGET_MS = 60_000;
-export const OUTBOUND_FINALIZATION_BUDGET_MS = 20_000;
 
 // Escopo por tentativa; requests de outros clientes/workspaces não compartilham
 // relógio nem AbortController. Não interrompe tools por Promise.race.
