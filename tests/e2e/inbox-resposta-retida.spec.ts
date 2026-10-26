@@ -32,7 +32,13 @@ test('aviso acompanha a resposta exata, some após confirmação e mantém hist�
  await part(1,'sent');await page.reload();await expect(notice).toContainText('parcialmente',{timeout:60000});
  const second=await part(2,'sending');await page.reload();await expect(notice).toContainText('Entrega sem confirmação',{timeout:60000});
  const update=await admin.from('messages').update({status:'sent',external_id:'ack-second',metadata:{...second.metadata,outbound_attempt:{phase:'confirmed'}}}).eq('organization_id',org).eq('id',second.id);expect(update.error).toBeNull();
- await expect(notice).toHaveCount(0,{timeout:45000});await page.reload();await expect(notice).toHaveCount(0,{timeout:60000});
+ await expect(notice).toHaveCount(0,{timeout:45000});
+ const loadedRetention=page.waitForResponse(r=>r.url().includes('/conversations/'+conv+'/retention')&&r.request().method()==='GET'&&r.status()===200);
+ await page.reload();const retention=await loadedRetention;
+ expect((await retention.json()).data.retentions).toEqual([]);
+ await expect(page.getByTestId('chat-thread').getByText('Parte 2',{exact:true})).toBeVisible({timeout:60000});
+ await expect(page.getByRole('textbox',{name:'Mensagem',exact:true})).toBeVisible();
+ await expect(notice).toHaveCount(0,{timeout:60000});
  const history=await admin.from('before_send_traces').select('id').eq('organization_id',org).eq('job_id',job);expect(history.error).toBeNull();expect(history.data).toHaveLength(1);
  await page.screenshot({path:evidence+'/retencao-resolvida.png',fullPage:true});
 });
@@ -45,6 +51,6 @@ test('tempo mínimo salva, relê e não depende de alteração de prompt',async(
  await section.getByRole('spinbutton',{name:'Mínimo em segundos',exact:true}).fill('20');await section.getByRole('spinbutton',{name:'Máximo em segundos',exact:true}).fill('30');
  await section.getByRole('button',{name:'Salvar tempo de resposta',exact:true}).click();await expect(section.getByRole('status')).toContainText('salvo e conferido',{timeout:60000});
  await page.reload();await expect(section.getByRole('switch')).toBeChecked({timeout:60000});await expect(section.getByRole('spinbutton',{name:'Mínimo em segundos',exact:true})).toHaveValue('20');await expect(section.getByRole('spinbutton',{name:'Máximo em segundos',exact:true})).toHaveValue('30');
- await page.screenshot({path:evidence+'/tempo-salvo.png',fullPage:true});
+ await section.screenshot({path:evidence+'/tempo-salvo.png'});
  }finally{await admin.from('ai_agents').update({config:before.data?.config??{}}).eq('id',agent);}
 });
