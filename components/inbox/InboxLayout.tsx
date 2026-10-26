@@ -442,7 +442,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
             <div className="min-h-0 flex-1 overflow-hidden">
               <ChatThread conversationId={selectedConversation.id} onResponder={setRespondendo} />
             </div>
-            <RetentionNotice conversationId={selectedConversation.id} />
+            <RetentionNotice conversationId={selectedConversation.id} organizationId={orgId} />
             {motivoDaJanela && (
               <JanelaFechadaAviso
                 conversationId={selectedConversation.id}

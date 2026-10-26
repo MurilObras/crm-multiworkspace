@@ -43,3 +43,14 @@ describe("sendInBubbles", () => {
     expect(send).toHaveBeenCalledTimes(2); // parou na 2ª
   });
 });
+
+it('não reagrupa partes já aprovadas quando o limite muda na retomada',async()=>{
+ const sent:string[]=[];
+ await expect(sendInBubbles('Primeira. Segunda.',{enabled:true,maxChars:5,maxBubbles:1,plannedBubbles:['Primeira.','Segunda.'],send:async body=>{sent.push(body);return {kind:'sent'};},sleep:async()=>{},jitter:()=>0})).rejects.toThrow('response_send_limit_changed');
+ expect(sent).toEqual([]);
+});
+it('persiste o plano inteiro antes do primeiro transporte e conserva a ordem original',async()=>{
+ const events:string[]=[];
+ await sendInBubbles('Texto original',{enabled:false,maxChars:100,plannedBubbles:['A','B'],prepare:async parts=>{events.push('prepare:'+parts.join(','));},send:async body=>{events.push(body);return {kind:'sent'};},sleep:async()=>{},jitter:()=>0});
+ expect(events).toEqual(['prepare:A,B','A','B']);
+});

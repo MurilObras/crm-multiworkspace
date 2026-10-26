@@ -84,6 +84,27 @@ export function plannedMessageContent(rules: Json): Json[] {
   });
 }
 
+/** Somente o texto do titular; nunca o payload operacional completo, IDs de mídia ou URLs. */
+export function responseDeliveryContent(value:unknown): Record<string,unknown>|null {
+ if(!value || typeof value!=='object' || Array.isArray(value)) return null;
+ const plan=value as Record<string,unknown>;
+ if(typeof plan.body!=='string') return null;
+ return {body:plan.body,approved_body:typeof plan.approvedBody==='string'?plan.approvedBody:null,
+   parts:Array.isArray(plan.bubbles)?plan.bubbles.filter((v):v is string=>typeof v==='string'):[],has_media:Boolean(plan.media),
+   following:Array.isArray(plan.following)?plan.following.flatMap(item=>{if(!item||typeof item!=='object'||Array.isArray(item))return [];const v=item as Record<string,unknown>;return typeof v.body==='string'?[{body:v.body,has_media:Boolean(v.media)}]:[];}):[]};
+}
+export async function collectResponseDeliveryPlans(admin:SupabaseClient,organizationId:string,contactId:string){
+ const result:Record<string,unknown>[]=[];let cursor:string|null=null;
+ for(;;){
+  let query=admin.from("job_queue").select("id,created_at,payload").eq("organization_id",organizationId).eq("contact_id",contactId).order("id").limit(500);
+  if(cursor)query=query.gt("id",cursor);
+  const {data,error}=await query;if(error)throw new Error('lgpd_response_delivery_unavailable');
+  for(const row of data??[]){const content=responseDeliveryContent(row.payload?.response_delivery);if(content)result.push({job_id:row.id,created_at:row.created_at,...content});}
+  if((data?.length??0)<500)break;cursor=data![data!.length-1]!.id;
+ }
+ return result;
+}
+
 interface AutomationPlanExport { event_id:string; created_at:string; redacted_at:string|null; messages:Json[] }
 interface AutomationRunExport { id:string; event_id:string|null; rule_identity:string|null; status:string; execution_state:string|null; plan_redacted_at:string|null }
 
@@ -292,6 +313,7 @@ export interface ExportPayload {
   obra_subscription_receipts?: Record<string, unknown>[];
   obra_subscription_outreach?: Record<string, unknown>[];
   responsible_consultations?: ResponsibleConsultationExport;
+  response_delivery_plans?: Record<string,unknown>[];
   commercial_dashboard?:{payments:Record<string,unknown>[];attributions:Record<string,unknown>[];product_links?:Record<string,unknown>[];receipts?:Record<string,unknown>[]};
 }
 
@@ -705,6 +727,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  const response_delivery_plans=contactId?await collectResponseDeliveryPlans(admin,organizationId,contactId):[];
   const responsible_consultations=contactId ? await collectResponsibleConsultations(admin,organizationId,contactId)
     : {requests:[],deliveries:[],cases:[],events:[]};
 
@@ -790,6 +813,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     obra_subscription_receipts,
     obra_subscription_outreach,
     responsible_consultations,
+    response_delivery_plans,
     commercial_dashboard,
   };
 }

@@ -1,3 +1,4 @@
+import { recordDeliveryRetention } from './delivery-retention';
 import { createHash } from 'node:crypto';
 import type { HandlerCtx } from '@/lib/api/handlers/types';
 import { ApiError } from '@/lib/api/types';
@@ -15,6 +16,7 @@ import { decideOutboundRecovery, type RecoveryMessage } from './outbound-recover
 import { guardObraFollowup } from '@/lib/obra-no-bolso/followup-guard';
 import { prepareAgentMedia } from './prepare-media';
 import { followupJobGate } from './followup-job-gate';
+import { automaticPreflight } from '@/lib/automation/automatic-preflight';
 import { currentAutomaticRecipient } from '@/lib/automation/current-recipient';
 import { outboundTiming } from '@/lib/channels/outbound-timing';
 import { OUTBOUND_PREPARATION_BUDGET_MS,
@@ -23,6 +25,7 @@ import { OUTBOUND_PREPARATION_BUDGET_MS,
 export interface OutboundAttemptOptions {
   actor?: HandlerCtx['actor'];
   prepare?: () => Promise<SinkInput>;
+  sleep?: (milliseconds:number)=>Promise<void>;
 }
 
 /** Um protocolo de envio usado pelos DOIS consumidores. Os CTEs de owner tomam
@@ -35,8 +38,22 @@ export async function executeOutboundAttempt(
   const timing = outboundTiming({ organization_id: input.tenantId, job_id: input.jobId, seq: input.seq });
   let outcome = 'interrupted';
   try {
-    const result = await withServiceRequestBudget(OUTBOUND_PREPARATION_BUDGET_MS,
+    let result = await withServiceRequestBudget(OUTBOUND_PREPARATION_BUDGET_MS,
       () => executeAttempt(db, cfg, input, options, timing));
+    if(result.kind==='failed'||result.kind==='queued') await recordDeliveryRetention(db,input);
+    if(result.kind==='failed') {
+      const {rows}=await db.query<RecoveryMessage & {ledger_status:string}>(
+        `select m.id,m.status,m.external_id,m.error_code,m.metadata,l.status ledger_status
+          from send_ledger l join messages m on m.organization_id=l.organization_id and m.id=l.crm_message_id
+          where l.organization_id=$1 and l.contact_id is not distinct from $2 and l.job_id=$3 and l.seq=$4`,
+        [input.tenantId,input.leadId,input.jobId,input.seq]);
+      const failed=rows[0];
+      if(failed && (failed.metadata?.outbound_attempt as {phase?:string}|undefined)?.phase==='prepared' && decideOutboundRecovery(failed.ledger_status,failed)==='retry_safe') {
+        await (options.sleep??(ms=>new Promise(resolve=>setTimeout(resolve,ms))))(2000);
+        result=await withServiceRequestBudget(OUTBOUND_PREPARATION_BUDGET_MS,
+          ()=>executeAttempt(db,cfg,input,options,timing));
+      }
+    }
     outcome = result.kind;
     return result;
   } finally {
@@ -175,6 +192,7 @@ async function executeAttempt(
   const approvalMetadata = () => audioSource ? { approved_media: audioSource,
     ...((audioSource as { media_type?: string }).media_type === 'audio' ? { approved_audio: audioSource } : {}) } : {};
   const messageId = previous?.id ?? key;
+
   try {
     timing.phase('prepare_media');
     await assertAudioApproved();
@@ -199,9 +217,14 @@ async function executeAttempt(
       ...prepared, metadata: { ...prepared.metadata,
         ...(typeof rawFingerprint === 'string' ? { agent_media_fingerprint: rawFingerprint } : {}),
         ...approvalMetadata(), idempotency_key: key,
+        ...(input.responseKey ? { response_key: input.responseKey, response_part_count: input.responsePartCount } : {}),
         outbound_attempt: { phase: 'prepared', input: { ...prepared, metadata: undefined } } },
     }, {
       messageId,
+      loadAutomaticPreflight: contact ? scope => {
+        if(scope.contactId!==contact || scope.conversationId!==prepared.conversation_id) throw new Error('automation_recipient_changed');
+        return automaticPreflight(db,org,contact,prepared.conversation_id,scope.channelSessionId);
+      } : undefined,
       onPhase: phase => {
         timing.phase(phase);
         // O transporte possui deadline específico do adapter (vídeo pode levar

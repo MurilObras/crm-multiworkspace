@@ -8,6 +8,7 @@ export interface RetentionTrace {
   created_at: string;
   vetoed_gate: string | null;
   vetoed_code: string | null;
+  delivery_state: "pending" | "partial" | "uncertain" | "historical";
 }
 
 export interface RetentionData {
@@ -20,11 +21,12 @@ export interface RetentionData {
  * leve: um veto acontece no worker, fora do realtime de mensagens — 30s é
  * suficiente pra "operação visível" sem custo de canal dedicado.
  */
-export function useRetention(conversationId: string | null) {
+export function useRetention(conversationId: string | null, organizationId?: string|null) {
   return useQuery({
-    queryKey: ["conversation-retention", conversationId],
-    enabled: !!conversationId,
+    queryKey: ["conversation-retention", conversationId, organizationId],
+    enabled: !!conversationId && organizationId!==null,
     refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
     queryFn: () =>
       apiClient
         .get<{ data: RetentionData }>(`/api/v1/conversations/${conversationId}/retention`)

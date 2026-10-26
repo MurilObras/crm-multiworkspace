@@ -3,7 +3,8 @@ import type { ToolSet } from "ai";
 /** O SDK pode executar várias tools do mesmo step em paralelo. A fila local
  * conserva a ordem e revalida ANTES de cada efeito, inclusive tools MCP.
  * drain precisa terminar antes de liberar a lane do contato no Postgres. */
-export function guardCurrentInboundTools(tools: ToolSet, assertCurrent: () => Promise<void>) {
+export function guardCurrentInboundTools(tools: ToolSet, assertCurrent: () => Promise<void>,
+  onBlocked?: (name: string, input: unknown) => void) {
   let tail: Promise<void> = Promise.resolve();
   const guarded: ToolSet = {};
   for (const [name, definition] of Object.entries(tools)) {
@@ -22,7 +23,12 @@ export function guardCurrentInboundTools(tools: ToolSet, assertCurrent: () => Pr
         });
         await previous;
         try {
-          await assertCurrent();
+          try {
+            await assertCurrent();
+          } catch (error) {
+            onBlocked?.(name, args[0]);
+            throw error;
+          }
           return await execute(...args);
         } finally {
           release();

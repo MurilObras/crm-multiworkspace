@@ -66,6 +66,8 @@ export interface SendMessageInput {
   /** Posição da mensagem no turno (1..n) — com jobId forma a identidade da intenção. */
   seq: number;
   conversationId: string;
+  responseKey?: string;
+  responsePartCount?: number;
   body: string;
   media?: ChannelSendInput['media'];
   /** Veto antes de persistir e antes do transporte; pode executar duas vezes. */

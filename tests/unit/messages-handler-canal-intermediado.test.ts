@@ -372,6 +372,7 @@ describe("janela universal no sink de outbound", () => {
     const send = vi.spyOn(getAdapter("meta_cloud"), "send");
     const { supabase, estado } = makeSupabase({ ...conversaCompleta({ provider: "meta_cloud" }), last_inbound_at: null });
     const query = vi.fn(async (sql: string, args?: unknown[]) => {
+      if(sql.includes('as waiting')) return {rows:[{current:{id:CONTACT,phone_number:'+5511999999999',is_blocked:false,is_anonymized:false},latest:{contact_id:CONTACT,channel_session_id:SESSION,last_inbound_at:null,bot_silenced_until:null,assignee_kind:'agent',status:'ai_handling'},channel:{status:'WORKING',archived_at:null},waiting:false}],rowCount:1};
       if (sql.includes('update messages m set')) {
         if (!estado.message) throw new Error('fake_pg: message_missing');
         const metadata = (estado.message.metadata ?? {}) as Row;

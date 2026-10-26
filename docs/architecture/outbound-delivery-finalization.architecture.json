@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Resposta completa e aviso fiel ao envio",
+    "subtitle": "Plano fixo, espera e fechamento",
+    "output": "outbound-delivery-finalization.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Configuração e Inbox"
+    },
+    {
+      "id": "runtime",
+      "label": "Motor e banco"
+    }
+  ],
+  "mainPath": [
+    "reply-timing",
+    "response-plan",
+    "outbound",
+    "retention"
+  ],
+  "nodes": [
+    {
+      "id": "reply-timing",
+      "lane": "ui",
+      "col": 1,
+      "type": "frontend",
+      "label": "Tempo mínimo do agente"
+    },
+    {
+      "id": "response-plan",
+      "lane": "runtime",
+      "col": 2,
+      "type": "backend",
+      "label": "Plano privado do job"
+    },
+    {
+      "id": "outbound",
+      "lane": "runtime",
+      "col": 3,
+      "type": "backend",
+      "label": "Envio com ledger e checagem atual"
+    },
+    {
+      "id": "retention",
+      "lane": "ui",
+      "col": 4,
+      "type": "frontend",
+      "label": "Inbox: pendente, parcial ou incerto"
+    },
+    {
+      "id": "checkpoint",
+      "lane": "runtime",
+      "col": 4,
+      "type": "backend",
+      "label": "Memória estruturada sem ferramentas"
+    }
+  ],
+  "edges": [
+    {
+      "from": "reply-timing",
+      "to": "response-plan"
+    },
+    {
+      "from": "response-plan",
+      "to": "outbound"
+    },
+    {
+      "from": "outbound",
+      "to": "retention"
+    },
+    {
+      "from": "outbound",
+      "to": "checkpoint"
+    },
+    {
+      "from": "checkpoint",
+      "to": "response-plan",
+      "label": "próximo turno"
+    }
+  ]
+}

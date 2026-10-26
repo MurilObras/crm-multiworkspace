@@ -1,3 +1,4 @@
+import type { AutomaticPreflight } from "@/lib/automation/automatic-preflight";
 import { z } from 'zod';
 /**
  * Core handlers para messages (list + send).
@@ -208,6 +209,7 @@ export async function sendMessageHandler(
     messageId?: string;
     beforeSend?: (message: Message) => Promise<void>;
     beforeTransport?: (message: Message) => Promise<void>;
+    loadAutomaticPreflight?: (scope:{conversationId:string;contactId:string;channelSessionId:string}) => Promise<AutomaticPreflight>;
     writeAttemptState?: (message: Message, change: OutboundAttemptWrite) => Promise<Message>;
     onPhase?: (phase: OutboundSendPhase) => void;
     /**
@@ -587,21 +589,23 @@ export async function sendMessageHandler(
     const beginTransport = async () => {
       options?.onPhase?.('preflight');
       if ((ctx.actor.type !== "user" && ctx.actor.type !== "responsible")) {
-        const pending = await supabase.rpc("fn_responsible_waiting", { p_org: ctx.organization_id, p_contact: c.contact_id });
+        const preflight = await options?.loadAutomaticPreflight?.({conversationId:c.id,contactId:c.contact_id,channelSessionId:c.channel_session_id});
+        const pending = preflight ? {data:preflight.waiting,error:null} : await supabase.rpc("fn_responsible_waiting", { p_org: ctx.organization_id, p_contact: c.contact_id });
         if (pending.error) throw new ApiError(503,"internal_error",undefined,ctx.requestId,"responsible_pause_unavailable");
         if (pending.data === true) throw new OutboundPreflightDeferredError("awaiting_responsible");
-        const current = await currentAutomaticRecipient(supabase, ctx.organization_id, c.contact_id);
+        const current = preflight?.current ?? await currentAutomaticRecipient(supabase, ctx.organization_id, c.contact_id);
         if (current.phone_number !== c.contacts?.phone_number || current.wa_identity !== c.contacts?.wa_identity ||
             current.wa_lid !== c.contacts?.wa_lid) {
           throw new ApiError(403, "forbidden", undefined, ctx.requestId, "recipient_changed");
         }
-        const { data: latest, error: latestError } = await supabase.from("conversations")
+        const { data: latest, error: latestError } = preflight ? {data:preflight.latest,error:null} : await supabase.from("conversations")
           .select("contact_id, channel_session_id, last_inbound_at, bot_silenced_until, assignee_kind, status")
           .eq("id",c.id).eq("organization_id",ctx.organization_id).maybeSingle();
-        const { data: channel, error: channelError } = await supabase.from("channel_sessions")
+        const { data: channel, error: channelError } = preflight ? {data:preflight.channel,error:null} : await supabase.from("channel_sessions")
           .select("status, archived_at").eq("id",c.channel_session_id)
           .eq("organization_id",ctx.organization_id).maybeSingle();
-        if (latestError || channelError || !latest || latest.contact_id !== current.id ||
+        if (latestError || channelError) throw new ApiError(503,'internal_error',undefined,ctx.requestId,'automation_preflight_unavailable');
+        if (!latest || latest.contact_id !== current.id ||
             latest.channel_session_id !== c.channel_session_id || !channel || channel.archived_at || channel.status !== "WORKING") {
           throw new ApiError(403,"forbidden",undefined,ctx.requestId,"channel_unavailable");
         }
@@ -622,7 +626,8 @@ export async function sendMessageHandler(
         const { data, error } = await supabase.rpc("fn_automation_message_live", {
           p_org:ctx.organization_id,p_message:message.id,p_contact:c.contact_id,
         });
-        if (error || data !== true) throw new ApiError(403,"forbidden",undefined,ctx.requestId,"contact_anonymized");
+        if(error) throw new ApiError(503,'internal_error',undefined,ctx.requestId,'automation_preflight_unavailable');
+        if (data !== true) throw new ApiError(403,"forbidden",undefined,ctx.requestId,"contact_anonymized");
       }
       await options?.beforeTransport?.(message);
       transportStarted = true;
@@ -801,6 +806,9 @@ export async function sendMessageHandler(
         : !transportStarted && (ctx.actor.type !== "user" && ctx.actor.type !== "responsible") && err instanceof ApiError && err.status === 403
         ? "automatic_send_blocked" : msg.startsWith("storage_sign_failed")
         ? "storage_sign_failed"
+        : !transportStarted && ['recipient_unavailable','responsible_pause_unavailable','automation_preflight_unavailable'].includes(msg)
+          ? 'automation_preflight_unavailable'
+        : !transportStarted && (err instanceof Error && ['TimeoutError','AbortError'].includes(err.name)) ? 'automation_preflight_timeout'
         : adapter.codes.sendFailed;
 
       // Falta de CREDENCIAL não é falha desta mensagem: é canal ainda não

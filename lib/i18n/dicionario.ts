@@ -1,3 +1,4 @@
+import { RESPONSE_DELIVERY_TRANSLATIONS } from './response-delivery';
 /**
  * Os textos das telas que a equipe usa todo dia.
  *
@@ -41,6 +42,7 @@ import { DASHBOARD_TRANSLATIONS } from "./dashboard";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  ...RESPONSE_DELIVERY_TRANSLATIONS,
   ...MEDIA_INTENT_TRANSLATIONS,
   ...RESPONSIBLE_TRANSLATIONS,
   ...DASHBOARD_TRANSLATIONS,

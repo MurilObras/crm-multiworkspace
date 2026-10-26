@@ -284,26 +284,23 @@ describe('protocolo único sobre snapshots persistidos no PostgreSQL', () => {
     await expect(sendTurnMessage(db.pool,{supabase:db.supabase},{...input('worker'),tenantId:'20000000-0000-4000-8000-000000000001'})).rejects.toThrow('outbound_lease_lost');
     expect(transport).not.toHaveBeenCalled();
   });
-  it('timeout antes da rede conserva a identidade preparada e permite uma única retomada', async () => {
+  it('falha transitória no novo pré-voo retoma uma vez sem mudar a identidade nem repetir transporte', async () => {
     await claim('worker');
-    const rpc = db.supabase.rpc.bind(db.supabase);
-    let fail = true;
-    vi.spyOn(db.supabase, 'rpc').mockImplementation((async (...args: Parameters<typeof rpc>) => {
-      if (args[0] === 'fn_responsible_waiting' && fail) {
-        fail = false;
-        throw new DOMException('Synthetic timeout', 'TimeoutError');
+    const query=db.pool.query.bind(db.pool);let fail=true,checks=0;let preparedId='';
+    vi.spyOn(db.pool,'query').mockImplementation((async (...args:unknown[])=>{
+      if(typeof args[0]==='string' && args[0].includes('as waiting')) {
+        checks++;if(fail){fail=false;throw new DOMException('Synthetic timeout','TimeoutError');}
       }
-      return rpc(...args);
-    }) as unknown as typeof rpc); // fixture RPC só é aguardada; não encadeia filtros PostgREST.
-    expect((await worker('worker')).kind).toBe('failed');
-    expect(transport).not.toHaveBeenCalled();
-    const first = (await db.pool.query('select id,metadata from messages')).rows;
-    expect(first).toHaveLength(1);
-    expect(first[0].metadata.outbound_attempt.phase).toBe('prepared');
-    expect((await worker('worker')).kind).toBe('sent');
+      return (query as (...args:unknown[])=>Promise<unknown>)(...args);
+    }) as typeof db.pool.query);
+    const result=await sendTurnMessage(db.pool,{supabase:db.supabase},input('worker'),{sleep:async ms=>{
+      expect(ms).toBe(2000);const rows=(await db.pool.query('select id,metadata from messages')).rows;
+      expect(rows).toHaveLength(1);expect(rows[0].metadata.outbound_attempt.phase).toBe('prepared');preparedId=rows[0].id;
+      expect(transport).not.toHaveBeenCalled();
+    }});
+    expect(result.kind).toBe('sent');expect(checks).toBe(2);expect(transport).toHaveBeenCalledOnce();
     expect((await worker('worker')).kind).toBe('already_sent');
-    expect(transport).toHaveBeenCalledOnce();
-    expect((await db.pool.query('select id from messages')).rows).toEqual([{ id: first[0].id }]);
+    expect((await db.pool.query('select id from messages')).rows).toEqual([{id:preparedId}]);
   });
   it('timeout da prévia depois do envio confirmado não repete o transporte', async () => {
     await claim('worker');

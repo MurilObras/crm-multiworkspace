@@ -13,6 +13,7 @@
  *   - "Publicado vN + Rascunho vM" (formulário mostra a draft)
  */
 import * as React from "react";
+import { ReplyTiming } from "./ReplyTiming";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -938,6 +939,7 @@ export function AgentForm(props: Props) {
             ) : null}
           </Card>
 
+          {"agent" in props ? <ReplyTiming agentId={props.agent.id} readOnly={disabled} /> : null}
           {/* Estilo de resposta (split de mensagens — Onda 4) */}
           <Card className="space-y-3 p-4">
             <h3 className="text-sm font-medium">{t("Estilo de resposta")}</h3>

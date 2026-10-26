@@ -275,6 +275,7 @@ aplica.
 | `20261022180000` | `0239_obra_commercial_events` | Recebe cadastro e primeiro pagamento do backend do aplicativo por contrato v3, sem alterar o acompanhamento de 96 horas. |
 | `20261023190000` | `0240_agent_config_revision` | CAS por revisão controlada pelo banco; evita JSON de configuração na URL e preserva edições concorrentes de mídias e do agente. |
 | `20261026020000` | `0241_private_realtime_policy_roles` | Limita a aplicação de políticas privadas de leitura aos papéis da aplicação; uma inscrição anônima não interrompe o lote Realtime dos usuários autenticados. |
+| `20261026190000` | `0242_response_delivery_retention` | Relaciona avisos do Inbox à resposta e ao canal; remove planos privados ao concluir ou anonimizar o contato. |
 
 ## Reproducibility
 

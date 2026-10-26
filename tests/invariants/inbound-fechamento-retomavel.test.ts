@@ -51,8 +51,8 @@ describe('falha de memória não refaz atendimento já concluído', () => {
         ] : [{ type: 'text', text: 'fim' }], finishReason: { unified: first ? 'tool-calls' : 'stop', raw: undefined }, usage, warnings: [] };
       }
       checkpoints++;
-      if (checkpoints === 2) retryPrompt = JSON.stringify(opts.prompt);
-      return { content: [{ type: 'text', text: checkpoints === 1 ? '{"commitments": inválido}' : CHECKPOINT }], finishReason: { unified: 'stop', raw: undefined }, usage, warnings: [] };
+      if (checkpoints === 3) retryPrompt = JSON.stringify(opts.prompt);
+      return { content: [{ type: 'text', text: checkpoints <= 2 ? '{"commitments": inválido}' : CHECKPOINT }], finishReason: { unified: 'stop', raw: undefined }, usage, warnings: [] };
     });
     const handler = createInboundTurnHandler({
       crmCfg: { supabase: {} as never }, llmCfg: { anthropicApiKey: 'fake-test-key' }, registry, log: createLogger(),
@@ -91,7 +91,7 @@ describe('falha de memória não refaz atendimento já concluído', () => {
     await completeJob(pool, job.id, 'closing-retry');
     expect(sends).toBe(1);
     expect(mainSteps).toBe(2); // SDK: um step com tools + um step de encerramento.
-    expect(checkpoints).toBe(2);
+    expect(checkpoints).toBe(3);
     expect(retryPrompt).toContain('O atestado tem prazo de um mês');
     expect(retryPrompt).not.toContain('NOVA PERGUNTA');
     expect((await pool.query(`select count(*)::int n from lead_notes where organization_id=$1 and contact_id=$2`, [ORG, CONTACT])).rows[0].n).toBe(1);
@@ -108,7 +108,7 @@ describe('falha de memória não refaz atendimento já concluído', () => {
     await completeJob(pool, job.id, 'closing-upgrade');
     expect(sends).toBe(1);
     expect(mainSteps).toBe(2);
-    expect(checkpoints).toBe(2);
+    expect(checkpoints).toBe(3);
     expect((await pool.query(`select count(*)::int n from lead_checkpoints where job_id=$1`, [job.id])).rows[0].n).toBe(1);
 
     await expect(rememberTurnClosing(pool, legacy!, 'worker-sem-posse', { version: 1, agent: null })).rejects.toThrow('outbound_lease_lost');
@@ -137,7 +137,7 @@ describe('falha de memória não refaz atendimento já concluído', () => {
     expect(await checkpointSupersededByNewerTurn(pool, late!, newer.id)).toBe(true);
     await handler(late!, pool, { workerId: 'closing-late' });
     await completeJob(pool, job.id, 'closing-late');
-    expect(checkpoints).toBe(2);
+    expect(checkpoints).toBe(3);
     expect(mainSteps).toBe(2);
     expect(sends).toBe(1);
     const current = (await pool.query(`select job_id,next_action from lead_checkpoints

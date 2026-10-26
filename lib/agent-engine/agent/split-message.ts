@@ -113,6 +113,8 @@ export interface SendInBubblesOpts<T extends BubbleOutcome = BubbleOutcome> {
   sleep: (ms: number) => Promise<void>;
   /** ms de jitter humano entre bolhas (só entre, não antes da 1ª). */
   jitter: () => number;
+  prepare?: (bubbles: string[]) => Promise<void>;
+  plannedBubbles?: string[];
 }
 
 /**
@@ -132,14 +134,16 @@ export async function sendInBubbles<T extends BubbleOutcome>(
   body: string,
   opts: SendInBubblesOpts<T>,
 ): Promise<T> {
-  let bubbles = opts.enabled ? splitIntoBubbles(body, opts.maxChars) : [body];
+  let bubbles = opts.plannedBubbles ?? (opts.enabled ? splitIntoBubbles(body, opts.maxChars) : [body]);
   if (opts.maxBubbles !== undefined && bubbles.length > opts.maxBubbles) {
+    if(opts.plannedBubbles) throw new Error('response_send_limit_changed');
     const limit = Math.max(1, Math.floor(opts.maxBubbles));
     bubbles = limit === 1 ? [body] : [
       ...bubbles.slice(0, limit - 1), bubbles.slice(limit - 1).join('\n\n'),
     ];
   }
   if (bubbles.length === 0) return opts.send(body); // corpo vazio: deixa o canal decidir
+  await opts.prepare?.(bubbles);
   let last: T | undefined;
   for (let i = 0; i < bubbles.length; i++) {
     if (i > 0) await opts.sleep(opts.jitter());

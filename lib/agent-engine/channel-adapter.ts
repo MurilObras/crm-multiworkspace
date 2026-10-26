@@ -22,6 +22,8 @@ export interface ChannelSendInput {
   seq: number;
   /** referência da conversa no canal (conversation_id do CRM na v1) */
   conversationId: string;
+  responseKey?: string;
+  responsePartCount?: number;
   body: string;
   /** Imagem/vídeo com legenda; áudio usa referência aprovada e não tem legenda. */
   media?: { type: 'image' | 'video'; url: string; mimeType?: string }

@@ -36,11 +36,12 @@ export async function rememberTurnClosing(
   const checked = turnClosingSchema.parse(state);
   await withJobLease(pool, job.id, workerId, job.organization_id, async tx => {
     await tx.query(
-      `update job_queue set payload = payload || jsonb_build_object('turn_closing', $2::jsonb)
+      `update job_queue set payload = (payload-'response_delivery') || jsonb_build_object('turn_closing', $2::jsonb)
         where id = $1 and organization_id = $3 and contact_id = $4`,
       [job.id, JSON.stringify(checked), job.organization_id, job.contact_id],
     );
   });
+  delete job.payload.response_delivery;
   job.payload.turn_closing = checked;
 }
 
