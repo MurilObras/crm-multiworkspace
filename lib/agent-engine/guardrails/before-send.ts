@@ -32,8 +32,9 @@
  * espera o lock, relê o estado JÁ com o envio do primeiro contabilizado e veta.
  * O `channel.send` (POST ao CRM) roda na sua PRÓPRIA conexão/tx — o advisory lock
  * do nosso client serializa os concorrentes enquanto ele acontece.
- * ponytail: o lock fica retido durante o POST ao CRM (bounded por CRM_MCP_TIMEOUT_MS)
- * — aceitável no volume do MVP (throttle já espaça o número); se um número virar
+ * ponytail: o lock fica retido durante o sink local. O executor limita a espera
+ * HTTP no Supabase por fase; o transporte possui o prazo próprio do adapter.
+ * Não é um timeout global do turno. Se um número virar
  * gargalo, o upgrade é reservar o slot antes do POST e reconciliar no watchdog.
  */
 import type pg from 'pg';

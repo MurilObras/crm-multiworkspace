@@ -18,6 +18,7 @@
 
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { env } from "@/lib/env";
+import { serviceFetch, SERVICE_DATABASE_TIMEOUT_MS } from './service-fetch';
 
 let _admin: SupabaseClient | null = null;
 
@@ -30,7 +31,9 @@ export function createAdminClient(): SupabaseClient {
       persistSession: false,
       detectSessionInUrl: false,
     },
+    db: { timeout: SERVICE_DATABASE_TIMEOUT_MS, retry: false },
     global: {
+      fetch: serviceFetch(),
       headers: {
         "X-Client-Info": "deskcomm-crm/admin",
       },

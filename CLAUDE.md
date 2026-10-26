@@ -40,6 +40,7 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 ### Multi-tenancy
 - `organization_id uuid not null references organizations(id) on delete cascade` em **toda** tabela tenant-aware
 - RLS policy `tenant_isolation_<tabela>_all` aplicada via helper `fn_user_org_ids()`
+- Políticas privadas de leitura (`SELECT` ou `ALL`) que chamam helpers privados delimitam os destinatários com `TO authenticated, service_role`, preservando papéis explícitos adicionais. Aplicá-las a `PUBLIC` faz uma inscrição anônima abortar a avaliação RLS do lote Realtime; conceder EXECUTE anônimo ao helper não é correção.
 - Service role bypassa RLS — handlers que usam admin client **DEVEM** filtrar `organization_id` manualmente, resolvido de fonte confiável (cookie/JWT/webhook secret/path token), **NUNCA do body**
 - Toda query que cruza tabelas tenant-aware filtra `organization_id` explicitamente
 - Teste de isolamento (cria 2 tenants, verifica não-vazamento) é obrigatório no CI antes de merge

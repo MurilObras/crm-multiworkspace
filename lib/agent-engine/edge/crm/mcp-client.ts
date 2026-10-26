@@ -11,6 +11,7 @@
  * engine já importam (CrmEdgeConfig) — o conteúdo é a versão fundida.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { serviceFetch, SERVICE_DATABASE_TIMEOUT_MS, WORKER_STORAGE_TIMEOUT_MS } from '@/lib/supabase/service-fetch';
 
 export interface CrmEdgeConfig {
   /** admin client (service role) — usado só pelas bordas que chamam handlers do app. */
@@ -37,6 +38,10 @@ export function crmEdgeConfigFromEnv(env: {
   return {
     supabase: createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
+      // A fila/ledger já governa retry. Não multiplicar a espera por retries
+      // HTTP invisíveis enquanto o guardrail mantém a exclusão do canal.
+      db: { timeout: SERVICE_DATABASE_TIMEOUT_MS, retry: false },
+      global: { fetch: serviceFetch({ storageTimeoutMs: WORKER_STORAGE_TIMEOUT_MS }) },
     }),
   };
 }

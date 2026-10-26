@@ -230,11 +230,8 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
 
     await page.locator("#name").fill("Tomik QA");
     await page.getByRole("button", { name: /criar e continuar/i }).click();
-    // O wizard ganhou um passo entre treinar e chamar o time: ver o
-    // funcionário atender. Terminar sem nunca tê-lo visto fazer nada era como
-    // o onboarding entregava a pessoa num inbox vazio.
-    await page.waitForURL(/\/onboarding\/testar/, { timeout: 20_000 });
-    await snap(page, "j1.7-testar");
+    await page.waitForURL(/\/onboarding\/funil/, { timeout: 20_000 });
+    await snap(page, "j1.7-funil");
 
     // `eq(organization_id)` pela MESMA razão de `orgRow()` acima: sem ele, este
     // `select` lê os agentes de TODAS as organizações do banco, e o
@@ -249,43 +246,37 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     expect(agents?.length).toBe(1);
     expect(agents?.[0]).toMatchObject({ name: "Tomik QA", is_active: true, is_default: true });
 
-    // A VERSÃO, e não só o agente. Este caso olhava apenas `ai_agents` — e foi
-    // por isso que a regressão do provedor nasceu invisível: o agente ficava
-    // bonito na tabela enquanto a versão publicada apontava para uma empresa de
-    // IA que a instalação não contratou, morrendo em toda mensagem.
-    const { data: versoes } = await svc
+    // J1.6 pulou o WhatsApp depois de mostrar o QR: a sessão pendente existe,
+    // mas não foi escolhida como destino. Sem canal vinculado não há versão
+    // publicada nem exigência de chave para concluir o rascunho.
+    expect(agents?.[0]?.published_version_id).toBeNull();
+    const { data: versoes, error: erroVersoes } = await svc
       .from("ai_agent_versions")
-      .select("provider, model, status, channel_session_id")
+      .select("id")
+      .eq("organization_id", orgDoDono.id)
       .eq("agent_id", agents?.[0]?.id ?? "");
-    expect(versoes?.length).toBe(1);
-    expect(versoes?.[0]?.status).toBe("published");
+    expect(erroVersoes).toBeNull();
+    expect(versoes).toEqual([]);
+  });
 
-    // E o provedor da versão é o MESMO que a instalação escolheu. Comparar com
-    // uma string fixa aqui não provaria nada: o teste passaria justamente na
-    // instalação Anthropic, que é a única em que o defeito não aparecia.
-    // A SEGUNDA instância de "a primeira organização" neste mesmo arquivo. Aqui
-    // ela não apaga nada — faz pior de um jeito silencioso: `escolhido` vira o
-    // provedor de OUTRA organização, e a asserção abaixo passa ou reprova sem
-    // relação com a instalação que o wizard acabou de configurar.
-    const { data: org } = await svc
-      .from("organizations")
-      .select("settings")
-      .eq("id", orgDoDono.id)
-      .maybeSingle();
-    const escolhido =
-      (org?.settings as { llm?: { provider?: string } } | null)?.llm?.provider ?? "anthropic";
-    expect(versoes?.[0]?.provider).toBe(escolhido);
-
-    // O modelo veio do catálogo DAQUELE provedor — nunca um id emprestado.
-    const { data: curado } = await svc
-      .from("ai_models")
-      .select("model_id")
-      .eq("provider", escolhido)
-      .eq("is_default_for_provider", true)
-      .is("deprecated_at", null)
-      .limit(1)
-      .maybeSingle();
-    expect(versoes?.[0]?.model).toBe(curado?.model_id);
+  test("J1.23 organiza o funil pela tela mesmo sem IA publicada", async ({ page }) => {
+    await login(page);
+    await page.waitForURL(/\/onboarding\/funil/);
+    await expect(page.getByRole('heading',{name:'Onde ele organiza seus clientes'})).toBeVisible();
+    await page.getByLabel('Nome do quadro').fill('QA Atendimento');
+    await page.getByLabel('Nome da coluna 1',{exact:true}).fill('Interesse recebido QA');
+    await page.getByRole('button',{name:'Usar este quadro',exact:true}).click();
+    await page.waitForURL(/\/onboarding\/testar/,{timeout:20_000});
+    const org = await orgRow();
+    const pipelineId = (org.onboarding_state?.funil as {pipeline_id?:string})?.pipeline_id;
+    expect(pipelineId).toBeTruthy();
+    const pipeline = await svc.from('crm_pipelines').select('name').eq('organization_id',org.id).eq('id',pipelineId!).single();
+    expect(pipeline.error).toBeNull();
+    expect(pipeline.data?.name).toBe('QA Atendimento');
+    const stages = await svc.from('crm_stages').select('name').eq('organization_id',org.id).eq('pipeline_id',pipelineId!).order('position').limit(1);
+    expect(stages.error).toBeNull();
+    expect(stages.data?.[0]?.name).toBe('Interesse recebido QA');
+    await snap(page,'j1.23-quadro-salvo');
   });
 
   test("J1.24 ver ele atender: o wizard não termina sem mostrar o funcionário", async ({ page }) => {
@@ -300,7 +291,7 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     // O agente desta jornada nasceu SEM canal (o WhatsApp foi pulado em J1.6),
     // então ficou rascunho — e rascunho não responde. A tela tem de dizer isso
     // em vez de oferecer um ensaio que nunca funcionaria.
-    await expect(page.getByText(/rascunho/i)).toBeVisible();
+    await expect(page.getByText('rascunho', { exact: true })).toBeVisible();
     await snap(page, "j1.24-testar-rascunho");
 
     await page.getByRole("button", { name: /^continuar$/i }).click();
@@ -319,7 +310,7 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
 
     // Honestidade: sem RESEND_API_KEY nenhum email sai. A UI deve dizer isso
     // e oferecer o link de aceite copiável (nunca redirecionar em silêncio).
-    await expect(page.getByText(/não está configurado neste servidor/i)).toBeVisible({
+    await expect(page.getByText(/^Esta instalação não envia e-mail\. Os convites estão prontos/)).toBeVisible({
       timeout: 15_000,
     });
     const acceptUrl = (
@@ -365,9 +356,10 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     await page.goto("/app/settings/security");
     await expect(page.getByText("Desativada")).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: /^ativar$/i }).click();
+    const modal = page.getByRole('dialog');
 
     await expect(
-      page.getByRole("heading", { name: /verificação em duas etapas/i }),
+      modal.getByRole("heading", { name: /verificação em duas etapas/i }),
     ).toBeVisible({ timeout: 20_000 });
     await snap(page, "j1.10-mfa-ativar");
 
@@ -378,7 +370,7 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
 
     // secret manual (o que um leigo digitaria no app autenticador)
     await page.getByText(/não consegue escanear/i).click();
-    const secret = (await page.locator("code").innerText()).trim();
+    const secret = (await modal.locator("code").innerText()).trim();
     expect(secret.length).toBeGreaterThan(15);
     fs.writeFileSync(
       OWNER_STATE_PATH,
@@ -391,7 +383,7 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
       await page.locator('input[aria-label="Dígito 1"]').click();
       await page.keyboard.type(generateTotp(secret), { delay: 40 });
       try {
-        await expect(page.getByRole("heading", { name: /códigos de recuperação/i })).toBeVisible({
+        await expect(modal.getByRole("heading", { name: /códigos de recuperação/i })).toBeVisible({
           timeout: 8_000,
         });
         break;
@@ -407,7 +399,7 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     // caía no inbox sem ver estes códigos. Prova de que a tela persiste com os
     // 10 códigos + ações de salvar (grid font-mono no RecoveryCodesPanel).
     await expect(page.getByText(/salve esses 10 códigos/i)).toBeVisible();
-    const codes = page.locator("div.font-mono");
+    const codes = modal.locator("div.font-mono");
     await expect(codes).toHaveCount(10);
     await expect(page.getByRole("button", { name: /copiar todos/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /baixar \.txt/i })).toBeVisible();
@@ -418,9 +410,7 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
 
     // gate some após reload; shell do app visível
     await page.waitForLoadState("networkidle");
-    await expect(
-      page.getByRole("heading", { name: /verificação em duas etapas/i }),
-    ).toHaveCount(0, { timeout: 20_000 });
+    await expect(modal).toHaveCount(0, { timeout: 20_000 });
     await snap(page, "j1.10-inbox-livre");
   });
 

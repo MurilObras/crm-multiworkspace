@@ -135,7 +135,7 @@ function modeloQueChamaTemplate(input: Record<string, unknown>) {
   };
 }
 
-function montaHandler(doGenerate: unknown) {
+function montaHandler(doGenerate: unknown, unavailable = false) {
   return m.createInboundTurnHandler({
     crmCfg: { supabase: {} as never },
     llmCfg: { anthropicApiKey: "fake" } as never,
@@ -162,6 +162,7 @@ function montaHandler(doGenerate: unknown) {
         channel: "captura",
         send: async (i: EnvioCapturado) => {
           enviados.push(i);
+          if (unavailable) return { kind: 'unavailable', reason: 'SyntheticTimeout' };
           return { kind: "sent" as const, idempotencyKey: "k", messageId: "m1" };
         },
         sessionHealth: async () => ({ healthy: true, status: "WORKING" }),
@@ -305,6 +306,17 @@ const ALVO_META = { conv: CONV, sessao: SESSION_META, msg: MSG, evento: "ccccccc
 const ALVO_WAHA = { conv: CONV_WAHA, sessao: SESSION_WAHA, msg: MSG_WAHA, evento: "cccccccc-0000-4000-8000-000000000016" };
 
 describe("turno completo — send_template com a janela de 24h FECHADA", () => {
+  it('template indisponível não continua o modelo nem fecha memória como sucesso', async () => {
+    let calls = 0;
+    const model = modeloQueChamaTemplate({ template_name: 'retomada', language: 'pt_BR', values: { '1': 'Ana' } });
+    const error = await rodaTurno(montaHandler(async (opts: { prompt?: unknown }) => {
+      calls++;
+      return model(opts);
+    }, true), ALVO_META);
+    expect(error).not.toBeNull();
+    expect(calls).toBe(1);
+    expect(enviados).toHaveLength(1);
+  });
   it("o template sai, com corpo renderizado e identidade preservada", async () => {
     const erro = await rodaTurno(
       montaHandler(

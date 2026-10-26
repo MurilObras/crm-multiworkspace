@@ -16,6 +16,9 @@ import { guardObraFollowup } from '@/lib/obra-no-bolso/followup-guard';
 import { prepareAgentMedia } from './prepare-media';
 import { followupJobGate } from './followup-job-gate';
 import { currentAutomaticRecipient } from '@/lib/automation/current-recipient';
+import { outboundTiming } from '@/lib/channels/outbound-timing';
+import { OUTBOUND_PREPARATION_BUDGET_MS,
+  withServiceRequestBudget, resetServiceRequestBudget } from '@/lib/supabase/service-fetch';
 
 export interface OutboundAttemptOptions {
   actor?: HandlerCtx['actor'];
@@ -28,6 +31,22 @@ export interface OutboundAttemptOptions {
  * outra mensagem. O CAS prepared -> started é o limite de incerteza da rede. */
 export async function executeOutboundAttempt(
   db: Queryable, cfg: CrmEdgeConfig, input: SendMessageInput, options: OutboundAttemptOptions = {},
+): Promise<SendOutcome> {
+  const timing = outboundTiming({ organization_id: input.tenantId, job_id: input.jobId, seq: input.seq });
+  let outcome = 'interrupted';
+  try {
+    const result = await withServiceRequestBudget(OUTBOUND_PREPARATION_BUDGET_MS,
+      () => executeAttempt(db, cfg, input, options, timing));
+    outcome = result.kind;
+    return result;
+  } finally {
+    timing.finish(outcome);
+  }
+}
+
+async function executeAttempt(
+  db: Queryable, cfg: CrmEdgeConfig, input: SendMessageInput, options: OutboundAttemptOptions,
+  timing: ReturnType<typeof outboundTiming>,
 ): Promise<SendOutcome> {
   const { tenantId: org, leadId: contact, jobId: job, workerId: owner, seq } = input;
   if (!owner) throw new OutboundLeaseLostError();
@@ -157,6 +176,7 @@ export async function executeOutboundAttempt(
     ...((audioSource as { media_type?: string }).media_type === 'audio' ? { approved_audio: audioSource } : {}) } : {};
   const messageId = previous?.id ?? key;
   try {
+    timing.phase('prepare_media');
     await assertAudioApproved();
     const prepared: SinkInput = persisted ?? (options.prepare ? await options.prepare() : {
       conversation_id: input.conversationId, body: input.body,
@@ -182,6 +202,13 @@ export async function executeOutboundAttempt(
         outbound_attempt: { phase: 'prepared', input: { ...prepared, metadata: undefined } } },
     }, {
       messageId,
+      onPhase: phase => {
+        timing.phase(phase);
+        // O transporte possui deadline específico do adapter (vídeo pode levar
+        // mais que texto). Depois dele cada request mantém seu teto: auditoria
+        // lenta não pode esgotar antecipadamente o prazo do evento de negócio.
+        if (phase === 'transport') resetServiceRequestBudget(null);
+      },
       writeAttemptState: (message, change) => writeAttemptState(message.id, change),
       beforeSend: async () => {
         const { rows } = await db.query<{ id: string }>(
@@ -262,6 +289,8 @@ export async function executeOutboundAttempt(
       },
     });
   } catch (error) {
+    timing.fault();
+    timing.phase('reconcile');
     if (error instanceof OutboundLeaseLostError) throw error;
     if (error instanceof OutboundSupersededError || error instanceof OutboundAudioUnavailableError) {
       const reason = error.message;
@@ -292,5 +321,6 @@ export async function executeOutboundAttempt(
     if (message) return (await settle(message, true))!;
     throw error;
   }
+  timing.phase('reconcile');
   return (await settle(await readMessage(), true))!;
 }

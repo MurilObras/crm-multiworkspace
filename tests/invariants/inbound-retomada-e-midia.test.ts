@@ -65,7 +65,8 @@ const USO = {
   outputTokens: { total: 1, text: 1, reasoning: 0 },
 };
 
-function montaHandler(doGenerate: unknown, maxSendsPerTurn?: number, onSend?: (input: EnvioCapturado) => void) {
+function montaHandler(doGenerate: unknown, maxSendsPerTurn?: number, onSend?: (input: EnvioCapturado) => void,
+  sendFailure?: 'failed' | 'unavailable') {
   return m.createInboundTurnHandler({
     crmCfg: { supabase: {} as never },
     llmCfg: { anthropicApiKey: "fake" } as never,
@@ -93,6 +94,8 @@ function montaHandler(doGenerate: unknown, maxSendsPerTurn?: number, onSend?: (i
         send: async (i: EnvioCapturado) => {
           onSend?.(i);
           enviados.push(i);
+          if (sendFailure === 'unavailable') return { kind: 'unavailable', reason: 'SyntheticTimeout' };
+          if (sendFailure === 'failed') return { kind: 'failed', idempotencyKey: 'synthetic-failed', messageId: 'synthetic-message' };
           return {
             kind: "sent" as const,
             idempotencyKey: `k${enviados.length}`,
@@ -270,6 +273,32 @@ async function conferirAtividade(phase: string) {
 }
 
 describe("retomada de inbound no turno completo", () => {
+  it.each(['failed', 'unavailable', 'throw'] as const)(
+    'falha %s interrompe steps e tools mutantes já emitidas no mesmo lote', async failure => {
+      let calls = 0;
+      const marker = `nao_alterar_depois_da_falha_${failure}`;
+      const model = async () => {
+        const first = calls++ === 0;
+        return {
+          content: first ? [
+            { type: 'tool-call' as const, toolCallId: 'failed-send', toolName: 'send_message', input: JSON.stringify({ body: 'Resposta inicial' }) },
+            { type: 'tool-call' as const, toolCallId: 'second-send', toolName: 'send_message', input: JSON.stringify({ body: 'Outra tentativa indevida' }) },
+            { type: 'tool-call' as const, toolCallId: 'mutate-after-failure', toolName: 'update_lead_state', input: JSON.stringify({ next_action: marker }) },
+          ] : [{ type: 'text' as const, text: CHECKPOINT }],
+          finishReason: { unified: first ? 'tool-calls' as const : 'stop' as const, raw: undefined },
+          usage: USO, warnings: [],
+        };
+      };
+      const error = await rodaTurno(montaHandler(model, 4,
+        failure === 'throw' ? () => { throw new Error('SyntheticTimeout'); } : undefined,
+        failure === 'throw' ? undefined : failure));
+      expect(error).not.toBeNull();
+      expect(calls).toBe(1); // Sem outro step de modelo nem checkpoint após erro.
+      expect(enviados).toHaveLength(failure === 'throw' ? 0 : 1);
+      const state = (await pool.query('select next_action from lead_state where organization_id=$1 and contact_id=$2', [ORG, CONTACT])).rows[0];
+      expect(state?.next_action).not.toBe(marker);
+    },
+  );
   it.each(['required', 'optional', 'text', 'used', 'limited'])('recepção %s: envio obrigatório independe de escolha do modelo e não repete entre turnos', async behavior => {
     const agent = 'eeeeeeee-0000-4000-8000-000000000070';
     const version = 'eeeeeeee-0000-4000-8000-000000000071';

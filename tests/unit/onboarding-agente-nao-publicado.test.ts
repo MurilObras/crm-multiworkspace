@@ -132,6 +132,8 @@ interface Estado {
 }
 
 interface Mundo {
+  onboardingState?: Record<string, unknown>;
+  erroOnboarding?: ErroDb;
   /**
    * A credencial VALIDADA da organização para o provedor escolhido. `null` =
    * não tem nenhuma, e aí a versão nasce com `credential_id: null`, que
@@ -191,7 +193,7 @@ function montarBanco(mundo: Mundo = {}): Estado {
     agentes: mundo.agentes ?? [],
     versoes: mundo.versoes ?? [],
     eventos: [],
-    onboardingState: {},
+    onboardingState: mundo.onboardingState ?? {},
   };
   const canais = mundo.canais ?? { data: [CANAL], error: null };
 
@@ -290,6 +292,7 @@ function montarBanco(mundo: Mundo = {}): Estado {
         if (mundo.erroSettings) return { data: null, error: mundo.erroSettings };
         return { data: { settings: mundo.settings ?? null }, error: null };
       }
+      if (mundo.erroOnboarding) return { data: null, error: mundo.erroOnboarding };
       return { data: { onboarding_state: estado.onboardingState, onboarded_at: null }, error: null };
     }
 
@@ -437,6 +440,37 @@ describe("onboarding: publicação impossível não pode terminar em silêncio",
     expect(res).toBe("redirecionou");
     expect(estado.versoes).toHaveLength(0);
     expect(estado.eventos[0]?.payload).toMatchObject({ published: false });
+  });
+
+  it("pular WhatsApp mantém rascunho mesmo com QR pendente e sem chave de IA", async () => {
+    const estado = montarBanco({
+      onboardingState: { whatsapp: { skipped: true, status: 'skipped' } },
+      canais: { data: [{ ...CANAL, status: 'SCAN_QR_CODE' }], error: null },
+      chaveDaInstalacao: false,
+    });
+    expect(await clicar()).toBe('redirecionou');
+    expect(estado.versoes).toHaveLength(0);
+    expect(estado.agentes).toHaveLength(1);
+    expect(estado.agentes[0]?.published_version_id).toBeFalsy();
+    expect(estado.eventos[0]?.payload).toMatchObject({ published: false });
+  });
+
+  it("pular WhatsApp numa reentrada não desfaz publicação existente", async () => {
+    const estado = montarBanco({
+      onboardingState: { whatsapp: { skipped: true, status: 'skipped' } },
+      agentes: [{ id: 'agente-existente', organization_id: ORG, is_default: true, published_version_id: 'versao-publicada' }],
+      chaveDaInstalacao: false,
+    });
+    expect(await clicar()).toBe('redirecionou');
+    expect(estado.agentes[0]?.published_version_id).toBe('versao-publicada');
+    expect(estado.eventos[0]?.payload).toMatchObject({ published: true });
+  });
+
+  it("falha ao ler a escolha de conexão não vira autorização para publicar", async () => {
+    const estado = montarBanco({ erroOnboarding: { message: 'Synthetic read failure' } });
+    expect(await clicar()).toMatchObject({ ok: false, error: 'db_error' });
+    expect(estado.versoes).toHaveLength(0);
+    expect(redirects).toHaveLength(0);
   });
 
   it("versão já gravada por uma passagem anterior: repontar, não bater em duplicate key", async () => {

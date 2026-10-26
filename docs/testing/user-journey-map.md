@@ -1992,6 +1992,18 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 - Retorno operacional: `ApprovedAudios` mantém formulário e mostra referência, exige atualizar após falha; `agent_media_save_failed` registra categoria e requestId sem JSON ou dados pessoais. Nenhum arquivo referenciado é apagado por resposta incerta.
 - Validação pendente nesta etapa; não representa aprovação antecipada.
 
+## Esperas no envio — 2026-10-25
+
+- [P0] Mensagem recebida pelo frame WebSocket correto e exibida sem F5, mesmo com assinante anônimo paralelo; refetch não pode produzir aprovação falsa (`inbox-tempo-real.spec.ts`).
+- [P0] Pular WhatsApp após gerar QR permite concluir rascunho sem chave de IA e sem publicar por engano (`vps-fresh-onboarding.spec.ts`).
+- Diagnóstico e encerramento das pendências: `docs/testing/pr53-validation-completion.md`.
+
+- [P0] Serviço HTTP travado é interrompido incluindo body, sem multiplicar retries de GET; orçamento não vaza entre tentativas (`service-fetch.test.ts`).
+- [P0] Timeout antes da rede preserva identidade; depois de confirmação não duplica o envio (`followup-inline-ledger.test.ts`).
+- [P0] Falha de envio impede novas mensagens, tools mutantes no mesmo lote e novos steps do modelo (`inbound-retomada-e-midia.test.ts`).
+- [P1] Inbox, catálogo e execuções seguem acessíveis após fix de transporte; E2E existentes medem o frontend real no ambiente isolado.
+- Mapa do caminho e limites: `docs/testing/inbound-delivery-latency.md`. Medições técnicas ficam no log operacional; o estado de entrega continua na mensagem/ledger.
+
 ## Intenção contextual de mídia — 2026-10-24
 
 - [P1] Administrador altera a política de reenvio do agente, salva, recarrega e confere o catálogo preservado (`audios-pre-gravados.spec.ts`).

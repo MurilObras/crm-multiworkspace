@@ -2289,6 +2289,8 @@ async function executarTurnoDoAgente(
   const noteRunError = (err: Error): void => {
     runError ??= err;
   };
+  const deliveryFailed = (): boolean => runError !== null
+    || outcomes.some(outcome => outcome.kind === 'failed' || outcome.kind === 'unavailable');
 
   // Guideline-matching if-then (F3-09): o SINAL do turno (última mensagem inbound) decide
   // quais skills disparam. Corpos casados vão no SUFIXO da abertura (situacional, por-lead —
@@ -3269,7 +3271,14 @@ async function executarTurnoDoAgente(
     readOnlyTools: READ_ONLY_TOOLS,
     log: runLog, // os warns dos gates do breaker saem carimbados com o run
   });
-  const execution = guardCurrentInboundTools(breakerTools, assertCurrentInbound);
+  const execution = guardCurrentInboundTools(breakerTools, async () => {
+    // O resultado de envio não é só uma instrução para o modelo "encerrar".
+    // Bloqueia também tools já emitidas no MESMO step, antes de qualquer efeito.
+    // A fila retoma o ledger; outra tool não ganha nova sequência para contornar
+    // timeout/falha, nem muda o estado do lead sem ter entregue a resposta.
+    if (deliveryFailed()) throw runError ?? new Error('outbound_attempt_failed');
+    await assertCurrentInbound();
+  });
   const tools = execution.tools;
   const stopAfterLeaseLoss = async () => {
     if (!leaseLostError) return;
@@ -3451,7 +3460,7 @@ async function executarTurnoDoAgente(
         veto_code: delivery.result?.error?.code ?? null });
       if (supersededError !== null) await settleSuperseded();
       if (runError !== null) throw runError;
-      if (outcomes.some(o => o.kind === 'failed')) throw new Error('áudio obrigatório com envio falho — recuperação pela fila');
+      if (deliveryFailed()) throw new Error('áudio obrigatório com envio falho — recuperação pela fila');
       const deferred = outcomes.find(o => o.kind === 'queued' || o.kind === 'blocked');
       if (deferred) {
         await execution.drain();
@@ -3620,7 +3629,7 @@ async function executarTurnoDoAgente(
         messages: openingMessages,
         tools,
         maxSteps,
-        shouldStop: () => supersededError !== null,
+        shouldStop: () => supersededError !== null || deliveryFailed(),
         ...(agentConfig !== null
           ? {
               model: agentConfig.model,
@@ -3656,14 +3665,13 @@ async function executarTurnoDoAgente(
     }
   }
 
-  if (runError !== null) {
+  if (deliveryFailed()) {
+    await execution.drain();
     await mcpCleanup?.();
-    throw runError; // job falha → retry da fila; o ledger segura duplicata de envio
-  }
-  if (outcomes.some((o) => o.kind === 'failed')) {
-    // ponytail: retry re-roda o run inteiro (LLM incluso); seq N re-encontra a
-    // linha do ledger — 'accepted' pula, 'failed' rotaciona a key (F2-06).
-    throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
+    // A identidade (job, seq) é preservada. O ledger distingue confirmação,
+    // preparação retomável e entrega incerta: timeout não autoriza nova key
+    // nem repetição de um transporte que pode ter ocorrido.
+    throw runError ?? new Error('envio não confirmado pelo CRM — recuperação conforme ledger');
   }
 
   // Mesmo inbound, depois das ferramentas que podem avançar a etapa. Nunca

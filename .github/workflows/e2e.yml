@@ -289,6 +289,7 @@ jobs:
         audios-pre-gravados.spec.ts
         followup-linguagem.spec.ts followup-ramos.spec.ts
         wizard-do-funcionario.spec.ts mfa-opcional.spec.ts inbox-responder-citando.spec.ts
+        inbox-tempo-real.spec.ts
         agenda-tela-do-produto.spec.ts
         notificacoes-diz-o-que-falta.spec.ts
         relogio-http-cron-externo.spec.ts
@@ -472,39 +473,9 @@ jobs:
       # (main, 2026-08-09) semeia o catálogo no job, então a condição que a excluía
       # deixou de existir e ela voltou para a lista de execução.
       #
-      # `inbox-tempo-real` entrou aqui em 2026-08-26, no dia seguinte ao merge, e o
-      # motivo é medido nos dois eixos que importam — não é "está flaky, tira".
-      #
-      #  (a) ELE NÃO DISCRIMINA O CONSERTO QUE DIZ GUARDAR. Bancada local fiel a
-      #      este job (Supabase local pg17, `baseline.sql`, Realtime reiniciado
-      #      depois do baseline, `next build` de produção, os mesmos seeds),
-      #      revertendo SÓ `lib/supabase/browser.ts` para a versão anterior ao
-      #      #327 — e conferindo no bundle que o conserto saiu
-      #      (`grep -rc realtime-token .next/static` → 0, controle positivo
-      #      `sb-deskcomm-auth` → 1):
-      #
-      #          com o conserto  → 1 passed
-      #          sem o conserto  → 1 passed
-      #
-      #      Causa provável: `useMessagesRealtime` liga `refetchOnWindowFocus:
-      #      true` e o `execFileSync` que injeta a mensagem devolve o foco à
-      #      janela. Dois caminhos, mesma saída. Quem discrimina de verdade é
-      #      `tests/unit/realtime-token-do-socket.test.ts`, no `verify`.
-      #
-      #  (b) ELE REPROVA PR ALHEIO POR SORTE. Desde o conserto do locator:
-      #      #327 `dd58ec7c` pass · #343 `b508208b` pass · #344 `4e5acb21` FAIL ·
-      #      #344 rerun do MESMO sha FAIL. O #344 não toca uma linha de inbox,
-      #      realtime ou socket.
-      #
-      #      Um gate que reprova por moeda é pior que gate nenhum: ele treina o
-      #      time a reexecutar em vez de olhar, e foi assim que a degradação
-      #      silenciosa passou despercebida da primeira vez.
-      #
-      #      A spec CONTINUA no repositório e continua sendo a cerca de ponta a
-      #      ponta contra o sintoma relatado — roda local. Volta para a lista de
-      #      execução quando a issue #347 entregar entrega determinística (o
-      #      caminho provável é desligar o `refetchOnWindowFocus` durante a
-      #      asserção, para sobrar um caminho só).
+      # Inbox voltou à PARTE_1: exige frame WebSocket real e inscrição
+      # anônima paralela. A migration 0241 evita abortar o lote RLS. O teste
+      # falhou sem ela e passou com ela; foco/refetch não produz aprovação.
       # ✅ `agenda-marcar-pela-tela` SAIU DAQUI — e o registro é o motivo.
       #
       # Ela nasceu `skip` pela DECISÃO 21.3: a frente 1 é API e não tem pixel
@@ -548,7 +519,6 @@ jobs:
       #      fica FORA do CI em vez de ficar sem existir.
       FORA_DO_CI: >-
         vps-fresh-onboarding.spec.ts
-        inbox-tempo-real.spec.ts
         cadastro-sem-confirmacao-de-email.spec.ts
     steps:
       - uses: actions/checkout@v7
@@ -883,6 +853,16 @@ jobs:
           name: evidencias-responder-citando
           include-hidden-files: true
           path: .superpowers/evidence/responder-citando/*.png
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Guardar captura de entrega Realtime
+        if: ${{ always() && matrix.parte == 1 }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidencia-inbox-realtime
+          include-hidden-files: true
+          path: .superpowers/evidence/inbox-tempo-real/*.png
           if-no-files-found: warn
           retention-days: 7
 

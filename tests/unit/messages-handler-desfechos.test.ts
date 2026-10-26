@@ -303,6 +303,16 @@ describe('identidade manual nao concede privilegios de automacao', () => {
 });
 
 describe('sendMessageHandler — os 6 desfechos do envio', () => {
+  it('distingue preparação, transporte e pós-envio no diagnóstico', async () => {
+    wahaConfigured(true);
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ key: { id: 'TIMING' } })));
+    const phases: string[] = [];
+    const result = await sendMessageHandler(makeSupabase(conversationRow()), ctx, textInput(), {
+      onPhase: phase => { phases.push(phase); },
+    });
+    expect(result.status).toBe('sent');
+    expect(phases).toEqual(['recipient', 'persist_message', 'prepare_transport', 'preflight', 'transport', 'persist_result', 'finalize']);
+  });
   it('marca a entrada no transporte antes de qualquer envio remoto', async () => {
     wahaConfigured(true);
     const fetchMock = vi.fn(async () => Response.json({ key: { id: 'INLINE' } }));
