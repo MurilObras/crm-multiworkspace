@@ -86,6 +86,13 @@
       "col": 3,
       "type": "backend",
       "label": "Tempos por fase sem somar sobreposições"
+    },
+    {
+      "id": "media-context",
+      "lane": "runtime",
+      "col": 2,
+      "type": "backend",
+      "label": "Referência aprovada e contexto coerente"
     }
   ],
   "edges": [
@@ -147,6 +154,16 @@
       "from": "phase-timing",
       "to": "outbound",
       "label": "preparação e transporte distintos"
+    },
+    {
+      "from": "response-plan",
+      "to": "media-context",
+      "label": "uma decisão por interação"
+    },
+    {
+      "from": "media-context",
+      "to": "outbound",
+      "label": "texto antes do arquivo, com pré-voo atual"
     }
   ]
 }

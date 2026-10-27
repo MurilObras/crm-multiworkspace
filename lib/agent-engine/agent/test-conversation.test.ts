@@ -61,6 +61,26 @@ const options = { toolCallId: "test", messages: [], context: undefined };
 afterEach(() => vi.unstubAllEnvs());
 
 describe("planejamento contextual sem entrega inventada", () => {
+  it('F01/F02: referência real evita classificador e texto contraditório não chega à prévia', async () => {
+    const id = '10000000-0000-4000-8000-000000000061';
+    const media = readApprovedMedia({ approved_media: [{ id, title: 'Como funciona o aplicativo',
+      use_when: 'Apresentação geral do funcionamento do aplicativo.', storage_path: 'sintetico.ogg',
+      mime: 'audio/ogg', size_bytes: 10, enabled: true, required: true, allow_requested_repeat: true }] });
+    vi.mocked(runModelCall).mockRejectedValue(new Error('Classificador não deve executar para referência explícita'));
+    vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
+      await input.tools!.send_message!.execute!({ body: 'Esse áudio já foi enviado. Posso seguir apenas por texto.' }, options);
+      return { usage: { inputTokens: 1, outputTokens: 1 }, costCents: 1, latencyMs: 1 } as never;
+    });
+    const result = await testConversation(pool, {}, { organizationId: 'org',
+      agent: { ...config, approvedAudios: media, mediaReplayPolicy: 'explicit_repeat' },
+      message: 'Agora quero ouvir a apresentação. Reenvia aquele áudio Como funciona, sem vídeo nem foto.',
+      history: [{ direction: 'outbound', body: 'O áudio não pode ser repetido.' }],
+      mediaContext: { scenario: 'delivered', delivered_ids: [id], stage_id: null } });
+    expect(runModelCall).not.toHaveBeenCalled();
+    expect(result.messages).toEqual(['Sobre esse assunto:']);
+    expect(result.media_decision).toMatchObject({ authorized: true, intent: 'repeat', transport: 'planned' });
+    expect(result.gates).toContainEqual({ gate: 'media_context', pass: true, code: 'media_context_reconciled' });
+  });
   it("expõe indisponibilidade do classificador sem inventar falha de transporte ou custo zero", async () => {
     vi.mocked(runModelCall).mockRejectedValue(new Error("provider indisponível"));
     vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
