@@ -23,6 +23,25 @@ Observações agregadas da homologação anterior, sem identificação de client
 | Tentativas de texto, duração total | normalmente 4,6–6,4 s; uma de 21 s | inclui banco, verificações e finalização |
 | Fechamento | 8 jobs com cinco rejeições 400 cada | falha após a resposta, não explica sozinha a demora anterior |
 
+### Oito atendimentos da amostra anterior
+
+Tempos em segundos desde o registro da entrada no CRM até o registro/preparação da saída. Não são cronômetros de entrega ao WhatsApp. Identificadores e conteúdo dos clientes foram removidos.
+
+| Caso | Primeiro texto registrado | Mídia registrada | Intervalo entre registros | Transporte da mídia no adapter |
+| --- | ---: | ---: | ---: | ---: |
+| 1, texto | 53,2 | — | — | — |
+| 2, vídeo | 64,0 | 84,6 | 20,6 | 28,681 |
+| 3, vídeo | 75,9 | 96,0 | 20,1 | 26,500 |
+| 4, texto | 69,1 | — | — | — |
+| 5, texto | 76,8 | — | — | — |
+| 6, vídeo | 74,6 | 94,0 | 19,4 | 21,616 |
+| 7, áudio | 54,5 | 76,8 | 22,3 | 1,557 |
+| 8, foto | 65,6 | 87,1 | 21,5 | 1,751 |
+
+Em todos os oito, os envios receberam confirmação; o job terminou dead após cinco rejeições do fechamento. Não houve repetição observada de arquivos. O caso 4 teve veto semântico inicial seguido de envio relacionado confirmado; o histórico permaneceu e o aviso atual foi resolvido, comportamento que deve ser preservado.
+
+A preparação e o transporte ocorrem depois do registro da saída e podem se sobrepor ao intervalo entre registros: por isso um vídeo pode ter transporte maior que esse intervalo. ACKs atualizados posteriormente não substituem o horário real de primeiro recebimento. Fila, debounce e inferência não têm intervalos independentes completos nesta amostra antiga; permanecem lacunas explicitamente, sem reconstrução fictícia. As novas medições permitem separá-los em homologação posterior, após deploy autorizado.
+
 Não foi identificado intervalo configurado de 20 segundos entre texto e vídeo. Throttle padrão é 1,2 s com jitter até 0,8 s. O intervalo entre registros de mensagens não equivale à duração exclusiva do transporte.
 
 Logs existentes outbound_attempt_timing já distinguem preparação, verificações, transporte, resultado e finalização de cada seq. llm_calls.latency_ms da conversa abrange ferramentas e transporte. Somá-lo a esses envios duplica tempo.
