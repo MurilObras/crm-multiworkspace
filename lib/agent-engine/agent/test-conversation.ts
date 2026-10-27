@@ -55,6 +55,8 @@ import { explicitMediaPreference, withTurnMediaPreference } from "./media-prefer
 import { durableMediaPreference } from "./media-preference-scope";
 import type { MediaDiagnostic, MediaSimulation } from "@/lib/ai/agents/media-simulation";
 import { renderMediaDecisionInstruction } from "@/lib/ai/agents/media-simulation";
+import { resolveExplicitMediaReference } from './media-reference';
+import { coherentMediaContext } from './media-response-context';
 
 export interface TestConversationInput {
   organizationId: string;
@@ -202,7 +204,11 @@ export async function testConversation(
     detectHumanHandoffRequest(input.message) ||
     matchesHandoffKeyword(input.message, agent.handoffKeywords) ||
     detectAmbiguousOptOut(input.message);
-  if (catalog.some((m) => m.enabled) && !handoff) {
+  const reference = !handoff ? resolveExplicitMediaReference(input.message, catalog) : null;
+  if (reference) {
+    intent = reference.intent;
+    classificationReason = reference.reason;
+  } else if (catalog.some((m) => m.enabled) && !handoff) {
     try {
       const decision = await runModelCall(
         pool,
@@ -430,6 +436,11 @@ export async function testConversation(
         message:
           "Mídia planejada no ensaio, sem transporte real. Não acrescente fallback nem afirme entrega.",
       };
+    }
+    if (chosen && eligibility.allowed) {
+      const context = coherentMediaContext(parsed.body, mediaKind(chosen));
+      parsed.body = context.body;
+      if (context.amended) gateTrace.push({ gate: 'media_context', pass: true, code: 'media_context_reconciled' });
     }
     const gateContext: GateContext = {
       now,

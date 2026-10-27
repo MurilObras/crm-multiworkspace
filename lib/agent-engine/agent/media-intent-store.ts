@@ -62,6 +62,7 @@ export async function persistTurnMediaDecision(args: {
   selected: ApprovedMedia | null;
   blockReason?: () => string;
   noMatchReason?: string;
+  resolutionSource?: 'explicit_reference' | 'text_preference' | 'classifier';
 }): Promise<MediaDecision> {
   const decision: MediaDecision = {
     ...args.intent,
@@ -89,7 +90,8 @@ export async function persistTurnMediaDecision(args: {
         ? (args.blockReason?.() ?? "stage_not_permitted")
         : (args.noMatchReason ?? "no_matching_media");
   const { rows } = await args.db.query<{ decision: unknown }>(
-    `update job_queue set payload=coalesce(payload,'{}'::jsonb) || jsonb_build_object('media_intent_decision',$5::jsonb)
+    `update job_queue set payload=coalesce(payload,'{}'::jsonb) || jsonb_build_object('media_intent_decision',$5::jsonb,
+       'media_resolution_source',$8::text)
      where id=$1 and organization_id=$2 and contact_id is not distinct from $3 and status='running' and locked_by=$4
        and payload->>'conversation_id'=$6 and payload->>'inbound_message_id'=$7
        and not (payload ? 'media_intent_decision')
@@ -102,6 +104,7 @@ export async function persistTurnMediaDecision(args: {
       JSON.stringify(decision),
       args.conversation,
       args.inbound,
+      args.resolutionSource ?? 'classifier',
     ],
   );
   if (!rows[0]) throw new OutboundLeaseLostError();

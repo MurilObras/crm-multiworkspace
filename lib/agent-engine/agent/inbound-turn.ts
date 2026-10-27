@@ -79,6 +79,8 @@ import { availableConversationAudios, isRequestedApprovedMediaReplay } from './c
 import { requiredAudioPlan, deliverRequiredAudio, type RequiredAudioPlan } from './required-audio';
 import { audioIntentMessage, decideTurnMedia, isFirstAudioContact, pendingAudioSubject } from './audio-rule';
 import { MEDIA_INTENT_INSTRUCTION, NO_MEDIA_INTENT, parseMediaIntent } from './media-intent';
+import { resolveExplicitMediaReference } from './media-reference';
+import { coherentMediaContext } from './media-response-context';
 import { loadTurnMediaDecision, persistTurnMediaDecision } from './media-intent-store';
 import { recentTurnMediaIds } from './conversation-audios';
 import { renderMediaDecisionInstruction } from '@/lib/ai/agents/media-simulation';
@@ -1984,7 +1986,9 @@ async function executarTurnoDoAgente(
     return availableConversationAudios(pool, tenantId, input.conversationId, agentConfig.agentId,
       job.id, await eligibleAudiosForContact(pool, tenantId, leadId, catalog), inboundAnchor, firstAudioContact);
   };
-  let eligibleAudios = await freshAudios();
+  // A primeira seleção usa o catálogo completo. Antecipar filtros de histórico/
+  // preferência aqui repetia I/O e podia esconder o item antes de interpretar.
+  let eligibleAudios: Awaited<ReturnType<typeof freshAudios>> = [];
   // O fluxo legado mantém a conversa ativa. A consulta pelo WhatsApp traz seu
   // próprio bloco residente no prompt publicado e exige pausa: não combinar
   // instruções contraditórias ensinando o modelo a continuar após abrir o caso.
@@ -2559,7 +2563,8 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body: requestedBody, media, retry_of }) => {
+      execute: async ({ body: rawBody, media, retry_of }) => {
+        let requestedBody = rawBody;
         const approvedId = media && ('audio_id' in media ? media.audio_id : 'media_id' in media ? media.media_id : undefined);
         const managedMedia = agentConfig?.managedMediaConfigured || agentConfig?.approvedAudios?.length || agentConfig?.mediaReplayPolicy === 'explicit_repeat';
         if (!media && selectedTurnMedia !== undefined && managedMedia && containsMediaLink(requestedBody)) return { ok:false,
@@ -2571,6 +2576,12 @@ async function executarTurnoDoAgente(
           error: { code: 'media_not_approved', message: 'Neste turno use somente a mídia escolhida do catálogo aprovado ou responda em texto.' } };
         if (!media && mediaResponseCompleted) return { ok: false,
           error: { code: 'media_response_completed', message: 'A resposta com mídia já foi concluída. Encerre sem outra explicação, pergunta ou promessa de envio.' } };
+        const plannedContextMedia = selectedTurnMedia ? eligibleAudios.find(item => item.id === selectedTurnMedia) : undefined;
+        if (!media && !replayingDelivery && !requiredAudioPrelude && plannedContextMedia) {
+          const context = coherentMediaContext(requestedBody, 'type' in plannedContextMedia ? plannedContextMedia.type : 'audio');
+          requestedBody = context.body;
+          if (context.amended) runLog.info('media_context_reconciled', { job_id: job.id, media_id: selectedTurnMedia });
+        }
         const audio = approvedId ? (await freshAudios()).find(a => a.id === approvedId && a.enabled
           && ('type' in a ? a.type : 'audio') === media?.type) : undefined;
         if (audio?.required && !requiredAudioPrelude) return { ok: false, error: { code: 'audio_managed_by_rule', message: 'O CRM cuida da mídia obrigatória correspondente ao assunto após sua resposta. Não a envie por conta própria.' } };
@@ -3542,6 +3553,7 @@ async function executarTurnoDoAgente(
       if (job.payload.required_audio_plan !== undefined) {
         audioPlan = await requiredAudioPlan(pool, job, ctx.workerId, agentConfig.agentId, [], maxSendsPerTurn);
         selectedTurnMedia = audioPlan?.audio_id ?? null;
+        eligibleAudios = await freshAudios();
       } else {
         // Interpretar ANTES de preferências/histórico: retirar a mídia antes da
         // classificação fazia um pedido espontâneo parecer não ter material.
@@ -3551,7 +3563,11 @@ async function executarTurnoDoAgente(
           const subject = await pendingAudioSubject(pool,tenantId,input.conversationId,job.id,inboundAnchor);
           let intent = { ...NO_MEDIA_INTENT };
           let classificationReason: string | undefined;
-          if (catalog.length) {
+          const reference = resolveExplicitMediaReference(subject, catalog);
+          if (reference) {
+            intent = reference.intent;
+            classificationReason = reference.reason;
+          } else if (catalog.length) {
             try {
               const call = await measureTurnPhase(runLog, job, 'media_intent', async () => runModelCall(pool, deps.llmCfg, { tenantId, leadId, jobId: job.id,
                 agentId: agentConfig.agentId, purpose: 'audio_intent', model: agentConfig.model,
@@ -3579,8 +3595,9 @@ async function executarTurnoDoAgente(
             selected: catalog.find(m => m.id === intent.audio_id) ?? null,
             blockReason: () => blockReason,
             noMatchReason: classificationReason,
+            resolutionSource: reference?.source ?? 'classifier',
             authorize: async decision => availableConversationAudios(pool,tenantId,input.conversationId,
-              agentConfig.agentId,job.id,catalog,inboundAnchor,firstAudioContact,decision,
+              agentConfig.agentId,job.id,await eligibleAudiosForContact(pool,tenantId,leadId,catalog),inboundAnchor,firstAudioContact,decision,
               reason => { blockReason = reason; }),
           });
         }
