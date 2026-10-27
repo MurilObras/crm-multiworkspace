@@ -8,6 +8,16 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.9.0] — 2026-10-27
+
+### Corrigido
+
+- **Respostas completas, retenções atualizadas e tempo mínimo configurável** O Inbox distingue bloqueios pendentes, respostas parciais e entregas incertas, retirando o aviso quando a resposta relacionada é confirmada e preservando o histórico. A recuperação conserva o texto planejado e as identidades de envio, sem reconstruir o atendimento. O fechamento de memória usa formato estruturado e tentativas limitadas.
+
+  O plano privado respeita a visibilidade da conversa e só pode ser alterado pelos serviços do CRM, preservando a leitura autorizada dos diagnósticos.
+
+  O tempo mínimo da primeira resposta pode ser configurado na tela do agente. Vem desligado; quando ativado, conta o processamento dentro da espera e mantém as partes seguintes com intervalo curto.
+
 ## [3.8.1] — 2026-10-26
 
 ### Corrigido
@@ -3456,7 +3466,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.8.1...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.0...HEAD
+[3.9.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.8.1...v3.9.0
 [3.8.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.8.0...v3.8.1
 [3.8.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.2...v3.8.0
 [3.7.2]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.1...v3.7.2
