@@ -16,6 +16,10 @@ falhas ao PR de memória sem uma comparação entre revisões.
   Negativas incompatíveis e afirmações antecipadas são contidas localmente, sem
   outra chamada paga. Outro parágrafo factual é preservado; se nada restar, usa
   contexto neutro. A retomada não reescreve partes que já foram aprovadas.
+- A reserva por assunto não garante envio na etapa atual. Um avanço legítimo
+  durante o turno pode habilitar o arquivo; contexto e transporte consultam a
+  etapa e a aprovação atuais. Se a aprovação foi retirada ou o limite impede
+  montar o plano obrigatório, não apagar uma negativa que continua verdadeira.
 - O ensaio usa a mesma resolução e contenção, mas continua mostrando `planned`,
   sem arquivo realmente enviado ou sucesso de entrega inventado.
 - Ausência de seleção não é falha de transporte. Entrega anterior não significa
@@ -94,6 +98,11 @@ transporte, em comparação pareada. Sem evidência, essa meta fica pendente.
   frases reais, títulos concorrentes e uma negativa deliberada do modelo.
   A revisão posterior também corrigiu a distinção entre negativa do agente e
   descrição válida de funcionalidades por texto, coberta por dois controles.
+- O banco isolado detectou uma regressão na reserva antecipada de etapa, antes
+  da entrega: o cenário existente de avanço legítimo deixou de receber áudio.
+  A correção conserva a reserva e revalida a elegibilidade antes do contexto;
+  `inbound-retomada-e-midia.test.ts` também cobre negativa após avanço, aprovação
+  retirada e limite insuficiente. O check de banco precisa passar novamente.
 - Provedor real: três chamadas sintéticas no mesmo modelo publicado, HTTP 200:
   pedido longo com outros formatos negados, demonstração visual espontânea e
   contexto com histórico de negativa. Dois classificadores e uma chamada à

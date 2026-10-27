@@ -203,7 +203,7 @@ async function novaMensagem() {
     [NEW_MSG, ORG, CONV, SESSION, CONTACT],
   );
 }
-function modeloDeEnvio(antes?: () => Promise<void>, media?: { type: string; url: string }) {
+function modeloDeEnvio(antes?: () => Promise<void>, media?: { type: string; url: string }, body = 'Veja a demonstração oficial.') {
   let chamadas = 0;
   return async (opts: { prompt?: unknown }) => {
     resultadosVistos.push(opts.prompt);
@@ -223,7 +223,7 @@ function modeloDeEnvio(antes?: () => Promise<void>, media?: { type: string; url:
             toolCallId: "resposta",
             toolName: "send_message",
             input: JSON.stringify({
-              body: "Veja a demonstração oficial.",
+              body,
               ...(media ? { media } : {}),
             }),
           },
@@ -299,7 +299,7 @@ describe("retomada de inbound no turno completo", () => {
       expect(state?.next_action).not.toBe(marker);
     },
   );
-  it.each(['required', 'optional', 'text', 'used', 'limited'])('recepção %s: envio obrigatório independe de escolha do modelo e não repete entre turnos', async behavior => {
+  it.each(['required', 'optional', 'text', 'used', 'limited', 'limited-negative'])('recepção %s: envio obrigatório independe de escolha do modelo e não repete entre turnos', async behavior => {
     const agent = 'eeeeeeee-0000-4000-8000-000000000070';
     const version = 'eeeeeeee-0000-4000-8000-000000000071';
     const audioId = 'eeeeeeee-0000-4000-8000-000000000072';
@@ -321,9 +321,11 @@ describe("retomada de inbound no turno completo", () => {
     try {
       if (behavior === 'text') await pool.query("update messages set body='Prefiro só texto, sem áudio' where id=$1", [MSG]);
       if (behavior === 'used') await persistCapture();
-      expect(await rodaTurno(montaHandler(modeloDeEnvio(), behavior === 'limited' ? 1 : 4))).toBeNull();
+      expect(await rodaTurno(montaHandler(modeloDeEnvio(undefined, undefined,
+        behavior === 'limited-negative' ? 'Não consigo enviar esse áudio agora.' : undefined), behavior.startsWith('limited') ? 1 : 4))).toBeNull();
       expect(enviados.filter(e => e.media?.type === 'audio')).toHaveLength(behavior === 'required' ? 1 : 0);
-      if (behavior === 'limited') expect(JSON.stringify(resultadosVistos)).toContain('Mídia obrigatória pendente');
+      if (behavior.startsWith('limited')) expect(JSON.stringify(resultadosVistos)).toContain('Mídia obrigatória pendente');
+      if (behavior === 'limited-negative') expect(enviados[0]?.body).toBe('Não consigo enviar esse áudio agora.');
       if (behavior === 'required') {
         expect(enviados[0]?.body).toBe('Veja a demonstração oficial.');
         expect(enviados).toHaveLength(2);
@@ -340,7 +342,7 @@ describe("retomada de inbound no turno completo", () => {
       await pool.query('update ai_agents set archived_at=now(),published_version_id=null where id=$1', [agent]);
     }
   });
-  it.each(['topic', 'paraphrase', 'price', 'invalid', 'advance', 'outside', 'human', 'revoked', 'superseded'])(
+  it.each(['topic', 'paraphrase', 'price', 'invalid', 'advance', 'advance-negative', 'outside', 'human', 'revoked', 'revoked-negative', 'superseded'])(
     'áudio na mesma pergunta, sem depender de outra inbound: %s', async behavior => {
       const agent = 'eeeeeeee-0000-4000-8000-000000000070';
       const version = 'eeeeeeee-0000-4000-8000-000000000071';
@@ -351,7 +353,7 @@ describe("retomada de inbound no turno completo", () => {
       await leadParaAtividade();
       await pool.query(`insert into crm_stages(id,organization_id,pipeline_id,name,slug,position)
         values($1,$2,'eeeeeeee-0000-4000-8000-000000000021','Antes da demonstração','antes-audio',2000) on conflict do nothing`, [other, ORG]);
-      if (behavior === 'advance' || behavior === 'outside') await pool.query('update crm_leads set stage_id=$1 where organization_id=$2 and id=$3', [other, ORG, LEAD]);
+      if (behavior.startsWith('advance') || behavior === 'outside') await pool.query('update crm_leads set stage_id=$1 where organization_id=$2 and id=$3', [other, ORG, LEAD]);
       const audio = { id: audioId, title: 'Como funciona', use_when: 'Explica o funcionamento do serviço',
         send_when: 'Quando perguntar como funciona ou o que pode fazer. Não usar para preço.', trigger_type: 'topic',
         mime: 'audio/ogg', size_bytes: 17, enabled: true, required: true,
@@ -365,9 +367,9 @@ describe("retomada de inbound no turno completo", () => {
       await pool.query('update messages set body=$1 where id=$2', [behavior === 'price' ? 'Qual o preço?' : behavior === 'paraphrase' ? 'O que consigo fazer nesse serviço?' : 'Como funciona?', MSG]);
       let classifications = 0;
       const main = modeloDeEnvio(async () => {
-        if (behavior === 'advance') await pool.query('update crm_leads set stage_id=$1 where organization_id=$2 and id=$3', [stage, ORG, LEAD]);
-        if (behavior === 'revoked') await pool.query("update ai_agents set config=jsonb_set(config,'{approved_audios,0,enabled}','false') where organization_id=$1 and id=$2", [ORG, agent]);
-      });
+        if (behavior.startsWith('advance')) await pool.query('update crm_leads set stage_id=$1 where organization_id=$2 and id=$3', [stage, ORG, LEAD]);
+        if (behavior.startsWith('revoked')) await pool.query("update ai_agents set config=jsonb_set(config,'{approved_audios,0,enabled}','false') where organization_id=$1 and id=$2", [ORG, agent]);
+      }, undefined, behavior.endsWith('-negative') ? 'Esse arquivo já foi enviado. Não vou repetir a apresentação.' : undefined);
       try {
         const error = await rodaTurno(montaHandler(async (opts: { prompt?: unknown }) => {
           if (JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual')) {
@@ -386,9 +388,11 @@ describe("retomada de inbound no turno completo", () => {
         if (behavior === 'superseded') expect(error?.constructor.name).toBe('JobSettledError');
         else expect(error).toBeNull();
         expect(classifications).toBe(1);
-        const expected = ['topic', 'paraphrase', 'advance'].includes(behavior);
+        const expected = ['topic', 'paraphrase', 'advance', 'advance-negative'].includes(behavior);
         expect(enviados.filter(e => e.media?.type === 'audio')).toHaveLength(expected ? 1 : 0);
         expect(enviados[0]?.media).toBeUndefined();
+        if (behavior === 'advance-negative') expect(enviados[0]?.body).toBe('Sobre esse assunto:');
+        if (behavior === 'revoked-negative') expect(enviados[0]?.body).toContain('Não vou repetir');
         if (expected) {
           expect(enviados).toHaveLength(2);
           expect(enviados[1]?.media?.audio_id).toBe(audioId);

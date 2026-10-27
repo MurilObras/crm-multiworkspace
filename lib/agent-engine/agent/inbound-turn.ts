@@ -2576,8 +2576,12 @@ async function executarTurnoDoAgente(
           error: { code: 'media_not_approved', message: 'Neste turno use somente a mídia escolhida do catálogo aprovado ou responda em texto.' } };
         if (!media && mediaResponseCompleted) return { ok: false,
           error: { code: 'media_response_completed', message: 'A resposta com mídia já foi concluída. Encerre sem outra explicação, pergunta ou promessa de envio.' } };
-        const plannedContextMedia = selectedTurnMedia ? eligibleAudios.find(item => item.id === selectedTurnMedia) : undefined;
-        if (!media && !replayingDelivery && !requiredAudioPrelude && plannedContextMedia) {
+        // A etapa/aprovação pode mudar numa ferramenta ou enquanto o modelo
+        // responde. Só ajustar o texto se o arquivo ainda estiver elegível.
+        const plannedContextMedia = !media && !replayingDelivery && !requiredAudioPrelude && selectedTurnMedia
+          ? (await freshAudios()).find(item => item.id === selectedTurnMedia) : undefined;
+        if (!media && !replayingDelivery && !requiredAudioPrelude && plannedContextMedia
+          && (!plannedContextMedia.required || audioPlan?.audio_id === selectedTurnMedia)) {
           const context = coherentMediaContext(requestedBody, 'type' in plannedContextMedia ? plannedContextMedia.type : 'audio');
           requestedBody = context.body;
           if (context.amended) runLog.info('media_context_reconciled', { job_id: job.id, media_id: selectedTurnMedia });
@@ -3597,7 +3601,9 @@ async function executarTurnoDoAgente(
             noMatchReason: classificationReason,
             resolutionSource: reference?.source ?? 'classifier',
             authorize: async decision => availableConversationAudios(pool,tenantId,input.conversationId,
-              agentConfig.agentId,job.id,await eligibleAudiosForContact(pool,tenantId,leadId,catalog),inboundAnchor,firstAudioContact,decision,
+              // Reserva por assunto e histórico; a etapa é conferida fresca no
+              // contexto e transporte. Pode haver avanço legítimo neste turno.
+              agentConfig.agentId,job.id,catalog,inboundAnchor,firstAudioContact,decision,
               reason => { blockReason = reason; }),
           });
         }
