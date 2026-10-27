@@ -248,7 +248,7 @@ it('nova inbound durante a retomada encerra com descarte seguro, sem consumir re
 it('schema recusado após entrega abre aviso técnico uma vez, sem repetir envio nem consumir cinco tentativas', async () => {
   const f=await fixture(), other=await fixture(), job=await f.claim('schema');
   await saveDelivery(pool,job,'schema',{version:1,responseKey:randomUUID(),agentId:null,agentVersionId:null,firstSeq:1,
-    body:'Resposta já aprovada.',bubbles:['Resposta já aprovada.'],approved:true,waitUntil:null});
+    body:'Resposta já aprovada.',approvedBody:'Resposta já aprovada.',bubbles:['Resposta já aprovada.'],approved:true,waitUntil:null});
   let sends=0; const calls={model:0};
   let failure:unknown;
   try { await handler(async input=>{sends++;return accept(f,input);},calls,undefined,undefined,()=>{
@@ -270,7 +270,7 @@ it('schema recusado após entrega abre aviso técnico uma vez, sem repetir envio
 it('falha transitória retoma somente memória; persiste uma vez e finaliza sem repetir transporte', async () => {
   const f=await fixture(), job=await f.claim('transient'); let sends=0;const calls={model:0};let failing=true;
   await saveDelivery(pool,job,'transient',{version:1,responseKey:randomUUID(),agentId:null,agentVersionId:null,firstSeq:1,
-    body:'Entrega confirmada.',bubbles:['Entrega confirmada.'],approved:true,waitUntil:null});
+    body:'Entrega confirmada.',approvedBody:'Entrega confirmada.',bubbles:['Entrega confirmada.'],approved:true,waitUntil:null});
   const run=handler(async input=>{sends++;return accept(f,input);},calls,undefined,undefined,()=>{
     if(failing)throw Error('indisponibilidade temporária');
     return JSON.stringify({commitments:[],objections:[],next_action:null,rolling_summary:'Memória confirmada',declaracao:null});
