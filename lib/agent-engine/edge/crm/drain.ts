@@ -94,6 +94,7 @@ export async function drainTick(
   );
 
   for (const event of events) {
+    const started = performance.now();
     try {
       const desfecho = await processEvent(pool, event, knobs, log);
       if (desfecho === 'adiar') {
@@ -123,6 +124,9 @@ export async function drainTick(
         [event.id, terminal ? 'dead' : 'pending', message],
       );
       log.error('drain: evento falhou', { event_id: event.id, terminal, error: message });
+    } finally {
+      log.info('dispatch_processing_timing', { organization_id: event.organization_id, event_id: event.id,
+        elapsed_ms: Math.round(performance.now() - started) });
     }
   }
   return events.length;
