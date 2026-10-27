@@ -8,6 +8,12 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.9.1] — 2026-10-27
+
+### Corrigido
+
+- **Memória do atendimento compatível com saída estruturada** O fechamento da memória usa um formato completo aceito pela política estrita do provedor e preserva memórias antigas. A rejeição desse formato abre uma falha técnica com orientação nas Execuções e na Central, sem repetir as mesmas chamadas ou reenviar o atendimento. Medições distinguem espera na fila, processamento, transporte e fechamento.
+
 ## [3.9.0] — 2026-10-27
 
 ### Corrigido
@@ -3466,7 +3472,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.0...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.1...HEAD
+[3.9.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.0...v3.9.1
 [3.9.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.8.1...v3.9.0
 [3.8.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.8.0...v3.8.1
 [3.8.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.7.2...v3.8.0
