@@ -119,21 +119,22 @@ export async function availableConversationAudios(
   onDecision?: (reason: string) => void,
 ): Promise<ApprovedAudio[]> {
   if (!audios.length) return audios;
-  const prior = (await history(db,org,conversation)).filter(p => p.job_id !== job);
   const decision = provisional ?? await loadTurnMediaDecision(db,org,conversation,agent,job);
-  const text = await requestText(db,org,conversation,inbound,job,!!decision);
-  const allowed = new Map<string,boolean>();
-  for (const kind of new Set(audios.map(mediaKind))) allowed.set(kind,
-    withTurnMediaPreference(await conversationAllowsMedia(db,org,conversation,kind),text,kind));
   let candidates = audios;
   if (decision) {
     const item = candidates.find(m => m.id === decision.audio_id);
     if (!item || mediaApprovalHash(item) !== decision.approval_sha256
       || !provisional && decision.authorized_id !== item.id) return [];
+    const kind = mediaKind(item);
+    const text = await requestText(db,org,conversation,inbound,job,true);
+    const preference = explicitMediaPreference(text,kind);
+    // Pedido explícito já substitui a preferência antiga. Não reconciliar três
+    // formatos para decidir um; a negativa ATUAL e o histórico continuam frescos.
+    const allowsFormat = preference !== 'text' && (decision.format === kind || decision.intent === 'repeat'
+      || withTurnMediaPreference(await conversationAllowsMedia(db,org,conversation,kind),text,kind));
+    const prior = (await history(db,org,conversation)).filter(p => p.job_id !== job);
     const result = authorizeMediaIntent({ item, intent: decision, policy: decision.policy,
-      legacyRequest: explicitMediaPreference(text,mediaKind(item)) === 'audio',
-      allowsFormat: explicitMediaPreference(text,mediaKind(item)) !== 'text'
-        && (decision.format === mediaKind(item) || decision.intent === 'repeat' || allowed.get(mediaKind(item)) === true),
+      legacyRequest: preference === 'audio', allowsFormat,
       inbound, used: prior.filter(p => p.agent_id === agent || !!item.content_sha256 && p.fingerprint === item.content_sha256)
         .map(p => ({ id: p.audio_id, fingerprint: p.fingerprint, confirmed: ['sent','delivered','read'].includes(p.status) && p.phase !== 'uncertain', request: p.request_id })),
     });
@@ -141,6 +142,11 @@ export async function availableConversationAudios(
     if (firstContact === false && item.trigger_type === 'first_contact' && decision.intent !== 'repeat') return [];
     return result.allowed ? [item] : [];
   }
+  const prior = (await history(db,org,conversation)).filter(p => p.job_id !== job);
+  const text = await requestText(db,org,conversation,inbound,job);
+  const allowed = new Map<string,boolean>();
+  for (const kind of new Set(audios.map(mediaKind))) allowed.set(kind,
+    withTurnMediaPreference(await conversationAllowsMedia(db,org,conversation,kind),text,kind));
   if (refersToPreviousMedia(text)) {
     const kinds = (['audio','image','video'] as const).filter(k => explicitMediaPreference(text,k) === 'audio');
     const last = prior.find(p => kinds.includes(p.kind as 'audio' | 'image' | 'video'));
@@ -187,7 +193,8 @@ export async function assertConversationAudioAvailable(
       throw new OutboundAudioUnavailableError('audio_approval_revoked');
   }
   const currentText = await requestText(db,org,conversation,inbound,job,!!decision);
-  const allows = withTurnMediaPreference(await conversationAllowsMedia(db,org,conversation,mediaKind(m)),currentText,mediaKind(m));
+  const allows = decision && (decision.format === mediaKind(m) || decision.intent === 'repeat')
+    || withTurnMediaPreference(await conversationAllowsMedia(db,org,conversation,mediaKind(m)),currentText,mediaKind(m));
   if (decision ? decision.text_only || decision.authorized_id !== m.id || explicitMediaPreference(currentText,mediaKind(m)) === 'text'
       || (decision.format !== mediaKind(m) && decision.intent !== 'repeat' && !allows)
     : !allows)

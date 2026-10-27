@@ -118,19 +118,31 @@ export async function aplicarEfeitosPosEntrada(
   admin: Admin,
   entrada: EntradaDeMensagem,
 ): Promise<void> {
-  await aplicarOptOut(admin, entrada);
-  await abrirDemanda(admin, entrada);
-  await avaliarCampanha(admin, entrada);
-  // A resposta do lead avança o follow-up AQUI. O despacho do agente (LLM)
-  // vem depois: no Hobby ele estoura o tempo da request e o próximo texto
-  // do fluxo ficava esperando o relógio.
-  await acelerarPipelineDeEventos(admin, {
-    organizationId: entrada.organizationId,
-    contactId: entrada.contactId,
-    messageId: entrada.messageId,
-    texto: entrada.texto,
-  });
-  await pedirDespachoDoAgente(admin, entrada);
+  const started = performance.now();
+  const phases: Record<string, number> = {};
+  const measure = async (name: string, operation: () => Promise<void>) => {
+    const before = performance.now();
+    try { await operation(); }
+    finally { phases[name] = Math.round(performance.now() - before); }
+  };
+  try {
+    await measure('opt_out', () => aplicarOptOut(admin, entrada));
+    await measure('lead', () => abrirDemanda(admin, entrada));
+    await measure('campaign', () => avaliarCampanha(admin, entrada));
+    // A resposta do lead avança o follow-up AQUI. O despacho do agente (LLM)
+    // vem depois: no Hobby ele estoura o tempo da request e o próximo texto
+    // do fluxo ficava esperando o relógio.
+    await measure('followup', () => acelerarPipelineDeEventos(admin, {
+      organizationId: entrada.organizationId,
+      contactId: entrada.contactId,
+      messageId: entrada.messageId,
+      texto: entrada.texto,
+    }));
+    await measure('dispatch_event', () => pedirDespachoDoAgente(admin, entrada));
+  } finally {
+    logger.info('inbound_dispatch_timing', { organization_id: entrada.organizationId,
+      message_id: entrada.messageId, elapsed_ms: Math.round(performance.now() - started), phases_ms: phases });
+  }
 }
 
 /**

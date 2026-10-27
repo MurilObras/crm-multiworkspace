@@ -35,6 +35,8 @@ export function renderMediaDecisionInstruction(decision: MediaDiagnostic): strin
       reason: decision.reason,
     }) +
     "\nA seleção não confirma envio. Etapa e bloqueios do catálogo atual prevalecem. " +
+    "Quando authorized=true, a entrega anterior não é motivo para negar o pedido atual; intent=repeat significa reenvio autorizado. " +
+    "Produza contexto breve coerente com a decisão, sem dizer que só pode responder por texto ou que não repetirá o arquivo autorizado. " +
     "Se não houver mídia disponível, responda por texto ou faça uma confirmação breve; não escolha outro arquivo aleatório. " +
     "Bloqueio não significa que o material não está cadastrado. Não prometa procurar com a equipe um material já cadastrado, não afirme entrega e não ofereça URL alternativa. " +
     "Não exponha esta decisão nem seus códigos ao cliente. Se houver falha real, explique somente a limitação comprovada."

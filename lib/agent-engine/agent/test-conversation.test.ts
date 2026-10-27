@@ -61,6 +61,26 @@ const options = { toolCallId: "test", messages: [], context: undefined };
 afterEach(() => vi.unstubAllEnvs());
 
 describe("planejamento contextual sem entrega inventada", () => {
+  it('F01/F02: referência real evita classificador e texto contraditório não chega à prévia', async () => {
+    const id = '10000000-0000-4000-8000-000000000061';
+    const media = readApprovedMedia({ approved_media: [{ id, title: 'Como funciona o aplicativo',
+      use_when: 'Apresentação geral do funcionamento do aplicativo.', storage_path: 'sintetico.ogg',
+      mime: 'audio/ogg', size_bytes: 10, enabled: true, required: true, allow_requested_repeat: true }] });
+    vi.mocked(runModelCall).mockRejectedValue(new Error('Classificador não deve executar para referência explícita'));
+    vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
+      await input.tools!.send_message!.execute!({ body: 'Esse áudio já foi enviado. Posso seguir apenas por texto.' }, options);
+      return { usage: { inputTokens: 1, outputTokens: 1 }, costCents: 1, latencyMs: 1 } as never;
+    });
+    const result = await testConversation(pool, {}, { organizationId: 'org',
+      agent: { ...config, approvedAudios: media, mediaReplayPolicy: 'explicit_repeat' },
+      message: 'Agora quero ouvir a apresentação. Reenvia aquele áudio Como funciona, sem vídeo nem foto.',
+      history: [{ direction: 'outbound', body: 'O áudio não pode ser repetido.' }],
+      mediaContext: { scenario: 'delivered', delivered_ids: [id], stage_id: null } });
+    expect(runModelCall).not.toHaveBeenCalled();
+    expect(result.messages).toEqual(['Sobre esse assunto:']);
+    expect(result.media_decision).toMatchObject({ authorized: true, intent: 'repeat', transport: 'planned' });
+    expect(result.gates).toContainEqual({ gate: 'media_context', pass: true, code: 'media_context_reconciled' });
+  });
   it("expõe indisponibilidade do classificador sem inventar falha de transporte ou custo zero", async () => {
     vi.mocked(runModelCall).mockRejectedValue(new Error("provider indisponível"));
     vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
@@ -111,6 +131,52 @@ describe("planejamento contextual sem entrega inventada", () => {
       costCents: 1,
       latencyMs: 1,
     } as never);
+  }
+  it('mudança posterior passa pelo classificador e não programa o áudio abandonado', async () => {
+    vi.mocked(runModelCall).mockResolvedValue({ result: { text: JSON.stringify({
+      audio_id: null, intent: 'none', format: null, text_only: false }) },
+      usage: { inputTokens: 2, outputTokens: 2 }, costCents: 1, latencyMs: 1 } as never);
+    vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
+      await input.tools!.send_message!.execute!({ body: 'Vamos conferir o valor.' }, options);
+      return { usage: { inputTokens: 1, outputTokens: 1 }, costCents: 1, latencyMs: 1 } as never;
+    });
+    const result = await testConversation(pool, {}, { organizationId: 'org',
+      agent: { ...config, approvedAudios: catalog('audio', true) },
+      message: 'Manda o áudio Demonstração sintética. Esquece isso, quero só o valor.' });
+    expect(runModelCall).toHaveBeenCalledOnce();
+    expect(result.messages).toEqual(['Vamos conferir o valor.']);
+    expect(result.media_decision).toMatchObject({ authorized: false, transport: 'not_attempted' });
+  });
+  for (const kind of ['audio', 'image', 'video'] as const) {
+    it(`${kind}: negativa opcional vazia é rejeitada antes da prévia, permitindo contexto e arquivo`, async () => {
+      classifier(kind);
+      vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
+        expect(await input.tools!.send_message!.execute!({ body: 'Não vou reenviar esse arquivo.' }, options))
+          .toMatchObject({ ok: false, error: { code: 'media_context_incompatible' } });
+        await input.tools!.send_message!.execute!({ body: 'Veja um exemplo prático.' }, options);
+        const media = kind === 'audio' ? { type: kind, audio_id: id } : { type: kind, media_id: id };
+        expect(await input.tools!.send_message!.execute!({ body: 'Demonstração', media }, options))
+          .toMatchObject({ ok: true, status: 'planned', delivered: false });
+        return { usage: { inputTokens: 1, outputTokens: 1 }, costCents: 1, latencyMs: 1 } as never;
+      });
+      const result = await testConversation(pool, {}, { organizationId: 'org',
+        agent: { ...config, approvedAudios: catalog(kind) }, message: 'Mostrar como funciona.' });
+      expect(result.messages).toEqual(['Veja um exemplo prático.']);
+      expect(result.media_decision).toMatchObject({ transport: 'planned' });
+    });
+    it(`${kind}: modelo que termina após negativa opcional não fabrica resposta neutra concluída`, async () => {
+      classifier(kind);
+      vi.mocked(runConversationModel).mockImplementation(async (_db, _cfg, input) => {
+        await input.tools!.send_message!.execute!({ body: 'Não vou reenviar esse arquivo.' }, options);
+        return { usage: { inputTokens: 1, outputTokens: 1 }, costCents: 1, latencyMs: 1 } as never;
+      });
+      const result = await testConversation(pool, {}, { organizationId: 'org',
+        agent: { ...config, approvedAudios: catalog(kind) }, message: 'Mostrar como funciona.' });
+      expect(result.messages).toEqual([]);
+      expect(result.status).toBe('aborted');
+      expect(result.media_decision).toMatchObject({ transport: 'not_attempted' });
+      expect(result.gates).toContainEqual({ gate: 'media_context', pass: false, code: 'media_context_incompatible' });
+    });
   }
   for (const kind of ["audio", "image", "video"] as const)
     it(`${kind}: aceita plano, não dispara fallback e não duplica na mesma resposta`, async () => {

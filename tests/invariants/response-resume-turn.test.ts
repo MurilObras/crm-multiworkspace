@@ -200,6 +200,18 @@ it.each(['audio','image','video'] as const)('retoma %s obrigatório na seq 2 com
  expect((await pool.query('select count(*)::int n from send_ledger where job_id=$1 and status=\'accepted\'',[f.job.id])).rows[0].n).toBe(2);
 });
 
+it.each(['audio','image','video'] as const)('F02: %s obrigatório não entrega negativa do modelo antes do arquivo',async type=>{
+ const f=await requiredFixture(type,'after_response');const calls={model:0};let main=0;const sent:ChannelSendInput[]=[];
+ await handler(async input=>{sent.push(input);return accept(f,input);},calls,undefined,
+  ()=>++main===1?[{type:'tool-call',toolCallId:'incompatible-context',toolName:'send_message',
+   input:JSON.stringify({body:'Esse arquivo já foi enviado. Não vou repetir a apresentação.'})}]:[])(f.job,pool,{workerId:'required'});
+ expect(sent).toHaveLength(2);
+ expect(sent[0]).toMatchObject({body:'Sobre esse assunto:'});expect(sent[0]!.media).toBeUndefined();
+ expect(sent[1]).toMatchObject({media:{...f.media,agent_id:f.agent}});
+ expect(calls.model).toBe(1);
+ expect((await pool.query('select count(*)::int n from lead_checkpoints where organization_id=$1 and job_id=$2',[f.org,f.job.id])).rows[0].n).toBe(1);
+});
+
 it.each(['audio','image','video'] as const)('%s obrigatório já confirmado não recebe uma segunda tentativa ao retomar',async type=>{
  const f=await requiredFixture(type,'after_response'),responseKey=randomUUID();
  await accept(f,{tenantId:f.org,leadId:f.contact,jobId:f.job.id,workerId:'required',seq:3,conversationId:f.conversation,body:'Contexto confirmado.',responseKey:randomUUID(),responsePartCount:1});

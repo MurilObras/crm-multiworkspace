@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { outboundPostgres, ORG, CONTACT, CONV, JOB } from "../helpers/outbound-postgres";
 import { readApprovedMedia, type ApprovedMedia } from "@/lib/ai/agents/approved-media";
 import {
@@ -426,4 +426,27 @@ it("preferência revogada na tela entre a decisão e o transporte veta o envio",
 });
 it("hash distingue texto alterado e conserva o turno exato", () => {
   expect(mediaSubjectHash("mostra")).not.toBe(mediaSubjectHash("mostra de novo"));
+});
+
+it('P01: decisão de um formato não reconcilia preferências dos três formatos', async () => {
+  await persist();
+  const spy = vi.spyOn(db.pool, 'query');
+  try {
+    expect(await availableConversationAudios(db.pool, ORG, CONV, AGENT, JOB,
+      [media(), { ...media('audio'), id: OLD }, { ...media('image'), id: ALIAS }], INBOUND)).toHaveLength(1);
+    // Baseline fazia pelo menos 10 viagens para este catálogo; continuam as
+    // quatro leituras frescas da prova, mensagem atual e entregas anteriores.
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(4);
+  } finally { spy.mockRestore(); }
+});
+
+it('P02: otimização não reutiliza aprovação revogada entre duas conferências', async () => {
+  await persist();
+  const spy = vi.spyOn(db.pool, 'query');
+  try {
+    await expect(assertConversationAudioAvailable(db.pool, ORG, CONV, AGENT, MEDIA, OLD, JOB, media())).resolves.toBeUndefined();
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(6);
+  } finally { spy.mockRestore(); }
+  await db.pool.query("update ai_agents set config='{}'");
+  await expect(assertConversationAudioAvailable(db.pool, ORG, CONV, AGENT, MEDIA, OLD, JOB, media())).rejects.toThrow();
 });
