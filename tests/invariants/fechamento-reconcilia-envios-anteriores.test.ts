@@ -85,7 +85,7 @@ describe('fechamento não abandona envios de tentativas anteriores', () => {
         ] : [{ type: 'text', text: 'fim' }], finishReason: { unified: first ? 'tool-calls' : 'stop', raw: undefined }, usage, warnings: [] };
       }
       prompts.push(JSON.stringify(opts.prompt));
-      return { content: [{ type: 'text', text: ++checkpoints === 1 ? '{inválido}' : CHECKPOINT }], finishReason: { unified: 'stop', raw: undefined }, usage, warnings: [] };
+      return { content: [{ type: 'text', text: ++checkpoints <= 2 ? '{inválido}' : CHECKPOINT }], finishReason: { unified: 'stop', raw: undefined }, usage, warnings: [] };
     });
     const handler = createInboundTurnHandler({ crmCfg: { supabase: {} as never }, llmCfg: { anthropicApiKey: 'fake-test-key' }, registry, log: createLogger(),
       knobs: { historyLimit: 20, maxContextTokens: 2000, notesIndexMaxTokens: 1000, maxSteps: 5, queuedRetryDelayMs: 1000,
@@ -115,7 +115,7 @@ describe('fechamento não abandona envios de tentativas anteriores', () => {
     const final = await f.claim('final');
     await handler(final, pool, { workerId: 'final' });
     await completeJob(pool, f.job.id, 'final');
-    expect({ steps, sends, checkpoints }).toEqual({ steps: 2, sends: 1, checkpoints: 2 });
+    expect({ steps, sends, checkpoints }).toEqual({ steps: 2, sends: 1, checkpoints: 3 });
     for (const prompt of prompts) { expect(prompt).toContain('Podemos continuar'); expect(prompt).not.toContain('NOVA PERGUNTA'); }
     expect((await pool.query(`select count(*)::int n from lead_notes where organization_id=$1 and contact_id=$2`, [f.org, f.contact])).rows[0].n).toBe(1);
     expect((await pool.query(`select count(*)::int n from lead_checkpoints where organization_id=$1 and job_id=$2`, [f.org, f.job.id])).rows[0].n).toBe(1);

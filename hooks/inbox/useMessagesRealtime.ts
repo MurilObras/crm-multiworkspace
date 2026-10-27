@@ -55,7 +55,10 @@ export function useMessagesRealtime(conversationId: string | null) {
   });
 
   const onChange = useCallback(() => {
-    if (conversationId) qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+    if (conversationId) {
+      qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+      qc.invalidateQueries({ queryKey: ["conversation-retention", conversationId] });
+    }
     qc.invalidateQueries({ queryKey: ["conversations"] });
   }, [qc, conversationId]);
 

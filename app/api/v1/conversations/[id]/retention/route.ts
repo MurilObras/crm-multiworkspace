@@ -15,7 +15,7 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 /** Só vetos recentes interessam à tela — mais velho que isso é histórico, não aviso. */
-const RETENTION_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+// A janela de 24h e a resolução por resposta vivem na RPC canônica.
 
 interface RouteCtx {
   params: Promise<{ id: string }>;
@@ -53,16 +53,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("not_found", "Conversation not found.", 404, { requestId });
   }
 
-  const since = new Date(Date.now() - RETENTION_LOOKBACK_MS).toISOString();
-  const { data: traces, error: traceErr } = await supabase
-    .from("before_send_traces")
-    .select("id, created_at, vetoed_gate, vetoed_code")
-    .eq("organization_id", activeOrg.orgId)
-    .eq("contact_id", conv.contact_id)
-    .not("vetoed_gate", "is", null)
-    .gte("created_at", since)
-    .order("created_at", { ascending: false })
-    .limit(5);
+  const { data: traces, error: traceErr } = await supabase.rpc('fn_conversation_retentions', {
+    p_org: activeOrg.orgId, p_conversation: conv.id,
+  });
   if (traceErr) {
     return fail("internal_error", "Failed to load retention traces.", 500, { requestId });
   }

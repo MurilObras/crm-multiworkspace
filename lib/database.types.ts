@@ -2252,6 +2252,8 @@ export type Database = {
       };
       before_send_traces: {
         Row: {
+          conversation_id: string | null;
+          response_key: string | null;
           channel_session_id: string;
           contact_id: string | null;
           created_at: string;
@@ -2264,6 +2266,8 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          conversation_id?: string | null;
+          response_key?: string | null;
           channel_session_id: string;
           contact_id?: string | null;
           created_at?: string;
@@ -2275,6 +2279,8 @@ export type Database = {
           vetoed_gate?: string | null;
         };
         Update: {
+          conversation_id?: string | null;
+          response_key?: string | null;
           channel_session_id?: string;
           contact_id?: string | null;
           created_at?: string;
@@ -2286,6 +2292,7 @@ export type Database = {
           vetoed_gate?: string | null;
         };
         Relationships: [
+          {foreignKeyName:"before_send_traces_conversation_id_fkey";columns:["conversation_id"];isOneToOne:false;referencedRelation:"conversations";referencedColumns:["id"];},
           {
             foreignKeyName: "before_send_traces_channel_session_id_fkey";
             columns: ["channel_session_id"];
@@ -9174,6 +9181,10 @@ export type Database = {
       };
     };
     Functions: {
+      fn_conversation_retentions: {
+        Args: {p_org:string;p_conversation:string};
+        Returns: {id:string;created_at:string;vetoed_gate:string|null;vetoed_code:string|null;delivery_state:string}[];
+      };
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string };
         Returns: undefined;

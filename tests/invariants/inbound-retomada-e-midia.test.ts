@@ -392,7 +392,8 @@ describe("retomada de inbound no turno completo", () => {
         if (expected) {
           expect(enviados).toHaveLength(2);
           expect(enviados[1]?.media?.audio_id).toBe(audioId);
-          expect(JSON.stringify(resultadosVistos)).toContain('Resultado REAL do áudio obrigatório');
+          // O fechamento só recebe fatos canônicos, sem reencaminhar a fita de ferramentas.
+          expect(JSON.stringify(resultadosVistos)).toContain('Retomada SOMENTE do registro de memória');
         }
       } finally {
         await pool.query('update contacts set force_human=false where organization_id=$1 and id=$2', [ORG, CONTACT]);

@@ -735,6 +735,8 @@ export interface RunBeforeSendArgs {
    * emitido ao logger); usado por testes que exercitam a cadeia sem um job real.
    */
   jobId?: string;
+  conversationId?: string;
+  responseKey?: string;
   /** número (channel_sessions.id do CRM) — chave da serialização e do estado anti-ban. */
   channelSessionId: string;
   body: string;
@@ -1105,8 +1107,8 @@ async function persistTrace(
   try {
     const { rows } = await args.pool.query<{ id: string }>(
       `insert into before_send_traces
-         (organization_id, job_id, contact_id, channel_session_id, trace, vetoed_gate, vetoed_code)
-       values ($1, $2, $3, $4, $5, $6, $7)
+         (organization_id, job_id, contact_id, channel_session_id, trace, vetoed_gate, vetoed_code, conversation_id, response_key)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        returning id`,
       [
         args.tenantId,
@@ -1116,6 +1118,7 @@ async function persistTrace(
         JSON.stringify(trace),
         veto?.gate ?? null,
         veto?.code ?? null,
+        args.conversationId ?? null, args.responseKey ?? null,
       ],
     );
     return rows[0]?.id ?? null;

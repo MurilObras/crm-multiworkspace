@@ -15,7 +15,7 @@
  * cacheWriteTokens}. Validado no ai@7 via scripts/smoke-llm.sh (modelo real) —
  * upgrade de major re-valida esses paths pelo mesmo gate (regra dura 16).
  */
-import { generateText, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
+import { generateText, Output, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
 import type pg from 'pg';
 import { z } from 'zod';
 
@@ -111,6 +111,8 @@ export interface RunModelCallInput {
   /** atribuição de custo: 'agent_turn' (default) | 'classifier' | 'compaction' | 'connection_test' */
   purpose?: string;
   system?: string;
+  /** Fechamentos estruturados, sem alterar as chamadas comuns. */
+  outputSchema?: z.ZodType;
   messages: ModelMessage[];
   tools?: ToolSet;
   /**
@@ -414,6 +416,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       topP,
       topK,
       maxOutputTokens,
+      ...(input.outputSchema ? { output: Output.object({ schema: input.outputSchema }) } : {}),
     });
   } catch (err) {
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────

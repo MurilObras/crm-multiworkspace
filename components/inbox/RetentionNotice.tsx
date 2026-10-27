@@ -25,14 +25,21 @@ const KIND_CLASS: Record<RetentionKind, string> = {
  * before_send reteve a resposta do assistente nas últimas 24h, mostra o MOTIVO
  * traduzido em pt-br leigo acima do composer. Sem veto recente → não renderiza.
  */
-export function RetentionNotice({ conversationId }: { conversationId: string }) {
+export function RetentionNotice({ conversationId, organizationId }: { conversationId: string; organizationId?:string|null }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
-  const { data } = useRetention(conversationId);
+  const { data } = useRetention(conversationId,organizationId);
   const latest = data?.retentions[0];
   if (!latest || !data) return null;
 
-  const copy = retentionCopy(latest.vetoed_code, data.context, t);
+  const original = retentionCopy(latest.vetoed_code, data.context, t);
+  const copy = latest.delivery_state === 'historical'
+    ? { ...original, title: t('Ocorrência anterior de envio'), description: t('Há um bloqueio registrado anteriormente, sem vínculo suficiente para confirmar se continua pendente. Consulte o histórico do atendimento.') }
+    : latest.delivery_state === 'uncertain'
+      ? { ...original, title: t('Entrega sem confirmação'), description: t('Não foi possível confirmar esta entrega. Confira o atendimento antes de reenviar para evitar duplicação.') }
+      : latest.delivery_state === 'partial'
+        ? { ...original, title: t('Resposta enviada parcialmente'), description: t('Parte desta resposta chegou ao cliente; outra parte continua pendente. O histórico identifica a tentativa afetada.') }
+        : original;
   const Icon = KIND_ICON[copy.kind];
   const when = formatDistanceToNowStrict(new Date(latest.created_at), {
     addSuffix: true,

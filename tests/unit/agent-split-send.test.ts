@@ -42,4 +42,30 @@ describe("sendInBubbles", () => {
     expect(out.kind).toBe("blocked");
     expect(send).toHaveBeenCalledTimes(2); // parou na 2ª
   });
+
+  it("não ultrapassa uma parte queued mesmo que o canal volte antes da próxima", async () => {
+    const send = vi.fn()
+      .mockResolvedValueOnce({ kind: "queued", messageId: "pendente" })
+      .mockResolvedValueOnce({ kind: "sent", messageId: "fora-de-ordem" });
+    const prepare = vi.fn(async (_parts: string[]) => undefined);
+    const sleep = vi.fn(async () => undefined);
+    const text = "Primeira parte.\n\nSegunda parte.";
+    const out = await sendInBubbles(text, { enabled: true, maxChars: 16, prepare,
+      send, sleep, jitter: () => 0 });
+    expect(prepare).toHaveBeenCalledWith(["Primeira parte.", "Segunda parte."]);
+    expect(out.kind).toBe("queued");
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+});
+
+it('não reagrupa partes já aprovadas quando o limite muda na retomada',async()=>{
+ const sent:string[]=[];
+ await expect(sendInBubbles('Primeira. Segunda.',{enabled:true,maxChars:5,maxBubbles:1,plannedBubbles:['Primeira.','Segunda.'],send:async body=>{sent.push(body);return {kind:'sent'};},sleep:async()=>{},jitter:()=>0})).rejects.toThrow('response_send_limit_changed');
+ expect(sent).toEqual([]);
+});
+it('persiste o plano inteiro antes do primeiro transporte e conserva a ordem original',async()=>{
+ const events:string[]=[];
+ await sendInBubbles('Texto original',{enabled:false,maxChars:100,plannedBubbles:['A','B'],prepare:async parts=>{events.push('prepare:'+parts.join(','));},send:async body=>{events.push(body);return {kind:'sent'};},sleep:async()=>{},jitter:()=>0});
+ expect(events).toEqual(['prepare:A,B','A','B']);
 });

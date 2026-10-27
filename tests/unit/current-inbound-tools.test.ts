@@ -78,3 +78,11 @@ describe("ferramentas de uma mesma inbound", () => {
     expect(second).toHaveBeenCalledOnce();
   });
 });
+
+it('notifica o chamador das intenções bloqueadas sem executar seus efeitos',async()=>{
+ let failed=false;const execute=vi.fn(async()=>{failed=true;return 'failed';});const media=vi.fn(async()=>{});const blocked=vi.fn();
+ const guard=guardCurrentInboundTools({first:tool({inputSchema:z.object({}),execute}),send_message:tool({inputSchema:z.object({body:z.string()}),execute:media})},async()=>{if(failed)throw Error('delivery_failed');},blocked);
+ const opts={toolCallId:'same-step',messages:[],context:{}};
+ const results=await Promise.allSettled([guard.tools.first!.execute!({},opts),guard.tools.send_message!.execute!({body:'Vídeo de demonstração'},opts)]);
+ await guard.drain();expect(results.map(r=>r.status)).toEqual(['fulfilled','rejected']);expect(media).not.toHaveBeenCalled();expect(blocked).toHaveBeenCalledWith('send_message',{body:'Vídeo de demonstração'});
+});

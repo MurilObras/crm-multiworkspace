@@ -2,6 +2,7 @@
  * Zod source-of-truth para configuração de agents (config jsonb + guardrails jsonb).
  * Importado por backend (route handlers) e frontend (editor) — não duplicar.
  */
+import { replyDelaySchema, REPLY_DELAY_DEFAULT } from "@/lib/ai/agents/reply-delay";
 import { z } from "zod";
 import { mediaReplayPolicySchema } from "./agents/media-replay-policy";
 
@@ -83,6 +84,7 @@ export type Guardrails = z.infer<typeof guardrailsSchema>;
 // ---------------------------------------------------------------------------
 
 export const agentConfigSchema = z.object({
+  reply_delay: replyDelaySchema.default(REPLY_DELAY_DEFAULT),
   media_replay_policy: mediaReplayPolicySchema.default("explicit_media_request"),
   temperature: z.number().min(0).max(2).default(0.4),
   max_tokens: z.number().int().min(64).max(4096).default(1024),
@@ -96,6 +98,7 @@ export type AgentConfig = z.infer<typeof agentConfigSchema>;
 // No Zod 4, .partial() conserva defaults internos e preenche chaves ausentes.
 // PATCH precisa validar só as chaves enviadas, sem restaurar outros ajustes.
 const agentConfigPatchSchema = z.object({
+  reply_delay: replyDelaySchema.optional(),
   media_replay_policy: agentConfigSchema.shape.media_replay_policy.removeDefault().optional(),
   temperature: agentConfigSchema.shape.temperature.removeDefault().optional(),
   max_tokens: agentConfigSchema.shape.max_tokens.removeDefault().optional(),
@@ -108,6 +111,7 @@ const agentConfigPatchSchema = z.object({
 });
 
 export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
+  reply_delay: REPLY_DELAY_DEFAULT,
   media_replay_policy: "explicit_media_request",
   temperature: 0.4,
   max_tokens: 1024,

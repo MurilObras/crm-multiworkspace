@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto';
+import { readDelivery, saveDelivery, ReplyDelayPending, type DeliverySnapshot } from './response-delivery';
+import { replyDeadline } from '@/lib/ai/agents/reply-delay';
+import { checkpointCall } from './checkpoint-call';
 import { loadConversationInstructions, runConversationModel } from './conversation-model';
 import { waitingForResponsible } from '@/lib/responsibles/service';
 import { MESSAGE_ORDER_DESC } from '@/lib/messaging/message-order';
@@ -94,7 +98,7 @@ import {
   performHumanHandoff,
 } from './human-handoff';
 import { maybeCompact, renderCompactedSummary, trimTranscriptToBudget, type CompactionKnobs } from './compaction';
-import { pruneToolResults, type PruneToolResultsKnobs } from './prune-tool-results';
+import { type PruneToolResultsKnobs } from './prune-tool-results';
 import {
   classifyStage,
   recordStageDivergenceCandidate,
@@ -104,7 +108,7 @@ import {
 import { DECLARACAO_INSTRUCTION, declaracaoDoTurnoSchema, promessasEmAberto, type DeclaracaoDoTurno } from './declaracao';
 import { projetarContexto, projetarRetornoDeTool, turnoProjeta, type ContextoProjetado } from './projecao';
 import { capacidadesEntreguesAoOperador, catalogoEntregueAoOperador } from './entrega-de-capacidade';
-import { matchesHandoffKeyword } from './agent-config';
+import { loadPublishedAgentConfigById, matchesHandoffKeyword } from './agent-config';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { loadChannelKnobs } from '../pacing/store';
@@ -171,6 +175,7 @@ export const AGENT_TOOL_DEFS = {
       'Envia UMA mensagem de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead. Para foto/vídeo do catálogo, use type image/video e media_id aprovado. URL exata da base continua disponível para arquivos legados. Áudio usa type audio e audio_id aprovado, sem legenda. Envie contexto curto em outra chamada de texto antes da mídia do catálogo, sem anunciar envio futuro. Não invente arquivo/URL nem confirme antes do resultado real.',
     inputSchema: z.object({
       body: z.string().min(1).describe('corpo da mensagem, em pt-br, pronto para envio'),
+      retry_of: z.uuid().optional().describe('Somente ao corrigir a resposta vetada: use o retry_of devolvido pelo CRM, mantendo o mesmo assunto e arquivo. Ausente para outra resposta.'),
       media: z.union([z.object({
         type: z.enum(['image', 'video']),
         url: z.string().url().refine((url) => url.startsWith('https://'), 'Use HTTPS para mídia'),
@@ -1511,14 +1516,14 @@ async function resumeTurnClosing(
       ...(existing.declaracao == null ? {} : { declaracao: existing.declaracao }),
     };
   } else {
-    const closing = await runModelCall(pool, deps.llmCfg, {
+    const closing = await checkpointCall(pool, deps.llmCfg, {
       tenantId: job.organization_id, leadId, jobId: job.id, purpose: 'checkpoint',
       ...(state.agent === null ? {} : {
         model: state.agent.model,
         llmOverride: { provider: state.agent.provider, credentialId: state.agent.credentialId },
       }),
       messages,
-    }, { registry: deps.registry, log });
+    }, checkpointContentSchema, { registry: deps.registry, log });
     content = parseCheckpointText(closing.result.text);
     callId = closing.callId;
   }
@@ -1551,6 +1556,11 @@ async function executarTurnoDoAgente(
   const contextKnobs = { historyLimit: deps.knobs.historyLimit, maxTokens: deps.knobs.maxContextTokens };
   // Contexto do RUN em toda linha de log do turno (F2-16): job_id É o run id.
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
+  const pendingDelivery = readDelivery(job);
+  let conversationStarted = pendingDelivery !== null && pendingDelivery.phase !== 'prelude';
+  let replayingDelivery: DeliverySnapshot | null = pendingDelivery;
+  const correctionKeys = new Map<string,string>();
+  const deferredSends: Array<{body:string;media?:unknown}> = [];
   const closingState = readTurnClosing(job) ?? await recoverClosingBeforeMarker(pool, job, ctx.workerId);
   if (closingState !== null) {
     await resumeTurnClosing(deps, pool, job, ctx, input, closingState, runLog);
@@ -1831,7 +1841,10 @@ async function executarTurnoDoAgente(
   // cada turno, zero cache; org/sessão da row do job (fonte confiável). Sem router
   // ativo pra sessão, o resolver devolve o mesmo fluxo de hoje (outcome 'no_router').
   // null = sem agente publicado p/ esta sessão → fallback (playbook + settings + env).
-  const routed = await resolveTurnAgent(
+  const routed = pendingDelivery?.agentId ? {
+    config: await loadPublishedAgentConfigById(pool,tenantId,pendingDelivery.agentId),
+    routerId: null, intentName: null, confidence: null, outcome: 'sticky' as const,
+  } : await resolveTurnAgent(
     pool,
     deps.llmCfg,
     {
@@ -1847,6 +1860,8 @@ async function executarTurnoDoAgente(
     { log: runLog },
   );
   const agentConfig = routed.config;
+  if (pendingDelivery?.agentId && !agentConfig) throw new Error('response_agent_unavailable');
+  if (pendingDelivery && pendingDelivery.agentVersionId !== (agentConfig?.versionId??null)) throw new Error('response_approval_changed');
   if (agentConfig !== null) {
     runLog.info('config do agente publicada em uso', {
       agent_id: agentConfig.agentId,
@@ -1964,6 +1979,20 @@ async function executarTurnoDoAgente(
   // Undefined conserva os turnos legados. Null é uma decisão explícita por texto.
   // Catálogo do modelo e envio obrigatório passam pela MESMA escolha por turno.
   let selectedTurnMedia: string | null | undefined;
+  let resumeRequiredPrelude = false;
+  if(pendingDelivery && agentConfig) {
+    if(job.payload.required_audio_plan!==undefined) {
+      const saved=await requiredAudioPlan(pool,job,ctx.workerId,agentConfig.agentId,[],deps.knobs.maxSendsPerTurn??DEFAULT_MAX_SENDS_PER_TURN);
+      selectedTurnMedia=saved?.audio_id??null;
+      // Só o marcador explícito prova que o modelo ainda não começou. Snapshots
+      // legados sem fase nunca autorizam repetir conversa ou ferramentas.
+      resumeRequiredPrelude = pendingDelivery.phase === 'prelude' && saved !== null && saved.delivery_phase !== 'after_response';
+    } else if(job.payload.audio_rule_decision!==undefined) {
+      const saved=await decideTurnMedia({db:pool,job,worker:ctx.workerId,agent:agentConfig.agentId,audios:[],firstContact:firstAudioContact,classify:async()=>null});
+      selectedTurnMedia=saved.exclusive?saved.id:undefined;
+    }
+  }
+  if (pendingDelivery?.phase === 'prelude' && !resumeRequiredPrelude) throw new Error('response_prelude_invalid');
   const freshAudios = async () => {
     if (!agentConfig) return [];
     const { rows } = await pool.query<{ config: unknown }>(
@@ -2116,7 +2145,7 @@ async function executarTurnoDoAgente(
   // summary DURÁVEL segue vindo do checkpoint de fechamento; aqui ele só alimenta o prompt.
   let effectivePrevious = previous;
   let effectiveContext = openingContext.context;
-  if (deps.knobs.compaction !== undefined) {
+  if (!pendingDelivery && deps.knobs.compaction !== undefined) {
     const compacted = await maybeCompact(
       pool,
       deps.llmCfg,
@@ -2289,8 +2318,18 @@ async function executarTurnoDoAgente(
   const noteRunError = (err: Error): void => {
     runError ??= err;
   };
+  const readRunError = (): Error|null => runError;
   const deliveryFailed = (): boolean => runError !== null
     || outcomes.some(outcome => outcome.kind === 'failed' || outcome.kind === 'unavailable');
+  const deliveryStopped = () => deliveryFailed() || outcomes.some(o=>o.kind==='queued'||o.kind==='blocked');
+  const preserveDeferredSends = async () => {
+    if(!deferredSends.length || supersededError || leaseLostError) return;
+    await assertCurrentInbound();
+    const snapshot=readDelivery(job);
+    if(!snapshot) throw new Error('response_plan_missing');
+    await saveDelivery(pool,job,ctx.workerId,{...snapshot,following:[...(snapshot.following??[]),...deferredSends]});
+    deferredSends.length=0;
+  };
 
   // Guideline-matching if-then (F3-09): o SINAL do turno (última mensagem inbound) decide
   // quais skills disparam. Corpos casados vão no SUFIXO da abertura (situacional, por-lead —
@@ -2539,7 +2578,7 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body: requestedBody, media }) => {
+      execute: async ({ body: requestedBody, media, retry_of }) => {
         const approvedId = media && ('audio_id' in media ? media.audio_id : 'media_id' in media ? media.media_id : undefined);
         const managedMedia = agentConfig?.managedMediaConfigured || agentConfig?.approvedAudios?.length || agentConfig?.mediaReplayPolicy === 'explicit_repeat';
         if (!media && selectedTurnMedia !== undefined && managedMedia && containsMediaLink(requestedBody)) return { ok:false,
@@ -2575,12 +2614,30 @@ async function executarTurnoDoAgente(
         if (promiseTable !== null && !decidePromise({ candidate: body, table: promiseTable }).allow) {
           outOfTablePromiseAttempted = true;
         }
+        try {
+        const mediaBinding = JSON.stringify(media ?? 'text');
+        if (retry_of && correctionKeys.get(retry_of) !== mediaBinding)
+          return {ok:false,error:{code:'invalid_retention_reference',message:'A correção precisa se referir à resposta e ao arquivo vetados neste turno.'}};
+        const responseKey = replayingDelivery?.responseKey ?? retry_of ?? randomUUID();
+        const snapshot: DeliverySnapshot = replayingDelivery ?? {version:1,responseKey,agentId:agentConfig?.agentId??null,agentVersionId:agentConfig?.versionId??null,
+          phase:requiredAudioPrelude && !conversationStarted ? 'prelude' : 'response',
+          firstSeq:seq+1,body:requestedBody,media,bubbles:[],approved:false,waitUntil:null};
+        if (!replayingDelivery && physicalSends===0 && job.kind==='inbound_turn' && inboundAnchor && agentConfig?.replyDelay?.enabled) {
+          const anchor=await pool.query<{created_at:Date;observed_at:Date}>("select created_at,clock_timestamp() as observed_at from messages where organization_id=$1 and conversation_id=$2 and id=$3 and direction='inbound'", [tenantId,input.conversationId,inboundAnchor]);
+          const deadline=anchor.rows[0] ? replyDeadline(new Date(clock().getTime()-(new Date(anchor.rows[0].observed_at).getTime()-new Date(anchor.rows[0].created_at).getTime())),agentConfig.replyDelay) : null;
+          snapshot.waitUntil=readDelivery(job)?.waitUntil??deadline?.toISOString()??null;
+        }
+        await saveDelivery(pool,job,ctx.workerId,snapshot);
+        if (snapshot.waitUntil && new Date(snapshot.waitUntil)>clock()) {
+          runLog.info('resposta aguardando tempo mínimo configurado',{until:snapshot.waitUntil});
+          noteRunError(new ReplyDelayPending(new Date(snapshot.waitUntil)));
+          return {ok:false,error:{code:'reply_minimum_wait',message:'Resposta preservada para o horário configurado. Encerre sem outras ferramentas.'}};
+        }
         // Cadeia de guardrails (F2-13): stop/opt-out → anti-ban → spinning rodam
         // AQUI, entre a decisão do modelo e o adapter. Se um gate veta, o
         // channel.send NÃO acontece e a razão volta ao modelo como erro instrutivo;
         // seq só avança quando o envio é de fato tentado (gate veto não gasta seq
         // — preserva o alinhamento (job_id, seq) do ledger F2-06 entre re-runs).
-        try {
           // Wave 4 (spec 15 §10.2): estado de caso lido FRESCO a cada tentativa de envio
           // (pode ter mudado dentro deste MESMO turno via open_human_case, chamado antes
           // deste send_message). casesEnabled false (tela não habilita) → sempre false,
@@ -2592,6 +2649,7 @@ async function executarTurnoDoAgente(
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
           const beforeSendArgs = {
+            conversationId: input.conversationId, responseKey,
             pool,
             log: runLog,
             tenantId,
@@ -2641,10 +2699,17 @@ async function executarTurnoDoAgente(
             ...(semanticClassifier !== undefined ? { classifyPromiseSemantic: semanticClassifier } : {}),
             // `finalBody` = corpo após a cadeia (o disclosureGate F4-05 pode prependar o
             // disclosure via inject); é ELE que vai ao canal, não o `body` capturado da tool.
-            send: (finalBody: string) =>
-              sendInBubbles(finalBody, {
+            send: (finalBody: string) => {
+              if(snapshot.approved && snapshot.approvedBody!==finalBody) throw new Error('response_approval_changed');
+              snapshot.approvedBody=finalBody;
+              return sendInBubbles(finalBody, {
                 enabled: !requiredAudioPrelude && media === undefined && (agentConfig?.splitMessages ?? false),
                 maxChars: agentConfig?.splitMaxChars ?? 600,
+                ...(snapshot.approved ? {plannedBubbles:snapshot.bubbles} : {}),
+                prepare: async (bubbles) => {
+                  snapshot.bubbles=bubbles; snapshot.approved=true;
+                  await saveDelivery(pool,job,ctx.workerId,snapshot);
+                },
                 maxBubbles: sendCapacity(),
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
                 jitter: () => 1200 + Math.floor(Math.random() * 800), // piso no throttle anti-ban (1.2s) — bolhas são mensagens físicas
@@ -2660,11 +2725,13 @@ async function executarTurnoDoAgente(
                     seq,
                     conversationId: input.conversationId,
                     body: bubble,
+                    responseKey, responsePartCount:snapshot.bubbles.length,
                     beforePersist: assertCurrentInbound,
                     ...(outboundMedia !== undefined ? { media: outboundMedia } : {}),
                   });
                 },
-              }),
+              });
+            },
           };
           let chain = await runBeforeSend(beforeSendArgs);
           if (chain.status === 'vetoed' && chain.code === 'case_promise_without_case') {
@@ -2737,6 +2804,7 @@ async function executarTurnoDoAgente(
             });
           }
           if (chain.status === 'vetoed') {
+            correctionKeys.set(responseKey,mediaBinding);
             // Cap de warm-up/diário: reescrever o texto não resolve (é rate limit, não
             // conteúdo) — ensinar o modelo a "tentar de novo" só gasta passo. Guardamos
             // pra reagendar o JOB inteiro depois que o turno terminar (mesmo padrão de
@@ -2750,7 +2818,7 @@ async function executarTurnoDoAgente(
             }
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
             // modelo o vê no turno seguinte. NÃO é exceção — não derruba o run.
-            return { ok: false, error: { code: chain.code, message: chain.message } };
+            return { ok: false, error: { code: chain.code, message: chain.message, retry_of:responseKey } };
           }
           const outcome = chain.outcome;
           outcomes.push(outcome);
@@ -3276,8 +3344,12 @@ async function executarTurnoDoAgente(
     // Bloqueia também tools já emitidas no MESMO step, antes de qualquer efeito.
     // A fila retoma o ledger; outra tool não ganha nova sequência para contornar
     // timeout/falha, nem muda o estado do lead sem ter entregue a resposta.
-    if (deliveryFailed()) throw runError ?? new Error('outbound_attempt_failed');
+    if (deliveryStopped()) throw runError ?? new Error('outbound_attempt_failed');
     await assertCurrentInbound();
+  }, (name,raw) => {
+    if(name!=='send_message' || !deliveryStopped() || supersededError || leaseLostError) return;
+    const parsed=AGENT_TOOL_DEFS.send_message.inputSchema.safeParse(raw);
+    if(parsed.success && deferredSends.length<25) deferredSends.push({body:parsed.data.body,media:parsed.data.media});
   });
   const tools = execution.tools;
   const stopAfterLeaseLoss = async () => {
@@ -3315,7 +3387,7 @@ async function executarTurnoDoAgente(
   const currentStage: LeadStage = leadState?.stage ?? 'new';
   let stageSuggestion: LeadStage | null = null;
   let stageHintBlock = '';
-  if (deps.knobs.stageClassifier !== undefined) {
+  if (!pendingDelivery && deps.knobs.stageClassifier !== undefined) {
     stageSuggestion = await classifyStage(
       pool,
       deps.llmCfg,
@@ -3337,7 +3409,7 @@ async function executarTurnoDoAgente(
   // checado nele). NÃO veta o inbound — só FLAGRA o turno no trace; flag/level não são PII
   // (a mensagem/reason nunca vão a log). A correlação com promessa fora de tabela escala no fim.
   let jailbreakLevel: JailbreakLevel = 'none';
-  if (camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined)) {
+  if (!pendingDelivery && camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined)) {
     const verdict = await classifyJailbreak(
       pool,
       deps.llmCfg,
@@ -3475,10 +3547,15 @@ async function executarTurnoDoAgente(
       if (supersededError !== null) await settleSuperseded();
       await execution.drain();
       await mcpCleanup?.();
+      mcpCleanup = null;
+      if (error instanceof ReplyDelayPending) {
+        await rescheduleJob(pool,job.id,ctx.workerId,{delayMs:Math.max(1,error.until.getTime()-clock().getTime()),reason:'reply_minimum_wait'});
+        throw new JobSettledError('reply_minimum_wait');
+      }
       throw error;
     }
   };
-  if (agentConfig && job.kind === 'inbound_turn') {
+  if (!pendingDelivery && agentConfig && job.kind === 'inbound_turn') {
     try {
       // Plano legado continua usando as intenções originais, sem reclassificar no retry.
       if (job.payload.required_audio_plan !== undefined) {
@@ -3575,6 +3652,88 @@ async function executarTurnoDoAgente(
       throw error;
     }
   }
+  if (pendingDelivery) {
+    const execute=tools.send_message?.execute;
+    if(!execute) throw new Error('response_resume_tool_unavailable');
+    // A mídia obrigatória usa seq 2 DEPOIS do texto (seq >= 3). Contar somente
+    // seq menores perderia o contexto e o consumo físico já confirmado.
+    const lastPlannedSeq = pendingDelivery.firstSeq + Math.max(1,pendingDelivery.bubbles.length) - 1;
+    const prior=await pool.query<{n:number;text_sent:boolean}>(`select count(*)::int n,coalesce(bool_or(m.type='text'),false) text_sent
+      from send_ledger l join messages m on m.organization_id=l.organization_id and m.id=l.crm_message_id and m.contact_id=l.contact_id
+      where l.organization_id=$1 and l.contact_id=$2 and l.job_id=$3 and not(l.seq between $4 and $7)
+        and m.conversation_id=$5 and m.channel_session_id=$6
+        and m.status in('sent','delivered','read') and m.external_id is not null`,[tenantId,leadId,job.id,pendingDelivery.firstSeq,input.conversationId,input.channelSessionId,lastPlannedSeq]);
+    physicalSends=prior.rows[0]?.n??0;
+    audioContextSent=prior.rows[0]?.text_sent??false;
+    try {
+      let current:DeliverySnapshot|null=pendingDelivery;
+      while(current) {
+        seq=current.firstSeq-1;
+        requiredAudioPrelude=current.firstSeq<=2 && job.payload.required_audio_plan!==undefined;
+        replayingDelivery=current;
+        const raw=AGENT_TOOL_DEFS.send_message.inputSchema.parse({body:current.body,media:current.media});
+        const confirmed=current.approved ? await pool.query<{id:string;key:string}>(
+          `select m.id,l.id key from send_ledger l join messages m on m.organization_id=l.organization_id
+             and m.id=l.crm_message_id and m.contact_id=l.contact_id
+            where l.organization_id=$1 and l.contact_id=$2 and l.job_id=$3 and l.seq between $4 and $5
+             and m.conversation_id=$6 and m.channel_session_id=$8 and m.metadata->>'response_key'=$7
+             and m.status in('sent','delivered','read') and m.external_id is not null`,
+          [tenantId,leadId,job.id,current.firstSeq,current.firstSeq+current.bubbles.length-1,input.conversationId,current.responseKey,input.channelSessionId]) : {rows:[]};
+        const before=outcomes.length;
+        let resumedResult:unknown;
+        if(confirmed.rows.length===current.bubbles.length && confirmed.rows.length>0) {
+          await assertCurrentInbound();
+          seq=current.firstSeq+current.bubbles.length-1;
+          physicalSends+=current.bubbles.length;
+          if(!current.media) audioContextSent=true;
+          else { const m=current.media as {audio_id?:string;media_id?:string}; const id=m.audio_id??m.media_id;
+            if(id) audiosSentThisTurn.add(id); mediaResponseCompleted=true; }
+          outcomes.push({kind:'already_sent',idempotencyKey:confirmed.rows[0]!.key,messageId:confirmed.rows[0]!.id});
+        } else resumedResult=await execute(raw,{toolCallId:'response-resume-'+job.id+'-'+current.firstSeq,messages:[],context:undefined});
+        await execution.drain();
+        if(deliveryFailed()) throw runError??new Error('response_resume_failed');
+        const queued=outcomes.find(o=>o.kind==='queued'||o.kind==='blocked');
+        if(queued) {
+          await applySendOutcome(pool,queued.kind==='queued'?{...queued,crmMessageId:queued.messageId}:queued,
+            {jobId:job.id,workerId:ctx.workerId,tenantId,leadId},{queuedRetryDelayMs:deps.knobs.queuedRetryDelayMs});
+          throw new JobSettledError('response_resume_deferred');
+        }
+        if(outcomes.length===before) {
+          const veto=z.object({error:z.object({code:z.string()})}).safeParse(resumedResult);
+          throw new Error('response_resume_vetoed'+(veto.success?':'+veto.data.error.code:''));
+        }
+        const following: Array<{body:string;media?:unknown}>=current.following??[];
+        const next: {body:string;media?:unknown}|undefined=following[0];
+        const remaining=following.slice(1);
+        if(!next) {current=null;break;}
+        current={version:1,responseKey:randomUUID(),agentId:pendingDelivery.agentId,agentVersionId:pendingDelivery.agentVersionId,
+          firstSeq:seq+1,body:next.body,media:next.media,following:remaining,bubbles:[],approved:false,waitUntil:null};
+        await saveDelivery(pool,job,ctx.workerId,current);
+      }
+      replayingDelivery=null;requiredAudioPrelude=false;
+      if(job.payload.required_audio_plan!==undefined && agentConfig) {
+        const tail=await requiredAudioPlan(pool,job,ctx.workerId,agentConfig.agentId,[],maxSendsPerTurn);
+        if(tail && !audiosSentThisTurn.has(tail.audio_id)) await executeAudioPlan(tail,true);
+      }
+      if (!resumeRequiredPrelude) {
+        await mcpCleanup?.();mcpCleanup=null;
+        const state={version:1 as const,agent:agentConfig?{agentId:agentConfig.agentId,operatorEnabled:agentConfig.operatorEnabled,
+          provider:agentConfig.provider,model:agentConfig.model,credentialId:agentConfig.credentialId}:null};
+        await rememberTurnClosing(pool,job,ctx.workerId,state);
+        await resumeTurnClosing(deps,pool,job,ctx,input,state,runLog);
+        return;
+      }
+      requiredAudioBlock = `## Mídia obrigatória (retomada)\nResultado REAL: ${JSON.stringify(requiredAudioResult ?? {status:'already_sent'})}\nNão repita a mídia nem afirme entrega sem confirmação.`;
+    } catch(error) {
+      if(supersededError!==null) await settleSuperseded();
+      await execution.drain(); await mcpCleanup?.();
+      if(error instanceof ReplyDelayPending) {
+        await rescheduleJob(pool,job.id,ctx.workerId,{delayMs:Math.max(1,error.until.getTime()-clock().getTime()),reason:'reply_minimum_wait'});
+        throw new JobSettledError('reply_minimum_wait');
+      }
+      throw error;
+    }
+  }
   const audioBlock = renderApprovedMedia(await freshAudios());
   if (audioBlock) blocosResidentes.push(audioBlock);
   const system = blocosResidentes.join('\n\n');
@@ -3612,6 +3771,11 @@ async function executarTurnoDoAgente(
   // isso são as que estouram primeiro.
   let turn: Awaited<ReturnType<typeof runModelCall>>;
   try {
+    // Fence durável ANTES do modelo/operador. Um crash depois deste ponto não
+    // permite inferir pelo seq que a conversa ainda não executou efeitos.
+    const prelude = readDelivery(job);
+    if (prelude?.phase === 'prelude') await saveDelivery(pool,job,ctx.workerId,{...prelude,phase:'response'});
+    conversationStarted = true;
     turn = await runConversationModel(
       pool,
       deps.llmCfg,
@@ -3629,7 +3793,7 @@ async function executarTurnoDoAgente(
         messages: openingMessages,
         tools,
         maxSteps,
-        shouldStop: () => supersededError !== null || deliveryFailed(),
+        shouldStop: () => supersededError !== null || deliveryStopped(),
         ...(agentConfig !== null
           ? {
               model: agentConfig.model,
@@ -3643,6 +3807,7 @@ async function executarTurnoDoAgente(
     if (supersededError !== null) await settleSuperseded();
     await execution.drain();
     await mcpCleanup?.();
+    await preserveDeferredSends();
     throw error;
   }
 
@@ -3665,12 +3830,24 @@ async function executarTurnoDoAgente(
     }
   }
 
-  if (deliveryFailed()) {
+  if (deliveryStopped()) {
     await execution.drain();
     await mcpCleanup?.();
+    await preserveDeferredSends();
+    const deferred=outcomes.find(o=>o.kind==='queued'||o.kind==='blocked');
+    if(deferred && (deferred.kind==='queued'||deferred.kind==='blocked')) {
+      await applySendOutcome(pool,deferred.kind==='queued'?{...deferred,crmMessageId:deferred.messageId}:deferred,
+        {jobId:job.id,workerId:ctx.workerId,tenantId,leadId},{queuedRetryDelayMs:deps.knobs.queuedRetryDelayMs});
+      throw new JobSettledError('response_deferred');
+    }
     // A identidade (job, seq) é preservada. O ledger distingue confirmação,
     // preparação retomável e entrega incerta: timeout não autoriza nova key
     // nem repetição de um transporte que pode ter ocorrido.
+    const failedDelivery=readRunError();
+    if(failedDelivery instanceof ReplyDelayPending) {
+      await rescheduleJob(pool,job.id,ctx.workerId,{delayMs:Math.max(1,failedDelivery.until.getTime()-clock().getTime()),reason:'reply_minimum_wait'});
+      throw new JobSettledError('reply_minimum_wait');
+    }
     throw runError ?? new Error('envio não confirmado pelo CRM — recuperação conforme ledger');
   }
 
@@ -3684,10 +3861,7 @@ async function executarTurnoDoAgente(
   // (é onde a fita inteira é re-serializada num prompt) — o conteúdo durável já foi para
   // lead_notes pelo flush (F3-07), então o stub não perde nada recuperável. Opera SÓ no
   // sufixo por-lead, nunca no prefixo estável (regra de cache 15).
-  const responseMessages =
-    deps.knobs.prune !== undefined
-      ? pruneToolResults(turn.result.response.messages, deps.knobs.prune)
-      : turn.result.response.messages;
+
 
   // O modelo e suas tools terminaram. Se o fechamento falhar, a fila só
   // repete memória. Sessão offline/cap sem entrega continuam na política de envio.
@@ -3714,7 +3888,9 @@ async function executarTurnoDoAgente(
   // turno. Aqui o lead já recebeu resposta, mas a conversa ficaria sem
   // checkpoint e sem dono, e o próximo inbound cairia no mesmo bloqueio, agora
   // sem nada tendo mudado no meio.
-  const closing = await runModelCall(
+  const checkpointMessages=await closingMessages(pool,job,input.conversationId,previous,CHECKPOINT_INSTRUCTION);
+  if(checkpointMessages===null)return;
+  const closing = await checkpointCall(
     pool,
     deps.llmCfg,
     {
@@ -3729,15 +3905,9 @@ async function executarTurnoDoAgente(
           }
         : {}),
       system,
-      messages: [
-        // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
-        // fez seu trabalho na 1ª chamada e não precisa ir de novo.
-        ...openingTextOnly,
-        ...responseMessages,
-        ...(requiredAudioResult === undefined ? [] : [{ role: 'user' as const, content: `Resultado REAL do áudio obrigatório: ${JSON.stringify(requiredAudioResult)}. Registre somente o que foi confirmado.` }]),
-        { role: 'user', content: CHECKPOINT_INSTRUCTION },
-      ],
+      messages: checkpointMessages,
     },
+    checkpointContentSchema,
     { registry: deps.registry, log: runLog },
   );
   const content = parseCheckpointText(closing.result.text);

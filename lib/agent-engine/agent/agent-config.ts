@@ -14,6 +14,7 @@
  *     de fallback: playbook por ponteiro + settings.llm da org + knobs de env).
  */
 import type pg from 'pg';
+import { readReplyDelay } from '@/lib/ai/agents/reply-delay';
 import { readMediaReplayPolicy, type MediaReplayPolicy } from '@/lib/ai/agents/media-replay-policy';
 import { consultationInstructions } from '@/lib/responsibles/config';
 import { supportsResponsibleReplies, type ChannelProvider } from '@/lib/channels/capabilities';
@@ -22,6 +23,7 @@ import { mediaPathOwnedBy, readApprovedMedia, type ApprovedMedia as ApprovedAudi
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
 
 export interface PublishedAgentConfig {
+  replyDelay?: ReturnType<typeof readReplyDelay>;
   agentId: string;
   versionId: string;
   agentName: string;
@@ -180,6 +182,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
 
   return {
     agentId: r.agent_id,
+    replyDelay: readReplyDelay(r.config),
     mediaReplayPolicy: readMediaReplayPolicy(r.config),
     managedMediaConfigured: readApprovedMedia(r.config).length > 0,
     versionId: r.version_id,

@@ -45,6 +45,14 @@ export function retentionCopy(
   });
 
   switch (code) {
+    case 'automation_preflight_unavailable':
+    case 'automation_preflight_timeout':
+    case 'recipient_unavailable':
+      return {kind:'quality',title:t('Falha na conferência do atendimento'),description:t('O CRM não conseguiu consultar o estado atual no banco antes de enviar. A resposta permanece pendente de recuperação.')};
+    case 'outbound_delivery_uncertain':
+      return {kind:'quality',title:t('Entrega sem confirmação'),description:t('O resultado do transporte ainda não foi confirmado. Confira a tentativa antes de reenviar para evitar duplicação.')};
+    case 'outbound_pending':
+      return {kind:'quality',title:t('Resposta pendente'),description:t('A resposta foi preparada, mas o envio ainda não foi confirmado.')};
     case "outside_window":
       return make(
         "protection",
