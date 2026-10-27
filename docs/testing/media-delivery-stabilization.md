@@ -12,10 +12,16 @@ falhas ao PR de memória sem uma comparação entre revisões.
   humano, lease e entrega pendente/incerta continuam no mesmo caminho de envio.
 - Conteúdo/assunto é diferente de disponibilidade. Instruções de repetição não
   devem fazer o classificador esquecer o assunto de um pedido claro de reenvio.
-- O contexto de uma mídia autorizada é conferido antes de virar snapshot/envio.
-  Negativas incompatíveis e afirmações antecipadas são contidas localmente, sem
-  outra chamada paga. Outro parágrafo factual é preservado; se nada restar, usa
-  contexto neutro. A retomada não reescreve partes que já foram aprovadas.
+- O contexto de uma mídia autorizada é conferido antes de virar snapshot/envio,
+  sem uma chamada auxiliar para julgar ou reescrever texto. Outro parágrafo
+  factual é preservado. Se nada restar e houver plano obrigatório, usa contexto
+  neutro. Para mídia opcional, uma introdução vazia é vetada antes de gerar
+  mensagem/ledger: o Conversador pode corrigir na fila de ferramentas existente,
+  sob os mesmos limites de passos. Sem correção, o ensaio fica abortado, sem
+  fabricar uma resposta concluída. A retomada não reescreve partes aprovadas.
+- Conteúdo posterior ao pedido que não seja mera cortesia é avaliado pelo
+  classificador. Uma referência no começo de uma desistência ou mudança de
+  assunto não pode fixar a escolha antes da avaliação da mensagem inteira.
 - A reserva por assunto não garante envio na etapa atual. Um avanço legítimo
   durante o turno pode habilitar o arquivo; contexto e transporte consultam a
   etapa e a aprovação atuais. Se a aprovação foi retirada ou o limite impede
@@ -94,7 +100,7 @@ transporte, em comparação pareada. Sem evidência, essa meta fica pendente.
 
 ## Evidência isolada em 27/10/2026
 
-- Regressão focada: 163 casos aprovados, em cinco arquivos. Inclui as duas
+- Regressão focada da entrega anterior: 163 casos aprovados, em cinco arquivos. Inclui as duas
   frases reais, títulos concorrentes e uma negativa deliberada do modelo.
   A revisão posterior também corrigiu a distinção entre negativa do agente e
   descrição válida de funcionalidades por texto, coberta por dois controles.
@@ -142,3 +148,16 @@ Living System Checklist: entrada em `inbound-turn`, saída no ledger/adapter e
 checkpoint; diagnóstico na tela existente de Execuções/Testes; negativa contida
 antes da rede; falha retorna à matriz fixa e às guardas de envio; nenhuma tela,
 coluna ou tabela nova. PR 20 fora do escopo.
+
+## Última revisão antes do merge
+
+Três grupos reproduzidos: pedido seguido de mudança de assunto ainda fixava a
+mídia; negativas como “não tenho como reenviar” escapavam da contenção; e uma
+mídia opcional podia transformar uma negativa em contexto vazio sem arquivo.
+Onze asserções novas ficaram vermelhas antes da correção. Após corrigir, a
+regressão focada passou em 176 casos; o banco e o CI precisam medir o novo head.
+
+Controles adicionais no banco: correção do contexto opcional antes de texto e
+arquivo, encerramento sem correção com zero mensagens/ledger e mudança posterior
+de assunto passando pelo classificador sem planejar o arquivo abandonado.
+Não reinterpretar os checks do head anterior como aprovação deste ajuste.

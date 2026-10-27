@@ -681,14 +681,14 @@ it.each(['reception-burst','text-preference-burst'])(
     }
   });
 
-const REPLAY_PROTECTION_CASES=['required','optional','warmup','blocked','no-request','repeat-off'];
+const REPLAY_PROTECTION_CASES=['required','optional','optional-repair','optional-stop','warmup','blocked','no-request','repeat-off'];
 it.each(REPLAY_PROTECTION_CASES)(
   'reenvio solicitado atravessa a cadeia real sem dispensar aquecimento: %s',async behavior => {
     const agent='eeeeeeee-0000-4000-8000-000000000070';
     const version=randomUUID(), audioId=randomUUID(), previous=randomUUID();
     const original=(await pool.query('select body,metadata from messages where id=$1',[MSG])).rows[0]!;
     const audio={id:audioId,title:'Conclusão de matrícula',use_when:'Orientações aprovadas para concluir matrícula',
-      send_when:'Quando solicitar a conclusão de matrícula',trigger_type:'topic',required:behavior!=='optional',
+      send_when:'Quando solicitar a conclusão de matrícula',trigger_type:'topic',required:!behavior.startsWith('optional'),
       allow_requested_repeat:behavior!=='repeat-off',enabled:true,mime:'audio/ogg',size_bytes:17,stage_ids:[],
       storage_path:`${ORG}/agent-audios/${agent}/${audioId}.ogg`};
     await pool.query(`insert into ai_agents(id,organization_id,name,system_prompt,kind,config)
@@ -713,20 +713,31 @@ it.each(REPLAY_PROTECTION_CASES)(
         if(JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual'))
           return {content:[{type:'text',text:JSON.stringify({audio_id:audioId,intent:behavior==='no-request'?'show':'repeat',format:'audio',text_only:false})}],finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[]};
         const call=calls++;
-        if(call===0 || behavior==='optional' && call===1)
+        if(call===0 || behavior==='optional' && call===1 || behavior==='optional-repair' && call<=2)
           return {content:[{type:'tool-call',toolCallId:`resposta-${call}`,toolName:'send_message',
-            input:JSON.stringify(call===0?{body:'Sobre os próximos passos da matrícula:'}:{body:audio.title,media:{type:'audio',audio_id:audioId}})}],
+            input:JSON.stringify(call===0 ? {body:['optional-repair','optional-stop'].includes(behavior)
+              ? 'Não vou reenviar esse arquivo.' : 'Sobre os próximos passos da matrícula:'}
+              : behavior==='optional-repair' && call===1 ? {body:'Sobre os próximos passos da matrícula:'}
+              : {body:audio.title,media:{type:'audio',audio_id:audioId}})}],
             finishReason:{unified:'tool-calls',raw:undefined},usage:USO,warnings:[]};
         return {content:[{type:'text',text:CHECKPOINT}],finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[]};
       },3));
       const delivered=enviados.filter(e=>e.media?.type==='audio');
-      expect(delivered).toHaveLength(['required','optional'].includes(behavior)?1:0);
+      expect(delivered).toHaveLength(['required','optional','optional-repair'].includes(behavior)?1:0);
       const currentJob=(await pool.query("select id from job_queue where organization_id=$1 and contact_id=$2 and kind='inbound_turn' order by created_at desc limit 1",[ORG,CONTACT])).rows[0]!.id;
       const traces=(await pool.query('select trace,vetoed_code from before_send_traces where organization_id=$1 and job_id=$2 order by created_at desc',[ORG,currentJob])).rows;
-      if(['required','optional'].includes(behavior)) {
+      if(['required','optional','optional-repair'].includes(behavior)) {
         expect(delivered[0]?.media?.audio_id).toBe(audioId);
         expect(traces.some(t=>t.trace.some((g:{gate:string;verdict:string})=>g.gate==='spinning' && g.verdict==='skipped'))).toBe(true);
         expect((await pool.query('select count(*)::int as n from pacing_ledger where organization_id=$1 and channel_session_id=$2',[ORG,SESSION])).rows[0]?.n).toBe(2);
+      }
+      if(behavior.startsWith('optional-')) {
+        expect(JSON.stringify(resultadosVistos)).toContain('media_context_incompatible');
+        expect(enviados.every(e=>!e.body.includes('Não vou reenviar') && e.body!=='Sobre esse assunto:')).toBe(true);
+        if(behavior==='optional-stop') {
+          expect(enviados).toHaveLength(0);
+          expect((await pool.query('select count(*)::int n from send_ledger where organization_id=$1 and job_id=$2',[ORG,currentJob])).rows[0].n).toBe(0);
+        }
       }
       if(behavior==='warmup') expect(traces.some(t=>t.vetoed_code==='warmup_cap')).toBe(true);
       if(behavior==='no-request'||behavior==='repeat-off')
@@ -739,7 +750,7 @@ it.each(REPLAY_PROTECTION_CASES)(
     }
   });
 
-const AUDIO_REGRESSION_SCENARIOS = ['split-control', 'split-required', 'topic-control', 'topic-burst', 'stage-control', 'stage-outside',
+const AUDIO_REGRESSION_SCENARIOS = ['split-control', 'split-required', 'topic-control', 'topic-burst', 'topic-cancel', 'stage-control', 'stage-outside',
   'split-required-two', 'topic-answered', 'topic-delayed', 'voice-preference', 'reception-rejected'];
 it.each(AUDIO_REGRESSION_SCENARIOS)(
   'regressões de assunto, etapa e limite físico: %s', async scenario => {
@@ -764,6 +775,7 @@ it.each(AUDIO_REGRESSION_SCENARIOS)(
       [version, ORG, agent, SESSION, split, AUDIO_REGRESSION_SCENARIOS.indexOf(scenario)+100]);
     await pool.query('update ai_agents set published_version_id=$1 where id=$2', [version, agent]);
     const customerBody = scenario === 'topic-burst' || scenario === 'topic-delayed' ? 'Sou pedreiro'
+      : scenario === 'topic-cancel' ? 'Manda o áudio Como funciona. Esquece isso, quero só o preço.'
       : scenario === 'topic-answered' ? 'Qual o preço?' : split || scenario === 'reception-rejected' ? 'Olá' : 'Como funciona?';
     await pool.query('update messages set body=$1,metadata=\'{}\' where id=$2', [customerBody, MSG]);
     if (scenario === 'voice-preference') await pool.query(
@@ -787,7 +799,8 @@ it.each(AUDIO_REGRESSION_SCENARIOS)(
     if (scenario === 'stage-control') await leadParaAtividade();
     let calls = 0;
     let classifierText: string | null = null;
-    const text = split ? ['A'.repeat(180)+'.', 'B'.repeat(180)+'.', 'C'.repeat(180)+'.'].join('\n\n') : 'Vou explicar como funciona.';
+    const text = split ? ['A'.repeat(180)+'.', 'B'.repeat(180)+'.', 'C'.repeat(180)+'.'].join('\n\n')
+      : scenario === 'topic-cancel' ? 'Vamos conferir o valor.' : 'Vou explicar como funciona.';
     try {
       const error = await rodaTurno(montaHandler(async (opts: {prompt?: unknown}) => {
         if (JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual')) {
@@ -813,7 +826,13 @@ it.each(AUDIO_REGRESSION_SCENARIOS)(
       if (scenario === 'topic-burst' || scenario === 'topic-delayed') expect(classifierText).toBe('Como funciona?\n\nSou pedreiro');
       if (scenario.startsWith('stage')) expect(enviados.filter(e => !e.media).map(e => e.body)).toEqual([text]);
       if (scenario === 'stage-outside') { expect(enviados.filter(e => !e.media)).toHaveLength(1); }
-      if (required && !['stage-outside','topic-answered','voice-preference'].includes(scenario)) expect(enviados.filter(e=>e.media?.type==='audio')).toHaveLength(1);
+      if (required && !['stage-outside','topic-answered','topic-cancel','voice-preference'].includes(scenario)) expect(enviados.filter(e=>e.media?.type==='audio')).toHaveLength(1);
+      if (scenario === 'topic-cancel') {
+        expect(classifierText).toBe(customerBody);
+        expect(enviados).toHaveLength(1);
+        expect(enviados[0]?.body).toBe(text);
+        expect(enviados[0]?.media).toBeUndefined();
+      }
       if (scenario === 'voice-preference') {
         expect(enviados).toHaveLength(1);
         expect(enviados[0]?.media).toBeUndefined();

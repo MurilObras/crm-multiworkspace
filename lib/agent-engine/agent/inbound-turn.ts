@@ -80,7 +80,7 @@ import { requiredAudioPlan, deliverRequiredAudio, type RequiredAudioPlan } from 
 import { audioIntentMessage, decideTurnMedia, isFirstAudioContact, pendingAudioSubject } from './audio-rule';
 import { MEDIA_INTENT_INSTRUCTION, NO_MEDIA_INTENT, parseMediaIntent } from './media-intent';
 import { resolveExplicitMediaReference } from './media-reference';
-import { coherentMediaContext } from './media-response-context';
+import { coherentMediaContext, optionalMediaContextVeto } from './media-response-context';
 import { loadTurnMediaDecision, persistTurnMediaDecision } from './media-intent-store';
 import { recentTurnMediaIds } from './conversation-audios';
 import { renderMediaDecisionInstruction } from '@/lib/ai/agents/media-simulation';
@@ -2583,6 +2583,11 @@ async function executarTurnoDoAgente(
         if (!media && !replayingDelivery && !requiredAudioPrelude && plannedContextMedia
           && (!plannedContextMedia.required || audioPlan?.audio_id === selectedTurnMedia)) {
           const context = coherentMediaContext(requestedBody, 'type' in plannedContextMedia ? plannedContextMedia.type : 'audio');
+          const veto = optionalMediaContextVeto(context, plannedContextMedia.required);
+          if (veto) {
+            runLog.info('media_context_rejected', { job_id: job.id, media_id: selectedTurnMedia, code: veto.error.code });
+            return veto;
+          }
           requestedBody = context.body;
           if (context.amended) runLog.info('media_context_reconciled', { job_id: job.id, media_id: selectedTurnMedia });
         }

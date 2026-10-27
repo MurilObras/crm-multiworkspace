@@ -56,7 +56,7 @@ import { durableMediaPreference } from "./media-preference-scope";
 import type { MediaDiagnostic, MediaSimulation } from "@/lib/ai/agents/media-simulation";
 import { renderMediaDecisionInstruction } from "@/lib/ai/agents/media-simulation";
 import { resolveExplicitMediaReference } from './media-reference';
-import { coherentMediaContext } from './media-response-context';
+import { coherentMediaContext, optionalMediaContextVeto } from './media-response-context';
 
 export interface TestConversationInput {
   organizationId: string;
@@ -439,6 +439,11 @@ export async function testConversation(
     }
     if (chosen && eligibility.allowed) {
       const context = coherentMediaContext(parsed.body, mediaKind(chosen));
+      const veto = optionalMediaContextVeto(context, chosen.required);
+      if (veto) {
+        gateTrace.push({ gate: 'media_context', pass: false, code: veto.error.code });
+        return { ...veto, simulated: true };
+      }
       parsed.body = context.body;
       if (context.amended) gateTrace.push({ gate: 'media_context', pass: true, code: 'media_context_reconciled' });
     }

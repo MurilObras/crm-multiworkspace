@@ -47,6 +47,17 @@ describe('referência explícita, sem autorização implícita', () => {
     expect(resolveExplicitMediaReference('Reenvia o áudio Como funciona o pagamento.', catalog())).toBeNull();
     expect(resolveExplicitMediaReference('Reenvia o áudio funciona o Obra.', catalog())).toBeNull();
   });
+  it.each([
+    'Reenvia o áudio Como funciona o Obra no Bolso. Esquece isso, quero saber o preço.',
+    'Reenvia o áudio Como funciona o Obra no Bolso, esquece isso e me diga só o valor.',
+    'Reenvia o áudio Como funciona o Obra no Bolso\nDeixa esse material para depois; agora quero preço.',
+  ])('mudança posterior de assunto exige avaliação semântica: %s', text => {
+    expect(resolveExplicitMediaReference(text, catalog())).toBeNull();
+  });
+  it('um agradecimento posterior não perde uma referência inequívoca', () => {
+    expect(resolveExplicitMediaReference('Reenvia o áudio Como funciona o Obra no Bolso. Obrigado!', catalog()))
+      .toMatchObject({ intent: { audio_id: ID, intent: 'repeat' } });
+  });
   it('dois arquivos nomeados não viram escolha arbitrária pelo título mais longo', () => {
     const items = catalog();
     expect(resolveExplicitMediaReference('Reenvia o áudio Como funciona o Obra no Bolso e Preço especial.',
@@ -74,6 +85,8 @@ describe('F02: modelo deliberadamente contraditório', () => {
     'Não consigo enviar a imagem.',
     'Já te enviei o vídeo.',
     'Estou gravando agora esse áudio para você.',
+    'Não tenho como reenviar esse áudio.',
+    'Não dá para enviar o vídeo.',
   ])('impede contradição ou afirmação antecipada: %s', body => {
     expect(coherentMediaContext(body)).toEqual({ body: 'Sobre esse assunto:', amended: true });
   });

@@ -12,7 +12,7 @@ export function coherentMediaContext(body: string, kind?: 'audio' | 'image' | 'v
     const target = !kind || formats[kind].test(s) || /\b(?:arquivo|midia|apresentacao|gravacao|file|media)s?\b/.test(s);
     // Negar outro formato não contradiz o arquivo escolhido. A negativa sem
     // objeto (“não consigo enviar agora”) continua sendo uma negativa de envio.
-    const deliveryDenial = /\bnao\s+(?:(?:vou|posso|consigo|podemos|vamos|foi possivel|e possivel|sera possivel)\s+)?(?:te\s+|lhe\s+)?(?:repet\w*|reenvi\w*|envi\w*|mand\w*|anex\w*|encaminh\w*)\b/.test(s);
+    const deliveryDenial = /\bnao\s+(?:(?:vou|posso|consigo|podemos|vamos|foi possivel|e possivel|sera possivel|tenho como|da para)\s+)?(?:te\s+|lhe\s+)?(?:repet\w*|reenvi\w*|envi\w*|mand\w*|anex\w*|encaminh\w*)\b/.test(s);
     const denial = deliveryDenial && (target || !namesFormat && /\b(?:enviar|reenviar|repetir|mandar|anexar|encaminhar)(?:\s+(?:agora|aqui|isso|novamente|mais))?\s*[.!?]?$/.test(s));
     const agentContinuation = /\b(?:posso|consigo|vou|vamos|podemos|sigo|seguimos|seguirei|continuo|continuamos|respondo|responderei|explico|explicarei|nesta resposta|nessa resposta)\b/.test(s);
     const textOnly = (agentContinuation || /^\s*(?:apenas|somente|so)\b/.test(s))
@@ -26,4 +26,13 @@ export function coherentMediaContext(body: string, kind?: 'audio' | 'image' | 'v
     return !bad;
   }).join(' ')).filter(part => part.trim()).join('\n\n').trim();
   return { body: amended ? coherent || NEUTRAL_CONTEXT : body, amended };
+}
+
+/** Mídia opcional pode não sair. Sem conteúdo restante, não enviar só uma
+ * introdução vazia: o Conversador pode corrigir pela própria fila de ferramentas. */
+export function optionalMediaContextVeto(context: ReturnType<typeof coherentMediaContext>, required: boolean) {
+  return !required && context.amended && context.body === NEUTRAL_CONTEXT ? {
+    ok: false as const,
+    error: { code: 'media_context_incompatible', message: 'A mídia é opcional e ainda não foi enviada. Escreva um contexto útil se for usar o arquivo, ou uma resposta completa por texto. Não negue o envio para depois anexar a mesma mídia.' },
+  } : null;
 }
