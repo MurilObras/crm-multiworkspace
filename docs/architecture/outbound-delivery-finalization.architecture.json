@@ -65,6 +65,27 @@
       "col": 5,
       "type": "backend",
       "label": "Fila protegida por papel e conversa"
+    },
+    {
+      "id": "memory-contract",
+      "lane": "runtime",
+      "col": 5,
+      "type": "backend",
+      "label": "DTO estrito e memória legada"
+    },
+    {
+      "id": "technical-alert",
+      "lane": "ui",
+      "col": 6,
+      "type": "frontend",
+      "label": "Falha técnica visível sem cinco chamadas"
+    },
+    {
+      "id": "phase-timing",
+      "lane": "runtime",
+      "col": 3,
+      "type": "backend",
+      "label": "Tempos por fase sem somar sobreposições"
     }
   ],
   "edges": [
@@ -98,6 +119,34 @@
       "from": "checkpoint",
       "to": "response-plan",
       "label": "próximo turno"
+    },
+    {
+      "from": "checkpoint",
+      "to": "memory-contract"
+    },
+    {
+      "from": "memory-contract",
+      "to": "checkpoint",
+      "label": "normalização sem avaliação inventada"
+    },
+    {
+      "from": "memory-contract",
+      "to": "technical-alert",
+      "label": "schema recusado"
+    },
+    {
+      "from": "technical-alert",
+      "to": "queue-access",
+      "label": "dead sob lease, histórico preservado"
+    },
+    {
+      "from": "response-plan",
+      "to": "phase-timing"
+    },
+    {
+      "from": "phase-timing",
+      "to": "outbound",
+      "label": "preparação e transporte distintos"
     }
   ]
 }

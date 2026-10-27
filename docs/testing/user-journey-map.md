@@ -10,6 +10,8 @@
 
 ## Convenções
 
+Memória e diagnóstico `[P1]`: `tests/e2e/inbox-resposta-retida.spec.ts` exibe a falha técnica de schema em Execuções e preserva o Inbox sem bloqueio de entrega inventado. O JSON real emitido pelo SDK é validado em `checkpoint-contract.test.ts`; retomada sem envios duplicados, lease e memória recente em `tests/invariants/response-resume-turn.test.ts`. Contrato, relógios e smoke remoto opt-in em [memória e demora](../changes/checkpoint-memory-latency.md).
+
 Follow-up `[P1]`: o caso de edição da espera de 10min e janela de
 `tests/e2e/followup-builder.spec.ts` configura a janela na tela, salva e recarrega.
 O bug de etiqueta no contato consultada no cartão é coberto nos dois adapters por
