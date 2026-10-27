@@ -58,9 +58,26 @@
       "col": 4,
       "type": "backend",
       "label": "Memória estruturada sem ferramentas"
+    },
+    {
+      "id": "queue-access",
+      "lane": "runtime",
+      "col": 5,
+      "type": "backend",
+      "label": "Fila protegida por papel e conversa"
     }
   ],
   "edges": [
+    {
+      "from": "response-plan",
+      "to": "queue-access",
+      "label": "plano privado"
+    },
+    {
+      "from": "queue-access",
+      "to": "outbound",
+      "label": "somente serviços alteram"
+    },
     {
       "from": "reply-timing",
       "to": "response-plan"

@@ -10,6 +10,8 @@ Uma parte queued interrompe a sequência: as próximas permanecem no plano aprov
 
 A sequência reservada de uma mídia obrigatória não indica a ordem de entrega: o texto pode estar confirmado em seq >= 3 antes da mídia reservada em seq 2. A retomada conta todos os envios confirmados fora do grupo atual, preservando contexto e limite físico. Mídia já confirmada não recebe outra tentativa do plano. A espera mínima no contexto automático é reagendada sem falhar. O snapshot distingue explicitamente prelúdio de resposta; antes de iniciar o modelo, um marcador durável impede repetir a conversa após interrupção. Snapshots antigos sem fase assumem resposta e não autorizam regeneração por inferência.
 
+A migration 0243 mantém a fila como escrita interna dos serviços: membros autenticados não podem forjar jobs, alterar o plano ou seus marcadores pelo acesso direto ao banco. A leitura de um job com resposta privada respeita a conversa exata e suas permissões. Diagnósticos sem conteúdo privado conservam o acesso anterior. Rotas e workers com serviço continuam operando; a defesa de escrita permanece na RLS mesmo se uma instalação conceder privilégios por engano.
+
 Tempo mínimo é uma configuração do agente, editável junto ao Estilo de resposta, desligada por padrão. Processamento conta no piso; aguardar devolve o job à fila depois que modelo/tools cessam. O número inteiro não fica sob lock durante essa espera.
 
 Living System Checklist:
