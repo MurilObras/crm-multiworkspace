@@ -22196,6 +22196,21 @@ create trigger redact_response_delivery before update of is_anonymized or delete
 -- A fila já é consumida por workers/admin; as telas usam leitura e rotas autorizadas.
 revoke insert,update,delete,truncate,references,trigger on public.job_queue from public,anon,authenticated;
 
+-- Nenhum produtor (inclusive cron/evento) pode trazer um plano pronto no input.
+-- Ele nasce depois do claim, na gravação protegida por lease do próprio worker.
+create or replace function public.fn_job_queue_private_plan_input() returns trigger
+language plpgsql security invoker set search_path='' as $$
+begin
+ if NEW.payload ? 'response_delivery' then
+  raise exception 'response_delivery_requires_claimed_job' using errcode='23514';
+ end if;
+ return NEW;
+end; $$;
+revoke all on function public.fn_job_queue_private_plan_input() from public,anon,authenticated;
+drop trigger if exists job_queue_private_plan_input on public.job_queue;
+create trigger job_queue_private_plan_input before insert on public.job_queue
+ for each row execute function public.fn_job_queue_private_plan_input();
+
 -- Defesa contra um GRANT acidental futuro: RLS também impede forjar/reabrir jobs.
 drop policy if exists job_queue_internal_insert on public.job_queue;
 create policy job_queue_internal_insert on public.job_queue as restrictive
