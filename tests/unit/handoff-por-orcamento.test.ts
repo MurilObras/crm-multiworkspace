@@ -330,7 +330,8 @@ describe("o call site — medido no texto, porque a unidade não o alcança", ()
     const inicioDoNucleo = fonteInbound.indexOf("async function executarTurnoDoAgente");
     expect(inicioDoNucleo).toBeGreaterThan(0);
     for (const auxiliar of ["classifyStage(", "maybeCompact("]) {
-      const pos = fonteInbound.indexOf(`await ${auxiliar}`);
+      // A chamada pode estar dentro do medidor de fase, sem await imediato.
+      const pos = fonteInbound.indexOf(auxiliar);
       expect(pos, `${auxiliar} não foi encontrado — o detector mede outra coisa`).toBeGreaterThan(0);
       expect(
         pos,
@@ -388,7 +389,7 @@ describe("a fila trata veto de negócio como veto, não como incidente", () => {
   const fonteWorker = readFileSync(WORKER, "utf8").replace(/\s+/gu, " ");
   const ROTEAMENTO =
     "if (terminal) { await cancelJob(pool, job.id, leaseOwner, errMsg(err)); } " +
-    "else { await failJob(pool, job.id, leaseOwner, err); }";
+    "else { await failJob(pool, job.id, leaseOwner, err, { retryable: !(err instanceof CheckpointSchemaError) }); }";
 
   it("erro terminal vai para cancelJob; o resto continua em failJob", () => {
     expect(fonteWorker.length, "guarda de vacuidade: arquivo do worker vazio").toBeGreaterThan(1000);
