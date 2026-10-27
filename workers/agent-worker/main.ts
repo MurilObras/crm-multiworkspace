@@ -63,6 +63,8 @@ if (!sentryDsn) {
 import http from 'node:http';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { queueAttemptTiming } from '../../lib/agent-engine/obs/turn-timing';
+import { CheckpointSchemaError } from '../../lib/agent-engine/edge/llm/checkpoint-error';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import type pg from 'pg';
@@ -370,6 +372,8 @@ export async function startWorker(
   const runJob = async (job: JobRow): Promise<void> => {
     const leaseOwner = job.locked_by;
     if (!leaseOwner) throw new Error('job_without_lease');
+    const attemptStarted = performance.now();
+    log.info('queue_attempt_timing', queueAttemptTiming(job, Date.now()));
     try {
       const handler = handlers.get(job.kind);
       if (!handler) {
@@ -409,7 +413,7 @@ export async function startWorker(
         if (terminal) {
           await cancelJob(pool, job.id, leaseOwner, errMsg(err));
         } else {
-          await failJob(pool, job.id, leaseOwner, err);
+          await failJob(pool, job.id, leaseOwner, err, { retryable: !(err instanceof CheckpointSchemaError) });
         }
       } catch (failErr) {
         log.error('disposição do job indisponível — lease expira via reaper', {
@@ -421,6 +425,9 @@ export async function startWorker(
         // vale saber que isto aconteceu.
         Sentry.captureException(failErr);
       }
+    } finally {
+      log.info('job_attempt_timing', { organization_id: job.organization_id, job_id: job.id,
+        attempt: job.attempts, elapsed_ms: Math.round(performance.now() - attemptStarted) });
     }
   };
 

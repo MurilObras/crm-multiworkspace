@@ -1,10 +1,12 @@
+import { CheckpointSchemaError } from '@/lib/agent-engine/edge/llm/checkpoint-error';
+import { rememberTurnClosing } from '@/lib/agent-engine/agent/turn-closing';
 import {afterAll,afterEach,it,expect} from 'vitest';
 import {randomUUID,createHash} from 'node:crypto';
 import pg from 'pg';
 import {createInboundTurnHandler,JobSettledError} from '@/lib/agent-engine/agent/inbound-turn';
 import {createFakeRegistry} from '@/lib/agent-engine/edge/llm/providers';
 import {createLogger} from '@/lib/agent-engine/obs/logger';
-import {enqueueJob,claimJobs,failJob} from '@/lib/agent-engine/queue/queue';
+import {enqueueJob,claimJobs,failJob,completeJob} from '@/lib/agent-engine/queue/queue';
 import {saveDelivery} from '@/lib/agent-engine/agent/response-delivery';
 import type {ChannelSendInput} from '@/lib/agent-engine/channel-adapter';
 if(!process.env.TEST_DB_CONTAINER)throw Error('Use pnpm test:db com banco descartável');
@@ -44,10 +46,10 @@ async function fixture() {
   return { org, contact, session, conversation, job, claim, retry, newer };
 }
 const usage={inputTokens:{total:1,noCache:1,cacheRead:0,cacheWrite:0},outputTokens:{total:1,text:1,reasoning:0}};
-function handler(send:(input:ChannelSendInput)=>Promise<unknown>,calls:{model:number},clock=new Date('2026-07-28T18:00:00Z'),conversation?:()=>Array<{type:'tool-call';toolCallId:string;toolName:string;input:string}>){
+function handler(send:(input:ChannelSendInput)=>Promise<unknown>,calls:{model:number},clock=new Date('2026-07-28T18:00:00Z'),conversation?:()=>Array<{type:'tool-call';toolCallId:string;toolName:string;input:string}>,checkpoint?:()=>string){
  return createInboundTurnHandler({crmCfg:{supabase:{} as never},llmCfg:{anthropicApiKey:'fake-test-key'},log:createLogger(),
  registry:createFakeRegistry(async opts=>{if(opts.tools?.length){if(!conversation)throw Error('Não chamar agente nem ferramentas na retomada');return {content:conversation(),finishReason:{unified:'tool-calls',raw:undefined},usage,warnings:[]};}calls.model++;
- return {content:[{type:'text',text:'{"commitments":[],"objections":[],"next_action":null,"rolling_summary":"Fatos confirmados"}'}],finishReason:{unified:'stop',raw:undefined},usage,warnings:[]};}),
+ return {content:[{type:'text',text:checkpoint?.()??'{"commitments":[],"objections":[],"next_action":null,"rolling_summary":"Fatos confirmados"}'}],finishReason:{unified:'stop',raw:undefined},usage,warnings:[]};}),
  knobs:{historyLimit:20,maxContextTokens:2000,notesIndexMaxTokens:1000,maxSteps:5,queuedRetryDelayMs:1000,breaker:{exactFailureWarn:2,exactFailureBlock:5,sameToolFailureWarn:3,sameToolFailureHalt:8,noProgressWarn:3,noProgressBlock:5}},
  channel:()=>({send}) as never,clock:()=>clock,sleep:async()=>{}});
 }
@@ -240,4 +242,56 @@ it('nova inbound durante a retomada encerra com descarte seguro, sem consumir re
  const calls={model:0};const run=handler(async input=>{await f.newer();await input.beforePersist?.();throw Error('Não transportar resposta antiga');},calls);
  await expect(run(job,pool,{workerId:'race'})).rejects.toBeInstanceOf(JobSettledError);
  expect((await pool.query('select status from job_queue where id=$1',[job.id])).rows[0].status).toBe('done');expect(calls.model).toBe(0);
+});
+
+
+it('schema recusado após entrega abre aviso técnico uma vez, sem repetir envio nem consumir cinco tentativas', async () => {
+  const f=await fixture(), other=await fixture(), job=await f.claim('schema');
+  await saveDelivery(pool,job,'schema',{version:1,responseKey:randomUUID(),agentId:null,agentVersionId:null,firstSeq:1,
+    body:'Resposta já aprovada.',approvedBody:'Resposta já aprovada.',bubbles:['Resposta já aprovada.'],approved:true,waitUntil:null});
+  let sends=0; const calls={model:0};
+  let failure:unknown;
+  try { await handler(async input=>{sends++;return accept(f,input);},calls,undefined,undefined,()=>{
+    throw Object.assign(new Error("Invalid schema for response_format 'response': Missing 'prazo'."),{statusCode:400});
+  })(job,pool,{workerId:'schema'}); } catch(error) { failure=error; }
+  expect(failure).toBeInstanceOf(CheckpointSchemaError);expect(sends).toBe(1);expect(calls.model).toBe(1);
+  expect((await pool.query('select payload from job_queue where id=$1',[job.id])).rows[0].payload.turn_closing).toBeDefined();
+  // A mesma disposição usada pelo worker: falha técnica, não cancelamento comercial.
+  const failed=await failJob(pool,job.id,'schema',failure,{retryable:false});
+  expect(failed?.status).toBe('dead');expect(failed?.attempts).toBe(1);
+  expect(await failJob(pool,job.id,'schema',failure,{retryable:false})).toBeNull();
+  const alerts=await pool.query("select organization_id,title from agent_inbox_items where ref_id=$1 and kind='job_dead'",[job.id]);
+  expect(alerts.rows).toEqual([{organization_id:f.org,title:'Falha técnica: intervenção necessária'}]);
+  expect((await pool.query('select status from job_queue where id=$1',[other.job.id])).rows[0].status).toBe('pending');
+  const runs=await pool.query("select error_code from llm_calls where organization_id=$1 and job_id=$2 and purpose='checkpoint'",[f.org,job.id]);
+  expect(runs.rows).toEqual([{error_code:'checkpoint_schema_invalid'}]);
+});
+
+it('falha transitória retoma somente memória; persiste uma vez e finaliza sem repetir transporte', async () => {
+  const f=await fixture(), job=await f.claim('transient'); let sends=0;const calls={model:0};let failing=true;
+  await saveDelivery(pool,job,'transient',{version:1,responseKey:randomUUID(),agentId:null,agentVersionId:null,firstSeq:1,
+    body:'Entrega confirmada.',approvedBody:'Entrega confirmada.',bubbles:['Entrega confirmada.'],approved:true,waitUntil:null});
+  const run=handler(async input=>{sends++;return accept(f,input);},calls,undefined,undefined,()=>{
+    if(failing)throw Error('indisponibilidade temporária');
+    return JSON.stringify({commitments:[],objections:[],next_action:null,rolling_summary:'Memória confirmada',declaracao:null});
+  });
+  await expect(run(job,pool,{workerId:'transient'})).rejects.toThrow('temporária');
+  await f.retry('transient'); const retry=await f.claim('retry'); failing=false;
+  await run(retry,pool,{workerId:'retry'}); await run(retry,pool,{workerId:'retry'});
+  expect(sends).toBe(1);expect(calls.model).toBe(2);
+  const memory=await pool.query('select rolling_summary,declaracao from lead_checkpoints where organization_id=$1 and job_id=$2',[f.org,job.id]);
+  expect(memory.rows).toEqual([{rolling_summary:'Memória confirmada',declaracao:null}]);
+  await completeJob(pool,job.id,'retry');
+  expect((await pool.query('select status from job_queue where id=$1',[job.id])).rows[0].status).toBe('done');
+});
+
+it('retry do fechamento não sobrepõe memória mais recente e respeita lease', async () => {
+  const f=await fixture(), job=await f.claim('older');const calls={model:0};
+  await rememberTurnClosing(pool,job,'older',{version:1,agent:null,previousCheckpointId:null});
+  await pool.query("insert into lead_checkpoints(organization_id,contact_id,rolling_summary) values($1,$2,'Memória mais recente')",[f.org,f.contact]);
+  await expect(rememberTurnClosing(pool,job,'wrong-owner',{version:1,agent:null})).rejects.toThrow();
+  await handler(async()=>{throw Error('Não transportar');},calls)(job,pool,{workerId:'older'});
+  expect(calls.model).toBe(0);
+  expect((await pool.query('select rolling_summary from lead_checkpoints where organization_id=$1 and contact_id=$2',[f.org,f.contact])).rows)
+    .toEqual([{rolling_summary:'Memória mais recente'}]);
 });

@@ -54,3 +54,26 @@ test('tempo mínimo salva, relê e não depende de alteração de prompt',async(
  await section.screenshot({path:evidence+'/tempo-salvo.png'});
  }finally{await admin.from('ai_agents').update({config:before.data?.config??{}}).eq('id',agent);}
 });
+
+
+test('falha da memória aparece nas Execuções sem inventar bloqueio de mensagem já entregue', async ({page})=>{
+ creds=await loginComoAdmin(page,creds); const org=(creds as typeof creds & {org_id:string}).org_id;
+ const contact=randomUUID(),session=randomUUID(),conv=randomUUID(),job=randomUUID(),run=randomUUID();
+ await insert('contacts',{id:contact,organization_id:org,name:'Memória sintética E2E',phone_number:'+5511999912346'});
+ await insert('channel_sessions',{id:session,organization_id:org,waha_session_name:'memory-'+session,status:'WORKING',webhook_secret_encrypted:'e2e'});
+ await insert('conversations',{id:conv,organization_id:org,contact_id:contact,channel_session_id:session,status:'ai_handling'});
+ await insert('job_queue',{id:job,organization_id:org,contact_id:contact,kind:'inbound_turn',status:'dead',attempts:1,
+   last_error:'checkpoint_schema_invalid: o provedor recusou o formato da memória',payload:{conversation_id:conv,channel_session_id:session}});
+ await insert('messages',{organization_id:org,contact_id:contact,channel_session_id:session,conversation_id:conv,direction:'outbound',type:'text',status:'sent',external_id:'ack-'+randomUUID(),body:'Resposta fictícia entregue.'});
+ await insert('llm_calls',{id:run,organization_id:org,contact_id:contact,job_id:job,purpose:'checkpoint',provider:'openai',model:'synthetic-e2e',status:'erro',
+   error_code:'checkpoint_schema_invalid',error_message:'Formato da memória recusado.',http_status:400,input_tokens:0,output_tokens:0,cache_read_tokens:0,cache_write_tokens:0,latency_ms:100,cost_cents:null});
+ await page.goto('/app/ai/runs'); const card=page.getByTestId('execucao-'+run);
+ await expect(card).toContainText('O provedor recusou o formato da memória',{timeout:60000});
+ await expect(card).toContainText('não repita o atendimento');
+ await page.reload(); await expect(card).toContainText('Corrija a integração',{timeout:60000});
+ await card.screenshot({path:evidence+'/memoria-schema-invalid.png'});
+ await page.goto('/app/inbox?id='+conv);
+ await expect(page.getByText('Resposta fictícia entregue.',{exact:true})).toBeVisible({timeout:60000});
+ await expect(page.getByTestId('retention-notice')).toHaveCount(0);
+ await page.screenshot({path:evidence+'/memoria-sem-bloqueio-falso.png',fullPage:true});
+});
