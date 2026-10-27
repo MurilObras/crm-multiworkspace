@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { measureTurnPhase } from '../obs/turn-timing';
+import { checkpointContentSchema, type CheckpointContent } from './checkpoint-contract';
 import { readDelivery, saveDelivery, ReplyDelayPending, type DeliverySnapshot } from './response-delivery';
 import { replyDeadline } from '@/lib/ai/agents/reply-delay';
 import { checkpointCall } from './checkpoint-call';
@@ -105,7 +107,7 @@ import {
   renderStageHint,
   type StageClassifierKnobs,
 } from './stage-classifier';
-import { DECLARACAO_INSTRUCTION, declaracaoDoTurnoSchema, promessasEmAberto, type DeclaracaoDoTurno } from './declaracao';
+import { DECLARACAO_INSTRUCTION, promessasEmAberto, type DeclaracaoDoTurno } from './declaracao';
 import { projetarContexto, projetarRetornoDeTool, turnoProjeta, type ContextoProjetado } from './projecao';
 import { capacidadesEntreguesAoOperador, catalogoEntregueAoOperador } from './entrega-de-capacidade';
 import { loadPublishedAgentConfigById, matchesHandoffKeyword } from './agent-config';
@@ -369,28 +371,7 @@ const inboundTurnPayloadSchema = z
   })
   .passthrough();
 
-/** Conteúdo do checkpoint — o modelo devolve, o Zod valida, o Postgres guarda. */
-export const checkpointContentSchema = z.object({
-  commitments: z.array(z.string()).default([]),
-  objections: z.array(z.string()).default([]),
-  next_action: z.string().nullable().default(null),
-  rolling_summary: z.string().default(''),
-  /**
-   * A declaração do turno (spec 16 §5) — a fronteira entre FALAR e OPERAR.
-   *
-   * `.optional()` SEM default, e a diferença importa: `undefined` significa que o
-   * modelo não declarou nada (fechamento incompleto — turno a investigar), e é
-   * estado distinto de `{nada_a_declarar: true}`, que é uma avaliação registrada.
-   * Um `.default({})` aqui apagaria essa distinção e faria "o modelo esqueceu"
-   * parecer "não havia nada" — ver o cabeçalho de `declaracao.ts`.
-   *
-   * Opcional também é o que mantém a retrocompatibilidade: checkpoint gravado
-   * antes desta versão, e clone self-host cujo modelo ainda não conhece o campo,
-   * seguem validando.
-   */
-  declaracao: declaracaoDoTurnoSchema.optional(),
-});
-export type CheckpointContent = z.infer<typeof checkpointContentSchema>;
+export { checkpointContentSchema, type CheckpointContent } from './checkpoint-contract';
 
 /**
  * A ROW como o Postgres a devolve. `declaracao` é `Omit`-ada e redeclarada porque
@@ -1516,18 +1497,18 @@ async function resumeTurnClosing(
       ...(existing.declaracao == null ? {} : { declaracao: existing.declaracao }),
     };
   } else {
-    const closing = await checkpointCall(pool, deps.llmCfg, {
+    const closing = await measureTurnPhase(log, job, 'checkpoint', () => checkpointCall(pool, deps.llmCfg, {
       tenantId: job.organization_id, leadId, jobId: job.id, purpose: 'checkpoint',
       ...(state.agent === null ? {} : {
         model: state.agent.model,
         llmOverride: { provider: state.agent.provider, credentialId: state.agent.credentialId },
       }),
       messages,
-    }, checkpointContentSchema, { registry: deps.registry, log });
+    }, { registry: deps.registry, log }));
     content = parseCheckpointText(closing.result.text);
     callId = closing.callId;
   }
-  await publishTurnCheckpoint(pool, job, ctx, input, state.agent, content, { callId }, log);
+  await measureTurnPhase(log, job, 'checkpoint_persist', () => publishTurnCheckpoint(pool, job, ctx, input, state.agent, content, { callId }, log));
   log.info('fechamento retomado e concluído — sem repetir atendimento ou envios');
 }
 
@@ -1841,7 +1822,7 @@ async function executarTurnoDoAgente(
   // cada turno, zero cache; org/sessão da row do job (fonte confiável). Sem router
   // ativo pra sessão, o resolver devolve o mesmo fluxo de hoje (outcome 'no_router').
   // null = sem agente publicado p/ esta sessão → fallback (playbook + settings + env).
-  const routed = pendingDelivery?.agentId ? {
+  const routed = await measureTurnPhase(runLog, job, 'routing', async () => pendingDelivery?.agentId ? {
     config: await loadPublishedAgentConfigById(pool,tenantId,pendingDelivery.agentId),
     routerId: null, intentName: null, confidence: null, outcome: 'sticky' as const,
   } : await resolveTurnAgent(
@@ -1858,7 +1839,7 @@ async function executarTurnoDoAgente(
       stickyIntent: sticky.active_intent,
     },
     { log: runLog },
-  );
+  ));
   const agentConfig = routed.config;
   if (pendingDelivery?.agentId && !agentConfig) throw new Error('response_agent_unavailable');
   if (pendingDelivery && pendingDelivery.agentVersionId !== (agentConfig?.versionId??null)) throw new Error('response_approval_changed');
@@ -2013,12 +1994,12 @@ async function executarTurnoDoAgente(
   }
   const previous = await latestCheckpoint(pool, tenantId, leadId);
   const leadState = await getLeadState(pool, tenantId, leadId);
-  const openingContext = await getLeadContext(
+  const openingContext = await measureTurnPhase(runLog, job, 'context', () => getLeadContext(
     pool,
     deps.crmCfg,
     { tenantId, leadId, conversationId: input.conversationId, fuso: fusoDaOrg },
     turnContextKnobs,
-  );
+  ));
   if (!openingContext.ok) {
     // Sem contexto não há turno: transiente (CRM fora) OU permanente (lead
     // sumiu) — ambos re-tentam pela fila e morrem em 'dead' se persistirem.
@@ -3388,17 +3369,17 @@ async function executarTurnoDoAgente(
   let stageSuggestion: LeadStage | null = null;
   let stageHintBlock = '';
   if (!pendingDelivery && deps.knobs.stageClassifier !== undefined) {
-    stageSuggestion = await classifyStage(
+    stageSuggestion = await measureTurnPhase(runLog, job, 'stage_classifier', () => classifyStage(
       pool,
       deps.llmCfg,
       { tenantId, leadId, jobId: job.id },
       {
         context: effectiveContext,
         currentStage,
-        ...argsAux(deps.knobs.stageClassifier.model),
+        ...argsAux(deps.knobs.stageClassifier?.model),
       },
       { registry: deps.registry, log: runLog },
-    );
+    ));
     if (stageSuggestion !== null) {
       stageHintBlock = renderStageHint(stageSuggestion, currentStage);
     }
@@ -3410,7 +3391,7 @@ async function executarTurnoDoAgente(
   // (a mensagem/reason nunca vão a log). A correlação com promessa fora de tabela escala no fim.
   let jailbreakLevel: JailbreakLevel = 'none';
   if (!pendingDelivery && camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined)) {
-    const verdict = await classifyJailbreak(
+    const verdict = await measureTurnPhase(runLog, job, 'jailbreak', () => classifyJailbreak(
       pool,
       deps.llmCfg,
       { tenantId, leadId, jobId: job.id },
@@ -3421,7 +3402,7 @@ async function executarTurnoDoAgente(
         ...argsAux(deps.knobs.jailbreak?.model),
       },
       { registry: deps.registry, log: runLog },
-    );
+    ));
     jailbreakLevel = verdict.level;
     if (verdict.flag) {
       // trace do turno: só flag/level (não PII) — a mensagem e o reason nunca são logados.
@@ -3572,13 +3553,13 @@ async function executarTurnoDoAgente(
           let classificationReason: string | undefined;
           if (catalog.length) {
             try {
-              const call = await runModelCall(pool, deps.llmCfg, { tenantId, leadId, jobId: job.id,
+              const call = await measureTurnPhase(runLog, job, 'media_intent', async () => runModelCall(pool, deps.llmCfg, { tenantId, leadId, jobId: job.id,
                 agentId: agentConfig.agentId, purpose: 'audio_intent', model: agentConfig.model,
                 llmOverride: { provider: agentConfig.provider, credentialId: agentConfig.credentialId },
                 system: MEDIA_INTENT_INSTRUCTION,
                 messages: [{ role: 'user', content: audioIntentMessage(subject, catalog,
                   await recentTurnMediaIds(pool,tenantId,input.conversationId,job.id,agentConfig.agentId,catalog),firstAudioContact) }],
-              }, { registry: deps.registry, log: runLog });
+              }, { registry: deps.registry, log: runLog }));
               intent = parseMediaIntent(call.result.text,catalog,subject,reason => { classificationReason = reason; },agentConfig.mediaReplayPolicy ?? 'explicit_media_request');
             } catch (error) {
               if (error instanceof LlmBudgetExceededError) throw error;
@@ -3776,7 +3757,7 @@ async function executarTurnoDoAgente(
     const prelude = readDelivery(job);
     if (prelude?.phase === 'prelude') await saveDelivery(pool,job,ctx.workerId,{...prelude,phase:'response'});
     conversationStarted = true;
-    turn = await runConversationModel(
+    turn = await measureTurnPhase(runLog, job, 'conversation', () => runConversationModel(
       pool,
       deps.llmCfg,
       {
@@ -3802,7 +3783,7 @@ async function executarTurnoDoAgente(
           : {}),
       },
       { registry: deps.registry, log: runLog },
-    );
+    ));
   } catch (error) {
     if (supersededError !== null) await settleSuperseded();
     await execution.drain();
@@ -3890,7 +3871,7 @@ async function executarTurnoDoAgente(
   // sem nada tendo mudado no meio.
   const checkpointMessages=await closingMessages(pool,job,input.conversationId,previous,CHECKPOINT_INSTRUCTION);
   if(checkpointMessages===null)return;
-  const closing = await checkpointCall(
+  const closing = await measureTurnPhase(runLog, job, 'checkpoint', () => checkpointCall(
     pool,
     deps.llmCfg,
     {
@@ -3907,12 +3888,11 @@ async function executarTurnoDoAgente(
       system,
       messages: checkpointMessages,
     },
-    checkpointContentSchema,
     { registry: deps.registry, log: runLog },
-  );
+  ));
   const content = parseCheckpointText(closing.result.text);
 
-  await publishTurnCheckpoint(pool, job, ctx, input, agentConfig, content, closing, runLog);
+  await measureTurnPhase(runLog, job, 'checkpoint_persist', () => publishTurnCheckpoint(pool, job, ctx, input, agentConfig, content, closing, runLog));
 
   // F3-11: divergência classificador×modelo. O classificador sugeriu um estágio; se o
   // modelo confirmou (via update_lead_state — a máquina F2-10) um estágio DIFERENTE, o

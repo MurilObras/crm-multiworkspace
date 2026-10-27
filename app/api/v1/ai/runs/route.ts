@@ -36,6 +36,7 @@ const O_QUE_FAZER: Record<string, string> = {
     "O provedor recusou por limite de uso ou saldo. Verifique o faturamento na conta do provedor.",
   provedor_indisponivel:
     "O provedor está fora do ar ou demorou demais. Costuma se resolver sozinho; se persistir, troque de provedor nesse ponto.",
+  checkpoint_schema_invalid: 'O provedor recusou o formato da memória. Corrija a integração; não repita o atendimento.',
   modelo_sem_ferramentas:
     "O modelo escolhido não sabe usar as ferramentas do CRM. Troque por um que saiba, no painel de Provedores.",
   // A única linha desta tabela em que o produto parou de propósito. Ela existe

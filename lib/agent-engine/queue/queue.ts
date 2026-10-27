@@ -306,13 +306,14 @@ export async function failJob(
   jobId: string,
   workerId: string,
   error: unknown,
+  options: { retryable?: boolean } = {},
 ): Promise<JobRow | null> {
   const { rows } = await db.query<JobRow>(
     `with updated as (
        update job_queue
-       set status = case when attempts >= max_attempts then 'dead' else 'pending' end,
+       set status = case when (attempts >= max_attempts or not $4::boolean) then 'dead' else 'pending' end,
            run_after = case
-             when attempts >= max_attempts then run_after
+             when (attempts >= max_attempts or not $4::boolean) then run_after
              else now() + (least(power(2, greatest(attempts - 1, 0)) * 10, 120) * interval '1 second')
            end,
            locked_by = null, locked_at = null, last_error = $3
@@ -322,7 +323,8 @@ export async function failJob(
      alert as (
        insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
        select organization_id, 'job_dead', 'critical',
-              'Job descartado após esgotar tentativas',
+              case when not $4::boolean then 'Falha técnica: intervenção necessária'
+                   else 'Job descartado após esgotar tentativas' end,
               -- O erro que matou o job vai JUNTO. Antes o corpo era só
               -- 'kind=...; attempts=5' e jogava fora a única informação que
               -- resolveria: o aviso existia, e não dizia nada. Caso real desta
@@ -335,7 +337,7 @@ export async function failJob(
        where status = 'dead'
      )
      select * from updated`,
-    [jobId, workerId, normalizeError(error)],
+    [jobId, workerId, normalizeError(error), options.retryable !== false],
   );
   return rows[0] ?? null;
 }

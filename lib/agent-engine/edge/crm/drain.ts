@@ -379,6 +379,8 @@ async function processEvent(
         event_id: event.id,
         job_id: pendingId,
       });
+      log.info('dispatch_timing', { organization_id: event.organization_id, job_id: pendingId,
+        event_age_ms: Math.max(0, Date.now() - new Date(event.created_at).getTime()), debounce_ms: knobs.debounceMs, coalesced: true });
       return 'processado';
     }
   }
@@ -397,6 +399,8 @@ async function processEvent(
     },
     ...(runAfter !== undefined ? { runAfter } : {}),
   });
+  log.info('dispatch_timing', { organization_id: event.organization_id, job_id: job.id,
+    event_age_ms: Math.max(0, Date.now() - new Date(event.created_at).getTime()), debounce_ms: knobs.debounceMs, coalesced: false, deduped });
   log.info('drain: job de turno enfileirado', { event_id: event.id, job_id: job.id, deduped });
   return 'processado';
 }

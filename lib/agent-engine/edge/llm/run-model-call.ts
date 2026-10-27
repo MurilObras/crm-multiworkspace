@@ -15,9 +15,11 @@
  * cacheWriteTokens}. Validado no ai@7 via scripts/smoke-llm.sh (modelo real) —
  * upgrade de major re-valida esses paths pelo mesmo gate (regra dura 16).
  */
-import { generateText, Output, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
+import { generateText, Output, stepCountIs, type ModelMessage, type ToolSet, type FlexibleSchema } from 'ai';
 import type pg from 'pg';
 import { z } from 'zod';
+
+import { CheckpointSchemaError, isStructuredSchemaRejection } from './checkpoint-error';
 
 import { scrubMessage } from '@/lib/sentry/scrub';
 
@@ -112,7 +114,7 @@ export interface RunModelCallInput {
   purpose?: string;
   system?: string;
   /** Fechamentos estruturados, sem alterar as chamadas comuns. */
-  outputSchema?: z.ZodType;
+  outputSchema?: FlexibleSchema<unknown>;
   messages: ModelMessage[];
   tools?: ToolSet;
   /**
@@ -418,7 +420,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       maxOutputTokens,
       ...(input.outputSchema ? { output: Output.object({ schema: input.outputSchema }) } : {}),
     });
-  } catch (err) {
+  } catch (caught) {
+    const err = purpose === 'checkpoint' && input.outputSchema && isStructuredSchemaRejection(caught)
+      ? new CheckpointSchemaError(caught) : caught;
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────
     //
     // Até aqui o INSERT em llm_calls vivia só DEPOIS desta chamada, sem `try`
@@ -560,6 +564,10 @@ export function normalizarErro(err: unknown): {
   // classificar esta falha" no caso mais bem explicado do produto.
   if (err instanceof LlmBudgetExceededError) {
     return { error_code: 'orcamento_esgotado', error_message: redigirMensagemDoProvedor(bruto), http_status: null };
+  }
+
+  if (err instanceof CheckpointSchemaError) {
+    return { error_code: 'checkpoint_schema_invalid', error_message: 'O provedor recusou o formato da memória. Corrija a integração; não repita o atendimento.', http_status: typeof status === 'number' ? status : 400 };
   }
 
   let codigo = 'erro_desconhecido';
