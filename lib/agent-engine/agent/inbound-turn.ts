@@ -1557,6 +1557,7 @@ async function executarTurnoDoAgente(
   // Contexto do RUN em toda linha de log do turno (F2-16): job_id É o run id.
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
   const pendingDelivery = readDelivery(job);
+  let conversationStarted = pendingDelivery !== null && pendingDelivery.phase !== 'prelude';
   let replayingDelivery: DeliverySnapshot | null = pendingDelivery;
   const correctionKeys = new Map<string,string>();
   const deferredSends: Array<{body:string;media?:unknown}> = [];
@@ -1978,15 +1979,20 @@ async function executarTurnoDoAgente(
   // Undefined conserva os turnos legados. Null é uma decisão explícita por texto.
   // Catálogo do modelo e envio obrigatório passam pela MESMA escolha por turno.
   let selectedTurnMedia: string | null | undefined;
+  let resumeRequiredPrelude = false;
   if(pendingDelivery && agentConfig) {
     if(job.payload.required_audio_plan!==undefined) {
       const saved=await requiredAudioPlan(pool,job,ctx.workerId,agentConfig.agentId,[],deps.knobs.maxSendsPerTurn??DEFAULT_MAX_SENDS_PER_TURN);
       selectedTurnMedia=saved?.audio_id??null;
+      // Só o marcador explícito prova que o modelo ainda não começou. Snapshots
+      // legados sem fase nunca autorizam repetir conversa ou ferramentas.
+      resumeRequiredPrelude = pendingDelivery.phase === 'prelude' && saved !== null && saved.delivery_phase !== 'after_response';
     } else if(job.payload.audio_rule_decision!==undefined) {
       const saved=await decideTurnMedia({db:pool,job,worker:ctx.workerId,agent:agentConfig.agentId,audios:[],firstContact:firstAudioContact,classify:async()=>null});
       selectedTurnMedia=saved.exclusive?saved.id:undefined;
     }
   }
+  if (pendingDelivery?.phase === 'prelude' && !resumeRequiredPrelude) throw new Error('response_prelude_invalid');
   const freshAudios = async () => {
     if (!agentConfig) return [];
     const { rows } = await pool.query<{ config: unknown }>(
@@ -2614,6 +2620,7 @@ async function executarTurnoDoAgente(
           return {ok:false,error:{code:'invalid_retention_reference',message:'A correção precisa se referir à resposta e ao arquivo vetados neste turno.'}};
         const responseKey = replayingDelivery?.responseKey ?? retry_of ?? randomUUID();
         const snapshot: DeliverySnapshot = replayingDelivery ?? {version:1,responseKey,agentId:agentConfig?.agentId??null,agentVersionId:agentConfig?.versionId??null,
+          phase:requiredAudioPrelude && !conversationStarted ? 'prelude' : 'response',
           firstSeq:seq+1,body:requestedBody,media,bubbles:[],approved:false,waitUntil:null};
         if (!replayingDelivery && physicalSends===0 && job.kind==='inbound_turn' && inboundAnchor && agentConfig?.replyDelay?.enabled) {
           const anchor=await pool.query<{created_at:Date;observed_at:Date}>("select created_at,clock_timestamp() as observed_at from messages where organization_id=$1 and conversation_id=$2 and id=$3 and direction='inbound'", [tenantId,input.conversationId,inboundAnchor]);
@@ -3540,6 +3547,11 @@ async function executarTurnoDoAgente(
       if (supersededError !== null) await settleSuperseded();
       await execution.drain();
       await mcpCleanup?.();
+      mcpCleanup = null;
+      if (error instanceof ReplyDelayPending) {
+        await rescheduleJob(pool,job.id,ctx.workerId,{delayMs:Math.max(1,error.until.getTime()-clock().getTime()),reason:'reply_minimum_wait'});
+        throw new JobSettledError('reply_minimum_wait');
+      }
       throw error;
     }
   };
@@ -3643,11 +3655,14 @@ async function executarTurnoDoAgente(
   if (pendingDelivery) {
     const execute=tools.send_message?.execute;
     if(!execute) throw new Error('response_resume_tool_unavailable');
-    // Já aceitas em grupos anteriores contam para o teto físico do turno.
+    // A mídia obrigatória usa seq 2 DEPOIS do texto (seq >= 3). Contar somente
+    // seq menores perderia o contexto e o consumo físico já confirmado.
+    const lastPlannedSeq = pendingDelivery.firstSeq + Math.max(1,pendingDelivery.bubbles.length) - 1;
     const prior=await pool.query<{n:number;text_sent:boolean}>(`select count(*)::int n,coalesce(bool_or(m.type='text'),false) text_sent
       from send_ledger l join messages m on m.organization_id=l.organization_id and m.id=l.crm_message_id and m.contact_id=l.contact_id
-      where l.organization_id=$1 and l.contact_id=$2 and l.job_id=$3 and l.seq<$4 and m.conversation_id=$5 and m.channel_session_id=$6
-        and m.status in('sent','delivered','read') and m.external_id is not null`,[tenantId,leadId,job.id,pendingDelivery.firstSeq,input.conversationId,input.channelSessionId]);
+      where l.organization_id=$1 and l.contact_id=$2 and l.job_id=$3 and not(l.seq between $4 and $7)
+        and m.conversation_id=$5 and m.channel_session_id=$6
+        and m.status in('sent','delivered','read') and m.external_id is not null`,[tenantId,leadId,job.id,pendingDelivery.firstSeq,input.conversationId,input.channelSessionId,lastPlannedSeq]);
     physicalSends=prior.rows[0]?.n??0;
     audioContextSent=prior.rows[0]?.text_sent??false;
     try {
@@ -3698,14 +3713,17 @@ async function executarTurnoDoAgente(
       replayingDelivery=null;requiredAudioPrelude=false;
       if(job.payload.required_audio_plan!==undefined && agentConfig) {
         const tail=await requiredAudioPlan(pool,job,ctx.workerId,agentConfig.agentId,[],maxSendsPerTurn);
-        if(tail?.delivery_phase==='after_response') { audioContextSent=true; await executeAudioPlan(tail,true); }
+        if(tail && !audiosSentThisTurn.has(tail.audio_id)) await executeAudioPlan(tail,true);
       }
-      await mcpCleanup?.();mcpCleanup=null;
-      const state={version:1 as const,agent:agentConfig?{agentId:agentConfig.agentId,operatorEnabled:agentConfig.operatorEnabled,
-        provider:agentConfig.provider,model:agentConfig.model,credentialId:agentConfig.credentialId}:null};
-      await rememberTurnClosing(pool,job,ctx.workerId,state);
-      await resumeTurnClosing(deps,pool,job,ctx,input,state,runLog);
-      return;
+      if (!resumeRequiredPrelude) {
+        await mcpCleanup?.();mcpCleanup=null;
+        const state={version:1 as const,agent:agentConfig?{agentId:agentConfig.agentId,operatorEnabled:agentConfig.operatorEnabled,
+          provider:agentConfig.provider,model:agentConfig.model,credentialId:agentConfig.credentialId}:null};
+        await rememberTurnClosing(pool,job,ctx.workerId,state);
+        await resumeTurnClosing(deps,pool,job,ctx,input,state,runLog);
+        return;
+      }
+      requiredAudioBlock = `## Mídia obrigatória (retomada)\nResultado REAL: ${JSON.stringify(requiredAudioResult ?? {status:'already_sent'})}\nNão repita a mídia nem afirme entrega sem confirmação.`;
     } catch(error) {
       if(supersededError!==null) await settleSuperseded();
       await execution.drain(); await mcpCleanup?.();
@@ -3753,6 +3771,11 @@ async function executarTurnoDoAgente(
   // isso são as que estouram primeiro.
   let turn: Awaited<ReturnType<typeof runModelCall>>;
   try {
+    // Fence durável ANTES do modelo/operador. Um crash depois deste ponto não
+    // permite inferir pelo seq que a conversa ainda não executou efeitos.
+    const prelude = readDelivery(job);
+    if (prelude?.phase === 'prelude') await saveDelivery(pool,job,ctx.workerId,{...prelude,phase:'response'});
+    conversationStarted = true;
     turn = await runConversationModel(
       pool,
       deps.llmCfg,

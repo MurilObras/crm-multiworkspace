@@ -8,6 +8,8 @@ O snapshot guarda texto privado e próximas chamadas de envio do mesmo lote para
 
 Uma parte queued interrompe a sequência: as próximas permanecem no plano aprovado para retomada, mesmo se o canal voltar antes do intervalo entre partes. Somente confirmação de envio permite avançar.
 
+A sequência reservada de uma mídia obrigatória não indica a ordem de entrega: o texto pode estar confirmado em seq >= 3 antes da mídia reservada em seq 2. A retomada conta todos os envios confirmados fora do grupo atual, preservando contexto e limite físico. Mídia já confirmada não recebe outra tentativa do plano. A espera mínima no contexto automático é reagendada sem falhar. O snapshot distingue explicitamente prelúdio de resposta; antes de iniciar o modelo, um marcador durável impede repetir a conversa após interrupção. Snapshots antigos sem fase assumem resposta e não autorizam regeneração por inferência.
+
 Tempo mínimo é uma configuração do agente, editável junto ao Estilo de resposta, desligada por padrão. Processamento conta no piso; aguardar devolve o job à fila depois que modelo/tools cessam. O número inteiro não fica sob lock durante essa espera.
 
 Living System Checklist:

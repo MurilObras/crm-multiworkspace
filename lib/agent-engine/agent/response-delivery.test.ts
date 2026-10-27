@@ -14,4 +14,14 @@ describe('plano fixo de envio',()=>{
  it('um plano ainda não aprovado não libera partes para transporte',()=>{
  expect(deliverySnapshotSchema.safeParse({...base,bubbles:['A.'],approved:false}).success).toBe(false);
  });
+ it('snapshot sem fase não comprova que o modelo ainda não começou',()=>{
+  expect(deliverySnapshotSchema.parse({...base,bubbles:[],approved:false}).phase).toBe('response');
+ });
+ it('prelúdio explícito exige agente e somente as sequências reservadas',()=>{
+  const prelude={...base,agentId:randomUUID(),phase:'prelude',bubbles:[],approved:false};
+  expect(deliverySnapshotSchema.safeParse(prelude).success).toBe(true);
+  expect(deliverySnapshotSchema.safeParse({...prelude,firstSeq:3}).success).toBe(false);
+  expect(deliverySnapshotSchema.safeParse({...prelude,agentId:null}).success).toBe(false);
+  expect(deliverySnapshotSchema.safeParse({...prelude,following:[{body:'Outra resposta'}]}).success).toBe(false);
+ });
 });

@@ -81,7 +81,7 @@ it('espera configurada reagenda sem enviar, sem chamar modelo e sem consumir a t
 
 async function accept(f:Awaited<ReturnType<typeof fixture>>,input:ChannelSendInput){
  await input.beforePersist?.();const key=randomUUID(),mid=randomUUID();
- await pool.query(`insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,external_id,body,metadata) values($1,$2,$3,$4,$5,'text','outbound','sent',$8,$6,$7)`,[mid,f.org,f.conversation,f.session,f.contact,input.body,JSON.stringify({idempotency_key:key,response_key:input.responseKey,response_part_count:input.responsePartCount}),'ack-'+mid]);
+ await pool.query(`insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,external_id,body,metadata) values($1,$2,$3,$4,$5,$9,'outbound','sent',$8,$6,$7)`,[mid,f.org,f.conversation,f.session,f.contact,input.body,JSON.stringify({idempotency_key:key,response_key:input.responseKey,response_part_count:input.responsePartCount}),'ack-'+mid,input.media?.type??'text']);
  await pool.query(`insert into send_ledger(id,organization_id,contact_id,job_id,seq,body_hash,status,crm_message_id) values($1,$2,$3,$4,$5,$6,'accepted',$7)`,[key,f.org,f.contact,f.job.id,input.seq,createHash('sha256').update(input.body).digest('hex'),mid]);
  return {kind:'sent',idempotencyKey:key,messageId:mid};
 }
@@ -171,6 +171,68 @@ it.each(['audio','image','video','revoked'] as const)('retoma mídia %s com cont
  const sent:ChannelSendInput[]=[];const calls={model:0};const run=handler(async input=>{sent.push(input);return accept(f,input);},calls);
  if(kind==='revoked'){await expect(run(job,pool,{workerId:'media'})).rejects.toThrow('response_resume_vetoed');expect(sent).toHaveLength(0);expect(calls.model).toBe(0);}
  else {await run(job,pool,{workerId:'media'});expect(sent).toHaveLength(1);expect(sent[0]).toMatchObject({seq:2,body:rule.title,media:{...media,agent_id:agent}});expect(calls.model).toBe(1);}
+});
+
+async function requiredFixture(type:'audio'|'image'|'video',phase:'after_response'|'legacy',wait=false){
+ const f=await fixture(),agent=randomUUID(),version=randomUUID(),id=randomUUID();
+ const ext=type==='audio'?'ogg':type==='image'?'png':'mp4';
+ const rule={id,title:'Mídia obrigatória aprovada',use_when:'Explica o funcionamento do serviço',send_when:'Quando pedir para conhecer o serviço',trigger_type:'topic',required:true,enabled:true,stage_ids:[],size_bytes:17,mime:type==='audio'?'audio/ogg':type==='image'?'image/png':'video/mp4',storage_path:f.org+'/'+(type==='audio'?'agent-audios':'agent-media')+'/'+agent+'/'+id+'.'+ext,...(type==='audio'?{}:{type})};
+ await pool.query(`insert into ai_agents(id,organization_id,name,system_prompt,kind,config) values($1,$2,'Agente com mídia obrigatória','Atenda com arquivos aprovados','mcp_agent',$3)`,[agent,f.org,JSON.stringify({approved_media:[rule],...(wait?{reply_delay:{enabled:true,min_seconds:20,max_seconds:20}}:{})})]);
+ await pool.query(`insert into ai_agent_versions(id,organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,max_steps) values($1,$2,$3,1,'Atenda com clareza e objetividade.','anthropic','claude-sonnet-4-6',$4,'published',5)`,[version,f.org,agent,f.session]);
+ await pool.query('update ai_agents set published_version_id=$1 where id=$2',[version,agent]);
+ const job=await f.claim('required');
+ job.payload.required_audio_plan={agent_id:agent,audio_id:id,...(phase==='after_response'?{delivery_phase:phase}:{})};
+ job.payload.audio_rule_decision={agent_id:agent,audio_id:id};job.payload.media_catalog_decision=true;
+ await pool.query('update job_queue set payload=$2 where id=$1',[job.id,JSON.stringify(job.payload)]);
+ const media=type==='audio'?{type,audio_id:id}:{type,media_id:id};
+ return {...f,job,agent,version,id,rule,media};
+}
+
+it.each(['audio','image','video'] as const)('retoma %s obrigatório na seq 2 com contexto confirmado na seq 3',async type=>{
+ const f=await requiredFixture(type,'after_response');
+ await accept(f,{tenantId:f.org,leadId:f.contact,jobId:f.job.id,workerId:'required',seq:3,conversationId:f.conversation,body:'Contexto já entregue.',responseKey:randomUUID(),responsePartCount:1});
+ await saveDelivery(pool,f.job,'required',{version:1,responseKey:randomUUID(),agentId:f.agent,agentVersionId:f.version,firstSeq:2,body:f.rule.title,media:f.media,bubbles:[f.rule.title],approvedBody:f.rule.title,approved:true,waitUntil:null});
+ const sent:ChannelSendInput[]=[],calls={model:0};
+ await handler(async input=>{sent.push(input);return accept(f,input);},calls)(f.job,pool,{workerId:'required'});
+ expect(sent).toHaveLength(1);expect(sent[0]).toMatchObject({seq:2,media:{...f.media,agent_id:f.agent}});expect(calls.model).toBe(1);
+ expect((await pool.query('select count(*)::int n from send_ledger where job_id=$1 and status=\'accepted\'',[f.job.id])).rows[0].n).toBe(2);
+});
+
+it.each(['audio','image','video'] as const)('%s obrigatório já confirmado não recebe uma segunda tentativa ao retomar',async type=>{
+ const f=await requiredFixture(type,'after_response'),responseKey=randomUUID();
+ await accept(f,{tenantId:f.org,leadId:f.contact,jobId:f.job.id,workerId:'required',seq:3,conversationId:f.conversation,body:'Contexto confirmado.',responseKey:randomUUID(),responsePartCount:1});
+ await accept(f,{tenantId:f.org,leadId:f.contact,jobId:f.job.id,workerId:'required',seq:2,conversationId:f.conversation,body:f.rule.title,media:{...f.media,agent_id:f.agent},responseKey,responsePartCount:1});
+ await saveDelivery(pool,f.job,'required',{version:1,responseKey,agentId:f.agent,agentVersionId:f.version,firstSeq:2,body:f.rule.title,media:f.media,bubbles:[f.rule.title],approvedBody:f.rule.title,approved:true,waitUntil:null});
+ const send=async()=>{throw Error('Não repetir transporte nem texto após mídia confirmada');};const calls={model:0};
+ await handler(send,calls)(f.job,pool,{workerId:'required'});expect(calls.model).toBe(1);
+});
+
+it.each(['after_response','legacy'] as const)('tempo mínimo no contexto obrigatório %s reagenda sem falhar e retoma todo o plano',async phase=>{
+ const f=await requiredFixture('audio',phase,true),calls={model:0};let main=0;const sent:ChannelSendInput[]=[];
+ const first=handler(async input=>{sent.push(input);return accept(f,input);},calls,undefined,()=>{main++;return [];});
+ await expect(first(f.job,pool,{workerId:'required'})).rejects.toBeInstanceOf(JobSettledError);
+ expect(sent).toHaveLength(0);expect(main).toBe(phase==='legacy'?0:1);expect(calls.model).toBe(0);
+ const saved=(await pool.query('select status,attempts,payload from job_queue where id=$1',[f.job.id])).rows[0];
+ expect(saved).toMatchObject({status:'pending',attempts:0});expect(saved.payload.response_delivery.firstSeq).toBe(1);
+ expect(saved.payload.response_delivery.phase).toBe(phase==='legacy'?'prelude':'response');
+ await pool.query('update job_queue set run_after=now() where id=$1',[f.job.id]);const resumed=await f.claim('required-retry');
+ await handler(async input=>{sent.push(input);return accept(f,input);},calls,new Date('2026-07-28T18:00:30Z'),()=>{main++;return [];})
+  (resumed,pool,{workerId:'required-retry'});
+ expect(sent.map(i=>({seq:i.seq,type:i.media?.type??'text'}))).toEqual([{seq:1,type:'text'},{seq:2,type:'audio'}]);
+ expect(main).toBe(1);expect(calls.model).toBe(1);
+});
+
+it('interrupção depois do início do modelo não repete a conversa nem o prelúdio confirmado',async()=>{
+ const f=await requiredFixture('audio','legacy'),calls={model:0};let main=0;
+ await expect(handler(input=>accept(f,input),calls,undefined,()=>{main++;throw Error('Modelo interrompido depois do início');})
+  (f.job,pool,{workerId:'required'})).rejects.toThrow();
+ expect(main).toBeGreaterThan(0);const invoked=main;
+ const saved=(await pool.query('select payload from job_queue where id=$1',[f.job.id])).rows[0].payload.response_delivery;
+ expect(saved).toMatchObject({phase:'response',firstSeq:2});
+ await f.retry('required');const resumed=await f.claim('required-retry');
+ await handler(async()=>{throw Error('Não repetir áudio ou contexto confirmados');},calls)
+  (resumed,pool,{workerId:'required-retry'});
+ expect(main).toBe(invoked);expect(calls.model).toBe(1);
 });
 
 it('nova inbound durante a retomada encerra com descarte seguro, sem consumir retries de envio',async()=>{

@@ -7,6 +7,7 @@ const followingSendSchema = z.object({body:z.string().max(100000),media:z.unknow
 // Conteúdo privado: a migration remove este snapshot quando o contato é anonimizado.
 export const deliverySnapshotSchema = z.object({
  version: z.literal(1), responseKey: z.uuid(), agentId: z.uuid().nullable(), agentVersionId: z.uuid().nullable(),
+ phase: z.enum(['response','prelude']).default('response'),
  firstSeq: z.number().int().positive(), body: z.string().max(100000), media: z.unknown().optional(),
  following: z.array(followingSendSchema).max(25).default([]),
  approvedBody: z.string().max(100000).optional(), bubbles: z.array(z.string().max(100000)).max(25), approved: z.boolean(), waitUntil: z.iso.datetime().nullable(),
@@ -15,6 +16,8 @@ export const deliverySnapshotSchema = z.object({
   ctx.addIssue({code:'custom',message:'Plano aprovado exige corpo e partes persistidos.'});
  if(!value.approved && value.bubbles.length!==0)
   ctx.addIssue({code:'custom',message:'Plano ainda não aprovado não pode conter partes liberadas.'});
+ if(value.phase==='prelude' && (value.agentId===null || value.firstSeq>2 || value.bubbles.length>1 || value.following.length>0))
+  ctx.addIssue({code:'custom',message:'Prelúdio exige agente, sequência reservada e uma única entrega.'});
 });
 export type DeliverySnapshot = z.input<typeof deliverySnapshotSchema>;
 export type FollowingSend = z.infer<typeof followingSendSchema>;
