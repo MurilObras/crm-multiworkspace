@@ -79,6 +79,10 @@ describe('F02: modelo deliberadamente contraditório', () => {
     ('mantém contexto factual sem alegação de entrega: %s', body => {
       expect(coherentMediaContext(body)).toEqual({ body, amended: false });
     });
+  it.each(['Você pode registrar gastos somente por texto ou áudio.', 'Você cadastra o gasto sem áudio, se preferir.'])
+    ('não confunde a capacidade do produto com negativa de envio: %s', body => {
+      expect(coherentMediaContext(body, 'audio')).toEqual({ body, amended: false });
+    });
   it('não confunde vídeo recusado com áudio autorizado nem apaga origem factual da gravação', () => {
     const body = 'Não vou enviar vídeo. Essa gravação é do responsável.';
     expect(coherentMediaContext(body, 'audio')).toEqual({ body, amended: false });

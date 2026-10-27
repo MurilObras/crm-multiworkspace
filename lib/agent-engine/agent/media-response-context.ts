@@ -14,10 +14,13 @@ export function coherentMediaContext(body: string, kind?: 'audio' | 'image' | 'v
     // objeto (“não consigo enviar agora”) continua sendo uma negativa de envio.
     const deliveryDenial = /\bnao\s+(?:(?:vou|posso|consigo|podemos|vamos|foi possivel|e possivel|sera possivel)\s+)?(?:te\s+|lhe\s+)?(?:repet\w*|reenvi\w*|envi\w*|mand\w*|anex\w*|encaminh\w*)\b/.test(s);
     const denial = deliveryDenial && (target || !namesFormat && /\b(?:enviar|reenviar|repetir|mandar|anexar|encaminhar)(?:\s+(?:agora|aqui|isso|novamente|mais))?\s*[.!?]?$/.test(s));
-    const textOnly = /\b(?:apenas|somente|so)\s+(?:por\s+|em\s+)?texto\b|\b(?:por\s+|em\s+)texto[^.!?]{0,30}\bsem\s+repet\w*/.test(s);
+    const agentContinuation = /\b(?:posso|consigo|vou|vamos|podemos|sigo|seguimos|seguirei|continuo|continuamos|respondo|responderei|explico|explicarei|nesta resposta|nessa resposta)\b/.test(s);
+    const textOnly = (agentContinuation || /^\s*(?:apenas|somente|so)\b/.test(s))
+      && /\b(?:apenas|somente|so)\s+(?:por\s+|em\s+)?texto\b|\b(?:por\s+|em\s+)texto[^.!?]{0,30}\bsem\s+repet\w*/.test(s);
     const previousDelivery = target && /\b(?:ja\s+(?:foi\s+)?(?:enviad\w*|mandad\w*|encaminhad\w*)|ja\s+(?:te\s+|lhe\s+)?(?:enviei|mandei|encaminhei))\b/.test(s);
     const recordingClaim = /\b(?:estou|to)\s+gravando\b/.test(s);
-    const withoutTarget = kind && formats[kind].test(s) && /\bsem\s+(?:(?:o|a|esse|essa|este|esta|um|uma)\s+)?(?:audio|imagem|foto|video)\b/.test(s);
+    const withoutTarget = kind && formats[kind].test(s) && agentContinuation
+      && /\bsem\s+(?:(?:o|a|esse|essa|este|esta|um|uma)\s+)?(?:audio|imagem|foto|video)\b/.test(s);
     const bad = denial || textOnly || previousDelivery || recordingClaim || withoutTarget;
     if (bad) amended = true;
     return !bad;

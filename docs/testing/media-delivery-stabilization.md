@@ -90,8 +90,10 @@ transporte, em comparação pareada. Sem evidência, essa meta fica pendente.
 
 ## Evidência isolada em 27/10/2026
 
-- Regressão focada: 158 casos aprovados, em cinco arquivos. Inclui as duas
+- Regressão focada: 160 casos aprovados, em cinco arquivos. Inclui as duas
   frases reais, títulos concorrentes e uma negativa deliberada do modelo.
+  A revisão posterior também corrigiu a distinção entre negativa do agente e
+  descrição válida de funcionalidades por texto, coberta por dois controles.
 - Provedor real: três chamadas sintéticas no mesmo modelo publicado, HTTP 200:
   pedido longo com outros formatos negados, demonstração visual espontânea e
   contexto com histórico de negativa. Dois classificadores e uma chamada à
