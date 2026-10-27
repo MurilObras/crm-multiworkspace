@@ -710,6 +710,7 @@ it.each(REPLAY_PROTECTION_CASES)(
     let calls=0;
     try {
       await rodaTurno(montaHandler(async (opts:{prompt?:unknown})=>{
+        resultadosVistos.push(opts.prompt);
         if(JSON.stringify(opts.prompt).includes('Classifique somente o assunto da mensagem atual'))
           return {content:[{type:'text',text:JSON.stringify({audio_id:audioId,intent:behavior==='no-request'?'show':'repeat',format:'audio',text_only:false})}],finishReason:{unified:'stop',raw:undefined},usage:USO,warnings:[]};
         const call=calls++;
