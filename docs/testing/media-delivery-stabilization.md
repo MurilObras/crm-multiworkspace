@@ -94,10 +94,14 @@ transporte, em comparação pareada. Sem evidência, essa meta fica pendente.
 
 ## Evidência isolada em 27/10/2026
 
-- Regressão focada: 160 casos aprovados, em cinco arquivos. Inclui as duas
+- Regressão focada: 163 casos aprovados, em cinco arquivos. Inclui as duas
   frases reais, títulos concorrentes e uma negativa deliberada do modelo.
   A revisão posterior também corrigiu a distinção entre negativa do agente e
   descrição válida de funcionalidades por texto, coberta por dois controles.
+  A variação de F01 com “não reenviar vídeo” foi reproduzida antes da correção:
+  perdia `repeat` e virava `show`. Agora a recusa de outro formato é separada do
+  pedido positivo, com e sem vírgula; recusa posterior do próprio formato veta
+  o arquivo. O probe anterior e o posterior mantêm o mesmo pedido sintético.
 - O banco isolado detectou uma regressão na reserva antecipada de etapa, antes
   da entrega: o cenário existente de avanço legítimo deixou de receber áudio.
   A correção conserva a reserva e revalida a elegibilidade antes do contexto;

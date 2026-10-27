@@ -15,6 +15,8 @@ describe('referência explícita, sem autorização implícita', () => {
   it.each([
     ['F01', 'Agora quero ouvir a apresentação de como funciona o Obra no Bolso. Reenvia aquele áudio Como funciona, sem vídeo nem foto.'],
     ['F02', 'Agora prefiro ouvir: reenvia o áudio Como funciona o Obra no Bolso, por favor.'],
+    ['F01/negativa de outro formato', 'Reenvia o áudio Como funciona o Obra no Bolso, não reenvia vídeo nem foto.'],
+    ['F01/negativa sem pontuação', 'Reenvia o áudio Como funciona o Obra no Bolso não reenvia vídeo nem foto.'],
   ])('%s: reconhece as frases reais sem depender do modelo', (_id, text) => {
     expect(resolveExplicitMediaReference(text, catalog())).toMatchObject({ source: 'explicit_reference',
       intent: { audio_id: ID, format: 'audio', intent: 'repeat', text_only: false } });
@@ -36,6 +38,10 @@ describe('referência explícita, sem autorização implícita', () => {
   it('não resolve IDs de mensagem nem escolhe formato que foi negado', () => {
     expect(resolveExplicitMediaReference(`Reenvia o áudio ${ID}.`, catalog())).toBeNull();
     expect(resolveExplicitMediaReference('Não envie áudio Como funciona o aplicativo.', catalog())?.intent.audio_id ?? null).toBeNull();
+  });
+  it('uma recusa posterior do próprio formato prevalece sobre o pedido anterior', () => {
+    expect(resolveExplicitMediaReference('Reenvia o áudio Como funciona o Obra no Bolso, não precisa reenviar áudio.', catalog()))
+      .toMatchObject({ source: 'text_preference', intent: { audio_id: null, text_only: true } });
   });
   it('não confunde prefixo comum com outro assunto nomeado', () => {
     expect(resolveExplicitMediaReference('Reenvia o áudio Como funciona o pagamento.', catalog())).toBeNull();

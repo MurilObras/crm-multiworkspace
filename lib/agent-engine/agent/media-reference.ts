@@ -25,7 +25,15 @@ export function resolveExplicitMediaReference(subject: string, catalog: Approved
   // A correção posterior substitui a oração anterior. Formatos negados não são títulos.
   const clause = mediaPreferenceClauses(selectionText).filter(part => explicitMediaPreference(part, kind) === 'audio').at(-1);
   if (!clause) return null;
-  const request = ` ${words(clause.split(/,\s*(?:sem|sin|não|nao|no)\b/iu)[0]!).join(' ')} `;
+  const refusalAt = clause.search(/,\s*(?:sem|sin|não|nao|no)\b|\b(?:não|nao|no)\s+(?:precisa\s+)?(?:me\s+)?(?:reenvi\w*|repet\w*|envia\w*|manda\w*|mostra\w*)/iu);
+  const suffix = refusalAt < 0 ? '' : normalizeMediaText(clause.slice(refusalAt));
+  const formats = { audio: /\b(?:audios?|voice)\b/, image: /\b(?:foto|imagen|imagens|imagem|image)s?\b/, video: /\bvideos?\b/ };
+  // A recusa do próprio formato prevalece, inclusive “não precisa reenviar”.
+  if (suffix && formats[kind].test(suffix))
+    return { intent: { ...NO_MEDIA_INTENT, text_only: true }, source: 'text_preference' };
+  const otherFormatOnly = suffix && kinds.some(other => other !== kind && formats[other].test(suffix));
+  const requestClause = otherFormatOnly ? clause.slice(0, refusalAt) : clause;
+  const request = ` ${words(requestClause).join(' ')} `;
   const scored = catalog.filter(item => item.enabled && mediaKind(item) === kind).map(item => {
     const title = words(item.title);
     let score = 0;
@@ -54,5 +62,5 @@ export function resolveExplicitMediaReference(subject: string, catalog: Approved
     || match.span[0] < best.span[0] || match.span[1] > best.span[1]))
     return { intent: { ...NO_MEDIA_INTENT }, reason: 'ambiguous_media_reference', source: 'explicit_reference' };
   return { source: 'explicit_reference', intent: { audio_id: best.item.id,
-    intent: clearRepeatIntent(clause) ? 'repeat' : 'show', format: kind, text_only: false } };
+    intent: clearRepeatIntent(requestClause) ? 'repeat' : 'show', format: kind, text_only: false } };
 }
