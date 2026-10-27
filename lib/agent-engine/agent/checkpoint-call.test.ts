@@ -30,9 +30,19 @@ describe('fechamento isolado', () => {
     await expect(checkpointCall(...args)).rejects.toBeInstanceOf(CheckpointSchemaError);
     expect(mock).toHaveBeenCalledTimes(1);
   });
-  it('não remove o contrato se o provedor não suportar saída estruturada', async () => {
-    const e = new Error('não suportado'); e.name = 'AI_UnsupportedFunctionalityError'; mock.mockRejectedValue(e);
-    await expect(checkpointCall(...args)).rejects.toBe(e); expect(mock).toHaveBeenCalledTimes(1);
-    expect(mock.mock.calls[0]![2].outputSchema).toBeDefined();
+  it('preserva alternativa validada só quando o provedor declara não oferecer o recurso', async () => {
+    const e = new Error('não suportado'); e.name = 'AI_UnsupportedFunctionalityError';
+    mock.mockRejectedValueOnce(e).mockResolvedValueOnce({ result: { text: '{"rolling_summary":"Fato confirmado"}' } });
+    expect(JSON.parse((await checkpointCall(...args)).result.text).declaracao).toBeUndefined();
+    expect(mock).toHaveBeenCalledTimes(2);
+    expect(mock.mock.calls[1]![2].outputSchema).toBeUndefined();
+    expect(mock.mock.calls[1]![2].tools).toBeUndefined();
+    expect(mock.mock.calls[1]![2].model).toBe('configured');
+  });
+  it('nem o nome de recurso não suportado permite esconder rejeição de schema', async () => {
+    const e = Object.assign(new Error('Invalid schema for response_format'), { statusCode: 400 });
+    e.name = 'AI_UnsupportedFunctionalityError'; mock.mockRejectedValue(e);
+    await expect(checkpointCall(...args)).rejects.toBeInstanceOf(CheckpointSchemaError);
+    expect(mock).toHaveBeenCalledTimes(1);
   });
 });
