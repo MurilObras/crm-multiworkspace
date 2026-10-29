@@ -8,6 +8,14 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.9.3] — 2026-10-29
+
+### Alterado
+
+- **Atendimento com leitura mais clara e melhor aproveitamento da tela no celular** O atendimento ganhou cabeçalho de navegação profundo, superfícies de leitura claras e seleção mais visível. Busca, filtros, abas e ações existentes foram reorganizados para caber no espaço disponível. Em telas estreitas, lista e conversa se alternam; com mais espaço, aparecem dois ou três painéis. A ficha continua acessível quando não cabe ao lado da conversa.
+
+  O campo de mensagem acompanha a área visível quando o teclado reduz a tela. As cores e a marca personalizadas, a preferência de tema e os comportamentos de atendimento existentes são preservados. A atualização não exige ação de configuração.
+
 ## [3.9.2] — 2026-10-27
 
 ### Corrigido
@@ -3491,7 +3499,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.2...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.3...HEAD
+[3.9.3]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.2...v3.9.3
 [3.9.2]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.1...v3.9.2
 [3.9.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.0...v3.9.1
 [3.9.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.8.1...v3.9.0
