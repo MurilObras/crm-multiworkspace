@@ -54,7 +54,7 @@ A segunda rodada conserva o histórico avaliado no primeiro ciclo. Os estados de
 
 ## Pareceres preservados
 
-As cópias `.txt` abaixo mantêm literalmente os bytes dos relatórios Markdown locais ignorados pelo Git. Nomes de imagens dentro desses relatos pertencem ao pacote histórico que cada reviewer recebeu; o índice acima é a relação de PNGs efetivamente entregue aqui. Não se reescreve um parecer antigo para fazê-lo aprovar o código novo.
+As cópias `.txt` abaixo mantêm o conteúdo literal dos relatórios Markdown locais ignorados pelo Git. Apenas os fins de linha são normalizados para LF, conforme `.gitattributes`; os hashes abaixo conferem os arquivos versionados. Nomes de imagens dentro desses relatos pertencem ao pacote histórico que cada reviewer recebeu; o índice acima é a relação de PNGs efetivamente entregue aqui. Não se reescreve um parecer antigo para fazê-lo aprovar o código novo.
 
 | Arquivo | Decisão e alcance histórico |
 | --- | --- |
@@ -73,7 +73,7 @@ Checksums SHA-256 das cópias históricas:
 - `revisao-pr61-inicial.txt`: `fe390a1bca26f4a2ede132452bf58beb04ab1c62fa5c4b8e60fffa79124d4d6a`
 - `revisao-pr61-intermediaria.txt`: `7ac92a756af9a21e91c1120899767cd25fd6fd024b524a58963e368aab7e6dc8`
 - `detector-inicial.json`: `97194e58f3e939d3685a701537d7c1c636a33bc093241a3c013d53ba38178f21`
-- `revisao-pr61-veredicto-final.txt`: `cb8716119c8f058caf66125b2933565befb4708abde0d8545297c12e30b99e3f`
+- `revisao-pr61-veredicto-final.txt`: `4c0d36f6b6597666681df803c007c53ff89cdb6b9bf25cea9dc5436fa5d0e0a9`
 - `revisao-pr61-testes-integrados.txt`: `aadd1a1d1071232573bbca2fb0a7ce73a4b64d742d3fd2fcd88c54f6bb796e61`
 
 ## Estado de aceitação
