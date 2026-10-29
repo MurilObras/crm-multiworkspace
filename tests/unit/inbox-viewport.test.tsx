@@ -53,14 +53,65 @@ describe("área visível do atendimento", () => {
     );
   });
 
-  it("desconta um aviso acima da área de atendimento", () => {
+  it("acompanha entrada e saída de aviso sem resize da viewport", () => {
     const viewport = new Viewport();
     vi.stubGlobal("visualViewport", viewport);
+    let atualizarLayout = () => {};
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          atualizarLayout = callback;
+        }
+        observe = observe;
+        disconnect = disconnect;
+      },
+    );
     render(<Surface />);
     const surface = screen.getByTestId("surface");
-    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ top: 40 } as DOMRect);
-    act(() => viewport.dispatchEvent(new Event("resize")));
+    const bounds = vi.spyOn(surface, "getBoundingClientRect");
+    expect(observe).toHaveBeenCalledWith(document.body);
+    bounds.mockReturnValue({ top: 40 } as DOMRect);
+    act(atualizarLayout);
     expect(surface.style.getPropertyValue("--inbox-viewport-height")).toBe("804px");
+    bounds.mockReturnValue({ top: 0 } as DOMRect);
+    act(atualizarLayout);
+    expect(surface.style.getPropertyValue("--inbox-viewport-height")).toBe("844px");
+    cleanup();
+    expect(disconnect).toHaveBeenCalledTimes(2);
+  });
+
+  it("detecta aviso inserido/removido mantendo o body com altura mínima", async () => {
+    const viewport = new Viewport();
+    viewport.height = 480;
+    vi.stubGlobal("visualViewport", viewport);
+    const observe = vi.fn();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe = observe;
+        disconnect() {}
+      },
+    );
+    document.body.style.minHeight = "844px";
+    render(<Surface />);
+    const surface = screen.getByTestId("surface");
+    const bounds = vi.spyOn(surface, "getBoundingClientRect");
+    const banner = document.createElement("div");
+    bounds.mockReturnValue({ top: 40 } as DOMRect);
+    await act(async () => {
+      surface.before(banner);
+    });
+    expect(observe).toHaveBeenCalledWith(banner);
+    expect(surface.style.getPropertyValue("--inbox-viewport-height")).toBe("440px");
+    bounds.mockReturnValue({ top: 0 } as DOMRect);
+    await act(async () => {
+      banner.remove();
+    });
+    expect(surface.style.getPropertyValue("--inbox-viewport-height")).toBe("480px");
+    document.body.style.removeProperty("min-height");
   });
 
   it("deixa outras páginas intactas e limpa o ajuste ao sair do inbox", () => {

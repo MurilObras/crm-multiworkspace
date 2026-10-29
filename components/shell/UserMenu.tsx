@@ -65,10 +65,8 @@ export function UserMenu() {
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <div className="shell-preferences-menu flex items-center gap-2 px-2 py-1">
-            <SeletorDeIdioma />
-            <ThemeToggle />
-          </div>
+          <SeletorDeIdioma menuItems />
+          <ThemeToggle menuItem />
           <DropdownMenuItem
             data-testid="criar-workspace"
             onSelect={(e) => {

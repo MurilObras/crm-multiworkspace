@@ -26,9 +26,11 @@ Card de desenvolvimento registrado com a documentação do redesign em 29/10/202
 
 ## Evidência e decisão
 
-A revisão independente inicial em [revisao-local-inicial.md](../.superpowers/evidence/inbox-regulatis/revisao-local-inicial.md) retornou **fix**. Ela identifica diferenças materiais na marca, conversa, ficha, texto, shell e citações. Correções de código não constituem aprovação visual; o responsável deve anexar as capturas válidas após a correção e o novo veredito.
+A [revisão local inicial](../evidence/inbox-regulatis/revisoes/revisao-local-inicial.txt) retornou **fix**; o [veredito local](../evidence/inbox-regulatis/revisoes/revisao-local-veredicto.txt) resolveu os sete itens pontuados, com ship limitado a esse lote. O [índice de evidências](../evidence/inbox-regulatis/README.md) entrega as referências, cada PNG, medições e pareceres históricos fora dos diretórios locais ignorados.
 
-Na reconciliação de fonte, os selos e metadados da lista, excedente de tags, remetente IA e horários de mensagem usam `text-xs`; OwnerBadge é consumido sem compacto. Foram removidos os seletores de slot que não existiam, e a ficha aplica mínimo de 44px a botões e links. A toolbar mobile preserva frente clara no hover profundo e contorno claro de foco; no intermediário, hover usa superfície suave e destaque. Estes pontos estão corrigidos no código conferido, com confirmação visual ainda pendente.
+Os selos e metadados da lista, excedente de tags, remetente IA e horários de mensagem usam `text-xs`; OwnerBadge é consumido sem compacto. A ficha aplica mínimo de 44px a botões e links. A toolbar mobile preserva frente clara no hover profundo e contorno claro de foco; no intermediário, hover usa superfície suave e destaque. A segunda rodada documenta esses estados e a resolução local correspondente.
+
+No segundo ciclo, a [revisão integral do PR](../evidence/inbox-regulatis/revisoes/revisao-pr61-inicial.txt) abriu F1/F2/F3. A [reavaliação intermediária](../evidence/inbox-regulatis/revisoes/revisao-pr61-intermediaria.txt) resolveu teclado das preferências e contraste da nota, mas recusou body-only como prova suficiente de reserva de altura. A fonte final observa caixas anteriores/ancestrais e childList dos ancestrais. O [veredito final](../evidence/inbox-regulatis/revisoes/revisao-pr61-veredicto-final.txt) resolveu os três itens após conferir menus, nota clara/escura e aviso válido com body mínimo real e área visível emulada de 480px. O ship é restrito às correções pontuadas.
 
 O harness local usa componentes reais com dados sintéticos e backend substituído. Sua aprovação visual, se vier a ocorrer, terá esse alcance. Integração, envio, Realtime real, hardware e desempenho exigem evidência própria.
 
@@ -42,4 +44,4 @@ O harness local usa componentes reais com dados sintéticos e backend substituí
 
 ## Estado deste card
 
-Critérios documentados; execução em andamento pelo responsável. Este card não registra QA passed, não cria métricas retrospectivas de reprodução e não autoriza publicação.
+Os dois ciclos encerraram as correções pontuadas; design-qa registra passed apenas nesse escopo visual. O [addendum dos testes](../evidence/inbox-regulatis/revisoes/revisao-pr61-testes-integrados.txt) não encontrou achado material nos dois diffs finais de navegação. Sua execução, CI do novo head, integração geral e hardware têm gates próprios. Este card não registra aprovação global da superfície, não cria métricas retrospectivas de reprodução e não autoriza publicação.

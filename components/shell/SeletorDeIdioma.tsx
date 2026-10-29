@@ -9,6 +9,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { useT } from "@/hooks/i18n/useT";
 import { useAplicarIdioma, useIdioma } from "@/lib/i18n/IdiomaProvider";
@@ -40,7 +42,7 @@ const NOME_DO_IDIOMA: Record<Idioma, { curto: string; completo: string }> = {
   es: { curto: "ES", completo: "Español" },
 };
 
-export function SeletorDeIdioma() {
+export function SeletorDeIdioma({ menuItems = false }: { menuItems?: boolean }) {
   const t = useT();
   const idioma = useIdioma();
   const aplicar = useAplicarIdioma();
@@ -83,6 +85,29 @@ export function SeletorDeIdioma() {
     });
   };
 
+  const opcoes = IDIOMAS.map((codigo) => (
+    <DropdownMenuItem
+      key={codigo}
+      onSelect={() => escolher(codigo)}
+      data-testid={`idioma-${codigo}`}
+      aria-current={codigo === idioma}
+      disabled={salvando}
+      className="min-h-11"
+    >
+      <Check size={16} className={`mr-2 ${codigo === idioma ? "" : "invisible"}`} aria-hidden />
+      {NOME_DO_IDIOMA[codigo].completo}
+    </DropdownMenuItem>
+  ));
+
+  if (menuItems) {
+    return (
+      <DropdownMenuGroup aria-label={t("Idioma")}>
+        <DropdownMenuLabel>{t("Idioma")}</DropdownMenuLabel>
+        {opcoes}
+      </DropdownMenuGroup>
+    );
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -93,27 +118,11 @@ export function SeletorDeIdioma() {
           aria-label={`${t("Idioma")}: ${NOME_DO_IDIOMA[idioma].completo}`}
           data-testid="seletor-de-idioma"
         >
-          <span className="text-xs font-semibold tabular-nums">
-            {NOME_DO_IDIOMA[idioma].curto}
-          </span>
+          <span className="text-xs font-semibold tabular-nums">{NOME_DO_IDIOMA[idioma].curto}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[180px]">
-        {IDIOMAS.map((codigo) => (
-          <DropdownMenuItem
-            key={codigo}
-            onClick={() => escolher(codigo)}
-            data-testid={`idioma-${codigo}`}
-            aria-current={codigo === idioma}
-          >
-            <Check
-              size={16}
-              className={`mr-2 ${codigo === idioma ? "" : "invisible"}`}
-              aria-hidden
-            />
-            {NOME_DO_IDIOMA[codigo].completo}
-          </DropdownMenuItem>
-        ))}
+        {opcoes}
       </DropdownMenuContent>
     </DropdownMenu>
   );

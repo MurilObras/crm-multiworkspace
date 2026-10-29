@@ -29,3 +29,5 @@ Mudanças em branch própria; revisão e correção local; PR; nova revisão e c
 ## Evidence on Hand
 
 Relatório de auditoria de 29/10/2026, 22 imagens Regulatis e três composições aprovadas/detalhadas em Downloads/Regulatis-Referencias-CRM. A referência visual não comprova desempenho nem comportamento em aparelhos físicos.
+
+Cópias duráveis das três referências aprovadas, capturas sintéticas, medições e pareceres históricos estão indexadas em [evidence/inbox-regulatis/README.md](evidence/inbox-regulatis/README.md). Componentes reais com hooks de backend substituídos apoiam a avaliação visual; não demonstram integração, entrega ou hardware.

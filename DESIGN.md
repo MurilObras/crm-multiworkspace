@@ -136,6 +136,12 @@ components:
     rounded: "{rounded.field}"
     typography: "{typography.body}"
     padding: "8px 12px"
+  note-mode-selected:
+    backgroundColor: "{colors.surface}"
+    textColor: "var(--color-warning-fg)"
+    rounded: "{rounded.control}"
+    typography: "{typography.label}"
+    padding: "8px 12px"
 ---
 
 # Design System: CRM — Inbox
@@ -206,7 +212,7 @@ A fonte do layout é `components/inbox/inbox-workspace.css`. O container `inbox 
 - **De 760px até menos de 1100px úteis:** lista de 300px e conversa no espaço restante. A ficha continua em Sheet. A lista e a conversa ficam visíveis independentemente da seleção.
 - **A partir de 1100px úteis:** lista de 320px, conversa flexível e ficha de 300px; o acesso duplicado à ficha deixa de aparecer.
 - O cabeçalho global tem container próprio `shell-bar`: abaixo de 760px úteis, a busca vira botão de 44px e as preferências inline saem daquela faixa. A regra que oculta o cabeçalho global durante uma conversa mobile usa viewport menor que 760px, explicitamente diferente do container do Inbox.
-- O shell reserva `100dvh`, ou `--inbox-viewport-height` atualizado pelo visual viewport quando disponível. Lista e histórico têm suas áreas de rolagem. O compositor respeita `safe-area-inset-bottom`.
+- O shell reserva `100dvh`, ou `--inbox-viewport-height` atualizado pelo visual viewport quando disponível. O hook também observa caixas anteriores e ancestrais com ResizeObserver e recompõe essas observações por mudanças childList nos ancestrais, sem observar a subárvore das mensagens. Isso permite recalcular o offset quando avisos entram/saem mesmo que o body mantenha sua altura mínima; o mecanismo não depende só de resize do body. Lista e histórico têm suas áreas de rolagem. O compositor respeita `safe-area-inset-bottom`.
 - O ritmo reutiliza os passos `space-1` a `space-8` do frontmatter. Linhas usam mínimo de 92px no mobile e 84px nas composições de múltiplos painéis. No desktop, o padding da linha é 14px por 12px.
 - Busca, filtros, abas, ações principais, modos do compositor e ações da ficha recebem mínimo de 44px no código desta superfície. Isso é uma meta aplicada a esses grupos, não prova de que todos os controles herdados de dialogs e ferramentas já cumprem o alvo.
 
@@ -250,11 +256,15 @@ A busca tem curva do papel `field`, contorno funcional e tamanho de texto mobile
 
 O shell continua usando o registro de navegação, nomes, ícones e permissões existentes. O Inbox altera a expressão visual de cabeçalho e sidebar. O item atual recebe seleção suave com destaque; os demais usam texto claro de apoio. A sidebar existente ocupa 240px expandida ou 64px recolhida, com ícones do mapa canônico em `lib/ui/icons.ts`. A biblioteca primária da feature é Phosphor via esse mapa; componentes compartilhados legados não são permissão para novos imports diretos.
 
+As preferências que saem da faixa inline continuam acessíveis no Menu do usuário. Idiomas são itens Radix num grupo nomeado, sem submenu próprio; Tema é item Radix com ícone e texto do estado atual. Participam da mesma coleção de foco por setas, Enter e Escape, com retorno de foco ao gatilho; não usar botões avulsos dentro do menu para essas preferências.
+
 ### Conversa e compositor
 
 Mensagens recebidas têm avatar de contato ou iniciais, quando a identidade está disponível. No mobile, as enviadas usam ação de marca com frente correspondente; nas composições a partir de 760px úteis, usam superfície suave com texto de leitura. Manter nota interna, falha, mídia, citação, revogação e edição como estados existentes, sem normalizá-los em um balão genérico.
 
 “Responder” e “Nota interna” permanecem modos distintos. A ferramenta de áudio aparece no estado sem texto; envio aparece conforme rascunho e modo. Anexos, emoji, sugestões, bloqueios e atalhos mantêm seus handlers e condições. Uma captura com rascunho do mockup não autoriza alterar essa lógica.
+
+Nota selecionada usa o papel `note-mode-selected`: superfície opaca, texto `--color-warning-fg` e contorno interno de 1px na mesma tinta. A tinta semântica acompanha o tema existente. O par composto medido foi 5,987:1 no claro e 8,659:1 no escuro, conforme [contraste-nota.json](evidence/inbox-regulatis/round-3/contraste-nota.json); esses resultados descrevem esse estado, sem certificar outros pares.
 
 ## Do's and Don'ts
 

@@ -91,7 +91,7 @@ test.describe("G5-03 — fila com posição + atribuição", () => {
     // (1) Na Fila: a conversa aparece com posição (Nº) + "Aguardando há X".
     const queueItem = page.getByRole("button").filter({ hasText: q.contact_name });
     await expect(queueItem).toBeVisible({ timeout: 15_000 });
-    await expect(queueItem.getByText(/^\d+º$/)).toBeVisible();
+    await expect(queueItem.getByLabel(/^Posição \d+ na fila$/)).toBeVisible();
     await expect(queueItem.getByText(/Aguardando/)).toBeVisible();
     await page.screenshot({
       path: path.join(EVIDENCE, "G5-03-queue.png"),

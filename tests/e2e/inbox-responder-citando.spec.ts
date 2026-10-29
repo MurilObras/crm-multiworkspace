@@ -186,6 +186,24 @@ test.describe("responder citando", () => {
         };
       });
       expect(topbar, `cabeçalho em ${width}px`).toEqual({ inside: true, overlap: false });
+      if (width === 320 || width === 1440) {
+        const userMenu = page.getByRole("button", { name: "Menu do usuário", exact: true });
+        await userMenu.focus();
+        await page.keyboard.press("Enter");
+        await expect(
+          page.getByRole("menuitem", { name: "Português (BR)", exact: true }),
+        ).toBeFocused();
+        await page.keyboard.press("ArrowDown");
+        await expect(page.getByRole("menuitem", { name: "Español", exact: true })).toBeFocused();
+        await page.keyboard.press("ArrowDown");
+        await expect(page.getByRole("menuitem", { name: /^Tema / })).toBeFocused();
+        await page.screenshot({
+          path: path.join(EVIDENCE, `menu-teclado-${width}.png`),
+          fullPage: true,
+        });
+        await page.keyboard.press("Escape");
+        await expect(userMenu).toBeFocused();
+      }
       const tabs = page.getByRole("tab");
       for (const tab of await tabs.all()) {
         const box = await tab.boundingBox();

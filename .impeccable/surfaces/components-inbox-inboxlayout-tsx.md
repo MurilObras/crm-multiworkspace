@@ -35,12 +35,13 @@ Registro de desenvolvimento da direção aprovada, persistido durante a document
 
 A aprovação prévia informada pelo responsável escolhe a combinação de controles explícitos e estrutura clara da proposta 04, com conversa mobile 05 e atendimento desktop 06. O momento reconhecível é a passagem da lista clara para a conversa sob a mesma navegação profunda, preservando o contexto da pessoa e o caminho de volta.
 
-Referências externas ao repositório:
+Referências aprovadas com cópia durável no repositório:
 
-- `C:/Users/muril/Downloads/Regulatis-Referencias-CRM/propostas-inbox/04-combinacao-fila-controles.png`
-- `C:/Users/muril/Downloads/Regulatis-Referencias-CRM/propostas-inbox/05-conversa-mobile.png`
-- `C:/Users/muril/Downloads/Regulatis-Referencias-CRM/propostas-inbox/06-atendimento-desktop.png`
-- `C:/Users/muril/Downloads/Regulatis-Referencias-CRM/propostas-inbox/especificacao-interface.json`
+- `evidence/inbox-regulatis/referencias/04-combinacao-fila-controles.png`
+- `evidence/inbox-regulatis/referencias/05-conversa-mobile.png`
+- `evidence/inbox-regulatis/referencias/06-atendimento-desktop.png`
+
+As cópias vêm do conjunto local aprovado em Downloads/Regulatis-Referencias-CRM/propostas-inbox. A especificação de origem permanece em `C:/Users/muril/Downloads/Regulatis-Referencias-CRM/propostas-inbox/especificacao-interface.json`. O [índice de evidências](../../evidence/inbox-regulatis/README.md) identifica cada captura, medição e parecer entregue.
 
 A especificação contém propostas de tokens e pares estáticos de contraste. O código é a fonte dos tokens implementados em [DESIGN.md](../../DESIGN.md); o contraste proposto não certifica todos os estados renderizados. Poppins ficou condicionada a avaliação no arquivo de referência; o código preserva Atkinson.
 
@@ -60,10 +61,12 @@ A seleção local tem caminho explícito de voltar. O código mantém a limitaç
 
 Foi aplicado o trabalho ao CRM existente. Não foi feito scaffold, concept-seed ou a maquinaria comp-led de `state/spec/hero/final`. Não existe evidência de um seed, medição de reprodução ou score desses gates; nada disso será fabricado. Este contrato e o card [QUALITY BAR](../quality-bar-inbox.md) organizam a evidência disponível daqui em diante, sem fingir que existiam antes do código.
 
-A revisão independente inicial está em [revisao-local-inicial.md](../../.superpowers/evidence/inbox-regulatis/revisao-local-inicial.md), com disposição **fix**. A reconciliação de fonte confirmou metadados de atendimento com `text-xs` explícito, remoção dos seletores de slot inexistentes, mínimo de 44px também nos links da ficha e hover/foco da toolbar adaptados ao chrome mobile e ao painel intermediário. Essas correções de código ainda exigem capturas renovadas e novo veredito visual. Capturas afetadas por erro de montagem/formatação do shell foram rejeitadas pelo responsável, não aceitas como prova.
+A [revisão local inicial](../../evidence/inbox-regulatis/revisoes/revisao-local-inicial.txt) pediu sete correções; o [veredito local](../../evidence/inbox-regulatis/revisoes/revisao-local-veredicto.txt) as pontuou como resolvidas no harness, com ship restrito a esse lote. Metadados explícitos, mínimo de 44px nos links da ficha, hover/foco, marca e composição estão registrados na segunda rodada. Capturas afetadas por montagem/formatação inválida foram rejeitadas e substituídas, não aceitas como prova.
+
+A [revisão integral do PR 61](../../evidence/inbox-regulatis/revisoes/revisao-pr61-inicial.txt) abriu F1 teclado das preferências, F2 contraste da nota e F3 altura ao mudar aviso. A [reavaliação intermediária](../../evidence/inbox-regulatis/revisoes/revisao-pr61-intermediaria.txt) resolveu F1/F2 e manteve F3 parcial. Idiomas/tema usam itens Radix navegáveis; nota selecionada tem superfície opaca e tinta/contorno warning-fg. F3 observa caixas anteriores/ancestrais e alterações childList dos ancestrais, fora da subárvore de mensagens. O [veredito final](../../evidence/inbox-regulatis/revisoes/revisao-pr61-veredicto-final.txt) reabriu as capturas válidas com body mínimo real/área reduzida e resolveu F1/F2/F3, com remaining clear e ship restrito ao lote.
 
 As capturas locais usam componentes reais com backend substituído por dados sintéticos. Podem apoiar avaliação visual e de interação no harness, com seus limites; não demonstram integração, envio de mensagens, Realtime de produção, teclado móvel real ou uso em hardware físico.
 
 ## Pendências de aceitação
 
-Conferir o [QUALITY BAR](../quality-bar-inbox.md) nas referências e na nova evidência, finalizar o novo veredito local e cumprir os gates do repositório. Tipo, lint, testes relevantes, CI e os dois ciclos de revisão — local e depois no PR — devem passar antes de integrar/publicar. A presença deste documento, de DESIGN.md ou do sidecar não significa QA passed nem publicação autorizada.
+O [QUALITY BAR](../quality-bar-inbox.md) e o QA visual registram o aceite restrito dos dois ciclos. O [addendum dos testes](../../evidence/inbox-regulatis/revisoes/revisao-pr61-testes-integrados.txt) não encontrou achado material nos dois diffs de navegação. Permanecem build, testes relevantes, CI obrigatório do novo head e os gates reais de integração antes de integrar/publicar. Os resultados Linux do head anterior e o ship visual limitado não certificam automaticamente este worktree. A presença deste documento, de DESIGN.md ou do sidecar não autoriza publicação.

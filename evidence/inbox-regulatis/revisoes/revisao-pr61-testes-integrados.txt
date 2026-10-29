@@ -1,0 +1,19 @@
+Conclusão: fonte apta a nova execução no CI. Nenhum achado material P0/P1/P2 introduzido pelos dois diffs examinados. Isto não aprova o resultado da execução pendente.
+
+## Escopo
+
+Revisão somente leitura das alterações locais em `tests/e2e/queue-assign.spec.ts` e `tests/e2e/inbox-quem-manda.spec.ts` contra o head `0125b496f1b5112cfc89902f5a1b896c4c07dfbc`. Nenhuma UI, regra de negócio, API ou configuração foi alterada por este reviewer. Foi escrito somente este addendum.
+
+Abri as duas capturas de falha do CI fornecidas e amostras da matriz integrada em 320, 1280 e 1440px. A captura da fila mostra `1º na fila` e `2º na fila`, portanto a regex antiga que aceitava somente o ordinal isolado não corresponde mais ao conteúdo. A captura de quem manda mostra o comando humano com E2E Agent, ações e o botão Ficha em 1280px; o painel lateral não está visível nessa composição. As amostras da matriz mostram uma região em 320, duas em 1280 e três em 1440. Isso sustenta os motivos das duas adaptações; não equivale a reexecutar seus cenários corrigidos.
+
+## Provas preservadas
+
+- **Fila, linha 94:** `getByLabel(/^Posição \d+ na fila$/)` consulta o `aria-label` já existente do mesmo indicador visível e continua limitado ao item do contato semeado. Não passa a aceitar texto genérico fora da conversa. Mantém as asserções de item visível, espera, atribuição real via RPC, ausência posterior na Fila e presença em Minhas. A prova original não exigia um ordinal específico; a troca mantém essa mesma precisão e evita depender da composição visual do texto.
+- **Quem manda, linhas 227–242:** a condição escolhe como acessar a ficha — botão e dialog quando disponível, coluna `.inbox-contact` no layout largo. As asserções de Atividade, Assumiu e ausência do fallback continuam obrigatórias fora do `if`, dentro do painel escolhido. Se não houver botão e a coluna permanecer oculta, a asserção de visibilidade falha; não existe caminho que pule a prova. Escape fecha o dialog e sua ausência é verificada antes do retorno ao automático.
+- **Comando e efeito no banco:** continuam obrigatórios E2E Agent no comando, recusa do fallback Atendente, selo de pausa, silêncio `infinity` após assumir, ação Devolver ao automático, restauração de `(null)` no banco, comando automático e remoção do selo. Esses trechos não foram enfraquecidos pelo diff.
+
+Precisão de alcance: o nome exato E2E Agent é exigido no cabeçalho/comando, enquanto o bloco da ficha exige Atividade, Assumiu e ausência de Você/time. O diff não adiciona uma asserção do nome exato na própria linha da atividade. Esse alcance já existia antes da adaptação; não é regressão introduzida nem motivo para afirmar uma prova adicional que o teste não contém.
+
+## Limites da decisão
+
+O responsável informou ESLint aprovado nos dois arquivos e os resultados do CI antigo. Este reviewer não reexecutou E2E nem consultou novo resultado de CI. As capturas antigas confirmam incompatibilidade dos seletores com a apresentação, mas os dois testes corrigidos ainda precisam passar na nova execução, junto dos demais gates do novo head. A decisão permite submeter a correção à validação; não declara CI, integração, backend, hardware ou publicação aprovados.

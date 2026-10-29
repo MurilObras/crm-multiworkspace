@@ -1,0 +1,55 @@
+disposition: fix
+
+Insumos ausentes: contrato persistido de cinco blocos, card QUALITY BAR separado, `.impeccable/build/state.json`, spec medida e relatórios/crops de comp-diff hero/final. O responsável forneceu o contrato em mensagem e confirmou que as referências foram aprovadas antes desta execução; não houve evidência de roll/seed, e nenhum seed foi inventado. Revisão restrita aos arquivos e capturas fornecidos, sem navegador, detector adicional ou alterações no produto.
+
+## persistence
+
+Pass: `PRODUCT.md` existe e registra usuários, uso frequente no celular, finalidade, preservação de funcionalidades/APIs/permissões/marca, sequência de revisão e limite dos dados sintéticos. As referências aprovadas estão identificadas nominalmente no briefing e em `especificacao-interface.json`.
+
+Fail da trilha formal: não há state/spec/diffs de reprodução, hero-repro, contrato persistido nem card independente. A reprodução não está demonstrada quantitativamente pelo fluxo comp-led da skill. Isso não revoga a aprovação prévia das três referências nem autoriza criar um seed retrospectivo; requer registrar honestamente a adaptação deste fluxo ao CRM existente, os checkpoints cumpridos e os ainda pendentes. Não é uma comprovação de integração.
+
+Check 0 passou: abri as três referências, as três comparações pareadas, as oito capturas de lista/conversa e `desktop-full.png`. Dimensões confirmadas: 320×740, 390×844, 768×1024 e 1440×1024 para ambos os estados. Não há captura preta, vazia ou atribuída à superfície errada. Os espaços vazios nos estados sem conversa são estados intencionais, não captura quebrada. Os arquivos `medidas*.json` indicam overflow horizontal zero; isso não impede colisões internas.
+
+## fidelity
+
+Inventário observado nas referências antes de avaliar o contrato: navegação/cabeçalho violeta profundo; busca larga; dois filtros explícitos; abas claras com seleção lavanda; linhas separadas com avatar arredondado, nome, prévia, hora e posição na fila; conversa mobile com identidade/ações à vista, avatar ao lado das mensagens recebidas, balões recebidos lavanda e enviados violetas; composição desktop com lista, conversa e ficha; ficha com avatar, ações e seções identificadas por ícones; composer com modos, campo e ferramentas.
+
+| Elemento | Estado | Evidência e implicação |
+| --- | --- | --- |
+| Cabeçalho e navegação profundos | match no tema padrão capturado | `comparacao-lista.png`, `comparacao-desktop.png`: a navegação e o cabeçalho formam a estrutura violeta aprovada. |
+| Preservação da cor personalizada | contradicted por código | `inbox-workspace.css:36,55` procura `#marca-instalacao` dentro de `body`; `app/layout.tsx:288` o emite no `head`. Instalação personalizada sem marca de organização cai no fallback violeta. `--color-brand` existe em `lib/branding/css.ts`; o token do chrome não é o defeito. |
+| Busca, filtros e primeiras conversas mobile | match | `lista-320.png` e `lista-390.png`: controles e primeiras linhas alcançáveis; nenhuma lateral cortada. |
+| Não lidos como botão pressionável | adaptation | Preserva a interação original de `InboxFilters.tsx`; a especificação proíbe transformar detalhes incidentais do mock em novas interações. Não acrescentar dropdown para imitar a seta. |
+| Abas em duas linhas quando necessário | adaptation | `lista-320.png` e coluna de 320px em `lista-1440.png`; a meta de 44px e legibilidade justificam reflow, mantendo todos os escopos visíveis. |
+| Linhas, fila e seleção lavanda | match | `lista-390.png`, `conversa-1440.png`; nome/prévia/hora/fila, contagem e seleção estão presentes. |
+| Identidade, dono e conjunto de ações | adaptation | `comparacao-conversa.png`: “Assumir”/“Sem responsável” refletem o estado sintético. O diff não modifica as condições de `isOpen`, `isMineAssigned`, `podeDevolver` ou `podePausar`. Não usar o dono do mock como regra de domínio. |
+| Mensagens recebidas com avatar | missing | As referências 05/06 repetem o avatar ao lado das mensagens recebidas; `conversa-390.png`/`conversa-1440.png` não apresentam esse elemento. |
+| Balão enviado no desktop | contradicted | Referência 06 usa lavanda suave com texto escuro; `conversa-1440.png` mantém a saturação violeta e texto branco da versão mobile. A referência 05 autoriza esse tratamento no mobile, não substitui a composição desktop. |
+| Composer e Responder/Nota interna | adaptation | Campo vazio e microfone são o estado real sem rascunho, enquanto a referência mostra texto já escrito e enviar. O diff preserva handlers, bloqueios, anexo, emoji, sugestão e modos, reorganizando as ferramentas. |
+| Ficha desktop | contradicted / missing | Em `comparacao-desktop.png`, a ficha real mantém cartão compacto, não apresenta avatar de identidade nem os ícones que dão hierarquia às seções da referência 06; ações continuam em 28px (`CRMSidePanel.tsx:511,521,529`). A função existe, mas o acabamento aprovado não foi traduzido para esse painel. |
+| TopBar em 768px | contradicted | `lista-768.png`: texto/atalho de busca invade os controles à direita. `medidas-lista.json` registra busca com 26×36px. `TopBar.tsx`/`SearchTrigger.tsx` expandem o conteúdo em `md` global embora só restem 528px após a sidebar. |
+| TYPE | adaptation, com correção de metadados | A especificação aceita Atkinson já carregada no CRM e deixa Poppins condicionada a avaliação; não exigir fonte nova. Contudo o selo de estado em `ConversationHeader.tsx:158` permanece `text-[10px]`, abaixo do mínimo de 12px da especificação; a ficha também preserva selos de 10px. |
+| MATERIAL | match | Interface de superfícies planas e ícones reais, sem material fotográfico/rasters solicitado no produto. Não há obrigação de gerar assets raster e não há substituição de ilustração por CSS. |
+| GROUND | adaptation | Amostra do vazio na referência 05: `#fdfdfd`; na captura mobile: `#fbfaff`. O leve tom frio do resultado é explicitamente autorizado pelo token `canvas: #FBFAFF` da especificação. Não há desvio para creme. |
+
+THESIS: legibilidade e operação estão encaminhadas, mas a colisão em 768px e os controles da ficha ainda falham. OWN-WORLD: estrutura padrão reconhecível; preservação de marca falha no seletor. STORY: lista, conversa, responder/nota e ficha existem no código; as capturas estáticas não demonstram foco/retorno/envio. FIRST VIEWPORT: primeiras conversas e composer alcançáveis nas capturas; a barra superior de 768px falha. FORM: componentes reais, ícones do mapa existente e nenhum raster de tela; nenhum seed foi comprovado ou inventado.
+
+## ceiling
+
+A referência aprovada é o teto informado. Faltam os dispositivos nativos desse desenho na ficha: avatar como âncora de identidade, ícones canônicos nas seções e uma hierarquia de títulos/espaçamentos que diferencie os grupos sem depender de cartões. A conversa também perde o ritmo dos avatares recebidos e a suavidade do balão enviado no desktop. O piso não exige acrescentar movimento ornamental a um atendimento; não introduzir animação para preencher esse item.
+
+Dados do harness foram declarados sintéticos no briefing e nas comparações. Nenhuma alegação comercial nova foi observada. As capturas não validam backend, envio, Realtime, teclado físico/virtual ou aparelho móvel. Dark mode e marcas personalizadas têm caminhos no código, mas não foram capturados neste pacote; a preservação deles não está demonstrada visualmente.
+
+## material_fixes
+
+1. **Marca / OWN-WORLD:** corrigir os gates de fallback em `inbox-workspace.css:36,55` para verificar o marcador de instalação no documento, preservando os tokens resolvidos em ambos os temas; verificar instalação com marca e sem override de organização, organização com override e caso padrão, sem inventar novas regras de marca.
+2. **Fidelidade da conversa:** restaurar o avatar de identidade nas mensagens recebidas conforme referências 05/06 e aplicar no desktop o balão enviado lavanda com texto escuro, preservando o violeta mobile e os estados especiais de nota, falha, mídia e citação; evidência: `comparacao-conversa.png`/`comparacao-desktop.png`.
+3. **Fidelidade da ficha e TYPE:** traduzir a ficha real para a hierarquia da referência 06 com avatar/ícones canônicos, títulos e separações; ampliar ações da ficha para a meta de 44px e metadados/selo de estado para pelo menos 12px; manter os mesmos dados, condições, handlers e seções (`CRMSidePanel.tsx:490–529`, `ConversationHeader.tsx:158`).
+4. **FIRST VIEWPORT / toque:** corrigir TopBar/SearchTrigger pelo espaço útil, impedindo a colisão de busca/atalho com alertas em `lista-768.png` e mantendo alvo de pelo menos 44×44px no tablet; confirmar também 320/390/1440 após o ajuste e considerar o efeito nos outros caminhos que compartilham o shell.
+5. **Piso / citações:** remover a borda lateral colorida de 2px nas faixas de citação em `Composer.tsx:264` e `MessageBubble.tsx:131`, preservando reconhecimento, autor, recorte de conteúdo e cancelar; usar superfície/linha neutra consistente. São os dois achados do detector fornecido, não um segundo detector.
+6. **Piso / superfícies do navegador:** manter a mesma paleta aprovada em foco, menus, popovers e ficha aberta. O fallback violeta declara só papéis locais em `.inbox-workspace`, enquanto o mapa global de foco consome paradas como `--color-accent-500` e Radix porta para `body` (`lib/branding/css.ts`). Corrigir o escopo sem vazar cor para outras jornadas e conferir tema escuro e personalização nas capturas pós-correção.
+7. **Persistência / prova:** registrar o contrato de cinco blocos, a referência efetivamente aprovada e a adaptação do fluxo de revisão ao CRM existente; nomear a ausência de state/spec/diff em vez de afirmar gates executados, e arquivar comparações pós-correção e medidas como evidência. Não fabricar roll, seed ou score de reprodução.
+
+## keep
+
+Preservar a navegação violeta, os painéis claros e seleção lavanda, a legibilidade da Atkinson, o reflow pela largura útil, os controles explícitos e todas as condições/handlers existentes de atendimento, marca e temas; a revisão visual não libera merge/publicação nem substitui E2E real e a segunda revisão no PR.

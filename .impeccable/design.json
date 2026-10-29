@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T18:00:53Z",
+  "generatedAt": "2026-10-29T18:29:16Z",
   "title": "Design System: CRM — Inbox",
   "extensions": {
     "colorMeta": {
@@ -608,12 +608,12 @@
       "css": ".ds-contact{display:flex;flex-direction:column;gap:20px;padding:16px;background:var(--color-surface,#fff);color:var(--color-text,#1f1533);font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;}.ds-contact-title{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;font-weight:600;}.ds-contact-identity{display:flex;align-items:center;gap:12px;margin-top:12px;}.ds-contact-avatar{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:44px;height:44px;border-radius:14px;background:var(--color-accent-soft,#ede9fe);color:var(--color-accent,#6d28d9);}.ds-contact-name{font-size:14px;font-weight:500;}.ds-contact-phone,.ds-contact-empty{margin:4px 0 0;font-size:12px;color:var(--color-text-muted,#625a75);}"
     },
     {
-      "name": "Campo do compositor",
+      "name": "Compositor e modos",
       "kind": "input",
       "refersTo": "composer-field",
-      "description": "Campo de escrita legível; os modos, bloqueios e handlers permanecem no componente React existente.",
-      "html": "<textarea class=\"ds-composer-field\" rows=\"2\" aria-label=\"Mensagem\" placeholder=\"Escreva uma mensagem…\"></textarea>",
-      "css": ".ds-composer-field{display:block;width:100%;min-width:0;min-height:56px;max-height:160px;resize:none;border:1px solid var(--color-border-strong,#9a87b2);border-radius:12px;padding:8px 12px;background:var(--color-surface,#fff);color:var(--color-text,#1f1533);font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;font-size:16px;line-height:1.5;}.ds-composer-field::placeholder{color:var(--color-text-muted,#625a75);}.ds-composer-field:focus{outline:none;box-shadow:0 0 0 1px var(--ring,#6d28d9);}.ds-composer-field:disabled{cursor:not-allowed;opacity:.5;}@media(forced-colors:active){.ds-composer-field:focus-visible{outline:2px solid Highlight;outline-offset:2px;}}"
+      "description": "Campo real com modos Responder/Nota interna; nota selecionada usa superfície opaca e tinta semântica do tema, com contorno fino.",
+      "html": "<div class=\"ds-composer-sample\"><div class=\"ds-composer-modes\"><button class=\"ds-composer-mode\" type=\"button\" aria-pressed=\"false\">Responder</button><button class=\"ds-composer-mode ds-composer-note\" type=\"button\" aria-pressed=\"true\">Nota interna</button></div><textarea class=\"ds-composer-field\" rows=\"2\" aria-label=\"Mensagem\" placeholder=\"Escreva uma nota interna… (só o time vê)\"></textarea></div>",
+      "css": ".ds-composer-field{display:block;width:100%;min-width:0;min-height:56px;max-height:160px;resize:none;border:1px solid var(--color-border-strong,#9a87b2);border-radius:12px;padding:8px 12px;background:var(--color-surface,#fff);color:var(--color-text,#1f1533);font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;font-size:16px;line-height:1.5;}.ds-composer-field::placeholder{color:var(--color-text-muted,#625a75);}.ds-composer-field:focus{outline:none;box-shadow:0 0 0 1px var(--ring,#6d28d9);}.ds-composer-field:disabled{cursor:not-allowed;opacity:.5;}@media(forced-colors:active){.ds-composer-field:focus-visible{outline:2px solid Highlight;outline-offset:2px;}}.ds-composer-sample{padding:12px 16px;background:var(--color-warning-bg,rgba(176,122,43,.12));}.ds-composer-modes{display:flex;gap:8px;margin-bottom:8px;}.ds-composer-mode{min-height:44px;border:0;border-radius:10px;padding:8px 12px;background:transparent;color:var(--color-text-muted,#625a75);font-family:var(--font-atkinson),ui-sans-serif,system-ui,sans-serif;font-size:12px;font-weight:500;line-height:16px;cursor:pointer;transition:background-color 150ms,color 150ms;}.ds-composer-mode:hover{background:var(--color-surface-elevated,#f3f0fa);}.ds-composer-mode[aria-pressed=true]{background:var(--color-accent-soft,#ede9fe);color:var(--color-accent,#6d28d9);}.ds-composer-note[aria-pressed=true]{background:var(--color-surface,#fff);color:var(--color-warning-fg,#875a1a);box-shadow:inset 0 0 0 1px var(--color-warning-fg,#875a1a);}.ds-composer-mode:focus-visible{outline:2px solid var(--color-accent-500,#7c3aed);outline-offset:2px;}@media(forced-colors:active){.ds-composer-mode:focus-visible{outline:2px solid Highlight;}}"
     }
   ],
   "narrative": {
