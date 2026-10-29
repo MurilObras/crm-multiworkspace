@@ -18,9 +18,12 @@ import { useDebugToggle } from "@/hooks/ai/useDebugToggle";
 import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
 import type { Message, Note } from "@/lib/types/messaging";
+import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 interface Props {
   conversationId: string | null;
+  contact?: ConversationWithContact["contacts"];
   /** Escolher uma mensagem para responder. Sobe até o composer. */
   onResponder?: (m: Message) => void;
 }
@@ -59,7 +62,7 @@ function dayLabel(
   return format(d, "dd/MM/yyyy", { locale: locale });
 }
 
-export function ChatThread({ conversationId, onResponder }: Props) {
+export function ChatThread({ conversationId, onResponder, contact }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useMessagesRealtime(conversationId);
@@ -245,6 +248,12 @@ export function ChatThread({ conversationId, onResponder }: Props) {
               ) : (
                 <MessageBubble
                   canManage={canManage}
+                  contactName={contact ? rotuloDoContato(contact) : undefined}
+                  contactAvatarUrl={
+                    contact?.avatar_storage_path && !contact.is_anonymized
+                      ? `/api/v1/contacts/${contact.id}/avatar`
+                      : null
+                  }
                   key={`msg-${item.data.id}`}
                   message={item.data}
                   debugCitations={debugCitations}

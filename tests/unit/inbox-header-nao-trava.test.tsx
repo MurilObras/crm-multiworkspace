@@ -113,16 +113,10 @@ describe("header do inbox — não trava a largura da tela", () => {
 
   it('"Ver contato" existe no DOM e só se cala onde há outra porta', () => {
     renderHeader();
-    // Ele NÃO sai do markup: some por CSS a partir de `xl`, exatamente a largura
-    // em que o painel lateral entra na tela com um "Ver contato" próprio. A
-    // distinção importa — remover do DOM tiraria a ação de quem usa 1024px, que
-    // é onde o painel não existe e esta é a única porta para o contato.
+    // O destino continua disponível no markup. A exclusão visual da duplicata
+    // depende da largura útil, conferida pelo teste de layout no navegador.
     const link = screen.getByText("Ver contato").closest("a, button") as HTMLElement;
     expect(link, "o link para o contato sumiu do markup").toBeTruthy();
-    const classes = `${link.className} ${link.parentElement?.className ?? ""}`;
-    expect(
-      classes,
-      "sem `xl:hidden`, a duplicata volta e o header ganha uma segunda linha em 1280px",
-    ).toContain("xl:hidden");
+    expect(link).toHaveAttribute("href", "/app/contacts/ct-1");
   });
 });

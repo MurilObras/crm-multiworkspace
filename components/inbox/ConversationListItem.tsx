@@ -103,7 +103,8 @@ function relativeTime(iso: string | null, locale: Locale): string {
 /** "Aguardando há 5 min" — desde a última mensagem do cliente (fallback: criação). */
 function waitingLabel(
   conversation: ConversationWithContact,
-  t: (texto: string) => string = (texto) => texto, locale: Locale,
+  t: (texto: string) => string = (texto) => texto,
+  locale: Locale,
 ): string {
   const since = conversation.last_inbound_at ?? conversation.created_at;
   if (!since) return t("Aguardando");
@@ -132,7 +133,6 @@ export function ConversationListItem({
   const truncated = preview.length > 60 ? `${preview.slice(0, 60)}…` : preview;
   const time = relativeTime(conversation.last_message_at, localeDaData);
   const unread = conversation.unread_count_for_assignee ?? 0;
-
 
   /**
    * Quem manda, pela MESMA regra do cabeçalho.
@@ -174,27 +174,20 @@ export function ConversationListItem({
       data-conversation-id={conversation.id}
       onClick={() => onSelect(conversation.id)}
       className={cn(
-        "group relative flex w-full items-start gap-3 border-b border-border/70 px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated",
-        "focus-visible:outline-hidden focus-visible:bg-surface-elevated",
+        "inbox-row group relative flex w-full items-start gap-3 border-b border-border/70 px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated",
+        "focus-visible:bg-surface-elevated focus-visible:outline-hidden",
         isSelected && "bg-accent-50 hover:bg-accent-50",
       )}
       aria-current={isSelected ? "true" : undefined}
     >
-      {isSelected && (
-        <span className="absolute inset-y-0 left-0 w-0.5 bg-accent" aria-hidden />
-      )}
       <div className="relative shrink-0">
-        <Avatar className="h-10 w-10">
+        <Avatar className="inbox-row-avatar h-10 w-10">
           {/* Só monta a <img> quando existe arquivo: sem isso o browser pediria
               a rota para TODO contato da lista e levaria 404 em cada um sem
               foto — que é a maioria. O AvatarFallback do Radix já cobre o caso
               de a imagem não carregar, então as iniciais nunca somem. */}
           {c?.avatar_storage_path && !c?.is_anonymized ? (
-            <AvatarImage
-              src={`/api/v1/contacts/${c.id}/avatar`}
-              alt=""
-              className="object-cover"
-            />
+            <AvatarImage src={`/api/v1/contacts/${c.id}/avatar`} alt="" className="object-cover" />
           ) : null}
           <AvatarFallback className="bg-surface-elevated text-xs font-medium text-text-muted">
             {initials(displayName, phoneFallback)}
@@ -202,7 +195,7 @@ export function ConversationListItem({
         </Avatar>
         <span
           className={cn(
-            "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background",
+            "absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full border-2 border-background",
             dot,
           )}
           aria-hidden
@@ -210,36 +203,23 @@ export function ConversationListItem({
       </div>
 
       <div className="min-w-0 flex-1">
-        {queuePosition !== undefined && (
-          <div className="mb-1 flex items-center gap-1.5">
-            <span
-              className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-soft px-1 text-[10px] font-medium tabular-nums text-accent"
-              aria-label={`${t("Posição")} ${queuePosition} ${t("na fila")}`}
-            >
-              {queuePosition}º
-            </span>
-            <span className="text-[11px] text-text-muted">
-              {waitingLabel(conversation, t, localeDaData)}
-            </span>
-          </div>
-        )}
         <div className="flex items-baseline justify-between gap-2">
           <span
             className={cn(
-              "truncate text-sm",
+              "inbox-row-name truncate text-sm",
               unread > 0 ? "font-semibold text-text" : "font-medium text-text",
-              c?.is_anonymized && "font-normal italic text-text-muted",
+              c?.is_anonymized && "font-normal text-text-muted italic",
             )}
           >
             {displayName}
           </span>
-          <span className="shrink-0 text-[11px] tabular-nums text-text-subtle">{time}</span>
+          <span className="inbox-row-time shrink-0 tabular-nums">{time}</span>
         </div>
 
         <div className="mt-0.5 flex items-center justify-between gap-2">
           <p
             className={cn(
-              "min-w-0 truncate text-[13px]",
+              "inbox-row-preview min-w-0 truncate text-[13px]",
               unread > 0 ? "text-text" : "text-text-muted",
             )}
           >
@@ -249,29 +229,39 @@ export function ConversationListItem({
             {truncated}
           </p>
           {unread > 0 && (
-            <span className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-semibold tabular-nums text-accent-foreground">
+            <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-semibold text-accent-foreground tabular-nums">
               {unread}
             </span>
           )}
         </div>
 
+        {queuePosition !== undefined && (
+          <div className="inbox-queue">
+            <span
+              className="inbox-queue-position tabular-nums"
+              aria-label={`${t("Posição")} ${queuePosition} ${t("na fila")}`}
+            >
+              {queuePosition}º {t("na fila")}
+            </span>
+            <span className="text-text-muted">{waitingLabel(conversation, t, localeDaData)}</span>
+          </div>
+        )}
+
         {temSelos && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1">
             {visibleTags.map((t) => (
-              <Badge key={t} variant="secondary" className="h-4 px-1.5 text-[10px]">
+              <Badge key={t} variant="secondary" className="min-h-5 px-1.5 text-xs">
                 {t}
               </Badge>
             ))}
-            {overflow > 0 && (
-              <span className="text-[10px] text-text-muted">+{overflow}</span>
-            )}
+            {overflow > 0 && <span className="text-xs text-text-muted">+{overflow}</span>}
             {mostrarAtendente && comando.quem === "humano" && (
-              <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} compacto />
+              <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} />
             )}
             {mostrarCanal && rotuloCanal && (
               <Badge
                 variant="outline"
-                className="h-4 gap-1 px-1.5 text-[10px] font-normal text-text-muted"
+                className="min-h-5 gap-1 px-1.5 text-xs font-normal text-text-muted"
                 title={`${t("Entrou por")} ${rotuloCanal}`}
               >
                 <Phone size={9} weight="regular" aria-hidden />
@@ -279,12 +269,12 @@ export function ConversationListItem({
               </Badge>
             )}
             {c?.is_blocked && (
-              <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
+              <Badge variant="destructive" className="min-h-5 px-1.5 text-xs">
                 {t("Bloqueado")}
               </Badge>
             )}
             {c?.is_anonymized && (
-              <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+              <Badge variant="outline" className="min-h-5 px-1.5 text-xs">
                 {t("Anonimizado")}
               </Badge>
             )}

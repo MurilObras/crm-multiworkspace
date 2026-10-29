@@ -5,6 +5,7 @@ import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { Phone, ArrowRight } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
@@ -126,8 +127,7 @@ export function ConversationHeader({ conversation }: Props) {
    * distribui sem calar, de propósito, senão uma org em round_robin ficaria sem
    * automático nenhum.
    */
-  const podePausar =
-    automaticoAtivo && !encerrada && conversation.assigned_to_user_id !== null;
+  const podePausar = automaticoAtivo && !encerrada && conversation.assigned_to_user_id !== null;
 
   return (
     // `flex-wrap` porque este header travava a LARGURA DA TELA INTEIRA. Ele
@@ -141,71 +141,96 @@ export function ConversationHeader({ conversation }: Props) {
     // de antes (uma linha), e quando aperta a barra desce para a linha de baixo.
     // Nenhuma ação some — um menu "mais" esconderia o "Lembrar" que a spec
     // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="truncate text-sm font-semibold">{displayName}</h2>
-          <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-            {t(STATUS_LABEL[status] ?? status)}
-          </Badge>
-          {/* Ao lado do estado, não escondido num painel: a pergunta "dá para
+    <div className="inbox-conversation-header flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
+      <div className="inbox-conversation-identity">
+        <Avatar className="inbox-contact-avatar">
+          {c?.avatar_storage_path && !c.is_anonymized && (
+            <AvatarImage src={`/api/v1/contacts/${c.id}/avatar`} alt="" />
+          )}
+          <AvatarFallback>
+            {displayName
+              .split(/\s+/)
+              .filter(Boolean)
+              .slice(0, 2)
+              .map((part) => part[0])
+              .join("")
+              .toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="truncate text-sm font-semibold">{displayName}</h2>
+            <Badge variant="outline" className="min-h-5 px-1.5 text-xs">
+              {t(STATUS_LABEL[status] ?? status)}
+            </Badge>
+            {/* Ao lado do estado, não escondido num painel: a pergunta "dá para
               escrever agora?" se faz ANTES de digitar, não depois de receber um
               `failed` com um código de cinco dígitos. */}
-          <JanelaSelo
-            provider={conversation.channel_sessions?.provider ?? null}
-            lastInboundAt={conversation.last_inbound_at}
-          />
-          {/* Sem esta marca, a conversa em que o robô está calado tem exatamente
+            <JanelaSelo
+              provider={conversation.channel_sessions?.provider ?? null}
+              lastInboundAt={conversation.last_inbound_at}
+            />
+            {/* Sem esta marca, a conversa em que o robô está calado tem exatamente
               a mesma cara de uma conversa normal — e ninguém entende por que as
               respostas automáticas pararam.
               O testid é o MESMO de antes de propósito: `escalacao-ciclo.spec.ts`
               o clica, e rótulo visível é contrato. O que mudou é o texto DIZER o
               motivo — "alguém assumiu" e "pausado para este cliente" pediam ações
               diferentes e tinham a mesma frase. */}
-          {motivo !== null && (
-            <Badge
-              variant="outline"
-              className="h-auto max-w-full whitespace-normal px-1.5 text-[10px] leading-4"
-              data-testid="badge-atendimento-humano"
-            >
-              <span className="min-w-0">
-              {t(ROTULO_DO_MOTIVO[motivo])}
-              {silencioAte && <> · {t("Retorno previsto")}: {silencioAte.toLocaleString(idiomaDaData, {
-                day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
-                timeZone: fuso,
-              })}</>}
-              </span>
-            </Badge>
-          )}
-        </div>
+            {motivo !== null && (
+              <Badge
+                variant="outline"
+                className="h-auto max-w-full px-1.5 text-xs leading-4 whitespace-normal"
+                data-testid="badge-atendimento-humano"
+              >
+                <span className="min-w-0">
+                  {t(ROTULO_DO_MOTIVO[motivo])}
+                  {silencioAte && (
+                    <>
+                      {" "}
+                      · {t("Retorno previsto")}:{" "}
+                      {silencioAte.toLocaleString(idiomaDaData, {
+                        day: "2-digit",
+                        month: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        timeZone: fuso,
+                      })}
+                    </>
+                  )}
+                </span>
+              </Badge>
+            )}
+          </div>
 
-        {/* QUEM ESTÁ NO COMANDO, com nome e por GEOMETRIA — disco cheio para
+          {/* QUEM ESTÁ NO COMANDO, com nome e por GEOMETRIA — disco cheio para
             pessoa, anel vazado para o automático. É o mesmo componente do card do
             funil e do dossiê: um terceiro jeito de dizer "quem manda", por cor ou
             por texto, faria a mesma pergunta ter três respostas diferentes na
             mesma tela. Cor não sobrevive ao daltonismo nem ao teste do metro. */}
-        <div className="mt-1 flex items-center gap-2" data-testid="comando-da-conversa">
-          {comando.quem === "humano" ? (
-            <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} />
-          ) : comando.quem === "automatico" ? (
-            <OwnerBadge ownerKind="ai" ownerName={t("Automático")} />
-          ) : (
-            // `ninguem`, `aguardando` e `encerrada` sem dono caem aqui: o disco
-            // TRACEJADO do OwnerBadge, que é como o funil já desenha "ninguém".
-            <OwnerBadge ownerKind={null} ownerName={null} />
+          <div className="mt-1 flex items-center gap-2" data-testid="comando-da-conversa">
+            {comando.quem === "humano" ? (
+              <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} />
+            ) : comando.quem === "automatico" ? (
+              <OwnerBadge ownerKind="ai" ownerName={t("Automático")} />
+            ) : (
+              // `ninguem`, `aguardando` e `encerrada` sem dono caem aqui: o disco
+              // TRACEJADO do OwnerBadge, que é como o funil já desenha "ninguém".
+              <OwnerBadge ownerKind={null} ownerName={null} />
+            )}
+          </div>
+          {phone && (
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+              <Phone size={11} weight="regular" aria-hidden /> {phone}
+            </p>
           )}
         </div>
-        {phone && (
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-            <Phone size={11} weight="regular" aria-hidden /> {phone}
-          </p>
-        )}
       </div>
 
       {/* `shrink-0` saiu daqui: era ele que impunha o piso de largura. Agora a
           barra pode encolher e quebrar internamente, e os botões continuam
           todos visíveis e clicáveis — só que em duas linhas quando preciso. */}
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="inbox-actions flex min-w-0 flex-wrap items-center gap-1.5">
         {isOpen && (
           <Button
             size="sm"
@@ -262,7 +287,9 @@ export function ConversationHeader({ conversation }: Props) {
             // que às vezes faz mais do que o nome promete precisa dizer quando.
             title={
               motivo === "contato_travado"
-                ? t("Religa o atendimento automático para este cliente — vale para todas as conversas dele.")
+                ? t(
+                    "Religa o atendimento automático para este cliente — vale para todas as conversas dele.",
+                  )
                 : t("Devolve esta conversa ao atendimento automático.")
             }
             onClick={() => retomar.mutate({ conversation_id: conversation.id })}
@@ -310,19 +337,10 @@ export function ConversationHeader({ conversation }: Props) {
             {t("Fechar")}
           </Button>
         )}
-        {/* `xl:hidden` porque a partir de 1280px o painel lateral de CRM entra
-            na tela — e ele já tem um "Ver contato", para o MESMO contato, a um
-            palmo de distância. Duas portas idênticas na mesma tela não são
-            redundância inofensiva: são a linha a mais que empurrava a barra de
-            ações para uma segunda fileira justo na largura mais apertada.
-            Medido: sem a duplicata, os botões voltam a caber em UMA linha em
-            1280px.
-
-            Abaixo de 1280 o painel não existe, e aí esta é a única porta para o
-            contato — por isso a condição é a mesma do painel, e não um valor
-            escolhido à parte. Não é esconder ação; é não repeti-la. */}
+        {/* O link direto fica no layout intermediário. No celular a Ficha
+            dá acesso ao contato; no layout largo o painel já oferece a porta. */}
         {c?.id && (
-          <Button asChild size="sm" variant="ghost" className="xl:hidden">
+          <Button asChild size="sm" variant="ghost" className="inbox-contact-link">
             <Link href={`/app/contacts/${c.id}`} className="flex items-center gap-1">
               {t("Ver contato")}
               <ArrowRight size={12} weight="regular" aria-hidden />
