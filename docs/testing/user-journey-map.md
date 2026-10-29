@@ -2014,3 +2014,12 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 - [P0] Pausa humana, alteração de etapa e nova inbound no transporte continuam nos invariantes de turno e nos testes de outbound.
 - Diagnóstico: `llm_calls.job_id` associa a decisão persistida ao ledger e à mensagem correta. Registros antigos sem decisão permanecem sem esse dado.
 - Laço de retorno: gestor vê o motivo, altera condições/política pelas telas e repete o cenário fictício. Detalhes e matriz: `docs/testing/contextual-media-intent.md`.
+
+## Atendimento responsivo — 2026-10-29
+
+- [P1] Busca global, troca de workspace, alertas e menu permanecem sem colisão no cabeçalho; lista e conversa se alternam pela seleção em áreas estreitas.
+- [P1] A lista continua visível quando há pelo menos 760px úteis; a ficha lateral entra desde 1100px úteis. Quando não cabe, a ficha abre pela ação existente, sem perder a seleção ao fechar.
+- [P1] Rascunho permanece ao alternar Responder e Nota interna. Citação, cancelar e troca de conversa conservam a cobertura existente.
+- Prova integrada adicionada ao cenário com fixtures próprias de `inbox-responder-citando.spec.ts`: 320, 390, 768, 1024, 1280 e 1440px. Não envia mensagens externas. Execução completa depende do ambiente E2E isolado.
+- [P1] `inbox-viewport.test.tsx` cobre redução/restauração da área visível, zoom, aviso acima do atendimento e limpeza ao sair da rota. Isso não substitui ensaio em aparelho físico.
+- Evidências locais de componentes com dados sintéticos e pareceres de revisão ficam em `.superpowers/evidence/inbox-regulatis/`. Integração com serviços reais e testes do PR são registrados separadamente; a prévia não comprova entrega.

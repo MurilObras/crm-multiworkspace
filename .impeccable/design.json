@@ -1,0 +1,670 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-29T18:00:53Z",
+  "title": "Design System: CRM — Inbox",
+  "extensions": {
+    "colorMeta": {
+      "chrome": {
+        "role": "primary",
+        "displayName": "Estrutura profunda",
+        "canonical": "color-mix(in srgb, var(--color-brand, #6d28d9) 24%, #100b21)",
+        "tonalRamp": [
+          "oklch(15% 0.0315 293.16)",
+          "oklch(26% 0.0625 293.16)",
+          "oklch(38% 0.0878 293.16)",
+          "oklch(49% 0.1002 293.16)",
+          "oklch(61% 0.1002 293.16)",
+          "oklch(72% 0.0878 293.16)",
+          "oklch(84% 0.0625 293.16)",
+          "oklch(95% 0.0315 293.16)"
+        ]
+      },
+      "chrome-text": {
+        "role": "neutral",
+        "displayName": "Frente da estrutura",
+        "canonical": "#faf7ff",
+        "tonalRamp": [
+          "oklch(15% 0.0034 303.12)",
+          "oklch(26% 0.0067 303.12)",
+          "oklch(38% 0.0095 303.12)",
+          "oklch(49% 0.0108 303.12)",
+          "oklch(61% 0.0108 303.12)",
+          "oklch(72% 0.0095 303.12)",
+          "oklch(84% 0.0067 303.12)",
+          "oklch(95% 0.0034 303.12)"
+        ]
+      },
+      "chrome-muted": {
+        "role": "neutral",
+        "displayName": "Apoio da estrutura",
+        "canonical": "#ddd2f1",
+        "tonalRamp": [
+          "oklch(15% 0.0135 301.65)",
+          "oklch(26% 0.0268 301.65)",
+          "oklch(38% 0.0376 301.65)",
+          "oklch(49% 0.0429 301.65)",
+          "oklch(61% 0.0429 301.65)",
+          "oklch(72% 0.0376 301.65)",
+          "oklch(84% 0.0268 301.65)",
+          "oklch(95% 0.0135 301.65)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Tela fria",
+        "canonical": "#fbfaff",
+        "tonalRamp": [
+          "oklch(15% 0.0021 295.45)",
+          "oklch(26% 0.0041 295.45)",
+          "oklch(38% 0.0057 295.45)",
+          "oklch(49% 0.0066 295.45)",
+          "oklch(61% 0.0066 295.45)",
+          "oklch(72% 0.0057 295.45)",
+          "oklch(84% 0.0041 295.45)",
+          "oklch(95% 0.0021 295.45)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Painel claro",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(26% 0.0000 89.88)",
+          "oklch(38% 0.0000 89.88)",
+          "oklch(49% 0.0000 89.88)",
+          "oklch(61% 0.0000 89.88)",
+          "oklch(72% 0.0000 89.88)",
+          "oklch(84% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "surface-elevated": {
+        "role": "neutral",
+        "displayName": "Faixa de controles",
+        "canonical": "#f3f0fa",
+        "tonalRamp": [
+          "oklch(15% 0.0042 299.80)",
+          "oklch(26% 0.0084 299.80)",
+          "oklch(38% 0.0117 299.80)",
+          "oklch(49% 0.0134 299.80)",
+          "oklch(61% 0.0134 299.80)",
+          "oklch(72% 0.0117 299.80)",
+          "oklch(84% 0.0084 299.80)",
+          "oklch(95% 0.0042 299.80)"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Tinta de leitura",
+        "canonical": "#1f1533",
+        "tonalRamp": [
+          "oklch(15% 0.0177 296.95)",
+          "oklch(26% 0.0351 296.95)",
+          "oklch(38% 0.0492 296.95)",
+          "oklch(49% 0.0562 296.95)",
+          "oklch(61% 0.0562 296.95)",
+          "oklch(72% 0.0492 296.95)",
+          "oklch(84% 0.0351 296.95)",
+          "oklch(95% 0.0177 296.95)"
+        ]
+      },
+      "text-muted": {
+        "role": "neutral",
+        "displayName": "Texto de apoio",
+        "canonical": "#625a75",
+        "tonalRamp": [
+          "oklch(15% 0.0135 298.33)",
+          "oklch(26% 0.0268 298.33)",
+          "oklch(38% 0.0376 298.33)",
+          "oklch(49% 0.0429 298.33)",
+          "oklch(61% 0.0429 298.33)",
+          "oklch(72% 0.0376 298.33)",
+          "oklch(84% 0.0268 298.33)",
+          "oklch(95% 0.0135 298.33)"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Divisória suave",
+        "canonical": "#e8e1f3",
+        "tonalRamp": [
+          "oklch(15% 0.0078 303.47)",
+          "oklch(26% 0.0155 303.47)",
+          "oklch(38% 0.0217 303.47)",
+          "oklch(49% 0.0248 303.47)",
+          "oklch(61% 0.0248 303.47)",
+          "oklch(72% 0.0217 303.47)",
+          "oklch(84% 0.0155 303.47)",
+          "oklch(95% 0.0078 303.47)"
+        ]
+      },
+      "control-border": {
+        "role": "neutral",
+        "displayName": "Contorno funcional",
+        "canonical": "#9a87b2",
+        "tonalRamp": [
+          "oklch(15% 0.0205 304.77)",
+          "oklch(26% 0.0406 304.77)",
+          "oklch(38% 0.0570 304.77)",
+          "oklch(49% 0.0651 304.77)",
+          "oklch(61% 0.0651 304.77)",
+          "oklch(72% 0.0570 304.77)",
+          "oklch(84% 0.0406 304.77)",
+          "oklch(95% 0.0205 304.77)"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Destaque violeta",
+        "canonical": "#6d28d9",
+        "tonalRamp": [
+          "#21103f",
+          "#3b176c",
+          "#4c1d95",
+          "#5b21b6",
+          "#6d28d9",
+          "#a78bfa",
+          "#ddd6fe",
+          "#f5f2ff"
+        ]
+      },
+      "accent-foreground": {
+        "role": "neutral",
+        "displayName": "Frente da ação",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(26% 0.0000 89.88)",
+          "oklch(38% 0.0000 89.88)",
+          "oklch(49% 0.0000 89.88)",
+          "oklch(61% 0.0000 89.88)",
+          "oklch(72% 0.0000 89.88)",
+          "oklch(84% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Lavanda de seleção",
+        "canonical": "#ede9fe",
+        "tonalRamp": [
+          "#21103f",
+          "#3b176c",
+          "#4c1d95",
+          "#5b21b6",
+          "#6d28d9",
+          "#a78bfa",
+          "#ddd6fe",
+          "#f5f2ff"
+        ]
+      },
+      "selected-row": {
+        "role": "primary",
+        "displayName": "Linha selecionada",
+        "canonical": "#f5f2ff",
+        "tonalRamp": [
+          "#21103f",
+          "#3b176c",
+          "#4c1d95",
+          "#5b21b6",
+          "#6d28d9",
+          "#a78bfa",
+          "#ddd6fe",
+          "#f5f2ff"
+        ]
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Destaque em hover",
+        "canonical": "#5b21b6",
+        "tonalRamp": [
+          "#21103f",
+          "#3b176c",
+          "#4c1d95",
+          "#5b21b6",
+          "#6d28d9",
+          "#a78bfa",
+          "#ddd6fe",
+          "#f5f2ff"
+        ]
+      },
+      "canvas-dark": {
+        "role": "neutral",
+        "displayName": "Tela escura",
+        "canonical": "#16121f",
+        "tonalRamp": [
+          "oklch(15% 0.0082 298.03)",
+          "oklch(26% 0.0162 298.03)",
+          "oklch(38% 0.0227 298.03)",
+          "oklch(49% 0.0259 298.03)",
+          "oklch(61% 0.0259 298.03)",
+          "oklch(72% 0.0227 298.03)",
+          "oklch(84% 0.0162 298.03)",
+          "oklch(95% 0.0082 298.03)"
+        ]
+      },
+      "surface-dark": {
+        "role": "neutral",
+        "displayName": "Painel escuro",
+        "canonical": "#1c1728",
+        "tonalRamp": [
+          "oklch(15% 0.0103 297.09)",
+          "oklch(26% 0.0204 297.09)",
+          "oklch(38% 0.0287 297.09)",
+          "oklch(49% 0.0327 297.09)",
+          "oklch(61% 0.0327 297.09)",
+          "oklch(72% 0.0287 297.09)",
+          "oklch(84% 0.0204 297.09)",
+          "oklch(95% 0.0103 297.09)"
+        ]
+      },
+      "surface-elevated-dark": {
+        "role": "neutral",
+        "displayName": "Faixa escura",
+        "canonical": "#2b233b",
+        "tonalRamp": [
+          "oklch(15% 0.0138 298.79)",
+          "oklch(26% 0.0273 298.79)",
+          "oklch(38% 0.0383 298.79)",
+          "oklch(49% 0.0438 298.79)",
+          "oklch(61% 0.0438 298.79)",
+          "oklch(72% 0.0383 298.79)",
+          "oklch(84% 0.0273 298.79)",
+          "oklch(95% 0.0138 298.79)"
+        ]
+      },
+      "text-dark": {
+        "role": "neutral",
+        "displayName": "Tinta clara",
+        "canonical": "#f5efff",
+        "tonalRamp": [
+          "oklch(15% 0.0068 302.94)",
+          "oklch(26% 0.0136 302.94)",
+          "oklch(38% 0.0191 302.94)",
+          "oklch(49% 0.0218 302.94)",
+          "oklch(61% 0.0218 302.94)",
+          "oklch(72% 0.0191 302.94)",
+          "oklch(84% 0.0136 302.94)",
+          "oklch(95% 0.0068 302.94)"
+        ]
+      },
+      "text-muted-dark": {
+        "role": "neutral",
+        "displayName": "Apoio no escuro",
+        "canonical": "#c4b8d8",
+        "tonalRamp": [
+          "oklch(15% 0.0143 302.42)",
+          "oklch(26% 0.0284 302.42)",
+          "oklch(38% 0.0399 302.42)",
+          "oklch(49% 0.0455 302.42)",
+          "oklch(61% 0.0455 302.42)",
+          "oklch(72% 0.0399 302.42)",
+          "oklch(84% 0.0284 302.42)",
+          "oklch(95% 0.0143 302.42)"
+        ]
+      },
+      "border-dark": {
+        "role": "neutral",
+        "displayName": "Divisória no escuro",
+        "canonical": "#3b304c",
+        "tonalRamp": [
+          "oklch(15% 0.0155 301.79)",
+          "oklch(26% 0.0308 301.79)",
+          "oklch(38% 0.0432 301.79)",
+          "oklch(49% 0.0493 301.79)",
+          "oklch(61% 0.0493 301.79)",
+          "oklch(72% 0.0432 301.79)",
+          "oklch(84% 0.0308 301.79)",
+          "oklch(95% 0.0155 301.79)"
+        ]
+      },
+      "control-border-dark": {
+        "role": "neutral",
+        "displayName": "Contorno no escuro",
+        "canonical": "#8d7aa8",
+        "tonalRamp": [
+          "oklch(15% 0.0221 303.25)",
+          "oklch(26% 0.0438 303.25)",
+          "oklch(38% 0.0615 303.25)",
+          "oklch(49% 0.0702 303.25)",
+          "oklch(61% 0.0702 303.25)",
+          "oklch(72% 0.0615 303.25)",
+          "oklch(84% 0.0438 303.25)",
+          "oklch(95% 0.0221 303.25)"
+        ]
+      },
+      "accent-dark": {
+        "role": "primary",
+        "displayName": "Destaque no escuro",
+        "canonical": "#c4a5ff",
+        "tonalRamp": [
+          "oklch(15% 0.0398 299.26)",
+          "oklch(26% 0.0790 299.26)",
+          "oklch(38% 0.1110 299.26)",
+          "oklch(49% 0.1267 299.26)",
+          "oklch(61% 0.1267 299.26)",
+          "oklch(72% 0.1110 299.26)",
+          "oklch(84% 0.0790 299.26)",
+          "oklch(95% 0.0398 299.26)"
+        ]
+      },
+      "accent-foreground-dark": {
+        "role": "neutral",
+        "displayName": "Frente da ação no escuro",
+        "canonical": "#201039",
+        "tonalRamp": [
+          "oklch(15% 0.0235 297.85)",
+          "oklch(26% 0.0467 297.85)",
+          "oklch(38% 0.0655 297.85)",
+          "oklch(49% 0.0748 297.85)",
+          "oklch(61% 0.0748 297.85)",
+          "oklch(72% 0.0655 297.85)",
+          "oklch(84% 0.0467 297.85)",
+          "oklch(95% 0.0235 297.85)"
+        ]
+      },
+      "accent-soft-dark": {
+        "role": "primary",
+        "displayName": "Seleção no escuro",
+        "canonical": "#35234d",
+        "tonalRamp": [
+          "oklch(15% 0.0234 301.81)",
+          "oklch(26% 0.0464 301.81)",
+          "oklch(38% 0.0652 301.81)",
+          "oklch(49% 0.0744 301.81)",
+          "oklch(61% 0.0744 301.81)",
+          "oklch(72% 0.0652 301.81)",
+          "oklch(84% 0.0464 301.81)",
+          "oklch(95% 0.0234 301.81)"
+        ]
+      },
+      "selected-row-dark": {
+        "role": "primary",
+        "displayName": "Linha selecionada no escuro",
+        "canonical": "#2c203c",
+        "tonalRamp": [
+          "oklch(15% 0.0163 302.80)",
+          "oklch(26% 0.0323 302.80)",
+          "oklch(38% 0.0453 302.80)",
+          "oklch(49% 0.0517 302.80)",
+          "oklch(61% 0.0517 302.80)",
+          "oklch(72% 0.0453 302.80)",
+          "oklch(84% 0.0323 302.80)",
+          "oklch(95% 0.0163 302.80)"
+        ]
+      },
+      "accent-hover-dark": {
+        "role": "primary",
+        "displayName": "Hover no escuro",
+        "canonical": "#d4bfff",
+        "tonalRamp": [
+          "oklch(15% 0.0280 299.50)",
+          "oklch(26% 0.0555 299.50)",
+          "oklch(38% 0.0779 299.50)",
+          "oklch(49% 0.0889 299.50)",
+          "oklch(61% 0.0889 299.50)",
+          "oklch(72% 0.0779 299.50)",
+          "oklch(84% 0.0555 299.50)",
+          "oklch(95% 0.0280 299.50)"
+        ]
+      },
+      "chrome-hover": {
+        "role": "primary",
+        "displayName": "Interação na estrutura profunda",
+        "canonical": "#34264c",
+        "tonalRamp": [
+          "oklch(15% 0.0211 299.32)",
+          "oklch(26% 0.0418 299.32)",
+          "oklch(38% 0.0587 299.32)",
+          "oklch(49% 0.0670 299.32)",
+          "oklch(61% 0.0670 299.32)",
+          "oklch(72% 0.0587 299.32)",
+          "oklch(84% 0.0418 299.32)",
+          "oklch(95% 0.0211 299.32)"
+        ]
+      },
+      "chrome-focus": {
+        "role": "primary",
+        "displayName": "Foco na estrutura profunda",
+        "canonical": "#e2ceff",
+        "tonalRamp": [
+          "oklch(15% 0.0215 303.57)",
+          "oklch(26% 0.0427 303.57)",
+          "oklch(38% 0.0600 303.57)",
+          "oklch(49% 0.0685 303.57)",
+          "oklch(61% 0.0685 303.57)",
+          "oklch(72% 0.0600 303.57)",
+          "oklch(84% 0.0427 303.57)",
+          "oklch(95% 0.0215 303.57)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Título da lista",
+        "purpose": "Título Inbox na área de filtros."
+      },
+      "identity": {
+        "displayName": "Identidade do contato",
+        "purpose": "Nome no cabeçalho e na lista mobile; peso condicionado à leitura."
+      },
+      "body": {
+        "displayName": "Texto de operação",
+        "purpose": "Campos e compositor mobile; a entrelinha declarada do balão não substitui o leading-snug de seus parágrafos."
+      },
+      "body-compact": {
+        "displayName": "Leitura compacta",
+        "purpose": "Nomes da lista e balões quando a largura útil alcança 760px."
+      },
+      "preview": {
+        "displayName": "Prévia compacta",
+        "purpose": "Prévia da lista nas composições com múltiplos painéis."
+      },
+      "label": {
+        "displayName": "Rótulo e metadados",
+        "purpose": "Abas, horários, fila e rótulos de operação."
+      }
+    },
+    "shadows": [
+      {
+        "name": "xs-light",
+        "value": "0 1px 2px 0 rgba(20, 18, 14, 0.04)",
+        "purpose": "Botão primário existente; --shadow-xs em globals.css."
+      },
+      {
+        "name": "sm-light",
+        "value": "0 1px 2px 0 rgba(20, 18, 14, 0.05), 0 1px 1px 0 rgba(20, 18, 14, 0.03)",
+        "purpose": "Balões; --shadow-sm em globals.css."
+      },
+      {
+        "name": "lg-light",
+        "value": "0 12px 32px -6px rgba(20, 18, 14, 0.10), 0 4px 12px -2px rgba(20, 18, 14, 0.06)",
+        "purpose": "Sheet herdado; --shadow-lg em globals.css."
+      },
+      {
+        "name": "xs-dark",
+        "value": "0 1px 2px 0 rgba(0, 0, 0, 0.30)",
+        "purpose": "Equivalente de --shadow-xs no tema escuro."
+      },
+      {
+        "name": "sm-dark",
+        "value": "0 1px 2px 0 rgba(0, 0, 0, 0.40), 0 1px 1px 0 rgba(0, 0, 0, 0.20)",
+        "purpose": "Equivalente de --shadow-sm no tema escuro."
+      },
+      {
+        "name": "lg-dark",
+        "value": "0 12px 32px -6px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.40)",
+        "purpose": "Equivalente de --shadow-lg no tema escuro."
+      }
+    ],
+    "motion": [
+      {
+        "name": "duration-fast",
+        "value": "120ms",
+        "purpose": "Transições de estado do botão e input comuns."
+      },
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.2, 0, 0, 1)",
+        "purpose": "Saída dos controles comuns."
+      },
+      {
+        "name": "sidebar-width",
+        "value": "200ms",
+        "purpose": "Transição de largura da sidebar existente; não é animação ornamental."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "inbox-two-panels",
+        "value": "760px"
+      },
+      {
+        "name": "inbox-three-panels",
+        "value": "1100px"
+      },
+      {
+        "name": "shell-bar-compact",
+        "value": "760px"
+      },
+      {
+        "name": "shell-sidebar-global-md",
+        "value": "768px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Enviar",
+      "kind": "button",
+      "refersTo": "button-send",
+      "description": "Botão de envio quando o rascunho ou o modo o exige; a condição real permanece no Composer.",
+      "html": "<button class=\"ds-send\" type=\"button\" aria-label=\"Enviar\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M231.4,44.34s0,.1,0,.15l-58.2,191.94a15.88,15.88,0,0,1-14,11.51q-.69.06-1.38.06a15.86,15.86,0,0,1-14.42-9.15L107,164.15a4,4,0,0,1,.77-4.58l57.92-57.92a8,8,0,0,0-11.31-11.31L96.43,148.26a4,4,0,0,1-4.58.77L17.08,112.64a16,16,0,0,1,2.49-29.8l191.94-58.2.15,0A16,16,0,0,1,231.4,44.34Z\"></path></svg></button>",
+      "css": ".ds-send{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;border-radius:4px;font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;font-size:12px;font-weight:500;line-height:16px;min-height:44px;padding:0 10px;cursor:pointer;transition:background-color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),border-color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),box-shadow var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),transform var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1));}.ds-send:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-bg,#fbfaff),0 0 0 4px var(--color-accent-500,#7c3aed);}.ds-send:active{transform:translateY(1px);}.ds-send:disabled{pointer-events:none;opacity:.5;cursor:default;}@media(forced-colors:active){.ds-send:focus-visible{outline:2px solid Highlight;outline-offset:2px;}}.ds-send{width:44px;height:44px;min-width:44px;padding:0;border:0;border-radius:12px;background:var(--color-accent,#6d28d9);color:var(--color-accent-fg,#fff);box-shadow:var(--shadow-xs,0 1px 2px 0 rgba(20,18,14,.04));}.ds-send:hover{background:var(--color-accent-hover,#5b21b6);}"
+    },
+    {
+      "name": "Ação primária",
+      "kind": "button",
+      "refersTo": "button-action-primary",
+      "description": "Expressão do botão Assumir, sem reproduzir ou alterar seus gates de domínio.",
+      "html": "<button class=\"ds-primary\" type=\"button\">Assumir</button>",
+      "css": ".ds-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;border-radius:4px;font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;font-size:12px;font-weight:500;line-height:16px;min-height:44px;padding:0 10px;cursor:pointer;transition:background-color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),border-color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),box-shadow var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),transform var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1));}.ds-primary:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-bg,#fbfaff),0 0 0 4px var(--color-accent-500,#7c3aed);}.ds-primary:active{transform:translateY(1px);}.ds-primary:disabled{pointer-events:none;opacity:.5;cursor:default;}@media(forced-colors:active){.ds-primary:focus-visible{outline:2px solid Highlight;outline-offset:2px;}}.ds-primary{border:0;background:var(--color-accent,#6d28d9);color:var(--color-accent-fg,#fff);box-shadow:var(--shadow-xs,0 1px 2px 0 rgba(20,18,14,.04));}.ds-primary:hover{background:var(--color-accent-hover,#5b21b6);}"
+    },
+    {
+      "name": "Ação outline",
+      "kind": "button",
+      "refersTo": "button-action-outline",
+      "description": "Ação secundária da conversa; contorno funcional e altura de toque do Inbox.",
+      "html": "<button class=\"ds-outline\" type=\"button\">Liberar</button>",
+      "css": ".ds-outline{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;border-radius:4px;font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;font-size:12px;font-weight:500;line-height:16px;min-height:44px;padding:0 10px;cursor:pointer;transition:background-color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),border-color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),box-shadow var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),transform var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1));}.ds-outline:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-bg,#fbfaff),0 0 0 4px var(--color-accent-500,#7c3aed);}.ds-outline:active{transform:translateY(1px);}.ds-outline:disabled{pointer-events:none;opacity:.5;cursor:default;}@media(forced-colors:active){.ds-outline:focus-visible{outline:2px solid Highlight;outline-offset:2px;}}.ds-outline{border:1px solid var(--color-border-strong,#9a87b2);background:transparent;color:var(--color-text,#1f1533);}.ds-outline:hover{border-color:var(--color-border-strong,#9a87b2);color:var(--color-accent,#6d28d9);}"
+    },
+    {
+      "name": "Ação ghost",
+      "kind": "button",
+      "refersTo": "button-action-ghost",
+      "description": "Acesso à ficha na toolbar: hover profundo e foco claro em uma região; superfície e destaque suaves no intermediário. A barra some na composição de três regiões.",
+      "html": "<div class=\"ds-toolbar-context\"><div class=\"ds-toolbar\"><button class=\"ds-ghost\" type=\"button\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M200,112a8,8,0,0,1-8,8H152a8,8,0,0,1,0-16h40A8,8,0,0,1,200,112Zm-8,24H152a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm40-80V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Zm-80.26-34a8,8,0,1,1-15.5,4c-2.63-10.26-13.06-18-24.25-18s-21.61,7.74-24.25,18a8,8,0,1,1-15.5-4,39.84,39.84,0,0,1,17.19-23.34,32,32,0,1,1,45.12,0A39.76,39.76,0,0,1,135.75,166ZM96,136a16,16,0,1,0-16-16A16,16,0,0,0,96,136Z\"></path></svg>Ficha</button></div></div>",
+      "css": ".ds-ghost{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;border-radius:4px;font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;font-size:12px;font-weight:500;line-height:16px;min-height:44px;padding:0 10px;cursor:pointer;transition:background-color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),border-color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),box-shadow var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),transform var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1));}.ds-ghost:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-bg,#fbfaff),0 0 0 4px var(--color-accent-500,#7c3aed);}.ds-ghost:active{transform:translateY(1px);}.ds-ghost:disabled{pointer-events:none;opacity:.5;cursor:default;}@media(forced-colors:active){.ds-ghost:focus-visible{outline:2px solid Highlight;outline-offset:2px;}}.ds-toolbar-context{container:ds-inbox-toolbar / inline-size;}.ds-toolbar{display:flex;justify-content:flex-end;min-height:44px;padding:0 4px;background:var(--inbox-chrome,color-mix(in srgb,var(--color-brand,#6d28d9) 24%,#100b21));color:var(--inbox-chrome-text,#faf7ff);}.ds-ghost{padding:0 8px;border:0;background:transparent;color:inherit;}.ds-ghost:hover{background:#34264c;color:var(--inbox-chrome-text,#faf7ff);}.ds-ghost:focus-visible{outline:2px solid #e2ceff;outline-offset:-3px;}@container ds-inbox-toolbar (width >= 760px){.ds-toolbar{background:var(--color-surface,#fff);color:var(--color-text,#1f1533);}.ds-ghost:hover{background:var(--color-accent-soft,#ede9fe);color:var(--color-accent,#6d28d9);}.ds-ghost:focus-visible{outline:none;}}@container ds-inbox-toolbar (width >= 1100px){.ds-toolbar{display:none;}}@media(forced-colors:active){.ds-ghost:focus-visible{outline:2px solid Highlight;outline-offset:2px;}}"
+    },
+    {
+      "name": "Busca de conversas",
+      "kind": "input",
+      "refersTo": "input-search",
+      "description": "Campo da lista em painel claro; no mobile a fonte real aplica o tratamento de chrome.",
+      "html": "<label class=\"ds-search\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z\"></path></svg><input class=\"ds-search-input\" aria-label=\"Buscar conversas\" placeholder=\"Buscar por nome, telefone ou mensagem…\"></label>",
+      "css": ".ds-search{position:relative;display:block;}.ds-search>svg{position:absolute;top:50%;left:12px;transform:translateY(-50%);pointer-events:none;color:var(--color-text-subtle,#625a75);}.ds-search-input{display:block;width:100%;min-height:44px;border:1px solid var(--color-border-strong,#9a87b2);border-radius:12px;background:var(--color-surface-elevated,#f3f0fa);color:var(--color-text,#1f1533);padding:8px 16px 8px 36px;font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;font-size:16px;transition:border-color var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1)),box-shadow var(--duration-fast,120ms) var(--ease-out,cubic-bezier(.2,0,0,1));}.ds-search-input::placeholder{color:var(--color-text-muted,#625a75);}.ds-search-input:hover{border-color:var(--color-border-strong,#9a87b2);}.ds-search-input:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-accent-soft,#ede9fe);background:var(--color-surface,#fff);}.ds-search-input:disabled{cursor:not-allowed;opacity:.55;}@media(forced-colors:active){.ds-search-input:focus-visible{outline:2px solid Highlight;outline-offset:2px;}}"
+    },
+    {
+      "name": "Navegação atual",
+      "kind": "nav",
+      "refersTo": "navigation-current",
+      "description": "Item do shell do Inbox; mantém o mapa de navegação e permissões existentes.",
+      "html": "<nav class=\"ds-navigation\" aria-label=\"Navegação de exemplo\"><a class=\"ds-nav-link\" href=\"#inbox\" aria-current=\"page\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,176H48V168H76.69L96,187.32A15.89,15.89,0,0,0,107.31,192h41.38A15.86,15.86,0,0,0,160,187.31L179.31,168H208v40Z\"></path></svg><span>Inbox</span></a></nav>",
+      "css": ".ds-navigation{padding:8px;background:var(--inbox-chrome,color-mix(in srgb,var(--color-brand,#6d28d9) 24%,#100b21));}.ds-nav-link{display:flex;align-items:center;gap:12px;border-radius:8px;padding:4px 12px;font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;font-size:14px;line-height:20px;text-decoration:none;background:var(--color-accent-soft,#ede9fe);color:var(--color-accent,#6d28d9);transition:color 150ms,background-color 150ms;}.ds-nav-link:hover{background:var(--color-accent-soft,#ede9fe);}.ds-nav-link:focus-visible{outline:2px solid var(--color-accent-500,#7c3aed);outline-offset:2px;}"
+    },
+    {
+      "name": "Aba selecionada",
+      "kind": "chip",
+      "refersTo": "scope-selected",
+      "description": "Seleção suave com contagem preenchida; abas reais podem quebrar de linha.",
+      "html": "<div class=\"ds-tabs\" role=\"tablist\" aria-label=\"Escopo de exemplo\"><button class=\"ds-tab\" type=\"button\" role=\"tab\" aria-selected=\"true\">Fila <span class=\"ds-count\">3</span></button><button class=\"ds-tab\" type=\"button\" role=\"tab\" aria-selected=\"false\">Minhas</button></div>",
+      "css": ".ds-tabs{display:flex;flex-wrap:wrap;gap:4px;padding:4px 12px;background:var(--color-surface-elevated,#f3f0fa);}.ds-tab{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-height:44px;flex:1 0 auto;border:0;border-radius:10px;padding:8px 6px;font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;font-size:12px;font-weight:500;line-height:16px;color:var(--color-text-muted,#625a75);background:transparent;cursor:pointer;}.ds-tab[aria-selected=true]{color:var(--color-accent,#6d28d9);background:var(--color-accent-soft,#ede9fe);}.ds-tab:hover{color:var(--color-text-muted,#625a75);}.ds-tab[aria-selected=true]:hover{color:var(--color-accent,#6d28d9);}.ds-tab:focus-visible{outline:2px solid var(--ring,#6d28d9);outline-offset:2px;}.ds-count{min-width:20px;border-radius:999px;padding:1px 4px;color:var(--color-accent-fg,#fff);background:var(--color-accent,#6d28d9);}"
+    },
+    {
+      "name": "Linha de conversa",
+      "kind": "custom",
+      "refersTo": "conversation-row-selected",
+      "description": "Amostra sintética da linha selecionada; identidade, prévia, horário e fila mantêm a hierarquia real.",
+      "html": "<button class=\"ds-row\" type=\"button\" aria-current=\"true\"><span class=\"ds-row-avatar\" aria-hidden=\"true\">CE</span><span class=\"ds-row-content\"><span class=\"ds-row-top\"><span class=\"ds-row-name\">Contato de exemplo</span><span class=\"ds-row-time\">10:42</span></span><span class=\"ds-row-preview\">Pode me enviar os detalhes?</span><span class=\"ds-row-queue\"><strong>1º na fila</strong><span>há 18 min</span></span></span></button>",
+      "css": ".ds-row{display:flex;align-items:flex-start;gap:12px;width:100%;min-height:92px;padding:16px;border:0;border-bottom:1px solid var(--color-border,#e8e1f3);background:var(--color-accent-50,#f5f2ff);color:var(--color-text,#1f1533);text-align:left;font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;cursor:pointer;transition:background-color 150ms;}.ds-row:hover{background:var(--color-accent-50,#f5f2ff);}.ds-row:focus-visible{outline:2px solid var(--color-accent,#6d28d9);outline-offset:-3px;}.ds-row-avatar{display:flex;flex-shrink:0;align-items:center;justify-content:center;width:44px;height:44px;border-radius:14px;background:var(--color-accent-soft,#ede9fe);color:var(--color-accent,#6d28d9);font-size:16px;font-weight:500;}.ds-row-content{display:block;min-width:0;flex:1;}.ds-row-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}.ds-row-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;font-weight:600;}.ds-row-time{flex-shrink:0;font-size:12px;font-variant-numeric:tabular-nums;color:var(--color-text-muted,#625a75);}.ds-row-preview{display:block;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;color:var(--color-text-muted,#625a75);}.ds-row-queue{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;font-size:12px;}.ds-row-queue strong{font-weight:600;color:var(--color-accent,#6d28d9);}.ds-row-queue>span{color:var(--color-text-muted,#625a75);}"
+    },
+    {
+      "name": "Container de contato",
+      "kind": "card",
+      "refersTo": "contact-container",
+      "description": "A ficha é uma coluna de seções, sem inventar um cartão elevado para cada grupo; dados desta amostra são sintéticos.",
+      "html": "<aside class=\"ds-contact\"><section><h3 class=\"ds-contact-title\">Contato</h3><div class=\"ds-contact-identity\"><span class=\"ds-contact-avatar\" aria-hidden=\"true\">CE</span><div><strong class=\"ds-contact-name\">Contato de exemplo</strong><p class=\"ds-contact-phone\">(11) •••••-1234</p></div></div></section><section><h3 class=\"ds-contact-title\">Atividade</h3><p class=\"ds-contact-empty\">Sem atividade nesta amostra.</p></section></aside>",
+      "css": ".ds-contact{display:flex;flex-direction:column;gap:20px;padding:16px;background:var(--color-surface,#fff);color:var(--color-text,#1f1533);font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;}.ds-contact-title{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;font-weight:600;}.ds-contact-identity{display:flex;align-items:center;gap:12px;margin-top:12px;}.ds-contact-avatar{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:44px;height:44px;border-radius:14px;background:var(--color-accent-soft,#ede9fe);color:var(--color-accent,#6d28d9);}.ds-contact-name{font-size:14px;font-weight:500;}.ds-contact-phone,.ds-contact-empty{margin:4px 0 0;font-size:12px;color:var(--color-text-muted,#625a75);}"
+    },
+    {
+      "name": "Campo do compositor",
+      "kind": "input",
+      "refersTo": "composer-field",
+      "description": "Campo de escrita legível; os modos, bloqueios e handlers permanecem no componente React existente.",
+      "html": "<textarea class=\"ds-composer-field\" rows=\"2\" aria-label=\"Mensagem\" placeholder=\"Escreva uma mensagem…\"></textarea>",
+      "css": ".ds-composer-field{display:block;width:100%;min-width:0;min-height:56px;max-height:160px;resize:none;border:1px solid var(--color-border-strong,#9a87b2);border-radius:12px;padding:8px 12px;background:var(--color-surface,#fff);color:var(--color-text,#1f1533);font-family:var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif;font-size:16px;line-height:1.5;}.ds-composer-field::placeholder{color:var(--color-text-muted,#625a75);}.ds-composer-field:focus{outline:none;box-shadow:0 0 0 1px var(--ring,#6d28d9);}.ds-composer-field:disabled{cursor:not-allowed;opacity:.5;}@media(forced-colors:active){.ds-composer-field:focus-visible{outline:2px solid Highlight;outline-offset:2px;}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Navegação profunda, leitura clara",
+    "overview": "A estrutura de navegação usa uma faixa escura e contínua; o trabalho acontece em painéis claros, com seleção suave e texto legível. A hierarquia serve ao atendimento frequente no celular: localizar uma conversa, reconhecer quem está no comando e escrever sem perder o contexto do contato.\n\nEste documento registra o código do redesign do Inbox, ainda sujeito à revisão e aos gates descritos no [contrato da superfície](.impeccable/surfaces/components-inbox-inboxlayout-tsx.md). Não estabelece uma nova identidade para todo o CRM. A personalização por instalação e organização, os temas e os componentes existentes continuam sendo a autoridade do produto. As cores de destaque acima descrevem o fallback do Inbox sem folha de marca; as cores escuras descrevem seu tema escuro.",
+    "keyCharacteristics": [
+      "Navegação profunda e leitura em superfícies claras.",
+      "Seleção lavanda no padrão, derivada da marca quando há personalização.",
+      "Componentes reais, controles explícitos e ícones do mapa canônico.",
+      "Composição determinada pela largura útil do atendimento."
+    ],
+    "rules": [
+      {
+        "name": "The Marca Soberana Rule",
+        "body": "O fallback violeta só se aplica quando o documento não contém `#marca-instalacao` nem `#marca-organizacao`. A busca é no `html`, cobrindo a folha de instalação emitida no `head` e a de organização emitida na árvore do `body`. Nunca copiar os valores de fallback por cima de uma marca resolvida.",
+        "section": "colors"
+      },
+      {
+        "name": "The Escopo da Jornada Rule",
+        "body": "Os papéis da rota são aplicados em `body:has(.inbox-workspace)` e na área de atendimento. Isso alcança os portais de menus e ficha dentro do documento enquanto o Inbox está montado, sem converter a paleta das demais jornadas.",
+        "section": "colors"
+      },
+      {
+        "name": "The Texto Operável Rule",
+        "body": "Preservar campos mobile no tamanho do papel `body`, metadados de atendimento com o mínimo aprovado de 12px e rótulos explícitos nas ações. Valores menores nas iniciais decorativas não estabelecem uma escala de leitura.",
+        "section": "typography"
+      },
+      {
+        "name": "The Largura Útil Rule",
+        "body": "Escolher a composição pelo espaço real do atendimento; não antecipar três painéis porque a janela passou de um breakpoint global.",
+        "section": "layout"
+      },
+      {
+        "name": "The Profundidade Funcional Rule",
+        "body": "Usar a profundidade existente para distinguir balão, controle e sobreposição. Não introduzir sombra dura deslocada ou animação ornamental como sinal de qualidade do atendimento.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** respeitar a precedência da marca resolvida e a troca de tema.",
+      "**Do** medir a largura útil do Inbox antes de escolher uma, duas ou três regiões.",
+      "**Do** manter ações, estados e permissões existentes ao traduzir as referências aprovadas.",
+      "**Do** usar os ícones do mapa canônico e componentes reais.",
+      "**Do** conferir foco, contraste, quebra de texto e controles alcançáveis nos estados mobile e desktop."
+    ],
+    "donts": [
+      "**Don't** espalhar o fallback violeta do Inbox para outras jornadas.",
+      "**Don't** importar uma imagem de tela como interface ou acrescentar imagens de conteúdo ausentes do produto.",
+      "**Don't** criar menus, funcionalidades ou regras de negócio a partir de detalhes incidentais dos mockups.",
+      "**Don't** converter texto pequeno, colisões ou bordas decorativas apontadas pela revisão em regras para futuras telas.",
+      "**Don't** tratar capturas sintéticas como comprovação de backend, envio, Realtime, teclado ou aparelho físico."
+    ]
+  }
+}
