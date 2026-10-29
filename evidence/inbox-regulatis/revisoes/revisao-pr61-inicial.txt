@@ -1,0 +1,58 @@
+disposition: fix
+
+Insumos ausentes por adaptação declarada: state/spec/diffs formais comp-led, roll/seed e hero-repro. O pedido e as respostas do usuário chegam pelo briefing do responsável, não como transcrição integral. Esses gates não são certificados nem reconstruídos retrospectivamente neste parecer.
+
+## persistence
+
+**Pass documental, com alcance delimitado.** Revisão independente do segundo ciclo, sobre o diff integral `origin/main...0125b496f1b5112cfc89902f5a1b896c4c07dfbc` do PR 61, sem assumir aprovação pelo primeiro ciclo. Foram lidos AGENTS.md, a doutrina aplicável de CLAUDE.md, PRODUCT.md, DESIGN.md, design-qa.md, o contrato da superfície, o QUALITY BAR e o craft floor. PRODUCT e direção estão persistidos; DESIGN descreve o mundo construído e a superfície registra as três referências aprovadas. A documentação é explícita sobre a adaptação de componentes existentes e sobre não ter executado a maquinaria formal comp-led. A ausência desta maquinaria é um limite de rastreabilidade do processo, não evidência de um score ou seed aprovado. Não fabricar esses registros.
+
+**Evidence check: pass.** Abri as referências 04, 05 e 06 e os 19 PNGs nomeados de `round-2`: as três comparações, lista e conversa em 320/390/768/1440, desktop escuro, ficha clara/escura, menu escuro, marca azul clara/escura, toolbar com foco e nota. Dimensões coerentes: 320/390×844, 768/1440×1024; comparações 804×884 e 2904×1064. Nenhum arquivo obrigatório informado está ausente, preto, vazio ou mostrando uma superfície diferente de seu nome. O menu escuro está enquadrado completo. As 23 medições cobrem larguras globais de 320 a 1440px, incluindo limiares do container; registram zero overflow horizontal e nenhuma colisão de controles do cabeçalho. Isso não cobre todos os estados do histórico, todas as traduções ou texto ampliado.
+
+O inventário visual inicial das referências é: faixa de navegação violeta profunda; lista clara com título, busca, filtros e abas; seleção lavanda, avatar, nome, prévia, hora, contagem e posição na fila; conversa mobile com voltar/ficha, identidade, estado, ações explícitas, mensagens recebidas com avatar e envio destacado; compositor com dois modos, campo e ferramentas; desktop com sidebar, lista, conversa e ficha contínua por seções. A revisão usou esse inventário, além do contrato.
+
+**Verdade e validação.** Os dados das comparações são rotulados sintéticos; os componentes são reais, mas hooks de backend foram substituídos no harness. Nenhuma tela rasterizada, ilustração ou nova imagem de conteúdo foi colocada no produto. Logos/avatares continuam nos mecanismos existentes e ícones no mapa canônico. No diff examinado não há mudança de API, banco, roles, regras, automações ou transporte de mensagens. Condições e handlers de assumir/liberar, automático, transferir, lembrar, fechar, bloqueios, janela, notas, anexos e citação permanecem; a seleção e os nós principais continuam montados, com áreas próprias de rolagem.
+
+O responsável informou typecheck/lint sem erros, build e 69 testes relevantes em 9 arquivos aprovados; esta revisão não reexecutou esses comandos. A consulta somente leitura ao PR confirmou o head revisado, `mergeStateStatus: UNSTABLE`, `support-knowledge: FAILURE` e verify/invariants/build/E2E ainda em andamento. O log da falha é `review_required:workspaces-e-acessos`, após `catalog.mjs check`; exige reconciliação do artigo/evidência atingido por UserMenu, não autoriza simplesmente regravar hashes. CI final, E2E com banco real, envio, Realtime real, teclado físico/safe area e ensaio em aparelho não estão aprovados por este parecer. O reviewer não iniciou servidor, renderizou componentes, enviou mensagens, comentou/aprovou o PR nem alterou produto ou configuração.
+
+## fidelity
+
+| Elemento saliente | Estado | Evidência e autoridade da adaptação |
+| --- | --- | --- |
+| TYPE | adaptation | Atkinson local mantém a voz de leitura do produto; a avaliação de Poppins era condicional, conforme contrato e DESIGN. Campos em 16px e metadados explícitos de 12px preservam a legibilidade pretendida, sem afirmar reprodução tipográfica literal. |
+| MATERIAL | match | Referências e entrega usam superfícies de app, contornos e avatares; não há material pictórico focal a substituir por CSS nem obrigação de produzir uma placa raster. |
+| GROUND | adaptation | Amostras dos fundos: referência 04 em (400,1700) #fefdfd; 05 em (750,1250) #fdfdfe; 06 em (800,600) #fdfdfd. Lista entregue em (200,750) #fff; histórico mobile em (200,600) e desktop em (850,600) #fbfaff. O histórico é discretamente mais frio; essa tradução é explícita na tela fria do OWN-WORLD e em DESIGN, sem deriva para creme ou slate azul. |
+| Navegação profunda e seleção suave | match | lista-390, conversa-1440 e desktop-escuro mantêm separação clara entre navegação, trabalho e seleção. Marca azul permanece azul em ambos os temas. |
+| Ordem da lista | match | Título, busca, filtros, abas e primeiras linhas ficam no primeiro viewport; posição na fila vem após a prévia, como na referência 04. |
+| Filtros e abas | adaptation | Não lidos é toggle, filtros dependem dos dados/papel e abas quebram em 320px e na lista desktop estreita. É a verdade funcional expressa no contrato; não criar dropdown ou esconder abas para copiar o mock. |
+| Identidade, estado e ações da conversa | adaptation | A conversa sintética sem dono mostra Assumir e não as ações do mock atribuído. Condições reais e indicadores de comando, telefone e janela têm precedência, conforme PRODUCT e contrato. |
+| Mensagens recebidas/enviadas | match | Avatares recebidos, alinhamento e sequência preservados; envio de marca no mobile e envio suave no desktop correspondem às referências 05/06. |
+| Compositor e ferramentas | adaptation | Campo vazio mostra microfone, rascunho mostra enviar; ferramentas reais mantêm handlers. A separação das linhas permite alcançar campo e ferramentas em 320px, conforme FIRST VIEWPORT e verdade do produto. |
+| Modo Nota interna selecionado | contradicted | nota-mobile.png mostra texto âmbar quase fundido no botão âmbar; contraste nominal 1,615:1, abaixo do craft floor e do QUALITY BAR. Achado F2. |
+| Ficha e topologia de regiões | adaptation | Ficha por seções no desktop e Sheet nas áreas estreitas; duas/três regiões são decididas por 760/1100px úteis. Não foram criados controles de expandir/recolher nem estados sugeridos apenas pelo mock. |
+| Portais/tema e foco da toolbar | match | Ficha clara/escura, menu escuro completo, azul claro/escuro e toolbar-mobile-foco confirmam a expressão visual desses estados específicos. |
+| Preferências no menu por teclado | contradicted | A nova linha de botões do UserMenu não integra a coleção navegável do menu; a captura comprova aparência, não alcance pelo teclado. Achado F1. |
+| Altura quando um aviso muda sem resize | contradicted | A reserva é recalculada só por eventos de viewport; o fluxo real de troca de organização pode mudar o banner acima sem esses eventos. Risco demonstrável no código, sem reprodução integrada neste parecer. Achado F3. |
+
+| Promessa do contrato | Avaliação |
+| --- | --- |
+| THESIS | Lista/conversa e o compositor são alcançáveis nas capturas fornecidas; F1 e F3 impedem certificar operação completa nos cenários identificados. |
+| OWN-WORLD | Navegação profunda, leitura fria, seleção suave, marca e temas estão visíveis; F2 viola o acabamento legível no modo nota. |
+| STORY | Lista → conversa → ficha → fechar → conversa e alternância de modos têm evidência no harness/teste adicionado; condições existentes foram preservadas no diff. Integração ainda depende do CI/E2E. |
+| FIRST VIEWPORT | Busca, filtros, primeiras conversas, identidade, ações e campo estão presentes em 320/390/768/1440. F3 deixa aberta a mudança de offset por aviso sem evento de viewport. |
+| FORM | Adaptação registrada dos componentes e dos ícones existentes, sem feature nova ou raster incorporado. Não existe seed/roll comprovado e, portanto, não há certificação do protocolo formal de concept-seed/comp-led. A memória visual do primeiro viewport conserva navegação profunda, lista clara e seleção lavanda. |
+
+## ceiling
+
+O mundo pede precisão de operação: as referências deixam espaço para contornos mais suaves e melhor distinção do modo nota. Os dispositivos úteis já usados são navegação contínua, seleção tonal, grupos de controles explícitos, contornos funcionais, avatar e painéis sem cartões elevados por seção. Profundidade, ornamento e movimento adicionais não são exigências desta superfície; acrescentá-los não resolveria os três achados. O detector fornecido é anterior às correções de borda lateral; o diff atual reduz ambas as citações a 1px. Não executei outro detector. Não vi kicker/eyebrow, sombra dura, gradient text, glyph novo substituindo o mapa de ícones ou raster meramente simbólico nas superfícies alteradas.
+
+## material_fixes
+
+1. **F1 — [P2] Regressão introduzida, teclado/portais; UserMenu.tsx:68–70.** Abaixo da largura em que as preferências inline somem, abrir o menu por teclado leva a Criar workspace/Sair; PT e Tema são botões comuns fora de DropdownMenuItem/SubTrigger. O Radix instalado navega sua coleção de itens, usa roving focus e cancela Tab (`@radix-ui/react-menu` dist/index.mjs:313/320); as setas também não incluem os botões soltos. Implementar preferências como itens/submenu acessíveis ou usar superfície com navegação de foco apropriada, preservando handlers. Validar Enter/setas/Escape e foco de retorno no mobile e desktop. Aparência do menu não comprova isso.
+2. **F3 — [P2] Risco real demonstrável de regressão, altura/avisos; useInboxViewport.ts:22–25.** O efeito depende apenas de enabled/ref e só observa resize/scroll da viewport. `setActiveOrg` revalida `/app`/layout, permitindo preservar o AppShell cliente enquanto ConexaoCaidaBanner passa a ocupar espaço acima dele. Sem resize/scroll, o valor gravado continua com a altura antiga: o fim do compositor passa abaixo da área visível pela altura do aviso, ou sobra espaço ao removê-lo. Observar a mudança efetiva do layout/avisos ou compor a reserva com eles; testar inserção/remoção sem emitir resize artificial. O teste atual de aviso altera o top e dispara resize manualmente, portanto não fecha esse cenário. Não é alegação de bug medido em iPhone.
+3. **F2 — [P2] Defeito visual preexistente mantido na superfície redesenhada, contraste; Composer.tsx:246.** Ao selecionar Nota interna, `bg-warning` #b07a2b e `text-warning-fg` #875a1a produzem 1,615:1 em texto de 12px; nota-mobile.png confirma o rótulo pouco legível. A dupla de classes já existia no base, portanto não atribuir sua origem ao PR; ainda viola o QUALITY BAR/craft floor da superfície entregue. Definir um par local selecionado com pelo menos 4,5:1 nos dois temas, preservando distinção de nota/resposta, e recapturar o estado claro/escuro.
+
+Não foram encontrados P0/P1 no diff examinado. Não promover ausência de hardware ou CI pendente a bug funcional inventado. A correção/validação destes itens é o lote aberto deste segundo ciclo; não elimina os gates finais do repositório.
+
+## keep
+
+Preservar condições e handlers reais, precedência da marca por instalação/organização, temas e portais, ordem lista → conversa → ficha, seleção/rascunho/citação, campo e ferramentas alcançáveis, painéis por largura útil e o alcance honesto da evidência sintética; nenhuma integração/publicação está autorizada apenas por este parecer.

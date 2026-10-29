@@ -19,7 +19,13 @@ import { Plus, SignOut } from "@/lib/ui/icons";
 
 function initials(name: string | null, email: string): string {
   if (name && name.trim()) {
-    return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
+    return name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((p) => p[0])
+      .join("")
+      .toUpperCase();
   }
   return email.slice(0, 2).toUpperCase();
 }
@@ -33,11 +39,18 @@ export function UserMenu() {
 
   return (
     <div className="flex items-center gap-2">
-      <SeletorDeIdioma />
-      <ThemeToggle />
+      <div className="shell-preferences-inline hidden items-center gap-2 md:flex">
+        <SeletorDeIdioma />
+        <ThemeToggle />
+      </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="rounded-full" aria-label={t("Menu do usuário")}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 shrink-0 rounded-full"
+            aria-label={t("Menu do usuário")}
+          >
             <Avatar className="h-8 w-8">
               {user.avatar_url && <AvatarImage src={user.avatar_url} alt="" />}
               <AvatarFallback>{initials(user.full_name, user.email)}</AvatarFallback>
@@ -52,6 +65,8 @@ export function UserMenu() {
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <SeletorDeIdioma menuItems />
+          <ThemeToggle menuItem />
           <DropdownMenuItem
             data-testid="criar-workspace"
             onSelect={(e) => {
@@ -62,7 +77,14 @@ export function UserMenu() {
             <Plus size={16} className="mr-2" aria-hidden />
             {t("Criar workspace")}
           </DropdownMenuItem>
-          <DropdownMenuItem disabled={isPending} onClick={() => startTransition(async () => { await signOut(); })}>
+          <DropdownMenuItem
+            disabled={isPending}
+            onClick={() =>
+              startTransition(async () => {
+                await signOut();
+              })
+            }
+          >
             <SignOut size={16} className="mr-2" aria-hidden />
             {t("Sair")}
           </DropdownMenuItem>

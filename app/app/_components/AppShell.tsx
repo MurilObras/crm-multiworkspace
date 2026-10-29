@@ -1,5 +1,9 @@
 "use client";
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { useInboxViewport } from "@/hooks/inbox/useInboxViewport";
+import { cn } from "@/lib/utils";
+import "@/components/inbox/inbox-workspace.css";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessageAlerts";
@@ -12,11 +16,18 @@ interface AppShellProps {
 }
 
 export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
+  const pathname = usePathname();
+  const inbox = pathname === "/app/inbox" || pathname.startsWith("/app/inbox/");
+  const shellRef = useRef<HTMLDivElement>(null);
+  useInboxViewport(shellRef, inbox);
   useInboundMessageAlerts();
   useCrmAlerts();
   useNotifyOpenFromServiceWorker();
   return (
-    <div className="flex min-h-screen w-full bg-background">
+    <div
+      ref={shellRef}
+      className={cn("flex min-h-screen w-full bg-background", inbox && "inbox-workspace")}
+    >
       <div className="hidden md:block">
         <Sidebar collapsed={sidebarCollapsed} />
       </div>
@@ -41,7 +52,7 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
       */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <TopBar />
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className={cn("flex-1 overflow-auto p-6", inbox && "inbox-main")}>{children}</main>
       </div>
     </div>
   );

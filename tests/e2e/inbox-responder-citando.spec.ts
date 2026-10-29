@@ -158,6 +158,94 @@ test.describe("responder citando", () => {
     await page.screenshot({ path: path.join(EVIDENCE, "cancelada.png"), fullPage: true });
   });
 
+  test("lista, conversa e ficha cabem na área útil sem perder seleção", async ({ page }) => {
+    await login(page);
+    for (const width of [320, 390, 768, 1024, 1280, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/app/inbox?filter=mine");
+      await expect(page.getByRole("tab", { name: /Minhas/ })).toBeVisible();
+      const search = page.getByRole("button", { name: "Buscar...", exact: true });
+      await expect(search).toBeVisible();
+      const topbar = await page.locator("header.shell-topbar").evaluate((header) => {
+        const rects = [...header.querySelectorAll("button, a")]
+          .map((el) => el.getBoundingClientRect())
+          .filter((r) => r.width > 0);
+        return {
+          inside: rects.every((r) => r.left >= 0 && r.right <= innerWidth + 1),
+          overlap: rects.some((a, i) =>
+            rects
+              .slice(i + 1)
+              .some(
+                (b) =>
+                  a.left < b.right - 1 &&
+                  a.right > b.left + 1 &&
+                  a.top < b.bottom - 1 &&
+                  a.bottom > b.top + 1,
+              ),
+          ),
+        };
+      });
+      expect(topbar, `cabeçalho em ${width}px`).toEqual({ inside: true, overlap: false });
+      if (width === 320 || width === 1440) {
+        const userMenu = page.getByRole("button", { name: "Menu do usuário", exact: true });
+        await userMenu.focus();
+        await page.keyboard.press("Enter");
+        await expect(
+          page.getByRole("menuitem", { name: "Português (BR)", exact: true }),
+        ).toBeFocused();
+        await page.keyboard.press("ArrowDown");
+        await expect(page.getByRole("menuitem", { name: "Español", exact: true })).toBeFocused();
+        await page.keyboard.press("ArrowDown");
+        await expect(page.getByRole("menuitem", { name: /^Tema / })).toBeFocused();
+        await page.screenshot({
+          path: path.join(EVIDENCE, `menu-teclado-${width}.png`),
+          fullPage: true,
+        });
+        await page.keyboard.press("Escape");
+        await expect(userMenu).toBeFocused();
+      }
+      const tabs = page.getByRole("tab");
+      for (const tab of await tabs.all()) {
+        const box = await tab.boundingBox();
+        expect(box, `aba visível em ${width}px`).not.toBeNull();
+        expect(box!.x + box!.width).toBeLessThanOrEqual(width + 1);
+      }
+
+      await selectConversation(page, 0);
+      const main = page.locator("main");
+      const available = await main.evaluate((el) => el.clientWidth);
+      const list = page.locator(".inbox-list");
+      const contact = page.locator(".inbox-contact");
+      if (available >= 760) await expect(list).toBeVisible();
+      else await expect(list).toBeHidden();
+      if (available >= 1100) await expect(contact).toBeVisible();
+      else await expect(contact).toBeHidden();
+      const message = page.getByRole("textbox", { name: "Mensagem", exact: true });
+      await expect(message).toBeVisible();
+      const composerBox = await page.locator(".inbox-composer").boundingBox();
+      expect(composerBox!.y + composerBox!.height).toBeLessThanOrEqual(901);
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      expect(overflow, `overflow em ${width}px`).toBeLessThanOrEqual(1);
+
+      if (available < 1100) {
+        await page.getByRole("button", { name: "Ficha", exact: true }).click();
+        await expect(page.getByRole("dialog")).toBeVisible();
+        await expect(
+          page.getByRole("dialog").getByText(conversations[0]!.name, { exact: true }),
+        ).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        await expect(page.locator(".inbox-grid")).toHaveAttribute("data-has-selection", "true");
+      }
+      await message.fill("Rascunho de teste, sem enviar.");
+      await page.getByRole("button", { name: "Nota interna", exact: true }).click();
+      await expect(message).toHaveValue("Rascunho de teste, sem enviar.");
+      await page.getByRole("button", { name: "Responder", exact: true }).click();
+      await expect(message).toHaveValue("Rascunho de teste, sem enviar.");
+      await page.screenshot({ path: path.join(EVIDENCE, `layout-${width}.png`), fullPage: true });
+    }
+  });
+
   test("trocar de conversa LIMPA a citação", async ({ page }) => {
     await login(page);
     await page.goto("/app/inbox?filter=mine");

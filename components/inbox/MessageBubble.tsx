@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
 import { ArrowBendUpLeft, Check, Checks, Robot, WarningOctagon } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
 import { CitationButton } from "@/components/ai/CitationButton";
@@ -21,6 +22,8 @@ interface Props {
   /** A mensagem citada por ESTA, quando houver — desenha o fio. */
   citada?: Message | null;
   canManage?: boolean;
+  contactName?: string;
+  contactAvatarUrl?: string | null;
 }
 
 function AckIndicator({ status, t }: { status: string; t: (texto: string) => string }) {
@@ -38,7 +41,15 @@ function AckIndicator({ status, t }: { status: string; t: (texto: string) => str
   return null;
 }
 
-export function MessageBubble({ message, debugCitations, onResponder, citada, canManage }: Props) {
+export function MessageBubble({
+  message,
+  debugCitations,
+  onResponder,
+  citada,
+  canManage,
+  contactName,
+  contactAvatarUrl,
+}: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const isOutbound = message.direction === "outbound";
@@ -70,6 +81,20 @@ export function MessageBubble({ message, debugCitations, onResponder, citada, ca
         isOutbound ? "justify-end" : "justify-start",
       )}
     >
+      {!isOutbound && contactName && (
+        <Avatar className="inbox-message-avatar" aria-hidden>
+          {contactAvatarUrl && <AvatarImage src={contactAvatarUrl} alt="" />}
+          <AvatarFallback>
+            {contactName
+              .split(/\s+/)
+              .filter(Boolean)
+              .slice(0, 2)
+              .map((part) => part[0])
+              .join("")
+              .toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+      )}
       {/*
         RESPONDER — aparece ao passar o mouse, como no WhatsApp Web.
         Fica FORA da bolha para não disputar espaço com o texto, e do lado de
@@ -107,7 +132,8 @@ export function MessageBubble({ message, debugCitations, onResponder, citada, ca
       )}
       <div
         className={cn(
-          "max-w-[75%] text-sm",
+          "inbox-message-bubble max-w-[75%] text-sm",
+          isOutbound && "inbox-message-outbound",
           isBareSticker
             ? "px-0 py-0"
             : cn(
@@ -128,7 +154,7 @@ export function MessageBubble({ message, debugCitations, onResponder, citada, ca
         {citada && (
           <div
             className={cn(
-              "mb-1 rounded-md border-l-2 px-2 py-1 text-xs",
+              "inbox-message-quote mb-1 rounded-md border-l px-2 py-1 text-xs",
               isOutbound
                 ? "border-primary-foreground/50 bg-primary-foreground/10"
                 : "border-primary bg-background/60",
@@ -155,7 +181,7 @@ export function MessageBubble({ message, debugCitations, onResponder, citada, ca
           </div>
         )}
         {senderLabel && (
-          <div className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold opacity-80">
+          <div className="mb-0.5 flex items-center gap-1 text-xs font-semibold opacity-80">
             {senderLabel === "IA" ? <Robot size={10} weight="duotone" aria-hidden /> : null}
             {senderLabel && t(senderLabel)}
           </div>
@@ -199,7 +225,7 @@ export function MessageBubble({ message, debugCitations, onResponder, citada, ca
         ) : null}
         <div
           className={cn(
-            "mt-1 flex items-center justify-end gap-1 text-[10px]",
+            "inbox-message-meta mt-1 flex items-center justify-end gap-1 text-xs",
             isOutbound ? "text-primary-foreground" : "text-muted-foreground",
           )}
         >

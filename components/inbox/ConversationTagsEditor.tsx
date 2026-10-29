@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
+import { Tag } from "@/lib/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,7 +45,7 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
   return (
     <section>
       <h3 className="text-xs font-semibold text-text">
-        {t("Tags da conversa")}
+        <Tag size={18} aria-hidden /> {t("Tags da conversa")}
       </h3>
 
       <div className="mt-2 flex flex-wrap gap-1">

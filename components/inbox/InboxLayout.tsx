@@ -145,7 +145,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
-  /** A ficha do contato como painel deslizante — só existe abaixo do `xl`. */
+  /** A ficha desliza quando não há largura útil para o painel lateral. */
   const [fichaAberta, setFichaAberta] = useState(false);
   /**
    * A mensagem escolhida para responder "em cima".
@@ -275,7 +275,9 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const motivoDaJanela =
     janela.tipo === "fechada"
       ? janela.fechadaHaMs === null
-        ? t("O cliente ainda não escreveu — a janela de 24h nunca abriu. Só um modelo aprovado sai daqui.")
+        ? t(
+            "O cliente ainda não escreveu — a janela de 24h nunca abriu. Só um modelo aprovado sai daqui.",
+          )
         : `${t("A janela de 24h fechou há")} ${formatarDecorrido(janela.fechadaHaMs)}. ${t("Só um modelo aprovado sai daqui — texto livre é recusado pela plataforma.")}`
       : null;
 
@@ -285,106 +287,58 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       ? t("Contato anonimizado — não é possível enviar mensagens.")
       : null;
 
-  // Altura da grade: a conta desconta TUDO que fica acima e abaixo dela.
-  //   3.5rem            TopBar (`h-14`, em components/shell/TopBar.tsx)
-  //   2 * --space-6     padding do <main> do AppShell (`p-6`, em cima e embaixo)
-  //
-  // Com `100vh-3.5rem` o padding ficava de fora e a grade media 48px a MAIS que a
-  // tela. Quem pagava a diferença era o composer, que fica no rodapé: nascia
-  // parcialmente abaixo da borda, atrapalhando justo na hora de escrever.
-  //
-  // As duas parcelas NÃO estão na mesma unidade, e por isso o padding entra pelo
-  // token e não como `3rem`: o `@theme inline` de `app/globals.css` remapeia a
-  // escala de spacing para `var(--space-N)` — `--space-6` é `24px` LITERAL —, mas
-  // não remapeia o `14`, que o Tailwind 4 calcula pelo multiplicador `--spacing`
-  // e segue sendo `3.5rem` de verdade. (Até o Tailwind 4 quem remapeava era o
-  // `tailwind.config.ts`; o arquivo não existe mais, o efeito é o mesmo.)
-  // Escrever a soma como
-  // `6.5rem` só acerta enquanto a raiz for 16px; com acessibilidade de fonte maior
-  // ou menor o composer sai da tela de novo. Pelo token, a conta se auto-corrige
-  // se a escala de espaçamento mudar.
-  //
-  // `dvh` em vez de `vh` porque no celular a `vh` ignora a barra do navegador — o
-  // mesmo corte, só que pior e mudando conforme se rola a página.
-
-  // TRÊS COLUNAS QUE CABEM — medido, não estimado.
-  //
-  // O `xl` do Tailwind dispara em 1280px, e era ali que a terceira coluna
-  // nascia: no ponto exato em que não havia espaço para ela. Com a barra de
-  // navegação (240px) sobram 1040px, e o grid pedia 300 + 707 + 320 = 1327 —
-  // o painel de CRM ficava 311px FORA da viewport, alcançável só rolando o
-  // `main` de lado, que ninguém faz. Em 1280 o atendente simplesmente não via
-  // contexto nenhum do cliente.
-  //
-  // Os 707px eram o `min-content` do `ConversationHeader` (a barra de ações
-  // era `shrink-0`), e `1fr` é `minmax(auto, 1fr)`: não encolhe abaixo disso.
-  // Consertado o header, o `1fr` volta a encolher sozinho — `minmax(0,1fr)`
-  // foi medido aqui e não mudou um pixel, então não entrou.
-  //
-  // Duas faixas em vez de uma: compacta onde aperta, generosa onde há espaço.
-  // Em 1280 isso dá 424px de conversa em vez de 372 — 54px de folga sobre o
-  // piso do composer (370px), em vez dos 2px que a versão de uma faixa só
-  // deixava. Margem de 2px não é margem, é sorte.
+  // O shell reserva a altura e o container CSS escolhe a composição pela
+  // largura útil. Seleção e nós montados continuam preservando o contexto.
   return (
     <OpenConversationProvider conversationId={selectedId}>
-    <div
-      className="grid h-[calc(100dvh-3.5rem-2*var(--space-6))] w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]"
-      /*
-       * O ESTADO DO TEMPO REAL, LEGÍVEL DE FORA — mesmo par que o dossiê do lead
-       * já publica (`LeadDossier`), e pela mesma razão: quando a entrega morre,
-       * nenhuma tela avisa. Foi o único achado que atravessou o dia intacto
-       * quando o realtime quebrou pela primeira vez, e voltou a morder agora.
-       *
-       * `divergencias` é o que a rede de segurança contou: refetch trouxe estado
-       * novo que o canal NÃO tinha entregue. Zero com o canal vivo; subindo é a
-       * assinatura de canal que assina e não entrega — o defeito que não grita.
-       *
-       * ⚠️ `data-realtime-status` vem do STATUS do canal, não de um objeto que
-       * existe sempre. A primeira versão desta linha derivava o valor de
-       * `listQ.seguranca`, que nunca é nulo — ela diria `ativo` inclusive com o
-       * canal morto. Controle decorativo é pior que controle nenhum: mente com
-       * cara de instrumento.
-       *
-       * Atributo de dado e não texto na tela de propósito: quem lê isto é o
-       * teste e quem depura, não o atendente. Pôr um aviso permanente na cara de
-       * quem atende seria ruído; esconder o sinal do todo é o que custou o dia.
-       */
-      data-realtime-status={listQ.realtimeStatus}
-      data-refetch-divergencias={listQ.seguranca?.divergencias ?? 0}
-    >
-      {/*
-        NO CELULAR, UMA COISA POR VEZ.
-
-        Antes as duas colunas caíam empilhadas em `grid-cols-1`: a lista inteira
-        primeiro e a conversa DEPOIS dela. Para responder era preciso rolar a
-        lista toda até o fim, e o composer ficava fora da tela — que é o
-        "incômodo" relatado por quem atende do telefone.
-
-        Sem media query em JavaScript de propósito: `useMediaQuery` decide DEPOIS
-        da hidratação, então a primeira pintura mostra o layout errado e pisca. A
-        classe condicional é resolvida pelo CSS, na primeira pintura, e some no
-        `md` — onde as duas colunas cabem juntas e a regra não se aplica.
-      */}
       <div
-        className={cn(
-          "h-full min-h-0 flex-col border-r border-border md:flex",
-          colunas.lista,
-        )}
+        className="inbox-grid w-full"
+        data-has-selection={Boolean(selectedId)}
+        /*
+         * O ESTADO DO TEMPO REAL, LEGÍVEL DE FORA — mesmo par que o dossiê do lead
+         * já publica (`LeadDossier`), e pela mesma razão: quando a entrega morre,
+         * nenhuma tela avisa. Foi o único achado que atravessou o dia intacto
+         * quando o realtime quebrou pela primeira vez, e voltou a morder agora.
+         *
+         * `divergencias` é o que a rede de segurança contou: refetch trouxe estado
+         * novo que o canal NÃO tinha entregue. Zero com o canal vivo; subindo é a
+         * assinatura de canal que assina e não entrega — o defeito que não grita.
+         *
+         * ⚠️ `data-realtime-status` vem do STATUS do canal, não de um objeto que
+         * existe sempre. A primeira versão desta linha derivava o valor de
+         * `listQ.seguranca`, que nunca é nulo — ela diria `ativo` inclusive com o
+         * canal morto. Controle decorativo é pior que controle nenhum: mente com
+         * cara de instrumento.
+         *
+         * Atributo de dado e não texto na tela de propósito: quem lê isto é o
+         * teste e quem depura, não o atendente. Pôr um aviso permanente na cara de
+         * quem atende seria ruído; esconder o sinal do todo é o que custou o dia.
+         */
+        data-realtime-status={listQ.realtimeStatus}
+        data-refetch-divergencias={listQ.seguranca?.divergencias ?? 0}
       >
-        <InboxFilters value={filterValue} onChange={setFilterValue} />
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <ConversationList
-            listQuery={listQ}
-            filters={filters}
-            selectedId={selectedId}
-            onSelect={handleSelect}
-            clientFilter={clientFilter}
-            onVisibleChange={handleVisibleChange}
-          />
+          {/* Abaixo de 760px úteis a seleção alterna os painéis; o CSS do
+            container mantém os nós montados e preserva a rolagem da lista. */}
+        <div
+          className={cn(
+            "inbox-list h-full min-h-0 flex-col border-r border-border md:flex",
+            colunas.lista,
+          )}
+        >
+          <InboxFilters value={filterValue} onChange={setFilterValue} />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <ConversationList
+              listQuery={listQ}
+              filters={filters}
+              selectedId={selectedId}
+              onSelect={handleSelect}
+              clientFilter={clientFilter}
+              onVisibleChange={handleVisibleChange}
+            />
+          </div>
         </div>
-      </div>
 
-      {/*
+        {/*
         AS DUAS COLUNAS DECIDEM PELO MESMO DADO — `selectedId`, não o objeto.
 
         A da lista some quando há `selectedId`; se esta aparecesse só quando a
@@ -396,100 +350,103 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         escondido — deixando o dono numa tela vazia, sem sequer o botão de
         voltar, porque ele morava dentro do ramo da conversa carregada.
       */}
-      <div
-        className={cn(
-          "h-full min-h-0 flex-col md:flex",
-          colunas.conversa,
-        )}
-      >
-        {/*
+        <div className={cn("inbox-conversation h-full min-h-0 flex-col md:flex", colunas.conversa)}>
+          {/*
           A barra do celular vive FORA do ramo da conversa carregada: o caminho
           de volta tem de existir inclusive quando não há o que mostrar — é aí
           que ele é a única saída. A porta da ficha, essa sim, depende da
           conversa, e só aparece quando há uma.
         */}
-        {selectedId && (
-          <div className="flex items-center gap-1 border-b border-border px-1 py-1 md:hidden">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 gap-1 px-2"
-              onClick={() => handleSelect(null)}
-            >
-              <CaretLeft size={16} />
-              {t("Conversas")}
-            </Button>
-            <div className="flex-1" />
-            {selectedConversation && (
-              <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
-                <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-9 gap-1 px-2 xl:hidden">
-                    <IdentificationCard size={16} />
-                    {t("Ficha")}
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-[min(22rem,90vw)] overflow-y-auto p-0">
-                  <SheetTitle className="sr-only">{t("Ficha do contato")}</SheetTitle>
-                  <CRMSidePanel conversation={selectedConversation} />
-                </SheetContent>
-              </Sheet>
-            )}
-          </div>
-        )}
-        {selectedConversation ? (
-          <>
-            <ConversationHeader conversation={selectedConversation} />
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <ChatThread conversationId={selectedConversation.id} onResponder={setRespondendo} />
+          {selectedId && (
+            <div className="inbox-mobile-bar flex items-center gap-1 border-b border-border px-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="inbox-back h-11 gap-1 px-2"
+                onClick={() => handleSelect(null)}
+              >
+                <CaretLeft size={16} />
+                {t("Conversas")}
+              </Button>
+              <div className="flex-1" />
+              {selectedConversation && (
+                <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
+                  <SheetTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="inbox-ficha-trigger h-11 gap-1 px-2"
+                    >
+                      <IdentificationCard size={16} />
+                      {t("Ficha")}
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="right" className="w-[min(22rem,90vw)] overflow-y-auto p-0">
+                    <SheetTitle className="sr-only">{t("Ficha do contato")}</SheetTitle>
+                    <CRMSidePanel conversation={selectedConversation} />
+                  </SheetContent>
+                </Sheet>
+              )}
             </div>
-            <RetentionNotice conversationId={selectedConversation.id} organizationId={orgId} />
-            {motivoDaJanela && (
-              <JanelaFechadaAviso
+          )}
+          {selectedConversation ? (
+            <>
+              <ConversationHeader conversation={selectedConversation} />
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <ChatThread
+                  conversationId={selectedConversation.id}
+                  contact={selectedConversation.contacts}
+                  onResponder={setRespondendo}
+                />
+              </div>
+              <RetentionNotice conversationId={selectedConversation.id} organizationId={orgId} />
+              {motivoDaJanela && (
+                <JanelaFechadaAviso
+                  conversationId={selectedConversation.id}
+                  provider={selectedConversation.channel_sessions?.provider ?? null}
+                  motivo={motivoDaJanela}
+                />
+              )}
+              <Composer
+                ref={composerRef}
                 conversationId={selectedConversation.id}
-                provider={selectedConversation.channel_sessions?.provider ?? null}
-                motivo={motivoDaJanela}
+                blockedReason={blockedReason}
+                janelaFechada={motivoDaJanela}
+                disabled={selectedConversation.status === "closed"}
+                contactName={selectedConversation.contacts?.name ?? null}
+                respondendo={respondendo}
+                onCancelarResposta={() => setRespondendo(null)}
+                currentContactId={selectedConversation.contact_id}
               />
-            )}
-            <Composer
-              ref={composerRef}
-              conversationId={selectedConversation.id}
-              blockedReason={blockedReason}
-              janelaFechada={motivoDaJanela}
-              disabled={selectedConversation.status === "closed"}
-              contactName={selectedConversation.contacts?.name ?? null}
-              respondendo={respondendo}
-              onCancelarResposta={() => setRespondendo(null)}
-              currentContactId={selectedConversation.contact_id}
-            />
-          </>
-        ) : selectionNotFound ? (
-          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
-            {t("Conversa não encontrada ou fora do seu acesso.")}
-          </div>
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-            <ChatCircle size={36} weight="thin" className="text-text-subtle" aria-hidden />
-            <p className="text-sm font-medium text-text-muted">{t("Selecione uma conversa")}</p>
-            <p className="text-xs text-text-muted">{t("Ou navegue com J e K")}</p>
-          </div>
-        )}
-      </div>
+            </>
+          ) : selectionNotFound ? (
+            <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+              {t("Conversa não encontrada ou fora do seu acesso.")}
+            </div>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+              <ChatCircle size={36} weight="thin" className="text-text-subtle" aria-hidden />
+              <p className="text-sm font-medium text-text-muted">{t("Selecione uma conversa")}</p>
+              <p className="text-xs text-text-muted">{t("Ou navegue com J e K")}</p>
+            </div>
+          )}
+        </div>
 
-      <div className="hidden h-full min-h-0 xl:block">
-        <CRMSidePanel conversation={selectedConversation} />
-      </div>
+        <div className="inbox-contact h-full min-h-0 border-l border-border">
+          <CRMSidePanel conversation={selectedConversation} />
+        </div>
 
-      <InboxKeyboardShortcuts
-        visibleIds={visibleIds}
-        selectedId={selectedId}
-        onSelect={handleSelect}
-        onFocusReply={handleFocusReply}
-        onClaim={handleClaim}
-        onClose={handleClose}
-        onToggleHelp={() => setHelpOpen((v) => !v)}
-      />
-      <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
-    </div>
+        <InboxKeyboardShortcuts
+          visibleIds={visibleIds}
+          selectedId={selectedId}
+          onSelect={handleSelect}
+          onFocusReply={handleFocusReply}
+          onClaim={handleClaim}
+          onClose={handleClose}
+          onToggleHelp={() => setHelpOpen((v) => !v)}
+        />
+        <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      </div>
     </OpenConversationProvider>
   );
 }

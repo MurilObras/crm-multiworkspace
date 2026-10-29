@@ -1,0 +1,22 @@
+[
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "C:\\Users\\muril\\.codex\\.chatgpt-projects\\g-p-6a9b585570f081919e31a4f9c2b43924\\work\\inbox-regulatis-mobile\\components\\inbox\\Composer.tsx",
+    "line": 264,
+    "snippet": "border-l-2"
+  },
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "C:\\Users\\muril\\.codex\\.chatgpt-projects\\g-p-6a9b585570f081919e31a4f9c2b43924\\work\\inbox-regulatis-mobile\\components\\inbox\\MessageBubble.tsx",
+    "line": 131,
+    "snippet": "border-l-2"
+  }
+]

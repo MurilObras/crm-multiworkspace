@@ -1,0 +1,21 @@
+## verdict
+
+| Item do relatório inicial | Pontuação | Evidência pós-correção e alcance |
+| --- | --- | --- |
+| 1. Marca / OWN-WORLD | resolvido | `inbox-workspace.css` consulta `html:not(:has(#marca-instalacao)):not(:has(#marca-organizacao))`; o marcador no head passa a impedir o fallback. `round-2/marca-azul-claro.png` e `marca-azul-escuro.png` mostram ação, seleção, avatar e mensagem seguindo a marca azul em ambos os temas; os ramos de marca continuam herdando os tokens resolvidos. |
+| 2. Fidelidade da conversa | resolvido | `comparacao-conversa.png`, `conversa-320.png`, `conversa-390.png` e `conversa-768.png` mostram avatares recebidos e mensagem enviada violeta na composição de uma região; `comparacao-desktop.png` e `conversa-1440.png` mostram o envio lavanda com texto escuro. Fonte conserva as ramificações de conteúdo e falha, com avatar condicionado à identidade disponível e CSS de envio suave a partir de 760px úteis. |
+| 3. Ficha e TYPE | resolvido | `conversa-1440.png`, `ficha-mobile-claro.png` e `ficha-mobile-escuro.png` mostram identidade com avatar, ícones nas seções e separações claras. CSS de `.inbox-contact-panel` aplica mínimo de 44px a botões/links e 12px ao texto de apoio; status/motivo em `ConversationHeader.tsx` e tags da ficha usam `text-xs` explícito. As condições e handlers dos botões da ficha permanecem no componente real. |
+| 4. TopBar / toque | resolvido | `lista-768.png` mostra busca compacta separada de alertas e perfil, com nome do workspace truncado dentro da região. `medidas-limites.json` contém 23 larguras, todas com overflow 0 e overlap false; em 768px a busca mede 44×44px. Capturas de 320/390/1440 e regras `shell-bar` confirmam a composição adaptada pelo espaço útil do shell compartilhado. |
+| 5. Citações | resolvido por fonte | `Composer.tsx` e `MessageBubble.tsx` usam `border-l` de 1px, encerrando o achado de borda lateral acima de 1px. Os blocos mantêm autor, trecho recortado, tratamento de mensagem revogada e cancelar. Não há captura específica de citação neste pacote; a pontuação cobre a correção mecânica no código, sem declarar inspeção visual desse estado. |
+| 6. Foco, menus e portais | resolvido | A paleta alcança `body:has(.inbox-workspace)` e os portais, com rampa violeta/foco restrita ao caso sem marca e ramificação escura própria. `desktop-escuro.png`, fichas clara/escura, `toolbar-mobile-foco.png` e a substituição válida de `menu-mobile-escuro.png` mostram superfícies e foco coerentes. O menu agora está integralmente visível sobre a lista escura, com identidade sintética, idioma/tema e ações. O escopo derivado da presença do Inbox deixa de casar quando a jornada desmonta. |
+| 7. Persistência / prova | resolvido | `.impeccable/surfaces/components-inbox-inboxlayout-tsx.md` registra os cinco blocos, referências e adaptação ao CRM; `.impeccable/quality-bar-inbox.md`, `DESIGN.md` e `.impeccable/design.json` registram a barra e os tokens atuais. A documentação declara a ausência de state/spec/diffs formais e roll/seed, sem inventar scores, QA ou aprovação retrospectiva. `round-2` arquiva comparações, estados e medidas pós-correção. |
+
+## remaining
+
+clear — nenhum dos sete itens pontuados permanece parcial ou não resolvido. Nenhuma regressão material introduzida pelo lote foi identificada dentro desse escopo; não foi feita nova busca de defeitos.
+
+A rodada anterior terminou em recapture, sem pontuar os itens. A imagem defeituosa do menu foi substituída no mesmo caminho e reaberta: agora tem 390×844px e contém o menu completo. As demais capturas do pacote já haviam sido abertas; suas dimensões foram conferidas novamente, incluindo lista/conversa de 320×844, 390×844, 768×1024 e 1440×1024. O espaço vazio dos estados sem seleção é intencional.
+
+Alcance de ship: apenas as sete correções visuais e de código pontuadas no harness de componentes reais com dados sintéticos. Não é aprovação da superfície inteira, de backend, envio, Realtime real ou hardware móvel. CI/Linux, E2E real, revisão/correção no PR e os demais gates de integração/publicação permanecem sob responsabilidade do ciclo principal. Nenhum código do produto foi alterado por esta revisão.
+
+disposition: ship

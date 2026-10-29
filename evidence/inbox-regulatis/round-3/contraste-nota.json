@@ -1,0 +1,30 @@
+[
+  {
+    "background": [
+      255,
+      255,
+      255
+    ],
+    "contrast": 5.987065633603692,
+    "foreground": [
+      135,
+      90,
+      26
+    ],
+    "theme": "light"
+  },
+  {
+    "background": [
+      28,
+      23,
+      40
+    ],
+    "contrast": 8.659150092071922,
+    "foreground": [
+      224,
+      173,
+      119
+    ],
+    "theme": "dark"
+  }
+]

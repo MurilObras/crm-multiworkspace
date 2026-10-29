@@ -221,15 +221,26 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     // Sem `if`: com o negócio semeado a linha TEM de aparecer. Uma asserção
     // condicional aqui passaria calada justamente no caso em que a feature não
     // funciona — que é o modo de falha que esta entrega existe para acabar.
-    await expect(page.getByText("Atividade", { exact: true }).first()).toBeVisible({
+    // A ficha vira um painel sobreposto quando não cabe como terceira coluna.
+    // Abra-a pelo mesmo controle do atendente; as provas da atividade continuam
+    // obrigatórias nos dois layouts.
+    const abrirFicha = page.getByRole("button", { name: "Ficha", exact: true });
+    const fichaSobreposta = await abrirFicha.isVisible();
+    if (fichaSobreposta) await abrirFicha.click();
+    const ficha = fichaSobreposta ? page.getByRole("dialog") : page.locator(".inbox-contact");
+    await expect(ficha.getByText("Atividade", { exact: true })).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByText(/Assumiu a conversa/i).first()).toBeVisible({
+    await expect(ficha.getByText(/Assumiu a conversa/i).first()).toBeVisible({
       timeout: 30_000,
     });
     // E com o NOME de quem agiu, não "Você/time" — é a diferença entre saber que
     // uma pessoa mexeu e saber QUAL pessoa.
-    await expect(page.getByText(/Você\/time/).first()).toHaveCount(0);
+    await expect(ficha.getByText(/Você\/time/).first()).toHaveCount(0);
+    if (fichaSobreposta) {
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    }
 
     // -----------------------------------------------------------------
     // (6) A VOLTA existe e funciona — o interruptor tem os dois lados.

@@ -2014,3 +2014,14 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 - [P0] Pausa humana, alteração de etapa e nova inbound no transporte continuam nos invariantes de turno e nos testes de outbound.
 - Diagnóstico: `llm_calls.job_id` associa a decisão persistida ao ledger e à mensagem correta. Registros antigos sem decisão permanecem sem esse dado.
 - Laço de retorno: gestor vê o motivo, altera condições/política pelas telas e repete o cenário fictício. Detalhes e matriz: `docs/testing/contextual-media-intent.md`.
+
+## Atendimento responsivo — 2026-10-29
+
+- [P1] Busca global, troca de workspace, alertas e menu permanecem sem colisão no cabeçalho; lista e conversa se alternam pela seleção em áreas estreitas.
+- [P1] A lista continua visível quando há pelo menos 760px úteis; a ficha lateral entra desde 1100px úteis. Quando não cabe, a ficha abre pela ação existente, sem perder a seleção ao fechar.
+- [P1] Rascunho permanece ao alternar Responder e Nota interna. Citação, cancelar e troca de conversa conservam a cobertura existente.
+- Prova integrada adicionada ao cenário com fixtures próprias de `inbox-responder-citando.spec.ts`: 320, 390, 768, 1024, 1280 e 1440px. O menu é percorrido por Enter/setas/Escape e devolve foco em 320/1440px. Não envia mensagens externas. A definição do cenário não demonstra sua execução no lote atual; o resultado depende do ambiente E2E isolado e do novo CI.
+- A matriz de layout em seis larguras passou no CI do head `0125b496`, com fixtures e banco reais; o responsável inspecionou as capturas de 320/1440px. Isso não valida automaticamente os deltas posteriores de teclado. O CI daquele head teve uma falha documental e duas asserções antigas de apresentação em outros E2E; as adequações de navegação foram revisadas sem achado material e aguardam execução no novo CI.
+- [P1] `user-menu-teclado.test.tsx` cobre a coleção Radix de idiomas/tema, Enter, setas, troca efetiva de tema, Escape e retorno de foco. Idiomas ficam num grupo do menu, sem submenu.
+- [P1] `inbox-viewport.test.tsx` cobre redução/restauração da área visível, zoom, aviso sem evento de viewport e limpeza. O cenário com body mínimo de 844px e área visível de 480px insere/remove aviso pelo DOM e verifica a reserva 440→480px sem resize artificial. A fonte observa caixas anteriores/ancestrais e mudanças childList fora da subárvore das mensagens; não depende só do resize do body.
+- As provas duráveis estão em `evidence/inbox-regulatis/`, com cada imagem e finalidade no [índice](../../evidence/inbox-regulatis/README.md). São componentes reais com dados sintéticos e hooks de backend substituídos. Integração, entrega, hardware e CI do lote atual têm validação própria; a prévia não os comprova.

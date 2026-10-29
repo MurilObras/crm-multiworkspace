@@ -74,11 +74,11 @@
         },
         {
           "path": "components/shell/TenantSwitcher.tsx",
-          "blob_sha": "78c91aa893ef9a6a374d7d2a9e30836688ef0a00"
+          "blob_sha": "9fc3554522404ee06021cf6171dfa14f241a2d5c"
         },
         {
           "path": "components/shell/UserMenu.tsx",
-          "blob_sha": "0175eed668f21611848e2d6b454fd13dc1c05ac2"
+          "blob_sha": "4f4e05e543d2819f527ee0fe5a384d7eb2520ae5"
         },
         {
           "path": "components/workspace/CreateWorkspaceDialog.tsx",

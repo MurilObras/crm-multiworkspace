@@ -23,10 +23,24 @@ export function TenantSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" disabled={isPending} className="gap-2" data-testid="tenant-switcher">
-          <Storefront size={16} weight="duotone" aria-hidden />
-          <span className="max-w-[160px] truncate">{active?.name ?? t("Selecionar workspace")}</span>
-          <CaretDown size={12} aria-hidden />
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={isPending}
+          className="h-11 max-w-full min-w-0 gap-1 px-1 md:gap-2 md:px-3"
+          title={active?.name ?? t("Selecionar workspace")}
+          data-testid="tenant-switcher"
+        >
+          <Storefront
+            size={16}
+            weight="duotone"
+            className="hidden shrink-0 min-[480px]:block"
+            aria-hidden
+          />
+          <span className="max-w-[160px] truncate">
+            {active?.name ?? t("Selecionar workspace")}
+          </span>
+          <CaretDown size={12} className="shrink-0" aria-hidden />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[220px]">
@@ -34,11 +48,17 @@ export function TenantSwitcher() {
           <DropdownMenuItem
             key={org.organization_id}
             data-testid={`tenant-switcher-item-${org.organization_id}`}
-            onClick={() => startTransition(async () => { await setActiveOrg(org.organization_id); })}
+            onClick={() =>
+              startTransition(async () => {
+                await setActiveOrg(org.organization_id);
+              })
+            }
             className="flex items-center justify-between"
           >
             <span className="truncate">{org.organization_name}</span>
-            {active?.orgId === org.organization_id && <span className="text-xs text-muted-foreground">✓</span>}
+            {active?.orgId === org.organization_id && (
+              <span className="text-xs text-muted-foreground">✓</span>
+            )}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

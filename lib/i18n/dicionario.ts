@@ -3520,6 +3520,9 @@ export const DICIONARIO: Traducoes = {
   },
   "Nome do modelo": { es: "Nombre de la plantilla" },
   Idioma: { es: "Idioma" },
+  "Tema claro": { es: "Tema claro" },
+  "Tema escuro": { es: "Tema oscuro" },
+  "Tema do sistema": { es: "Tema del sistema" },
   Categoria: { es: "Categoría" },
   "Utilidade — aviso de pedido, agendamento, cobrança": {
     es: "Utilidad — aviso de pedido, turno, cobro",

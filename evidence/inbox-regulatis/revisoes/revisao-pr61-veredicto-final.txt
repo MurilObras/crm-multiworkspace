@@ -1,0 +1,15 @@
+## verdict
+
+- **F1 — resolved.** Mantida a pontuação anterior: idioma e tema participam da coleção de itens Radix, alcançáveis por Enter/setas, com seleção e Escape devolvendo o foco. As capturas de menu em 320/390/1440 e os testes já examinados fecharam o achado. Nenhuma alteração de UI foi submetida depois dessa leitura.
+- **F2 — resolved.** Mantida a pontuação anterior: Nota selecionada usa superfície opaca, texto e contorno legíveis. As capturas clara/escura e a medição composta de 5,987:1/8,659:1 fecharam o achado.
+- **F3 — resolved.** O hook examinado observa ancestrais e caixas de irmãos anteriores ao shell com ResizeObserver; MutationObserver observa apenas childList dos ancestrais e recompõe as caixas observadas ao inserir/remover aviso. Assim, o recálculo não depende de o body mudar de tamanho. A guarda de valor igual, a limpeza de ambos os observadores e o limite que exclui a subárvore das mensagens permanecem. O teste novo insere/remove aviso sem evento de viewport e verifica sua observação e reserva 440→480; o log examinado confirma 3 arquivos/19 testes aprovados.
+
+**Evidence check: pass.** Reabri pessoalmente os dois arquivos atuais `evidence/inbox-regulatis/round-3/aviso-area-reduzida.png` e `.superpowers/evidence/inbox-regulatis/round-3/aviso-area-reduzida.png`. Ambos medem 390×480 e têm SHA-256 idêntico (`092ebf5c290488436e8e6abb2e1f30f40250f85b992aedd81e74e3d0aced73a6`). A imagem atual mostra o aviso cinza no topo, Conversas/Ficha, identidade e ações, histórico na sua região reduzida e todo o compositor com modos, campo, microfone e ferramentas dentro da área visível. A tentativa vazia foi efetivamente substituída. A captura completa de aviso, 390×844, também foi aberta na rodada anterior e é válida.
+
+`medidas-aviso.json` mantém body com altura e mínimo de 844px: reserva/top 844/0 → 804/40 → 844/0 na área completa, compositorBottom sempre 844; na área reduzida, 480/0 → 440/40 → 480/0, compositorBottom sempre 480. O método registrado insere/remove aviso por botão React sem resize entre esses três estados. A captura atual confere com o estado medido de aviso top 40, shell 440 e limite inferior 480. Isso fecha a lacuna do observador exclusivo do body. Não identifiquei regressão material introduzida pelo lote nas fontes e evidências examinadas.
+
+## remaining
+
+**clear** no lote F1/F2/F3. O `ship` deste veredito cobre as correções pontuadas. CI final do novo head, integração real, hardware e publicação conservam seus gates próprios; esta revisão não os aprova. A área reduzida é emulação, os dados/avisos são sintéticos e a evidência não comprova teclado físico, entrega de mensagens ou Realtime real. Este reviewer alterou somente este relatório.
+
+disposition: ship

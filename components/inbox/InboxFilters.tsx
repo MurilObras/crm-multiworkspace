@@ -105,44 +105,41 @@ export function InboxFilters({ value, onChange }: Props) {
 
   return (
     <div className="border-b border-border bg-background">
-      <div className="space-y-2 px-3 pt-3 pb-2">
-        <div className="flex items-center gap-2">
-          <div className="relative min-w-0 flex-1">
-            <MagnifyingGlass
-              size={15}
-              weight="regular"
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-subtle"
-              aria-hidden
-            />
-            <Input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder={t("Buscar por nome, telefone ou mensagem…")}
-              className="h-9 rounded-full border-transparent bg-surface-elevated pl-9 text-sm shadow-none focus-visible:border-border focus-visible:bg-background"
-              aria-label={t("Buscar conversas")}
-            />
+      <div className="inbox-filter-top">
+        <h1 className="inbox-filter-heading">{t("Inbox")}</h1>
+        <div className="inbox-filter-controls">
+          <div className="flex items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <MagnifyingGlass
+                size={15}
+                weight="regular"
+                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-text-subtle"
+                aria-hidden
+              />
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder={t("Buscar por nome, telefone ou mensagem…")}
+                className="h-9 rounded-full border-transparent bg-surface-elevated pl-9 text-sm shadow-none focus-visible:border-border focus-visible:bg-background"
+                aria-label={t("Buscar conversas")}
+              />
+            </div>
           </div>
-          {/* Botão pressionável em vez de Switch: o filtro vive na mesma linha
-              da busca, e o Switch com rótulo pedia uma linha inteira só para
-              si numa coluna de 280px. */}
-          <button
-            type="button"
-            aria-pressed={value.onlyUnread}
-            onClick={() => onChange({ ...value, onlyUnread: !value.onlyUnread })}
-            className={cn(
-              "h-9 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors",
-              "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              value.onlyUnread
-                ? "border-accent bg-accent text-accent-foreground"
-                : "border-border bg-transparent text-text-muted hover:bg-surface-elevated",
-            )}
-          >
-            {t("Não lidos")}
-          </button>
-        </div>
-
-        {(showChannelSwitch || (tagVocabulary?.length ?? 0) > 0) && (
-          <div className="flex gap-2">
+          <div className="inbox-filter-options">
+            <button
+              type="button"
+              aria-pressed={value.onlyUnread}
+              onClick={() => onChange({ ...value, onlyUnread: !value.onlyUnread })}
+              className={cn(
+                "h-9 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors",
+                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-hidden",
+                value.onlyUnread
+                  ? "border-accent bg-accent text-accent-foreground"
+                  : "border-border bg-transparent text-text-muted hover:bg-surface-elevated",
+              )}
+            >
+              {t("Não lidos")}
+            </button>
             {showChannelSwitch && (
               <Select
                 value={value.channel_session_id ?? "all"}
@@ -198,7 +195,7 @@ export function InboxFilters({ value, onChange }: Props) {
               </Select>
             )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Faixa sublinhada, não caixa cinza: cinco abas num grid de 280px
@@ -206,9 +203,9 @@ export function InboxFilters({ value, onChange }: Props) {
       <Tabs
         value={value.tab}
         onValueChange={(v) => onChange({ ...value, tab: v as InboxTab })}
-        className="px-3"
+        className="inbox-scope-tabs"
       >
-        <TabsList className="h-auto w-full justify-between gap-2 rounded-none bg-transparent p-0 [scrollbar-width:none]">
+        <TabsList className="h-auto w-full [scrollbar-width:none] justify-between gap-2 rounded-none bg-transparent p-0">
           {tabs.map((tab) => {
             const meta = INBOX_TABS.find((t) => t.value === tab)!;
             const count = countFor[tab];
@@ -216,11 +213,11 @@ export function InboxFilters({ value, onChange }: Props) {
               <TabsTrigger
                 key={tab}
                 value={tab}
-                className="-mb-px shrink-0 gap-1 rounded-none border-b-2 border-transparent px-0 pb-2 pt-1 text-xs font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-text data-[state=active]:shadow-none"
+                className="-mb-px shrink-0 gap-1 rounded-none border-b-2 border-transparent px-0 pt-1 pb-2 text-xs font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-text data-[state=active]:shadow-none"
               >
                 {t(meta.label)}
                 {typeof count === "number" && count > 0 && (
-                  <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
+                  <span className="inbox-tab-count tabular-nums">{count}</span>
                 )}
               </TabsTrigger>
             );

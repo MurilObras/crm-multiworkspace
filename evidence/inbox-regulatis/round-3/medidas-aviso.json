@@ -1,0 +1,53 @@
+{
+  "full": {
+    "before": {
+      "composerBottom": 844,
+      "height": 844,
+      "reserve": "844px",
+      "top": 0,
+      "viewHeight": 844
+    },
+    "notice": {
+      "composerBottom": 844,
+      "height": 804,
+      "reserve": "804px",
+      "top": 40,
+      "viewHeight": 844
+    },
+    "after": {
+      "composerBottom": 844,
+      "height": 844,
+      "reserve": "844px",
+      "top": 0,
+      "viewHeight": 844
+    }
+  },
+  "reduced": {
+    "before": {
+      "composerBottom": 480,
+      "height": 480,
+      "reserve": "480px",
+      "top": 0,
+      "viewHeight": 480
+    },
+    "notice": {
+      "composerBottom": 480,
+      "height": 440,
+      "reserve": "440px",
+      "top": 40,
+      "viewHeight": 480
+    },
+    "after": {
+      "composerBottom": 480,
+      "height": 480,
+      "reserve": "480px",
+      "top": 0,
+      "viewHeight": 480
+    }
+  },
+  "body": {
+    "height": 844,
+    "minHeight": "844px"
+  },
+  "method": "Harness sintético, body mínimo844 fixado; área visível480 emulada por viewport. Aviso entra/sai sem resize entre os três estados. Não é ensaio de teclado físico."
+}

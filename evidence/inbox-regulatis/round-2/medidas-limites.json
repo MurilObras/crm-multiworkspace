@@ -1,0 +1,1668 @@
+[
+  {
+    "area": 320,
+    "buttons": [
+      {
+        "label": "Abrir navegação",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 12,
+          "right": 56,
+          "top": 5.5,
+          "width": 44,
+          "x": 12,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 60,
+          "right": 156,
+          "top": 5.5,
+          "width": 96,
+          "x": 60,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 164,
+          "right": 208,
+          "top": 5.5,
+          "width": 44,
+          "x": 164,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 216,
+          "right": 260,
+          "top": 5.5,
+          "width": 44,
+          "x": 216,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 264,
+          "right": 308,
+          "top": 5.5,
+          "width": 44,
+          "x": 264,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 320
+  },
+  {
+    "area": 360,
+    "buttons": [
+      {
+        "label": "Abrir navegação",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 12,
+          "right": 56,
+          "top": 5.5,
+          "width": 44,
+          "x": 12,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 60,
+          "right": 196,
+          "top": 5.5,
+          "width": 136,
+          "x": 60,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 204,
+          "right": 248,
+          "top": 5.5,
+          "width": 44,
+          "x": 204,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 256,
+          "right": 300,
+          "top": 5.5,
+          "width": 44,
+          "x": 256,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 304,
+          "right": 348,
+          "top": 5.5,
+          "width": 44,
+          "x": 304,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 360
+  },
+  {
+    "area": 390,
+    "buttons": [
+      {
+        "label": "Abrir navegação",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 12,
+          "right": 56,
+          "top": 5.5,
+          "width": 44,
+          "x": 12,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 60,
+          "right": 226,
+          "top": 5.5,
+          "width": 166,
+          "x": 60,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 234,
+          "right": 278,
+          "top": 5.5,
+          "width": 44,
+          "x": 234,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 286,
+          "right": 330,
+          "top": 5.5,
+          "width": 44,
+          "x": 286,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 334,
+          "right": 378,
+          "top": 5.5,
+          "width": 44,
+          "x": 334,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 390
+  },
+  {
+    "area": 430,
+    "buttons": [
+      {
+        "label": "Abrir navegação",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 12,
+          "right": 56,
+          "top": 5.5,
+          "width": 44,
+          "x": 12,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 60,
+          "right": 248,
+          "top": 5.5,
+          "width": 188,
+          "x": 60,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 274,
+          "right": 318,
+          "top": 5.5,
+          "width": 44,
+          "x": 274,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 326,
+          "right": 370,
+          "top": 5.5,
+          "width": 44,
+          "x": 326,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 374,
+          "right": 418,
+          "top": 5.5,
+          "width": 44,
+          "x": 374,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 430
+  },
+  {
+    "area": 759,
+    "buttons": [
+      {
+        "label": "Abrir navegação",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 12,
+          "right": 56,
+          "top": 5.5,
+          "width": 44,
+          "x": 12,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 60,
+          "right": 268,
+          "top": 5.5,
+          "width": 208,
+          "x": 60,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 603,
+          "right": 647,
+          "top": 5.5,
+          "width": 44,
+          "x": 603,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 655,
+          "right": 699,
+          "top": 5.5,
+          "width": 44,
+          "x": 655,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 703,
+          "right": 747,
+          "top": 5.5,
+          "width": 44,
+          "x": 703,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 759
+  },
+  {
+    "area": 760,
+    "buttons": [
+      {
+        "label": "Abrir navegação",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 12,
+          "right": 56,
+          "top": 5.5,
+          "width": 44,
+          "x": 12,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 60,
+          "right": 268,
+          "top": 5.5,
+          "width": 208,
+          "x": 60,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 604,
+          "right": 648,
+          "top": 5.5,
+          "width": 44,
+          "x": 604,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 656,
+          "right": 700,
+          "top": 5.5,
+          "width": 44,
+          "x": 656,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 704,
+          "right": 748,
+          "top": 5.5,
+          "width": 44,
+          "x": 704,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 760
+  },
+  {
+    "area": 761,
+    "buttons": [
+      {
+        "label": "Abrir navegação",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 12,
+          "right": 56,
+          "top": 5.5,
+          "width": 44,
+          "x": 12,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 60,
+          "right": 268,
+          "top": 5.5,
+          "width": 208,
+          "x": 60,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 605,
+          "right": 649,
+          "top": 5.5,
+          "width": 44,
+          "x": 605,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 657,
+          "right": 701,
+          "top": 5.5,
+          "width": 44,
+          "x": 657,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 705,
+          "right": 749,
+          "top": 5.5,
+          "width": 44,
+          "x": 705,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 761
+  },
+  {
+    "area": 767,
+    "buttons": [
+      {
+        "label": "Abrir navegação",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 12,
+          "right": 56,
+          "top": 5.5,
+          "width": 44,
+          "x": 12,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 60,
+          "right": 268,
+          "top": 5.5,
+          "width": 208,
+          "x": 60,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 611,
+          "right": 655,
+          "top": 5.5,
+          "width": 44,
+          "x": 611,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 663,
+          "right": 707,
+          "top": 5.5,
+          "width": 44,
+          "x": 663,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 711,
+          "right": 755,
+          "top": 5.5,
+          "width": 44,
+          "x": 711,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 767
+  },
+  {
+    "area": 528,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 264,
+          "right": 496,
+          "top": 5.5,
+          "width": 232,
+          "x": 264,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 588,
+          "right": 632,
+          "top": 5.5,
+          "width": 44,
+          "x": 588,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 648,
+          "right": 692,
+          "top": 5.5,
+          "width": 44,
+          "x": 648,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 700,
+          "right": 744,
+          "top": 5.5,
+          "width": 44,
+          "x": 700,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 768
+  },
+  {
+    "area": 529,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 264,
+          "right": 496,
+          "top": 5.5,
+          "width": 232,
+          "x": 264,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 589,
+          "right": 633,
+          "top": 5.5,
+          "width": 44,
+          "x": 589,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 649,
+          "right": 693,
+          "top": 5.5,
+          "width": 44,
+          "x": 649,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 701,
+          "right": 745,
+          "top": 5.5,
+          "width": 44,
+          "x": 701,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 769
+  },
+  {
+    "area": 759,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 264,
+          "right": 496,
+          "top": 5.5,
+          "width": 232,
+          "x": 264,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 819,
+          "right": 863,
+          "top": 5.5,
+          "width": 44,
+          "x": 819,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 879,
+          "right": 923,
+          "top": 5.5,
+          "width": 44,
+          "x": 879,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 931,
+          "right": 975,
+          "top": 5.5,
+          "width": 44,
+          "x": 931,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 999
+  },
+  {
+    "area": 760,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 264,
+          "right": 496,
+          "top": 5.5,
+          "width": 232,
+          "x": 264,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 820,
+          "right": 864,
+          "top": 5.5,
+          "width": 44,
+          "x": 820,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 880,
+          "right": 924,
+          "top": 5.5,
+          "width": 44,
+          "x": 880,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 932,
+          "right": 976,
+          "top": 5.5,
+          "width": 44,
+          "x": 932,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 1000
+  },
+  {
+    "area": 761,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 264,
+          "right": 496,
+          "top": 5.5,
+          "width": 232,
+          "x": 264,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 821,
+          "right": 865,
+          "top": 5.5,
+          "width": 44,
+          "x": 821,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 881,
+          "right": 925,
+          "top": 5.5,
+          "width": 44,
+          "x": 881,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 933,
+          "right": 977,
+          "top": 5.5,
+          "width": 44,
+          "x": 933,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 1001
+  },
+  {
+    "area": 783,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 264,
+          "right": 496,
+          "top": 5.5,
+          "width": 232,
+          "x": 264,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 843,
+          "right": 887,
+          "top": 5.5,
+          "width": 44,
+          "x": 843,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 903,
+          "right": 947,
+          "top": 5.5,
+          "width": 44,
+          "x": 903,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 955,
+          "right": 999,
+          "top": 5.5,
+          "width": 44,
+          "x": 955,
+          "y": 5.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 1023
+  },
+  {
+    "area": 784,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 264,
+          "right": 496,
+          "top": 11.5,
+          "width": 232,
+          "x": 264,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 860,
+          "right": 904,
+          "top": 5.5,
+          "width": 44,
+          "x": 860,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 920,
+          "right": 956,
+          "top": 9.5,
+          "width": 36,
+          "x": 920,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 964,
+          "right": 1000,
+          "top": 9.5,
+          "width": 36,
+          "x": 964,
+          "y": 9.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 1024
+  },
+  {
+    "area": 785,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 264,
+          "right": 496,
+          "top": 11.5,
+          "width": 232,
+          "x": 264,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 49.5,
+          "height": 44,
+          "left": 861,
+          "right": 905,
+          "top": 5.5,
+          "width": 44,
+          "x": 861,
+          "y": 5.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 921,
+          "right": 957,
+          "top": 9.5,
+          "width": 36,
+          "x": 921,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 965,
+          "right": 1001,
+          "top": 9.5,
+          "width": 36,
+          "x": 965,
+          "y": 9.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 1025
+  },
+  {
+    "area": 1039,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 264,
+          "right": 496,
+          "top": 11.5,
+          "width": 232,
+          "x": 264,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 599.5,
+          "right": 983.5,
+          "top": 11.5,
+          "width": 384,
+          "x": 599.5,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1087,
+          "right": 1123,
+          "top": 9.5,
+          "width": 36,
+          "x": 1087,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Idioma: Português (BR)",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1131,
+          "right": 1167,
+          "top": 9.5,
+          "width": 36,
+          "x": 1131,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Tema: light. Cmd+Shift+L para alternar.",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1175,
+          "right": 1211,
+          "top": 9.5,
+          "width": 36,
+          "x": 1175,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1219,
+          "right": 1255,
+          "top": 9.5,
+          "width": 36,
+          "x": 1219,
+          "y": 9.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 1279
+  },
+  {
+    "area": 1040,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 264,
+          "right": 496,
+          "top": 11.5,
+          "width": 232,
+          "x": 264,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 600,
+          "right": 984,
+          "top": 11.5,
+          "width": 384,
+          "x": 600,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1088,
+          "right": 1124,
+          "top": 9.5,
+          "width": 36,
+          "x": 1088,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Idioma: Português (BR)",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1132,
+          "right": 1168,
+          "top": 9.5,
+          "width": 36,
+          "x": 1132,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Tema: light. Cmd+Shift+L para alternar.",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1176,
+          "right": 1212,
+          "top": 9.5,
+          "width": 36,
+          "x": 1176,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1220,
+          "right": 1256,
+          "top": 9.5,
+          "width": 36,
+          "x": 1220,
+          "y": 9.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 1280
+  },
+  {
+    "area": 1041,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 264,
+          "right": 496,
+          "top": 11.5,
+          "width": 232,
+          "x": 264,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 600.5,
+          "right": 984.5,
+          "top": 11.5,
+          "width": 384,
+          "x": 600.5,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1089,
+          "right": 1125,
+          "top": 9.5,
+          "width": 36,
+          "x": 1089,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Idioma: Português (BR)",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1133,
+          "right": 1169,
+          "top": 9.5,
+          "width": 36,
+          "x": 1133,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Tema: light. Cmd+Shift+L para alternar.",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1177,
+          "right": 1213,
+          "top": 9.5,
+          "width": 36,
+          "x": 1177,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1221,
+          "right": 1257,
+          "top": 9.5,
+          "width": 36,
+          "x": 1221,
+          "y": 9.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 1281
+  },
+  {
+    "area": 1099,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 264,
+          "right": 496,
+          "top": 11.5,
+          "width": 232,
+          "x": 264,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 629.5,
+          "right": 1013.5,
+          "top": 11.5,
+          "width": 384,
+          "x": 629.5,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1147,
+          "right": 1183,
+          "top": 9.5,
+          "width": 36,
+          "x": 1147,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Idioma: Português (BR)",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1191,
+          "right": 1227,
+          "top": 9.5,
+          "width": 36,
+          "x": 1191,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Tema: light. Cmd+Shift+L para alternar.",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1235,
+          "right": 1271,
+          "top": 9.5,
+          "width": 36,
+          "x": 1235,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1279,
+          "right": 1315,
+          "top": 9.5,
+          "width": 36,
+          "x": 1279,
+          "y": 9.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 1339
+  },
+  {
+    "area": 1100,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 264,
+          "right": 496,
+          "top": 11.5,
+          "width": 232,
+          "x": 264,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 630,
+          "right": 1014,
+          "top": 11.5,
+          "width": 384,
+          "x": 630,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1148,
+          "right": 1184,
+          "top": 9.5,
+          "width": 36,
+          "x": 1148,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Idioma: Português (BR)",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1192,
+          "right": 1228,
+          "top": 9.5,
+          "width": 36,
+          "x": 1192,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Tema: light. Cmd+Shift+L para alternar.",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1236,
+          "right": 1272,
+          "top": 9.5,
+          "width": 36,
+          "x": 1236,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1280,
+          "right": 1316,
+          "top": 9.5,
+          "width": 36,
+          "x": 1280,
+          "y": 9.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 1340
+  },
+  {
+    "area": 1101,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 264,
+          "right": 496,
+          "top": 11.5,
+          "width": 232,
+          "x": 264,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 630.5,
+          "right": 1014.5,
+          "top": 11.5,
+          "width": 384,
+          "x": 630.5,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1149,
+          "right": 1185,
+          "top": 9.5,
+          "width": 36,
+          "x": 1149,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Idioma: Português (BR)",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1193,
+          "right": 1229,
+          "top": 9.5,
+          "width": 36,
+          "x": 1193,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Tema: light. Cmd+Shift+L para alternar.",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1237,
+          "right": 1273,
+          "top": 9.5,
+          "width": 36,
+          "x": 1237,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1281,
+          "right": 1317,
+          "top": 9.5,
+          "width": 36,
+          "x": 1281,
+          "y": 9.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 1341
+  },
+  {
+    "area": 1200,
+    "buttons": [
+      {
+        "label": "Workspace demonstração com nome longo",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 264,
+          "right": 496,
+          "top": 11.5,
+          "width": 232,
+          "x": 264,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Buscar...",
+        "rect": {
+          "bottom": 43.5,
+          "height": 32,
+          "left": 680,
+          "right": 1064,
+          "top": 11.5,
+          "width": 384,
+          "x": 680,
+          "y": 11.5
+        }
+      },
+      {
+        "label": "Central de avisos — 10 em aberto",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1248,
+          "right": 1284,
+          "top": 9.5,
+          "width": 36,
+          "x": 1248,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Idioma: Português (BR)",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1292,
+          "right": 1328,
+          "top": 9.5,
+          "width": 36,
+          "x": 1292,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Tema: light. Cmd+Shift+L para alternar.",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1336,
+          "right": 1372,
+          "top": 9.5,
+          "width": 36,
+          "x": 1336,
+          "y": 9.5
+        }
+      },
+      {
+        "label": "Menu do usuário",
+        "rect": {
+          "bottom": 45.5,
+          "height": 36,
+          "left": 1380,
+          "right": 1416,
+          "top": 9.5,
+          "width": 36,
+          "x": 1380,
+          "y": 9.5
+        }
+      }
+    ],
+    "overflow": 0,
+    "overlap": false,
+    "width": 1440
+  }
+]

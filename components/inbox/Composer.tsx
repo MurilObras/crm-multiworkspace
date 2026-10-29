@@ -211,7 +211,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     <>
       <div
         className={cn(
-          "relative border-t border-border bg-background px-3 py-2",
+          "inbox-composer relative border-t border-border bg-background px-3 py-2",
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
@@ -222,10 +222,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           onPick={applyTemplate}
           onClose={() => setMenuDismissed(true)}
         />
-        <div className="mb-1.5 flex gap-1">
+        <div className="inbox-composer-modes mb-1.5 flex gap-1">
           <button
             type="button"
             onClick={() => setMode("reply")}
+            aria-pressed={mode === "reply"}
             className={cn(
               "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
               mode === "reply"
@@ -238,6 +239,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           <button
             type="button"
             onClick={() => setMode("note")}
+            aria-pressed={mode === "note"}
             className={cn(
               "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
               mode === "note"
@@ -259,9 +261,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           relê-la — ela está logo acima, no fio.
         */}
         {respondendo && mode === "reply" && (
-          <div className="mb-1 flex items-start gap-2 rounded-md border-l-2 border-primary bg-muted/60 px-2 py-1.5">
+          <div className="mb-1 flex items-start gap-2 rounded-md border-l border-primary bg-muted/60 px-2 py-1.5">
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-medium text-primary">
+              <div className="text-xs font-medium text-primary">
                 {respondendo.direction === "outbound" ? t("Você") : t("Cliente")}
               </div>
               <div className="line-clamp-2 text-xs text-muted-foreground">
@@ -279,35 +281,6 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           </div>
         )}
         <div className="flex items-end gap-2">
-          {mode === "reply" && (
-            <AttachMenu
-              disabled={respostaBarrada}
-              onPick={setPendingFile}
-              onPickContact={() => setContactPickerOpen(true)}
-            />
-          )}
-          {mode === "reply" && (
-            <DraftReplyButton conversationId={conversationId} disabled={isDisabled} onDraft={applyDraft} />
-          )}
-          <EmojiButton
-            disabled={isDisabled}
-            onPick={(emoji) => {
-              const ta = taRef.current;
-              if (!ta) {
-                setText((t) => t + emoji);
-                return;
-              }
-              const start = ta.selectionStart ?? text.length;
-              const end = ta.selectionEnd ?? text.length;
-              const next = text.slice(0, start) + emoji + text.slice(end);
-              setText(next);
-              requestAnimationFrame(() => {
-                ta.focus();
-                ta.selectionStart = ta.selectionEnd = start + emoji.length;
-                autoresize();
-              });
-            }}
-          />
           <textarea
             ref={taRef}
             value={text}
@@ -330,7 +303,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             // uma nota interna precisa saber que ela não vai para o cliente, e
             // essa informação não pode depender de abrir um diálogo.
             placeholder={
-              mode === "note" ? t("Escreva uma nota interna… (só o time vê)") : t("Escreva uma mensagem…")
+              mode === "note"
+                ? t("Escreva uma nota interna… (só o time vê)")
+                : t("Escreva uma mensagem…")
             }
             title={
               mode === "note"
@@ -338,8 +313,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 : t("Enter envia · Shift+Enter quebra linha")
             }
             className={cn(
-              "min-h-9 max-h-40 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
-              "placeholder:text-muted-foreground focus:outline-hidden focus:ring-1 focus:ring-ring",
+              "max-h-40 min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
+              "placeholder:text-muted-foreground focus:ring-1 focus:ring-ring focus:outline-hidden",
             )}
             disabled={mode === "note" ? isDisabled : respostaBarrada}
             aria-label={t("Mensagem")}
@@ -348,7 +323,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             <Button
               type="button"
               size="icon"
-              className="h-9 w-9 shrink-0"
+              className="inbox-send h-11 w-11 shrink-0"
               onClick={handleSubmit}
               disabled={(mode === "note" ? isDisabled : respostaBarrada) || !text.trim()}
               aria-label={t("Enviar")}
@@ -358,6 +333,41 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           ) : (
             <AudioRecorder conversationId={conversationId} disabled={respostaBarrada} />
           )}
+        </div>
+        <div className="inbox-composer-tools">
+          {mode === "reply" && (
+            <AttachMenu
+              disabled={respostaBarrada}
+              onPick={setPendingFile}
+              onPickContact={() => setContactPickerOpen(true)}
+            />
+          )}
+          {mode === "reply" && (
+            <DraftReplyButton
+              conversationId={conversationId}
+              disabled={isDisabled}
+              onDraft={applyDraft}
+            />
+          )}
+          <EmojiButton
+            disabled={isDisabled}
+            onPick={(emoji) => {
+              const ta = taRef.current;
+              if (!ta) {
+                setText((t) => t + emoji);
+                return;
+              }
+              const start = ta.selectionStart ?? text.length;
+              const end = ta.selectionEnd ?? text.length;
+              const next = text.slice(0, start) + emoji + text.slice(end);
+              setText(next);
+              requestAnimationFrame(() => {
+                ta.focus();
+                ta.selectionStart = ta.selectionEnd = start + emoji.length;
+                autoresize();
+              });
+            }}
+          />
         </div>
       </div>
       <AttachmentPreviewDialog
