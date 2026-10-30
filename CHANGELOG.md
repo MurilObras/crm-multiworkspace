@@ -8,6 +8,14 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.9.4] — 2026-10-30
+
+### Alterado
+
+- **Cores mais luminosas em todo o CRM** A identidade padrão passa a usar azul cobalto, gradientes estáticos nos destaques e superfícies de leitura claras, com uma paleta correspondente para o tema escuro. O atendimento e as demais telas compartilham os mesmos papéis de cor, incluindo menus e sobreposições.
+
+  As marcas personalizadas, as cores de status, o layout responsivo e as funcionalidades existentes são preservados. A atualização não exige configuração adicional.
+
 ## [3.9.3] — 2026-10-29
 
 ### Alterado
@@ -3499,7 +3507,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.3...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.4...HEAD
+[3.9.4]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.3...v3.9.4
 [3.9.3]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.2...v3.9.3
 [3.9.2]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.1...v3.9.2
 [3.9.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.0...v3.9.1
