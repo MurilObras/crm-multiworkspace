@@ -1,36 +1,45 @@
 ---
-name: "CRM — sistema visual do Inbox"
-description: "Navegação profunda, leitura clara e seleção suave no atendimento existente."
+name: "CRM — colorimetria Taskly"
+description: "Cobalto luminoso, leitura clara e lima contido nos componentes existentes."
 colors:
-  chrome: "color-mix(in srgb, var(--color-brand, #6d28d9) 24%, #100b21)"
-  chrome-text: "#faf7ff"
-  chrome-muted: "#ddd2f1"
-  chrome-hover: "#34264c"
-  chrome-focus: "#e2ceff"
-  canvas: "#fbfaff"
+  chrome: "#1643c0"
+  chrome-text: "#ffffff"
+  chrome-muted: "#f0f4ff"
+  chrome-hover: "#2437ba"
+  chrome-focus: "#ffffff"
+  chrome-border: "#a7bcff"
+  highlight: "#d7f65b"
+  highlight-foreground: "#1d2911"
+  canvas: "#f7f9fd"
   surface: "#ffffff"
-  surface-elevated: "#f3f0fa"
-  text: "#1f1533"
-  text-muted: "#625a75"
-  border: "#e8e1f3"
-  control-border: "#9a87b2"
-  accent: "#6d28d9"
+  surface-elevated: "#edf2ff"
+  text: "#1b2334"
+  text-muted: "#566174"
+  text-subtle: "#59677f"
+  border: "#dce3f1"
+  control-border: "#76839b"
+  accent: "#3047e8"
   accent-foreground: "#ffffff"
-  accent-soft: "#ede9fe"
-  selected-row: "#f5f2ff"
-  accent-hover: "#5b21b6"
-  canvas-dark: "#16121f"
-  surface-dark: "#1c1728"
-  surface-elevated-dark: "#2b233b"
-  text-dark: "#f5efff"
-  text-muted-dark: "#c4b8d8"
-  border-dark: "#3b304c"
-  control-border-dark: "#8d7aa8"
-  accent-dark: "#c4a5ff"
-  accent-foreground-dark: "#201039"
-  accent-soft-dark: "#35234d"
-  selected-row-dark: "#2c203c"
-  accent-hover-dark: "#d4bfff"
+  accent-soft: "#e8eeff"
+  selected-row: "#e8eeff"
+  accent-hover: "#2437ba"
+  canvas-dark: "#111827"
+  surface-dark: "#192337"
+  surface-elevated-dark: "#24324b"
+  text-dark: "#f0f4ff"
+  text-muted-dark: "#bdc9df"
+  text-subtle-dark: "#a8b6ce"
+  border-dark: "#34445f"
+  control-border-dark: "#71829f"
+  accent-dark: "#a7bcff"
+  accent-foreground-dark: "#121c34"
+  accent-soft-dark: "rgba(167, 188, 255, 0.16)"
+  selected-row-dark: "rgba(167, 188, 255, 0.16)"
+  accent-hover-dark: "#cbd7ff"
+  error: "#a94a3c"
+  destructive-foreground: "#ffffff"
+  error-dark: "#c87263"
+  destructive-foreground-dark: "#0a1020"
 typography:
   title:
     fontFamily: 'var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
@@ -107,8 +116,8 @@ components:
     typography: "{typography.body}"
     padding: "8px 16px 8px 36px"
   navigation-current:
-    backgroundColor: "{colors.accent-soft}"
-    textColor: "{colors.accent}"
+    backgroundColor: "{colors.highlight}"
+    textColor: "{colors.highlight-foreground}"
     rounded: "{rounded.navigation}"
     typography: "{typography.body-compact}"
     padding: "4px 12px"
@@ -142,49 +151,59 @@ components:
     rounded: "{rounded.control}"
     typography: "{typography.label}"
     padding: "8px 12px"
+  button-destructive:
+    backgroundColor: "{colors.error}"
+    textColor: "{colors.destructive-foreground}"
+    rounded: "{rounded.primitive}"
 ---
 
-# Design System: CRM — Inbox
+# Design System: CRM — colorimetria Taskly
 
 ## Overview
 
-**Creative North Star: "Navegação profunda, leitura clara"**
+**Creative North Star: "Cobalto luminoso, leitura clara"**
 
-A estrutura de navegação usa uma faixa escura e contínua; o trabalho acontece em painéis claros, com seleção suave e texto legível. A hierarquia serve ao atendimento frequente no celular: localizar uma conversa, reconhecer quem está no comando e escrever sem perder o contexto do contato.
+A navegação usa cobalto e gradiente estático luminoso; o trabalho acontece sobre superfícies frias de leitura, com seleção suave e texto legível. O lima destaca poucas seleções da navegação. No tema escuro, os neutros azulados e as frentes claras são desenhados separadamente.
 
-Este documento registra o código do redesign do Inbox, ainda sujeito à revisão e aos gates descritos no [contrato da superfície](.impeccable/surfaces/components-inbox-inboxlayout-tsx.md). Não estabelece uma nova identidade para todo o CRM. A personalização por instalação e organização, os temas e os componentes existentes continuam sendo a autoridade do produto. As cores de destaque acima descrevem o fallback do Inbox sem folha de marca; as cores escuras descrevem seu tema escuro.
+Este documento mescla a mudança cromática global autorizada em 29/10/2026 com os padrões implementados do Inbox. A autoridade de cores é Taskly, Behance 257138265; composição, funcionalidades, Atkinson, medidas e responsividade permanecem as existentes. O [contrato cromático](.impeccable/surfaces/app-globals-css.md) substitui o violeta anterior somente em cor. Os padrões de layout abaixo continuam específicos do Inbox; não prescrevem três painéis para outras jornadas. A marca por instalação e organização e as semânticas de estado continuam soberanas. A documentação descreve o build local, sem declarar CI final ou publicação.
 
 **Key Characteristics:**
 
-- Navegação profunda e leitura em superfícies claras.
-- Seleção lavanda no padrão, derivada da marca quando há personalização.
+- Cobalto com gradientes estáticos separados dos tokens de cor sólida.
+- Superfícies frias e lima contido; marca resolvida prevalece sobre o padrão.
 - Componentes reais, controles explícitos e ícones do mapa canônico.
 - Composição determinada pela largura útil do atendimento.
 
 ## Colors
 
-A paleta do Inbox combina estrutura violeta profunda, brancos frios e uma seleção lavanda; os papéis de destaque continuam ligados aos tokens resolvidos da marca.
+A paleta padrão é global: cobalto nas ações e na navegação, brancos frios no conteúdo e lima em seleções contidas. Os aliases do Inbox consomem os mesmos papéis; não existe fallback violeta próprio da rota.
 
 ### Primary
 
-- **Destaque violeta** (`accent`, `accent-hover`, `accent-foreground`): ação primária, contagens, foco e mensagem enviada no celular.
-- **Lavanda de seleção** (`accent-soft`, `selected-row`): aba ativa, item de navegação ativo, avatares de fallback e linha selecionada. Os dois papéis têm intensidades distintas no código.
-- **Estrutura profunda** (`chrome`, `chrome-text`, `chrome-muted`): cabeçalho e navegação. O fundo é a expressão de mistura preservada no frontmatter, alimentada por `--color-brand`, e não o hex fixo proposto no mockup.
-- **Interação na estrutura profunda** (`chrome-hover`, `chrome-focus`): fundo de hover e contorno claro que mantêm a frente legível sobre o chrome.
+- **Cobalto de ação** (`accent`, `accent-hover`, `accent-foreground`): ação primária, contagens, foco e mensagem enviada no celular.
+- **Azul de seleção** (`accent-soft`, `selected-row`): abas, avatares de fallback e linha selecionada; os dois papéis agora resolvem ao mesmo token suave.
+- **Cobalto de navegação** (`chrome`, `chrome-text`, `chrome-muted`): fundo sólido, texto e apoio do cabeçalho e sidebar, com gradiente em camada própria.
+- **Interação no cobalto** (`chrome-hover`, `chrome-focus`, `chrome-border`): hover, foco claro e contornos sobre a navegação.
 - **Destaque no escuro** (`accent-dark`, `accent-foreground-dark`, `accent-soft-dark`, `selected-row-dark`, `accent-hover-dark`): papéis alternativos do fallback quando `html[data-theme="dark"]` está ativo.
+
+### Secondary
+
+- **Lima contido** (`highlight`, `highlight-foreground`): item atual da sidebar e filtro mobile selecionado. Não substitui o verde de sucesso nem os papéis semânticos. Sob marca personalizada, esses papéis passam à seleção suave e à tinta da marca.
 
 ### Neutral
 
 - **Tela fria e painéis claros** (`canvas`, `surface`, `surface-elevated`): histórico, lista, ficha e faixas de controles.
-- **Tinta e texto de apoio** (`text`, `text-muted`): leitura principal, horários, fila e metadados.
+- **Tinta e texto de apoio** (`text`, `text-muted`, `text-subtle`): leitura principal, horários, fila e metadados.
 - **Divisória e contorno funcional** (`border`, `control-border`): separação de regiões e contorno mais forte de campos e controles.
 - **Neutros do tema escuro** (`canvas-dark`, `surface-dark`, `surface-elevated-dark`, `text-dark`, `text-muted-dark`, `border-dark`, `control-border-dark`): substituem os papéis claros; não se obtêm invertendo a tela.
 
-As rampas do sidecar são metadados de prévia. A rampa violeta clara usa oito paradas da escala real; as demais são sínteses tonais, não tokens novos da interface nem substitutos das rampas de marca em runtime.
+O sidecar registra as onze paradas reais do cobalto e dos neutros, sem sintetizar novas rampas. `app/globals.css` é a fonte dos papéis e `app/design/lib/tokens.ts` mantém os sólidos equivalentes no laboratório. A opção padrão do laboratório conserva o ID legado `sage` por compatibilidade e exibe o nome Taskly. A curva de marcas em `lib/branding/rampa.ts` permanece histórica: sua fixture Sage original não foi recalibrada para esta paleta. A régua gerada de contraste acompanha os novos sólidos; isso não promete pixels idênticos para toda marca cadastrada.
 
-**The Marca Soberana Rule.** O fallback violeta só se aplica quando o documento não contém `#marca-instalacao` nem `#marca-organizacao`. A busca é no `html`, cobrindo a folha de instalação emitida no `head` e a de organização emitida na árvore do `body`. Nunca copiar os valores de fallback por cima de uma marca resolvida.
+**The Marca Soberana Rule.** A marca resolvida por instalação ou organização prevalece sobre o padrão Taskly. A guarda no documento cobre `#marca-instalacao` no head e `#marca-organizacao` no body; remove os gradientes de ação e ambiente, deriva o chrome da marca e substitui o lima pelos papéis da marca. Nunca copiar o padrão por cima da marca resolvida.
 
-**The Escopo da Jornada Rule.** Os papéis da rota são aplicados em `body:has(.inbox-workspace)` e na área de atendimento. Isso alcança os portais de menus e ficha dentro do documento enquanto o Inbox está montado, sem converter a paleta das demais jornadas.
+**The Cor Sólida Rule.** Texto, borda, foco, aliases e régua consomem cores válidas. Gradientes estáticos vivem somente em background-image: chrome e ação claros usam `linear-gradient(115deg in srgb, #1643c0 0%, #3047e8 52%, #5362da 100%)`; ação escura usa `linear-gradient(115deg, #a7bcff, #cbd7ff 52%, #b5c1ff)`. O ambiente do shell usa `linear-gradient(135deg, #edf2ff 0%, #fafbff 70%, #f1f7e1 100%)` no claro e `linear-gradient(135deg, #192337, #111827 70%, #182525)` no escuro. Não converter esses fundos em valores de tokens sólidos.
+
+**The Semântica Soberana Rule.** Erro, sucesso, aviso, informação, trilhas de pessoas da agenda e categorias conservam seus papéis. Ação destrutiva usa vermelho sem gradiente em repouso e hover, com frente semântica própria; lima não significa sucesso. O alias destrutivo escuro usa `destructive-foreground-dark`, sem alterar os vermelhos.
 
 ## Typography
 
@@ -238,6 +257,8 @@ A ficha é uma coluna de seções com identidade e ações; não transformar cad
 
 Ações diretas, com rótulos legíveis. “Assumir” usa a variante primária; ações de atendimento usam outline ou ghost conforme o componente existente. A barra quebra em linhas com espaçamento de 8px, sem esconder ações para reproduzir um estado incidental do mockup. O envio usa o quadrado de 44px descrito no frontmatter. Ativo e desabilitado continuam herdados de `components/ui/button.tsx`; o CSS da superfície adapta hover e foco ao contexto.
 
+Primária/default e envio usam o sólido de ação sob o gradiente estático; hover remove a imagem e usa o sólido de hover. A variante destrutiva remove explicitamente background-image e conserva vermelho em hover, com brilho de 95%. A confirmação de apagar dados do tenant conserva sua sobrescrita vermelha com opacidade de 90% em hover, também sem imagem. Sob marca personalizada, ação não recebe gradiente. Os tokens de componente do frontmatter descrevem a base sólida; os snippets do sidecar incluem a imagem e os estados. As oito [medidas de confirmação](evidence/taskly/confirmacoes/medidas.json) registram mínimo de 4,67267:1 para a frente real; o [veredito F1](evidence/taskly/revisoes/veredito-local-f1.txt) tem aceite restrito a essa correção.
+
 Na toolbar da conversa abaixo de 760px úteis, hover usa `chrome-hover` e mantém `chrome-text`; foco visível usa `chrome-focus`, contorno de 2px e offset interno de -3px. Na composição intermediária, a toolbar é clara e hover usa `accent-soft` com `accent`. Essa barra fica oculta na composição de três regiões. Botões e links da ficha mantêm mínimo de 44px.
 
 ### Chips
@@ -254,7 +275,7 @@ A busca tem curva do papel `field`, contorno funcional e tamanho de texto mobile
 
 ### Navigation
 
-O shell continua usando o registro de navegação, nomes, ícones e permissões existentes. O Inbox altera a expressão visual de cabeçalho e sidebar. O item atual recebe seleção suave com destaque; os demais usam texto claro de apoio. A sidebar existente ocupa 240px expandida ou 64px recolhida, com ícones do mapa canônico em `lib/ui/icons.ts`. A biblioteca primária da feature é Phosphor via esse mapa; componentes compartilhados legados não são permissão para novos imports diretos.
+O shell continua usando o registro de navegação, nomes, ícones e permissões existentes. Cabeçalho e sidebar compartilham o cobalto com gradiente; o item atual recebe lima e tinta escura no padrão, e seleção derivada sob marca personalizada. Os demais usam texto claro de apoio. A sidebar existente ocupa 240px expandida ou 64px recolhida, com ícones do mapa canônico em `lib/ui/icons.ts`. A biblioteca primária da feature é Phosphor via esse mapa; componentes compartilhados legados não são permissão para novos imports diretos.
 
 As preferências que saem da faixa inline continuam acessíveis no Menu do usuário. Idiomas são itens Radix num grupo nomeado, sem submenu próprio; Tema é item Radix com ícone e texto do estado atual. Participam da mesma coleção de foco por setas, Enter e Escape, com retorno de foco ao gatilho; não usar botões avulsos dentro do menu para essas preferências.
 
@@ -264,13 +285,14 @@ Mensagens recebidas têm avatar de contato ou iniciais, quando a identidade est�
 
 “Responder” e “Nota interna” permanecem modos distintos. A ferramenta de áudio aparece no estado sem texto; envio aparece conforme rascunho e modo. Anexos, emoji, sugestões, bloqueios e atalhos mantêm seus handlers e condições. Uma captura com rascunho do mockup não autoriza alterar essa lógica.
 
-Nota selecionada usa o papel `note-mode-selected`: superfície opaca, texto `--color-warning-fg` e contorno interno de 1px na mesma tinta. A tinta semântica acompanha o tema existente. O par composto medido foi 5,987:1 no claro e 8,659:1 no escuro, conforme [contraste-nota.json](evidence/inbox-regulatis/round-3/contraste-nota.json); esses resultados descrevem esse estado, sem certificar outros pares.
+Nota selecionada usa o papel `note-mode-selected`: superfície opaca, texto `--color-warning-fg` e contorno interno de 1px na mesma tinta. A tinta semântica acompanha o tema existente. As medidas Regulatis em [contraste-nota.json](evidence/inbox-regulatis/round-3/contraste-nota.json) são históricas e antecedem a troca das superfícies; não são certificação de contraste da paleta Taskly.
 
 ## Do's and Don'ts
 
 ### Do:
 
 - **Do** respeitar a precedência da marca resolvida e a troca de tema.
+- **Do** manter gradientes estáticos separados dos sólidos e vermelho sem gradiente nas ações destrutivas.
 - **Do** medir a largura útil do Inbox antes de escolher uma, duas ou três regiões.
 - **Do** manter ações, estados e permissões existentes ao traduzir as referências aprovadas.
 - **Do** usar os ícones do mapa canônico e componentes reais.
@@ -278,8 +300,8 @@ Nota selecionada usa o papel `note-mode-selected`: superfície opaca, texto `--c
 
 ### Don't:
 
-- **Don't** espalhar o fallback violeta do Inbox para outras jornadas.
+- **Don't** restaurar o fallback violeta anterior ou importar a composição Taskly como parte de uma mudança de cores.
 - **Don't** importar uma imagem de tela como interface ou acrescentar imagens de conteúdo ausentes do produto.
 - **Don't** criar menus, funcionalidades ou regras de negócio a partir de detalhes incidentais dos mockups.
 - **Don't** converter texto pequeno, colisões ou bordas decorativas apontadas pela revisão em regras para futuras telas.
-- **Don't** tratar capturas sintéticas como comprovação de backend, envio, Realtime, teclado ou aparelho físico.
+- **Don't** tratar capturas do harness histórico como comprovação de backend, ou os E2E locais Taskly como prova de envio WhatsApp, Realtime de produção ou aparelho físico.

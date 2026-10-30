@@ -24,12 +24,11 @@ const RAIZ = process.cwd();
 const CSS = fs.readFileSync(path.join(RAIZ, "app/globals.css"), "utf8");
 
 /**
- * Os stops esperados saem do CSS, NÃO de uma cópia colada aqui.
+ * A paleta padrão é lida do CSS. A calibração do motor de marcas é histórica.
  *
- * Copiar à mão criaria uma segunda fonte da verdade que envelhece em silêncio: quem
- * mexesse na paleta do design system veria este teste verde contra a paleta de ontem, e
- * a catraca deixaria de calibrar contra a régua. Lendo do arquivo, mudar a Sage quebra
- * este teste — que é exatamente o aviso que se quer.
+ * Taskly substitui a identidade padrão, preservando as marcas cadastradas. Por
+ * isso a curva Sage mantém uma fixture de compatibilidade congelada: recalibrar
+ * o algoritmo pela nova identidade mudaria também as rampas dos clientes.
  */
 /**
  * O bloco `:root` sai por casamento de chaves, e não por `slice` entre duas
@@ -48,7 +47,7 @@ function blocoRoot(css: string): string {
   return css.slice(i, fim);
 }
 
-function stopsSageDoCss(): string[] {
+function stopsDoProdutoNoCss(): string[] {
   const raiz = blocoRoot(CSS);
   return GRAUS.map((g) => {
     const m = new RegExp(`--color-accent-${g}:\\s*(#[0-9a-f]{6})`, "i").exec(raiz);
@@ -102,30 +101,39 @@ describe("conversões de cor", () => {
   });
 });
 
-describe("rampaDeSemente — catraca de calibração contra o design system", () => {
-  const esperados = stopsSageDoCss();
+describe("rampaDeSemente — identidade padrão e compatibilidade das marcas", () => {
+  const esperados = stopsDoProdutoNoCss();
 
   it("lê 11 stops distintos do globals.css (guarda de vacuidade)", () => {
     // Sem isto, um regex quebrado devolveria lista vazia e a comparação abaixo passaria
     // por não ter o que comparar — instrumento morto tem cara de teste verde.
     expect(esperados).toHaveLength(11);
     expect(new Set(esperados).size).toBe(11);
-    expect(esperados[K]).toBe("#506d48");
+    expect(esperados[K]).toBe("#3047e8");
   });
 
   it("reproduz os 11 stops Sage a partir de #506d48 com Δ ≤ 2/255 por canal", () => {
+    // Fixture histórica do commit 710b02e0: protege marcas existentes, não a
+    // nova identidade padrão. O limite original de dois níveis por canal fica.
+    const sageHistorica = [
+      "#f3f6f1", "#e4ebe0", "#c8d6c1", "#a4ba9a", "#82a077", "#67885d",
+      "#506d48", "#41573b", "#374731", "#2f3c2b", "#171f15",
+    ];
+    expect(sageHistorica).toHaveLength(11);
+    expect(new Set(sageHistorica).size).toBe(11);
+    expect(sageHistorica[K]).toBe("#506d48");
     const derivada = rampaDeSemente("#506d48");
-    const distancias = esperados.map((esperado, i) => distanciaPorCanal(esperado, derivada[i]!));
+    const distancias = sageHistorica.map((esperado, i) => distanciaPorCanal(esperado, derivada[i]!));
     expect(
       Math.max(...distancias),
-      `derivada: ${derivada.join(" ")}\nesperada: ${esperados.join(" ")}\nΔ: ${distancias.join(",")}`,
+      `derivada: ${derivada.join(" ")}\nesperada: ${sageHistorica.join(" ")}\nΔ: ${distancias.join(",")}`,
     ).toBeLessThanOrEqual(2);
   });
 
   it("devolve o hex LITERAL no stop da semente", () => {
     // Ida-e-volta por OKLab erra ±1/255. Mostrar `#516d49` no seletor de cor enquanto a
     // UI pinta `#506d48` custa mais confiança do que o pixel vale.
-    for (const semente of ["#506d48", "#f5c518", "#0f172a", "#e11d48"]) {
+    for (const semente of ["#506d48", "#3047e8", "#f5c518", "#0f172a", "#e11d48"]) {
       expect(rampaDeSemente(semente)[K]).toBe(semente);
     }
   });

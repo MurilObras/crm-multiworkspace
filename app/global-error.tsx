@@ -27,10 +27,9 @@ export default function GlobalError({
       <body
         style={{
           margin: 0,
-          fontFamily:
-            "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-          background: "#fafaf9",
-          color: "#1c1917",
+          fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+          background: "#f7f9fd",
+          color: "#1b2334",
           minHeight: "100vh",
           display: "flex",
           alignItems: "center",
@@ -43,7 +42,7 @@ export default function GlobalError({
             maxWidth: 480,
             width: "100%",
             background: "white",
-            border: "1px solid #e7e5e4",
+            border: "1px solid #dce3f1",
             borderRadius: 12,
             padding: "2rem",
             textAlign: "center",
@@ -52,14 +51,14 @@ export default function GlobalError({
           <h1 style={{ fontSize: "1.5rem", margin: "0 0 0.5rem", fontWeight: 600 }}>
             Algo deu errado
           </h1>
-          <p style={{ color: "#57534e", margin: "0 0 1.5rem" }}>
+          <p style={{ color: "#566174", margin: "0 0 1.5rem" }}>
             Tente novamente em instantes. Se persistir, contate o suporte com o ID abaixo.
           </p>
           <div
             style={{
               fontFamily: "ui-monospace, monospace",
               fontSize: "0.75rem",
-              background: "#f5f5f4",
+              background: "#edf2ff",
               padding: "0.5rem",
               borderRadius: 6,
               marginBottom: "1rem",
@@ -81,7 +80,7 @@ export default function GlobalError({
               }}
               style={{
                 padding: "0.5rem 1rem",
-                border: "1px solid #d6d3d1",
+                border: "1px solid #8491a6",
                 background: "white",
                 borderRadius: 6,
                 cursor: "pointer",
@@ -94,8 +93,8 @@ export default function GlobalError({
               onClick={() => reset()}
               style={{
                 padding: "0.5rem 1rem",
-                border: "1px solid #1c1917",
-                background: "#1c1917",
+                border: "1px solid #3047e8",
+                background: "#3047e8",
                 color: "white",
                 borderRadius: 6,
                 cursor: "pointer",

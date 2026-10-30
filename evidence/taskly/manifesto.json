@@ -1,0 +1,303 @@
+{
+  "base": "710b02e03e5f280eeddf4fa3ac5f45e31c2e24a0",
+  "capturas": [
+    {
+      "arquivo": "evidence/taskly/capturas/cancelada.png",
+      "dimensoes": [
+        1280,
+        720
+      ],
+      "sha256": "83005f3e16e2573fe7dbd040e1b2f5a8235ce44e3bcf771590a81b33797001af",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-dark-1024.png",
+      "dimensoes": [
+        1024,
+        900
+      ],
+      "sha256": "465b6429529c355ad10a44c8c6f8ba274b049366c6501919013f73662fc602f0",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-dark-1440.png",
+      "dimensoes": [
+        1440,
+        900
+      ],
+      "sha256": "2c354ef5ae384f7929bd46ef7a97c9258986e7a6ae010e77269c490afa210eda",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-dark-320.png",
+      "dimensoes": [
+        320,
+        900
+      ],
+      "sha256": "321ab0580df57dba7ade9a33c51e224e0d1aa0f2ce60405b3dd4760e2ab18069",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-dark-390.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "d8f16e7feaffc8c83e32da7b1aeb9887559937b14224b0ef9c1571c9bb363922",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-dark-430.png",
+      "dimensoes": [
+        430,
+        900
+      ],
+      "sha256": "c884302ae5b5ef1f71f3da76f5027dee8adc7f6cd0e5c8350626af3a0d5de722",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-dark-460.png",
+      "dimensoes": [
+        460,
+        900
+      ],
+      "sha256": "2d63bd68aa5a80becf67928fd339bdd6181b54cc86b4efb92188fa5acf81d794",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-dark-768.png",
+      "dimensoes": [
+        768,
+        900
+      ],
+      "sha256": "78331e69dd6dc5efaecd6a71c2703545309c159fc9d6c4237a206e834b5122fa",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-ficha-dark-390.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "ffc898b97ba01ade63c909ce72b1baa186c23d74397f2b502d4fa08a7fdc275a",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-ficha-light-390.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "1eec65a07e35c376c1b47b105d9e57c3b4d4a32d40db492faab5b07601299d5a",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-light-1024.png",
+      "dimensoes": [
+        1024,
+        900
+      ],
+      "sha256": "6c18d34b78e852bb48252a887c28bcc0290696e6ac5a47cd2fa8b282c3cfefec",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-light-1440.png",
+      "dimensoes": [
+        1440,
+        900
+      ],
+      "sha256": "31bd538d13005566f7e37c4897acccffb02601045d2c23aef771f8c7a200dac0",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-light-320.png",
+      "dimensoes": [
+        320,
+        900
+      ],
+      "sha256": "b0a06cd1bd94e82bd81a64712a1d77bc1ae345c7932cf243c1822c247a18153c",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-light-390.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "840c8fe01534ba6ff269507aa86e9362469c7c2f14e5af69c21897522b3a708c",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-light-430.png",
+      "dimensoes": [
+        430,
+        900
+      ],
+      "sha256": "22bbbb7f07c45ebfa2d4587ed07362588ca72f1a8e7ad16aab1bdc412897e9ce",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-light-460.png",
+      "dimensoes": [
+        460,
+        900
+      ],
+      "sha256": "973564d955f0b43436dcc8f5637e3e1d113b86a6119309c6e1f086d75fabf6f3",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-light-768.png",
+      "dimensoes": [
+        768,
+        900
+      ],
+      "sha256": "9f2d6eaed8a2509881b1025c7a36a629b70841370e7e899ca84a3b2a498bed98",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-marca-dark-390.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "f9481e938172a9f0cbed4a3ab7198f3099f2d4314398d385f74134f6e56930a2",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-marca-light-390.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "82979404d3a84d222fc7358677a9e42e73ffb4955ee9a4b605a7f088aaa77f06",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-menu-dark-390.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "8790223b3b284caa3d74b7c7d2519261a836e7a83c2bef56359075e98d5fd62c",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/cor-menu-light-390.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "1f2e6890e49e96fbf85ed2a592ca645b420845981c126a6de79573d3e6dd88fd",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/faixa.png",
+      "dimensoes": [
+        1280,
+        720
+      ],
+      "sha256": "4570d38a762c9144d9dda9a0ba97afeba08405836448595188dc1c55226c414a",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/layout-1024.png",
+      "dimensoes": [
+        1024,
+        900
+      ],
+      "sha256": "c656ec598a9b2c66d7bf12bca736dfeed564edc6274d39aaa49d42e9072dd68f",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/layout-1280.png",
+      "dimensoes": [
+        1280,
+        900
+      ],
+      "sha256": "d47ed910c2635635c0db96e25d847a4a60ee74b4ec4e4b4969f2fb7f008a10d3",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/layout-1440.png",
+      "dimensoes": [
+        1440,
+        900
+      ],
+      "sha256": "4d4b6395be010854d82d0f2e8b1a8f88e1e5eb12b25761abe698f1d4d0fc3cb7",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/layout-320.png",
+      "dimensoes": [
+        320,
+        900
+      ],
+      "sha256": "600a04b8dc98f4b4d900fce41d0afc5d4d0221ff3736aa2e80c324832d9353d9",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/layout-390.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "5c9fe346ac40c7a4a28cfa399436a86e018bf346d288d1bff905ebfb4d9bd629",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/layout-768.png",
+      "dimensoes": [
+        768,
+        900
+      ],
+      "sha256": "d716671f20bf3fd9340edf0430866ce97b45d72d53b33baba565660b47ed8ef7",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/menu-teclado-1440.png",
+      "dimensoes": [
+        1440,
+        900
+      ],
+      "sha256": "819c8b59d32c4375a0050ab2bf35df2dff153fb279c14679a061c71444d53832",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/menu-teclado-320.png",
+      "dimensoes": [
+        320,
+        900
+      ],
+      "sha256": "12e961bb5c4cab1079ef6774a9f1d343e8b97a13d2e188485a028ac930011d55",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    },
+    {
+      "arquivo": "evidence/taskly/capturas/troca.png",
+      "dimensoes": [
+        1280,
+        720
+      ],
+      "sha256": "336f3913f9f27665702a0a11a5866b22a86bc9e6fdcb357b59da894f94061475",
+      "origem": "Teste Playwright do CRM, build de produção local, Supabase pg15 fresco, conta e dados sintéticos; sem envio externo."
+    }
+  ],
+  "fontes_sha256_lf": {
+    "app/app/settings/tenant/_danger-zone.tsx": "c50ef873442bdd9acc1278e944a666c06874882e443608301aceda00d2fcbf43",
+    "app/design/lib/tokens.ts": "d7188afa8c126176035d54a5abe57f5c646c343ccdf977ee2ca9f94a2033f0d9",
+    "app/design/showcase.css": "32d01307f3018bfc20abbbac82eca57bef2e31ae847b65d18b2f7570e0799bb1",
+    "app/global-error.tsx": "378bdd0bbf2056ab916785db0d897a3cc662ca970ffcf590f57d603977dddede",
+    "app/globals.css": "05868f27734ce321d40f404d07246f312f7f1327cec6cb4bd964d32c5cff99a5",
+    "components/inbox/inbox-workspace.css": "861ac31f9e84d08d865c33f42a34a3a4b675986b6bfa2dec1b6e7b2cf2d8c3ad",
+    "components/shell/Sidebar.tsx": "a5f2571ed8992a56fd808897bbb5ff9ae7ac843a26266773f681cf88604407cf",
+    "components/ui/button.tsx": "f731725aec5391bf0511cc16d3fa009e48c90e619e99aafd8f37daa0b9d2edce",
+    "components/ui/input.tsx": "589053eb6f38772793f7bf46451a78bab87259f7d60044ec44460fa44e15062b",
+    "components/ui/textarea.tsx": "d9a6c97ac71b5ad481fd75d46ae73ca7b18fe8b02035338c056bcd8602548250",
+    "lib/branding/rampa.ts": "b5bd57db57f928d426745d4c1f1ba127cbdbfd7fd6a6557c248a62b3d811b391",
+    "lib/branding/regua-do-produto.ts": "91d29f85e7ee015a06cf39c22354248d9805d740fbf44aac56309a5172b3cb53"
+  },
+  "limites": [
+    "Capturas do IAB com dimensões truncadas foram rejeitadas; não estão neste conjunto.",
+    "Não demonstra aparelho físico nem envio WhatsApp.",
+    "A cobertura de cores das demais páginas é estrutural, por tokens compartilhados; não equivale a captura individual de todas as rotas."
+  ]
+}

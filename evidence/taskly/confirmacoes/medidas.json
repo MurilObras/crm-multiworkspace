@@ -1,0 +1,130 @@
+[
+  {
+    "theme": "light",
+    "width": 390,
+    "state": "repouso",
+    "foreground": "rgb(255, 255, 255)",
+    "background": "rgb(169, 74, 60)",
+    "channels": [
+      169,
+      74,
+      60,
+      1
+    ],
+    "surface": "rgb(247, 249, 253)",
+    "gradient": "none",
+    "contrast": 5.627365711937858
+  },
+  {
+    "theme": "light",
+    "width": 390,
+    "state": "hover",
+    "foreground": "rgb(255, 255, 255)",
+    "background": "oklab(0.529497 0.110636 0.0648602 / 0.9)",
+    "channels": [
+      169,
+      74,
+      60,
+      0.9019607843137255
+    ],
+    "surface": "rgb(247, 249, 253)",
+    "gradient": "none",
+    "contrast": 4.692085595993438
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "state": "repouso",
+    "foreground": "rgb(255, 255, 255)",
+    "background": "rgb(169, 74, 60)",
+    "channels": [
+      169,
+      74,
+      60,
+      1
+    ],
+    "surface": "rgb(247, 249, 253)",
+    "gradient": "none",
+    "contrast": 5.627365711937858
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "state": "hover",
+    "foreground": "rgb(255, 255, 255)",
+    "background": "oklab(0.529497 0.110636 0.0648602 / 0.9)",
+    "channels": [
+      169,
+      74,
+      60,
+      0.9019607843137255
+    ],
+    "surface": "rgb(247, 249, 253)",
+    "gradient": "none",
+    "contrast": 4.692085595993438
+  },
+  {
+    "theme": "dark",
+    "width": 390,
+    "state": "repouso",
+    "foreground": "rgb(10, 16, 32)",
+    "background": "rgb(200, 114, 99)",
+    "channels": [
+      200,
+      114,
+      99,
+      1
+    ],
+    "surface": "rgb(17, 24, 39)",
+    "gradient": "none",
+    "contrast": 5.454536499611101
+  },
+  {
+    "theme": "dark",
+    "width": 390,
+    "state": "hover",
+    "foreground": "rgb(10, 16, 32)",
+    "background": "oklab(0.644014 0.0958494 0.0572799 / 0.9)",
+    "channels": [
+      200,
+      114,
+      99,
+      0.9019607843137255
+    ],
+    "surface": "rgb(17, 24, 39)",
+    "gradient": "none",
+    "contrast": 4.672672543455953
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "state": "repouso",
+    "foreground": "rgb(10, 16, 32)",
+    "background": "rgb(200, 114, 99)",
+    "channels": [
+      200,
+      114,
+      99,
+      1
+    ],
+    "surface": "rgb(17, 24, 39)",
+    "gradient": "none",
+    "contrast": 5.454536499611101
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "state": "hover",
+    "foreground": "rgb(10, 16, 32)",
+    "background": "oklab(0.644014 0.0958494 0.0572799 / 0.9)",
+    "channels": [
+      200,
+      114,
+      99,
+      0.9019607843137255
+    ],
+    "surface": "rgb(17, 24, 39)",
+    "gradient": "none",
+    "contrast": 4.672672543455953
+  }
+]

@@ -30,9 +30,9 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary:
-          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
+          "bg-accent text-accent-foreground bg-[image:var(--color-action-gradient)] hover:bg-accent-hover hover:bg-none shadow-xs",
         default:
-          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
+          "bg-accent text-accent-foreground bg-[image:var(--color-action-gradient)] hover:bg-accent-hover hover:bg-none shadow-xs",
         secondary:
           "bg-surface-elevated text-text border border-border hover:border-accent hover:text-accent",
         outline:
@@ -40,7 +40,7 @@ const buttonVariants = cva(
         ghost:
           "bg-transparent text-text hover:bg-accent-soft hover:text-accent",
         destructive:
-          "bg-error text-white hover:brightness-95 shadow-xs",
+          "bg-error bg-none text-destructive-foreground hover:bg-error hover:brightness-95 shadow-xs",
         link:
           "bg-transparent text-accent underline underline-offset-4 decoration-1 hover:decoration-2 h-auto p-0",
       },

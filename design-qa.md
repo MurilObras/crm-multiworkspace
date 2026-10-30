@@ -1,4 +1,18 @@
-# QA visual do atendimento — 29/10/2026
+# QA visual — fotografia da etapa Taskly em 29/10/2026
+
+O registro atual é de uma troca somente cromática sobre a base `710b02e03e5f280eeddf4fa3ac5f45e31c2e24a0`, branch `feat/taskly-colorimetria`. [DESIGN.md](DESIGN.md) e o sidecar descrevem o CSS implementado: cobalto, gradientes estáticos luminosos, lima contido, marcas e semânticas soberanas. Fontes, medidas, funcionalidades e responsividade permanecem as existentes.
+
+O [primeiro ciclo completo](evidence/taskly/revisoes/revisao-local-completa.txt) abriu somente F1, gradiente primário cobrindo confirmação destrutiva. O [veredito F1](evidence/taskly/revisoes/veredito-local-f1.txt) pontuou resolved e ship somente para essa correção, sem aprovar a superfície inteira ou publicação. O relatório inicial de recaptura permanece no pacote; não substitui a revisão completa sobre o conjunto corrigido.
+
+O [índice Taskly](evidence/taskly/README.md) relaciona os 31 PNGs principais refeitos no build final, oito confirmações e 13 capturas suplementares anteriores a F1. As confirmações foram habilitadas, fotografadas em repouso/hover e canceladas, sem exclusão. O mínimo medido de contraste destrutivo é 4,67267:1. A geometria comparada registra 188 declarações idênticas; tokens e consumidores compartilhados dão alcance estrutural às 103 páginas com UI de 112 entradas, sem captura individual de todas. A captura suplementar de settings/templates mostra 403 e não certifica um formulário.
+
+Resultados locais informados pelo executor: suíte de 786 arquivos, 8724 aprovados e uma falha esperada; Node smoke 4/4. A suíte completa antecede F1. Após F1: build de produção, E2E Inbox 4 + confirmação 1 (5/5), verificações dirigidas 55/55, lint e typecheck aprovados, com avisos herdados. A documentação não reexecutou essa suíte nem transforma resultados locais em CI final. Na fotografia desta etapa, revisão independente no PR, CI do head final e publicação eram gates separados pendentes; não é necessário reinterpretar este registro como carimbo de resultados externos futuros.
+
+As capturas Taskly são E2E do build local de produção com Supabase pg15 fresco e dados sintéticos. Diferem do harness Regulatis histórico abaixo. Não comprovam aparelho físico, transporte WhatsApp ou todos os estados das 103 páginas. São evidência de desenvolvimento; nenhum raster novo foi incorporado ao navegador. Planejamento anterior usou Plandex com contexto Impeccable; implementação desta etapa foi editada pelo Codex, sem chamada nova a provedores de IA. Caveman é voz concisa.
+
+## Registro histórico do atendimento Regulatis — 29/10/2026
+
+O conteúdo abaixo conserva o estado documental anterior à troca cromática. Seus resultados, contrastes e pendências pertencem aos respectivos lotes históricos e não certificam a etapa Taskly.
 
 final result: passed
 

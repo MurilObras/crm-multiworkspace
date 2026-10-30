@@ -132,7 +132,7 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
                 handleConfirm();
               }}
               disabled={!confere || isPending}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive bg-none text-destructive-foreground hover:bg-destructive/90"
             >
               {isPending ? t("Apagando…") : t("Apagar de vez")}
             </AlertDialogAction>

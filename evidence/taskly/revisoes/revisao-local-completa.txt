@@ -1,0 +1,46 @@
+disposition: fix
+
+Entradas ainda indisponíveis: capturas suplementares fora do Inbox anunciadas pelo executor e resultado da repetição integral da suíte unitária; CI do futuro PR permanece um gate separado. Não foram usados browser, produção, envs ou provedores de IA.
+
+## persistence
+
+**pass para esta etapa de revisão.** `PRODUCT.md`, o contrato `.impeccable/surfaces/app-globals-css.md` e a régua `.impeccable/quality-bar-taskly.md` existem. A referência Taskly é autoridade cromática, não uma composição a reproduzir: preservar fontes, medidas, layout, textos, comportamento e marca foi uma restrição explícita. A ausência de uma nova rodada de conceito/seed ou de gates de reprodução de comp não é defeito neste escopo já aprovado. A identidade anterior em `PRODUCT.md`, `DESIGN.md` e sidecar não veta a direção atual; sua atualização cromática permanece obrigatória no handoff ao documenter antes do fechamento.
+
+O check de evidência agora passa: os **31 PNGs** existem, têm dimensões e SHA-256 iguais ao manifesto atualizado, e foram abertos individualmente; as 22 capturas obrigatórias estão completas. `menu-teclado-1440.png` agora mostra as duas conversas carregadas e o item de tema destacado; a conversa sem seleção é coerente com a captura do menu na lista. Não há mais a condição que motivou `revisao-local-inicial.md`. Os hashes LF dos 11 arquivos de UI/marca do manifesto também correspondem às fontes atuais. O relatório anterior foi preservado.
+
+O diff integral foi inspecionado, incluindo os consumidores de `buttonVariants`, os aliases de cor, os escopos da marca, as mudanças do showcase e os testes. A comparação geométrica registra 27 declarações globais e 161 do Inbox sem mudança; o diff não introduz alterações de fonte, tamanho, breakpoint, hook, API ou banco. Isso não equivale a provar toda a UX ou todas as rotas.
+
+## fidelity
+
+Inventário visual próprio das referências locais `taskly-17.jpg` e `taskly-23.jpg`: campo claro frio com luminosidade lavanda, azul elétrico nas ações e destaques, lima em pequenas seleções, texto escuro e interfaces móveis com superfícies de leitura claras. As ilustrações, telefones, tipografia e composição promocional dessas imagens não fazem parte da autorização.
+
+| Elemento ou promessa | Estado | Evidência e limite |
+| --- | --- | --- |
+| TYPE | match | A tipografia operacional existente foi preservada. Reproduzir o lettering promocional da referência contrariaria a restrição de somente cores. |
+| MATERIAL | match | Chrome com gradiente estático e conteúdo sobre superfícies planas. Não há tentativa de substituir as ilustrações 3D por efeitos CSS, nem obrigação de importá-las. |
+| GROUND | match | `#f7f9fd`, branco e superfícies frias no claro; `#111827`, `#192337` e `#24324b` no escuro correspondem ao OWN-WORLD. Conferidos nas capturas `cor-light/dark-{320,390,430,460,768,1024,1440}.png` e nos tokens. |
+| Cobalto, gradiente e lima contido | adaptation | Azul acessível `#3047e8`, chrome gradiente e seleção lima preservam o papel cromático da referência sem copiar seu layout. A adaptação é exigida pela leitura operacional e pelo contrato. |
+| FIRST VIEWPORT e STORY | match | Ações, lista, conversa, ficha e compositor mantêm a ordem e a geometria existentes. As sete larguras de ambos os temas não exibem corte do compositor ou overflow horizontal; `medidas.json` registra overflow 0, envio de 44 × 44 e compositor terminando em y=900. |
+| Ação primária padrão | match | Os gradientes do envio, vistos nos dois temas, conservam a frente correspondente. O teste e as medidas reportam mínimos de aproximadamente 5,09:1 no claro e 9,09:1 no escuro. Esses valores não certificam todos os consumidores de `buttonVariants`. |
+| Semânticas soberanas | contradicted | **F1:** o novo background-image da variante primária permanece em `AlertDialogAction` mesmo quando o consumidor define fundo destrutivo. A confirmação “Apagar de vez” perde o vermelho em repouso e passa a texto branco sobre o gradiente claro no tema escuro. Evidência de fonte e composição de classes, descrita em `material_fixes`; essa tela não foi capturada neste pacote. |
+| Marca própria | adaptation | `cor-marca-{light,dark}-390.png` mostra a marca amarela substituindo ação, avatar, seleção e chrome; o gradiente de ação é removido. Os seletores novos verificam a folha da instalação no documento e a da organização no body. O caminho da instalação no head foi inspecionado no código; não há captura específica dessa origem nem de portais sob marca personalizada. |
+| Menu, Sheet e teclado | match | `cor-menu-{light,dark}-390.png`, `cor-ficha-{light,dark}-390.png` e as duas capturas de teclado mostram portais legíveis, dentro da largura e com foco visível no menu. Os asserts atuais verificam foco, `data-highlighted` e retorno ao gatilho. |
+| Preservação da curva histórica das marcas | adaptation | O conteúdo executável de `lib/branding/rampa.ts` é igual à base após retirar comentários e espaços. Os 11 stops da fixture Sage coincidem com os stops da base `710b02e0`; Δ≤2 e as guardas de 11 stops distintos continuam presentes. Manter essa fixture é adequado: recalibrar o motor pela nova paleta mudaria marcas cadastradas. Isso preserva a curva, não promete pixels idênticos em todas as marcas, pois a régua de contraste agora usa superfícies novas. |
+| Régua e testes de marca | match | `REGUA_DO_PRODUTO` acompanha os novos sólidos, fundos e neutros; as semânticas não foram substituídas. As expectativas antigas alteradas refletem novas bases e mantêm os pisos. O reteste 11/11 da rampa e os demais resultados são reportados pelo executor, não foram reexecutados por este revisor. |
+| Cobertura de TODAS as telas | adaptation, com limite material de evidência | Tokens globais e componentes compartilhados dão alcance estrutural às 112 entradas classificadas, das quais 103 têm UI. Isso não certifica a aparência individual dessas 103 páginas. O pacote visual atual cobre Inbox e seus estados; o defeito F1 demonstra uma combinação compartilhada fora dessa amostra. Os resultados suplementares anunciados não foram usados como prova visual. |
+
+Dados de demonstração são declarados sintéticos no manifesto e nas fixtures. As capturas de citação, cancelamento e troca de conversa são coerentes com seus nomes. O pacote não prova envio WhatsApp, aparelho físico, todas as integrações ou todos os estados de erro, vazio, nota e mídia.
+
+## ceiling
+
+O compromisso cromático chega ao patamar da régua nas superfícies do Inbox efetivamente capturadas, mas **o patamar de semânticas e contraste não foi atingido em F1**. Molduras, ilustrações 3D, novos materiais, lettering e movimento da referência ficarem de fora é coerente com a autorização de somente cores; não são melhorias a acrescentar nesta rodada.
+
+O detector foi lido, não repetido: 37 adições de cor pertencem à direção aprovada ainda pendente de documentação; 12 tamanhos, dois raios e dois bounce são herdados. A borda de 3px do exemplo de citação em `app/design/showcase.css:595` também é anterior e intacta. Não proponho alterar esses itens porque a restrição do usuário preserva geometria, tipografia e comportamento. A suíte integral em andamento, os checks obrigatórios do PR, imagem oficial, backup e rollback não são aprovados por este parecer visual.
+
+## material_fixes
+
+1. **F1 — P1, semântica e contraste:** corrigir `components/ui/button.tsx:33` e seu alias em `:35` para que o gradiente da ação padrão não sobreviva a um fundo semântico sobrescrito. `components/ui/alert-dialog.tsx:107` chama `buttonVariants()` sem variante e `app/app/settings/tenant/_danger-zone.tsx:135` sobrescreve apenas `bg-destructive`/frente/hover: a execução local de `twMerge` preserva `[background-image:var(--color-action-gradient)]` junto das classes destrutivas. Logo a imagem cobre o vermelho em repouso; no escuro, os stops `#a7bcff`, `#cbd7ff`, `#b5c1ff` com frente branca têm razões calculadas dos sólidos de **1,862:1, 1,428:1 e 1,745:1**, abaixo de 4,5:1. Preservar o vermelho e a frente legível da confirmação sem alterar sua ação, texto ou geometria. Conferir outros consumidores que sobrescrevem fundos e fornecer captura real da confirmação **habilitada, sem executar a exclusão**, nos dois temas, além de um controle primário padrão e um de marca personalizada; verificar repouso e hover para impedir troca de azul/lavanda para vermelho apenas ao apontar. Os números deste achado são dedução verificável do CSS, não medição de uma captura inexistente.
+
+## keep
+
+Preservar a composição e a responsividade atuais, os papéis globais sólidos com gradientes separados, a soberania das marcas e semânticas, a curva histórica de derivação e o foco de teclado agora comprovado; corrigir F1 sem ampliar o escopo para fontes, medidas, layout ou comportamento.

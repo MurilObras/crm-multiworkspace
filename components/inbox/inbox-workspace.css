@@ -1,30 +1,11 @@
-/* Direção aprovada: atendimento claro, navegação profunda e seleção suave.
-   O escopo impede que superfícies de outras jornadas mudem junto. */
+/* O Inbox compartilha a paleta global e a marca resolvida, inclusive em portais.
+   O chrome usa cor sólida nos aliases e gradiente somente como imagem de fundo. */
 body:has(.inbox-workspace),
 .inbox-workspace {
-  --inbox-chrome: color-mix(in srgb, var(--color-brand, #6d28d9) 24%, #100b21);
-  --inbox-chrome-text: #faf7ff;
-  --inbox-chrome-muted: #ddd2f1;
-  --color-bg: #fbfaff;
-  --color-surface: #ffffff;
-  --color-surface-elevated: #f3f0fa;
-  --color-text: #1f1533;
-  --color-text-muted: #625a75;
-  --color-text-subtle: #625a75;
-  --color-border: #e8e1f3;
-  --color-border-strong: #9a87b2;
-  --background: var(--color-surface);
-  --foreground: var(--color-text);
-  --card: var(--color-surface);
-  --card-foreground: var(--color-text);
-  --muted: var(--color-surface-elevated);
-  --muted-foreground: var(--color-text-muted);
-  --border: var(--color-border);
-  --input: var(--color-border-strong);
-  --primary: var(--color-accent);
-  --primary-foreground: var(--color-accent-fg);
-  --secondary: var(--color-surface-elevated);
-  --secondary-foreground: var(--color-text);
+  --inbox-chrome: var(--color-chrome);
+  --inbox-chrome-background: var(--color-chrome-gradient);
+  --inbox-chrome-text: var(--color-chrome-text);
+  --inbox-chrome-muted: var(--color-chrome-muted);
   color: var(--color-text);
   background: var(--color-bg);
 }
@@ -32,51 +13,6 @@ body:has(.inbox-workspace),
   height: var(--inbox-viewport-height, 100dvh);
   min-height: 0;
   overflow: hidden;
-}
-
-/* A marca resolvida continua soberana. Só a ausência de ambas as folhas de
-   marca habilita o violeta de partida; nenhuma cor do cliente é sobrescrita. */
-html:not(:has(#marca-instalacao)):not(:has(#marca-organizacao)) body:has(.inbox-workspace) {
-  --color-accent: #6d28d9;
-  --color-accent-fg: #ffffff;
-  --color-accent-soft: #ede9fe;
-  --color-accent-50: #f5f2ff;
-  --color-accent-100: #ede9fe;
-  --color-accent-200: #ddd6fe;
-  --color-accent-300: #c4b5fd;
-  --color-accent-400: #a78bfa;
-  --color-accent-500: #7c3aed;
-  --color-accent-600: #6d28d9;
-  --color-accent-700: #5b21b6;
-  --color-accent-800: #4c1d95;
-  --color-accent-900: #3b176c;
-  --color-accent-950: #21103f;
-  --color-accent-hover: #5b21b6;
-  --ring: #6d28d9;
-}
-
-[data-theme="dark"] body:has(.inbox-workspace),
-[data-theme="dark"] .inbox-workspace {
-  --color-bg: #16121f;
-  --color-surface: #1c1728;
-  --color-surface-elevated: #2b233b;
-  --color-text: #f5efff;
-  --color-text-muted: #c4b8d8;
-  --color-text-subtle: #c4b8d8;
-  --color-border: #3b304c;
-  --color-border-strong: #8d7aa8;
-}
-html[data-theme="dark"]:not(:has(#marca-instalacao)):not(:has(#marca-organizacao))
-  body:has(.inbox-workspace) {
-  --color-accent: #c4a5ff;
-  --color-accent-fg: #201039;
-  --color-accent-soft: #35234d;
-  --color-accent-50: #2c203c;
-  --color-accent-100: #35234d;
-  --color-accent-400: #c4a5ff;
-  --color-accent-500: #b58beb;
-  --color-accent-hover: #d4bfff;
-  --ring: #c4a5ff;
 }
 
 .inbox-workspace > div:last-child {
@@ -91,7 +27,8 @@ html[data-theme="dark"]:not(:has(#marca-instalacao)):not(:has(#marca-organizacao
 .inbox-workspace .shell-topbar,
 .inbox-workspace .shell-sidebar {
   color: var(--inbox-chrome-text);
-  background: var(--inbox-chrome);
+  background-color: var(--inbox-chrome);
+  background-image: var(--inbox-chrome-background);
   --foreground: var(--inbox-chrome-text);
   --muted-foreground: var(--inbox-chrome-muted);
   --color-text: var(--inbox-chrome-text);
@@ -99,23 +36,24 @@ html[data-theme="dark"]:not(:has(#marca-instalacao)):not(:has(#marca-organizacao
   --color-text-subtle: var(--inbox-chrome-muted);
   --color-bg: var(--inbox-chrome);
   --color-surface: var(--inbox-chrome);
-  --color-surface-elevated: #34264c;
-  --muted: #34264c;
-  --background: var(--inbox-chrome);
+  --color-surface-elevated: var(--color-chrome-hover);
+  --muted: var(--color-chrome-hover);
+  --background-color: var(--inbox-chrome);
+  background-image: var(--inbox-chrome-background);
   --card: var(--inbox-chrome);
-  --border: #55426d;
+  --border: var(--color-chrome-border);
 }
 .inbox-workspace .shell-sidebar a[aria-current="page"] {
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
+  background: var(--color-highlight);
+  color: var(--color-highlight-fg);
 }
 .inbox-workspace .shell-topbar button:hover,
 .inbox-workspace .shell-topbar a:hover {
-  background: #34264c;
+  background: var(--color-chrome-hover);
 }
 .inbox-workspace .shell-topbar button:focus-visible,
 .inbox-workspace .shell-topbar a:focus-visible {
-  outline: 2px solid #e2ceff;
+  outline: 2px solid var(--color-chrome-focus);
   outline-offset: 2px;
 }
 .inbox-grid {
@@ -149,7 +87,8 @@ html[data-theme="dark"]:not(:has(#marca-instalacao)):not(:has(#marca-organizacao
   display: flex;
   min-height: 44px;
   color: var(--inbox-chrome-text);
-  background: var(--inbox-chrome);
+  background-color: var(--inbox-chrome);
+  background-image: var(--inbox-chrome-background);
 }
 .inbox-mobile-bar button {
   min-height: 44px;
@@ -233,7 +172,7 @@ html[data-theme="dark"]:not(:has(#marca-instalacao)):not(:has(#marca-organizacao
   gap: 12px;
 }
 .inbox-row[aria-current="true"] {
-  background: var(--color-accent-50);
+  background: var(--color-accent-soft);
 }
 .inbox-row:focus-visible {
   outline: 2px solid var(--color-accent);
@@ -448,37 +387,40 @@ html[data-theme="dark"]:not(:has(#marca-instalacao)):not(:has(#marca-organizacao
 @container inbox (width < 760px) {
   .inbox-filter-top {
     color: var(--inbox-chrome-text);
-    background: var(--inbox-chrome);
+    background-color: var(--inbox-chrome);
+  background-image: var(--inbox-chrome-background);
     --color-text-subtle: var(--inbox-chrome-muted);
   }
   .inbox-filter-controls input,
   .inbox-filter-options > button {
     color: var(--inbox-chrome-text);
-    background: #2f2048;
-    border-color: #6f5a87;
+    background: var(--color-chrome-hover);
+    border-color: var(--color-chrome-border);
   }
   .inbox-filter-controls input::placeholder {
     color: var(--inbox-chrome-muted);
   }
   .inbox-filter-options > button[aria-pressed="true"] {
-    color: #23103d;
-    background: #e5d7ff;
+    color: var(--color-highlight-fg);
+    background: var(--color-highlight);
   }
   .inbox-filter-controls input:focus-visible,
   .inbox-filter-options > button:focus-visible {
-    outline: 2px solid #e2ceff;
+    outline: 2px solid var(--color-chrome-focus);
     outline-offset: 2px;
   }
   .inbox-conversation-header {
     --color-bg: var(--inbox-chrome);
     --color-surface: var(--inbox-chrome);
-    --color-surface-elevated: #34264c;
+    --color-surface-elevated: var(--color-chrome-hover);
     --color-text: var(--inbox-chrome-text);
     --color-text-muted: var(--inbox-chrome-muted);
     --color-text-subtle: var(--inbox-chrome-muted);
-    --color-border: #6f5a87;
+    --color-border: var(--color-chrome-border);
+    --color-border-strong: var(--color-chrome-border);
     color: var(--inbox-chrome-text);
-    background: var(--inbox-chrome);
+    background-color: var(--inbox-chrome);
+  background-image: var(--inbox-chrome-background);
   }
   .inbox-conversation-identity {
     width: 100%;
@@ -487,14 +429,18 @@ html[data-theme="dark"]:not(:has(#marca-instalacao)):not(:has(#marca-organizacao
     display: none;
   }
   .inbox-conversation-header :focus-visible {
-    outline-color: #e2ceff;
+    outline-color: var(--color-chrome-focus);
+  }
+  .inbox-conversation-header button:hover {
+    color: var(--inbox-chrome-text);
+    background-color: var(--color-chrome-hover);
   }
   .inbox-mobile-bar button:hover {
-    background: #34264c;
+    background: var(--color-chrome-hover);
     color: var(--inbox-chrome-text);
   }
   .inbox-mobile-bar button:focus-visible {
-    outline: 2px solid #e2ceff;
+    outline: 2px solid var(--color-chrome-focus);
     outline-offset: -3px;
   }
 }

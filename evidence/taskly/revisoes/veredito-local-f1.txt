@@ -1,0 +1,17 @@
+## verdict
+
+**F1 — resolved.** As oito capturas `confirmacoes/destrutivo-{light,dark}-{390,1440}-{repouso,hover}.png`, abertas individualmente, mostram a confirmação habilitada com fundo vermelho sem gradiente, frente branca no claro e escura no tema escuro, tanto em repouso quanto em hover. Não há mais troca de azul/lavanda para vermelho ao apontar. `confirmacoes/medidas.json` registra `gradient: none` nos oito estados e mínimo 4,6726725:1; uma conferência independente de pixels sólidos dos PNGs, usando a frente declarada, encontrou mínimo aproximado de 4,6394:1, também acima de 4,5:1. A pequena diferença de rasterização não muda a conclusão.
+
+Em `components/ui/button.tsx:33`, `bg-[image:var(--color-action-gradient)]` participa do grupo de background-image reconhecido pelo `twMerge`; em `:43`, a variante destrutiva define `bg-none`, frente semântica e hover vermelho. A composição executada localmente removeu tanto o gradiente quanto o hover azul herdados ao combinar a variante destrutiva com a primária. Os dois consumidores de followups usam essa variante em `QueueTab.tsx:295` e `DossieDoFollowup.tsx:430`. A sobrescrita literal em `app/app/settings/tenant/_danger-zone.tsx:135` agora também remove a imagem. `app/globals.css:430` define a frente destrutiva escura `#0a1020`, e o alias de `:545` aponta para esse papel. Textos, ação e geometria da confirmação permanecem intactos no diff.
+
+O check de evidência passa: dimensões e hashes dos 31 PNGs principais e dos oito de confirmação correspondem aos respectivos manifestos; os hashes LF das fontes principais também correspondem. Todos os 39 PNGs foram reabertos nesta pontuação. Os controles primários padrão continuam com gradiente e as capturas de marca amarela continuam sem esse gradiente, nos dois temas. O teste específico abre, habilita pelo nome e cancela o diálogo; não clica na confirmação e verifica zero POST de Next Action nessa rota. A spec está incluída em `SPECS_PARTE_1`.
+
+Regressões introduzidas pela correção: nenhuma material observada na amostra de F1 e nos controles renovados.
+
+## remaining
+
+**clear para F1.** O reviewer pontuou a única correção material listada como resolved. Este ship cobre a correção F1; não constitui nova aprovação geral da superfície, certificação individual das 103 páginas, prova de hardware ou autorização para publicar.
+
+A suíte completa informada pelo executor antecede a última mudança de primeiro plano; build, E2E e verificações dirigidas posteriores foram informados como verdes, mas não foram reexecutados por este revisor. O CI obrigatório no head final, o segundo ciclo de revisão no PR e os gates de documentação/publicação permanecem separados. As 13 capturas suplementares anteriores à F1 não foram usadas para certificar esta correção nem ampliar o alcance do veredito. Os relatórios anteriores foram preservados; nenhum detector foi repetido.
+
+disposition: ship
