@@ -187,6 +187,9 @@ test.describe("responder citando", () => {
       });
       expect(topbar, `cabeçalho em ${width}px`).toEqual({ inside: true, overlap: false });
       if (width === 320 || width === 1440) {
+        await expect(
+          page.locator(`button[data-conversation-id="${conversations[0]!.id}"]`),
+        ).toBeVisible();
         const userMenu = page.getByRole("button", { name: "Menu do usuário", exact: true });
         await userMenu.focus();
         await page.keyboard.press("Enter");
@@ -196,11 +199,15 @@ test.describe("responder citando", () => {
         await page.keyboard.press("ArrowDown");
         await expect(page.getByRole("menuitem", { name: "Español", exact: true })).toBeFocused();
         await page.keyboard.press("ArrowDown");
-        await expect(page.getByRole("menuitem", { name: /^Tema / })).toBeFocused();
+        const themeItem = page.getByRole("menuitem", { name: /^Tema / });
+        await expect(themeItem).toBeFocused();
+        await expect(themeItem).toHaveAttribute("data-highlighted", "");
         await page.screenshot({
           path: path.join(EVIDENCE, `menu-teclado-${width}.png`),
           fullPage: true,
+          animations: "disabled",
         });
+        await expect(themeItem).toBeFocused();
         await page.keyboard.press("Escape");
         await expect(userMenu).toBeFocused();
       }
@@ -268,5 +275,129 @@ test.describe("responder citando", () => {
     await expect(cancelInB.locator("..")).not.toContainText(conversations[0]!.body);
     await cancelInB.click();
     await expect(cancelInB).toHaveCount(0);
+  });
+
+  test("a paleta mantém contraste, área útil e marca própria nos dois temas", async ({ page }) => {
+    test.setTimeout(240_000);
+    if (!admin) throw new Error("Banco local de teste não preparado.");
+    const evidence = path.join(EVIDENCE, "colorimetria");
+    fs.mkdirSync(evidence, { recursive: true });
+    const measurements: unknown[] = [];
+    const { data: org, error: readError } = await admin
+      .from("organizations").select("settings").eq("id", creds.org_id).single();
+    if (readError || !org) throw new Error("Não foi possível guardar a marca da organização de teste.");
+
+    async function chooseTheme(theme: "light" | "dark") {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      const expected = theme === "light" ? "Tema claro" : "Tema escuro";
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await page.getByRole("button", { name: "Menu do usuário", exact: true }).click();
+        const item = page.getByRole("menuitem", { name: /^Tema / });
+        if ((await item.innerText()).trim() === expected) {
+          await item.press("Escape");
+          await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+          return;
+        }
+        await item.click();
+      }
+      throw new Error(`Não foi possível selecionar o tema ${theme} pela interface.`);
+    }
+
+    async function openDraft() {
+      await page.goto("/app/inbox?filter=mine");
+      await selectConversation(page, 0);
+      await page.getByPlaceholder("Escreva uma mensagem…", { exact: true }).fill("Rascunho sintético; não enviar.");
+      await expect(page.locator(".inbox-send")).toBeEnabled();
+      await page.mouse.move(0, 0);
+    }
+
+    await login(page);
+    try {
+      for (const theme of ["light", "dark"] as const) {
+        await chooseTheme(theme);
+        await openDraft();
+        await expect(page.locator("#marca-instalacao, #marca-organizacao")).toHaveCount(0);
+        const button = await page.locator(".inbox-send").evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { color: style.color, gradient: style.backgroundImage };
+        });
+        expect(button.gradient).toContain("linear-gradient");
+        const rgb = (value: string) => value.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+        const luminance = (color: number[]) => color.map((c) => {
+          const s = c / 255;
+          return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        }).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i]!, 0);
+        const foreground = luminance(rgb(button.color));
+        const stops = [...button.gradient.matchAll(/rgba?\(([^)]+)\)/g)].map((m) => rgb(m[1]!));
+        expect(stops.length).toBeGreaterThanOrEqual(2);
+        const ratios: number[] = [];
+        for (let i = 1; i < stops.length; i++) {
+          for (let sample = 0; sample <= 16; sample++) {
+            const background = luminance(stops[i - 1]!.map((c, channel) => c + (stops[i]![channel]! - c) * sample / 16));
+            ratios.push((Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05));
+          }
+        }
+        expect(Math.min(...ratios), `contraste do gradiente no tema ${theme}`).toBeGreaterThanOrEqual(4.5);
+        const chromeButton = page.locator("header.shell-topbar button:visible").first();
+        await chromeButton.hover();
+        const chromePaint = await chromeButton.evaluate((element) => ({
+          foreground: getComputedStyle(element).color,
+          background: getComputedStyle(element).backgroundColor,
+        }));
+        const chromeLuminances = [chromePaint.foreground, chromePaint.background].map((color) => luminance(rgb(color)));
+        expect((Math.max(...chromeLuminances) + 0.05) / (Math.min(...chromeLuminances) + 0.05), `hover do cabeçalho no tema ${theme}`).toBeGreaterThanOrEqual(4.5);
+        await page.mouse.move(0, 0);
+
+        for (const width of [320, 390, 430, 460, 768, 1024, 1440]) {
+          await page.setViewportSize({ width, height: 900 });
+          const bounds = await page.locator(".inbox-composer").boundingBox();
+          expect(bounds).not.toBeNull();
+          expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(901);
+          const overflow = await page.evaluate(() => document.body.scrollWidth - window.innerWidth);
+          expect(overflow, `overflow em ${width}px, ${theme}`).toBeLessThanOrEqual(1);
+          const target = await page.locator(".inbox-send").boundingBox();
+          expect(target!.width).toBeGreaterThanOrEqual(44);
+          expect(target!.height).toBeGreaterThanOrEqual(44);
+          await page.screenshot({ path: path.join(evidence, `${theme}-${width}.png`), fullPage: true });
+          measurements.push({ theme, width, bounds, target, overflow, minimumContrast: Math.min(...ratios) });
+        }
+        await page.setViewportSize({ width: 390, height: 900 });
+        await page.getByRole("button", { name: "Ficha", exact: true }).click();
+        const panel = page.getByRole("dialog", { name: "Ficha do contato", exact: true });
+        await expect(panel).toBeVisible();
+        const panelBounds = await panel.boundingBox();
+        expect(panelBounds!.x).toBeGreaterThanOrEqual(-1);
+        expect(panelBounds!.x + panelBounds!.width).toBeLessThanOrEqual(391);
+        await page.screenshot({ path: path.join(evidence, `ficha-${theme}-390.png`), fullPage: true });
+        await panel.press("Escape");
+        await expect(panel).toBeHidden();
+        await page.getByRole("button", { name: "Conversas", exact: true }).click();
+        await page.getByRole("button", { name: "Menu do usuário", exact: true }).click();
+        const menu = page.getByRole("menu", { name: "Menu do usuário", exact: true });
+        await expect(menu).toBeVisible();
+        await page.screenshot({ path: path.join(evidence, `menu-${theme}-390.png`), fullPage: true });
+        await menu.press("Escape");
+      }
+
+      // Só altera a organização sintética desta suíte e restaura a configuração
+      // original no finally. A página recarregada usa o resolvedor real da marca.
+      const settings = (org.settings ?? {}) as Record<string, unknown>;
+      const { error } = await admin.from("organizations")
+        .update({ settings: { ...settings, branding: { accent_hex: "#f5c518" } } })
+        .eq("id", creds.org_id);
+      if (error) throw new Error(`Preparar marca sintética: ${error.message}`);
+      for (const theme of ["light", "dark"] as const) {
+        await chooseTheme(theme);
+        await openDraft();
+        await expect(page.locator("#marca-organizacao")).toHaveCount(1);
+        await expect(page.locator(".inbox-send")).toHaveCSS("background-image", "none");
+        await page.setViewportSize({ width: 390, height: 900 });
+        await page.screenshot({ path: path.join(evidence, `marca-${theme}-390.png`), fullPage: true });
+      }
+    } finally {
+      const { error } = await admin.from("organizations").update({ settings: org.settings }).eq("id", creds.org_id);
+      if (error) throw new Error(`Restaurar marca da organização de teste: ${error.message}`);
+      fs.writeFileSync(path.join(evidence, "medidas.json"), JSON.stringify(measurements, null, 2));
+    }
   });
 });

@@ -1,5 +1,5 @@
 // Design tokens for DeskcommCRM showcase.
-// "Soft-tech / calmo" — neutros desaturados (greige/warm-gray), accent não-saturado.
+// Paleta padrão Taskly; alternativas do laboratório preservadas com seus IDs.
 // 5-Constraint Rule applied: Shape, Color (exact hex), Typography, Motion, Layout.
 
 export type PaletteId = "sage" | "clay" | "mist" | "plum" | "olive";
@@ -40,30 +40,30 @@ export type PaletteDef = {
 export const PALETTES: Record<PaletteId, PaletteDef> = {
   sage: {
     id: "sage",
-    name: "Sage",
-    description: "Verde-erva desaturado. Calmo, confiável, vegetal.",
+    name: "Taskly",
+    description: "Azul cobalto, superfícies luminosas e destaque lima contido.",
     accent: {
-      50: "#f3f6f1", 100: "#e4ebe0", 200: "#c8d6c1", 300: "#a4ba9a",
-      400: "#82a077", 500: "#67885d", 600: "#506d48", 700: "#41573b",
-      800: "#374731", 900: "#2f3c2b", 950: "#171f15",
+      50: "#f1f4ff", 100: "#e8eeff", 200: "#d5dfff", 300: "#cbd7ff",
+      400: "#a7bcff", 500: "#5266f0", 600: "#3047e8", 700: "#2437ba",
+      800: "#213196", 900: "#1e2b73", 950: "#121c34",
     },
     neutralLight: {
-      50: "#faf9f6", 100: "#f3f1ec", 200: "#e7e3da", 300: "#d2cdbf",
-      400: "#a9a395", 500: "#7d786c", 600: "#5d594f", 700: "#46433b",
-      800: "#2e2c26", 900: "#1c1a16", 950: "#0e0d0a",
+      50: "#f7f9fd", 100: "#edf2ff", 200: "#dce3f1", 300: "#8491a6",
+      400: "#71809a", 500: "#59677f", 600: "#566174", 700: "#3b4860",
+      800: "#29364c", 900: "#1b2334", 950: "#101827",
     },
     neutralDark: {
-      50: "#f5f4ef", 100: "#e6e4dc", 200: "#bbb8ac", 300: "#8e8b7f",
-      400: "#605e54", 500: "#444239", 600: "#33312a", 700: "#272620",
-      800: "#1d1c17", 900: "#161510", 950: "#0c0b08",
+      50: "#f0f4ff", 100: "#dee6f7", 200: "#cbd5e8", 300: "#bdc9df",
+      400: "#a8b6ce", 500: "#71829f", 600: "#34445f", 700: "#24324b",
+      800: "#192337", 900: "#111827", 950: "#0a1020",
     },
     states: {
       light: { success: "#5a8a5f", warning: "#b07a2b", error: "#a94a3c", info: "#4a7a93" },
       dark:  { success: "#82a077", warning: "#d09455", error: "#c87263", info: "#7da9bf" },
     },
     surfaces: {
-      light: { bg: "#faf9f6", surface: "#ffffff", surfaceElevated: "#f5f3ee", text: "#1c1a16", textMuted: "#5d594f", border: "#e7e3da" },
-      dark:  { bg: "#161510", surface: "#1d1c17", surfaceElevated: "#272620", text: "#f5f4ef", textMuted: "#8e8b7f", border: "#33312a" },
+      light: { bg: "#f7f9fd", surface: "#ffffff", surfaceElevated: "#edf2ff", text: "#1b2334", textMuted: "#566174", border: "#dce3f1" },
+      dark: { bg: "#111827", surface: "#192337", surfaceElevated: "#24324b", text: "#f0f4ff", textMuted: "#bdc9df", border: "#34445f" },
     },
   },
   clay: {

@@ -1,0 +1,5 @@
+disposition: recapture
+
+## recapture
+
+- `evidence/taskly/capturas/menu-teclado-1440.png`: arquivo obrigatório existente, 1440 × 900 e SHA-256 conforme o manifesto, mas a inspeção individual revela cinco skeletons da lista e o histórico ainda no estado de seleção vazia. O item de tema também não apresenta o destaque de foco visível observado em `menu-teclado-320.png`. A captura foi feita durante a transição de carregamento, portanto não é evidência válida de uma tela estabilizada com navegação por teclado. Em `tests/e2e/inbox-responder-citando.spec.ts:200`, estabilizar a lista após a navegação e confirmar novamente o foco no item de tema imediatamente antes da captura. Regravar **o mesmo caminho**, com a lista carregada e o menu aberto pelo teclado, item de tema visivelmente focado, topo do documento presente e viewport 1440 × 900. Atualizar o hash no manifesto e a folha de contato. Pelo check 0 do revisor, esta rodada requer nova revisão completa sobre as evidências válidas; não constitui aprovação da UI nem pontuação dos demais critérios.

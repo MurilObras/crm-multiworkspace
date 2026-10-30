@@ -58,9 +58,9 @@ const FIXTURE = [
 describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão", () => {
   it("acha os dois temas, a rampa do produto e os neutros", () => {
     expect(REGUA.rampaDoProduto).toHaveLength(11);
-    expect(REGUA.rampaDoProduto[6]).toBe("#506d48");
+    expect(REGUA.rampaDoProduto[6]).toBe("#3047e8");
     expect(REGUA.claro.neutros).toHaveLength(11);
-    expect(REGUA.escuro.neutros[9]).toBe("#161510");
+    expect(REGUA.escuro.neutros[9]).toBe("#111827");
     expect(REGUA.claro.base.map((b) => b.chave)).toEqual([
       "--color-bg",
       "--color-surface",
@@ -119,12 +119,12 @@ describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão"
     const razao = (papel: string, superficie: string) =>
       pares.find((p) => p.papel === papel && p.superficie === superficie)?.razao ?? 0;
 
-    expect(razao("--color-accent", "--color-bg")).toBeCloseTo(5.51, 2);
-    expect(razao(":focus-visible/outline", "--color-bg")).toBeCloseTo(3.79, 2);
-    expect(razao(":focus-visible/outline", "--color-surface-elevated")).toBeCloseTo(3.6, 2);
+    expect(razao("--color-accent", "--color-bg")).toBeCloseTo(6.24, 2);
+    expect(razao(":focus-visible/outline", "--color-bg")).toBeCloseTo(4.41, 2);
+    expect(razao(":focus-visible/outline", "--color-surface-elevated")).toBeCloseTo(4.15, 2);
   });
 
-  it("a Sage inteira, como está no CSS, cabe nos pisos", () => {
+  it("a paleta Taskly inteira, como está no CSS, cabe nos pisos", () => {
     for (const tema of [REGUA.claro, REGUA.escuro]) {
       const reprovas = medirPares(tema, REGUA.rampaDoProduto, 0).filter((p) => !p.passa);
       expect(reprovas, `${tema.nome}: ${JSON.stringify(reprovas)}`).toEqual([]);
@@ -304,11 +304,10 @@ describe("derivarMarca — as 16 sementes adversariais", () => {
 
 describe("reconciliação — quem se move são as NOSSAS semânticas", () => {
   it("a Sage pura já nasce colidida e dispara a reconciliação (controle positivo)", () => {
-    // `--color-success` do bloco escuro é `#82a077`, a MESMA string de
-    // `--color-accent-400` (globals.css:167 e :193). Δ = 0,0°. Se o mecanismo não
-    // disparasse aqui, ele não dispararia em lugar nenhum.
+    // A semântica success verde foi preservada na troca para Taskly. A marca
+    // Sage desta fixture continua adversarial, mesmo sem ser a cor padrão.
     expect(REGUA.escuro.semanticas.find((s) => s.nome === "success")?.hex).toBe(
-      REGUA.rampaDoProduto[4],
+      "#82a077",
     );
 
     const sage = derivarMarca("#506d48", REGUA);
@@ -375,8 +374,8 @@ describe("reconciliação — quem se move são as NOSSAS semânticas", () => {
         }
       }
     }
-    // Guarda de vacuidade do run inteiro: 23 movimentos medidos nas 16 sementes.
-    expect(movimentosNoRun).toBe(23);
+    // Guarda de vacuidade: 11 movimentos nas 16 sementes sobre as superfícies Taskly.
+    expect(movimentosNoRun).toBe(11);
   });
 });
 
@@ -407,13 +406,12 @@ describe("marca acromática — o accent do produto permanece", () => {
         separacaoDoNeutro(regua, tema.grauDoAccent, tema.accent),
       ).toBeGreaterThanOrEqual(PISO_DE_SEPARACAO_DO_NEUTRO);
     }
-    // Os números exatos, fixados: 0,0681 no claro (accent-600 × neutral-600) e 0,1994 no
-    // escuro (accent-400 × neutral-400). São eles que mostram por que o piso do briefing
-    // (8, na convenção ×100 — ou seja 0,08 aqui) não podia ser aceito sem medir: ele
-    // reprovaria o controle positivo do próprio produto no tema claro.
-    expect(separacaoDoNeutro(REGUA.claro, marca.claro.grauDoAccent, marca.claro.accent)).toBeCloseTo(0.0681, 4);
-    expect(separacaoDoNeutro(REGUA.escuro, marca.escuro.grauDoAccent, marca.escuro.accent)).toBeCloseTo(0.1994, 4);
-    expect(separacaoDoNeutro(REGUA.claro, marca.claro.grauDoAccent, marca.claro.accent)).toBeLessThan(0.08);
+    // Medição Taskly: 0,2071 no claro e 0,0685 no escuro. A cor que permanece
+    // precisa continuar cromática e separável em ambos os temas; as guardas
+    // de piso acima permanecem idênticas às da paleta anterior.
+    expect(separacaoDoNeutro(REGUA.claro, marca.claro.grauDoAccent, marca.claro.accent)).toBeCloseTo(0.2071, 4);
+    expect(separacaoDoNeutro(REGUA.escuro, marca.escuro.grauDoAccent, marca.escuro.accent)).toBeCloseTo(0.0685, 4);
+    expect(separacaoDoNeutro(REGUA.claro, marca.claro.grauDoAccent, marca.claro.accent)).toBeGreaterThan(0.2);
 
     // Controle negativo: um accent cinza reprovaria as duas guardas. Sem esta linha, os
     // pisos acima poderiam ser satisfeitos por qualquer coisa.

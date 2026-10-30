@@ -1,0 +1,254 @@
+[
+  {
+    "theme": "light",
+    "width": 320,
+    "bounds": {
+      "x": 0,
+      "y": 715,
+      "width": 320,
+      "height": 185
+    },
+    "target": {
+      "x": 260,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 5.088116369381391
+  },
+  {
+    "theme": "light",
+    "width": 390,
+    "bounds": {
+      "x": 0,
+      "y": 715,
+      "width": 390,
+      "height": 185
+    },
+    "target": {
+      "x": 330,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 5.088116369381391
+  },
+  {
+    "theme": "light",
+    "width": 430,
+    "bounds": {
+      "x": 0,
+      "y": 715,
+      "width": 430,
+      "height": 185
+    },
+    "target": {
+      "x": 370,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 5.088116369381391
+  },
+  {
+    "theme": "light",
+    "width": 460,
+    "bounds": {
+      "x": 0,
+      "y": 715,
+      "width": 460,
+      "height": 185
+    },
+    "target": {
+      "x": 400,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 5.088116369381391
+  },
+  {
+    "theme": "light",
+    "width": 768,
+    "bounds": {
+      "x": 240,
+      "y": 715,
+      "width": 528,
+      "height": 185
+    },
+    "target": {
+      "x": 708,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 5.088116369381391
+  },
+  {
+    "theme": "light",
+    "width": 1024,
+    "bounds": {
+      "x": 540,
+      "y": 715,
+      "width": 484,
+      "height": 185
+    },
+    "target": {
+      "x": 964,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 5.088116369381391
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "bounds": {
+      "x": 560,
+      "y": 715,
+      "width": 580,
+      "height": 185
+    },
+    "target": {
+      "x": 1080,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 5.088116369381391
+  },
+  {
+    "theme": "dark",
+    "width": 320,
+    "bounds": {
+      "x": 0,
+      "y": 715,
+      "width": 320,
+      "height": 185
+    },
+    "target": {
+      "x": 260,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 9.086768405086039
+  },
+  {
+    "theme": "dark",
+    "width": 390,
+    "bounds": {
+      "x": 0,
+      "y": 715,
+      "width": 390,
+      "height": 185
+    },
+    "target": {
+      "x": 330,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 9.086768405086039
+  },
+  {
+    "theme": "dark",
+    "width": 430,
+    "bounds": {
+      "x": 0,
+      "y": 715,
+      "width": 430,
+      "height": 185
+    },
+    "target": {
+      "x": 370,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 9.086768405086039
+  },
+  {
+    "theme": "dark",
+    "width": 460,
+    "bounds": {
+      "x": 0,
+      "y": 715,
+      "width": 460,
+      "height": 185
+    },
+    "target": {
+      "x": 400,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 9.086768405086039
+  },
+  {
+    "theme": "dark",
+    "width": 768,
+    "bounds": {
+      "x": 240,
+      "y": 715,
+      "width": 528,
+      "height": 185
+    },
+    "target": {
+      "x": 708,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 9.086768405086039
+  },
+  {
+    "theme": "dark",
+    "width": 1024,
+    "bounds": {
+      "x": 540,
+      "y": 715,
+      "width": 484,
+      "height": 185
+    },
+    "target": {
+      "x": 964,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 9.086768405086039
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "bounds": {
+      "x": 560,
+      "y": 715,
+      "width": 580,
+      "height": 185
+    },
+    "target": {
+      "x": 1080,
+      "y": 792,
+      "width": 44,
+      "height": 44
+    },
+    "overflow": 0,
+    "minimumContrast": 9.086768405086039
+  }
+]

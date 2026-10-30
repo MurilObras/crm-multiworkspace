@@ -1,0 +1,123 @@
+{
+  "origem": "Build de produção local, Supabase pg15 fresco, dados sintéticos. 5 testes de UI passaram. Não representa inspeção visual individual de todas as 103 páginas.",
+  "capturas": [
+    {
+      "arquivo": "evidence/taskly/aplicacoes/tela-habilidades.png",
+      "dimensoes": [
+        1280,
+        888
+      ],
+      "sha256": "4ca1c441533f0c2e880110741193a8222f191cc07d587822286a58bf8d42f161",
+      "spec": "olhar-telas-do-epico.spec.ts"
+    },
+    {
+      "arquivo": "evidence/taskly/aplicacoes/tela-roteadores.png",
+      "dimensoes": [
+        1280,
+        720
+      ],
+      "sha256": "ea3a6a0cbf96a647d396dabaa161931a310a749390a05d6f7f3b1b1bed0a193d",
+      "spec": "olhar-telas-do-epico.spec.ts"
+    },
+    {
+      "arquivo": "evidence/taskly/aplicacoes/tela-criar-agente.png",
+      "dimensoes": [
+        1280,
+        4300
+      ],
+      "sha256": "b5eb588b8f0a540997d2eab3e354a5d431b7aa2a07ab89a42b54f82d8b3cc25a",
+      "spec": "olhar-telas-do-epico.spec.ts"
+    },
+    {
+      "arquivo": "evidence/taskly/aplicacoes/tela-memoria-da-organizacao.png",
+      "dimensoes": [
+        1280,
+        944
+      ],
+      "sha256": "6a41a4c64cbc0b27dd3301f9c3fa16c2028535bee9bd7bedf7ec27087a90f661",
+      "spec": "olhar-telas-do-epico.spec.ts"
+    },
+    {
+      "arquivo": "evidence/taskly/aplicacoes/tela-consumo.png",
+      "dimensoes": [
+        1280,
+        1191
+      ],
+      "sha256": "c77f2852042a57d393eaabc51fe1901bedf8c0130be1437554222d656439feb1",
+      "spec": "olhar-telas-do-epico.spec.ts"
+    },
+    {
+      "arquivo": "evidence/taskly/aplicacoes/tela-caixa-do-humano.png",
+      "dimensoes": [
+        1280,
+        720
+      ],
+      "sha256": "a786ce552593076f2ee6d9ae6adc999f560df8e188f26a1a2dda5bbd008ad140",
+      "spec": "olhar-telas-do-epico.spec.ts"
+    },
+    {
+      "arquivo": "evidence/taskly/aplicacoes/tela-acervo-de-conhecimento.png",
+      "dimensoes": [
+        1280,
+        720
+      ],
+      "sha256": "2152156cbfae2f91f02f0e8227c9c7b92d1fe38f9e40352032cb3ef9148b5dbd",
+      "spec": "olhar-telas-do-epico.spec.ts"
+    },
+    {
+      "arquivo": "evidence/taskly/aplicacoes/qa-tela-audit.png",
+      "dimensoes": [
+        1280,
+        720
+      ],
+      "sha256": "3dc2ab2ac2a52c443f95075fe6a50b45b3161809c5646e475184e47aaa06b80d",
+      "spec": "qa-telas-descobertas-w4.spec.ts"
+    },
+    {
+      "arquivo": "evidence/taskly/aplicacoes/qa-tela-settings-templates.png",
+      "dimensoes": [
+        1280,
+        720
+      ],
+      "sha256": "4117fd3b8ef17d8f795c7ac9051bb97efdc8f8e715bd6c731fa98b0b9067e729",
+      "spec": "qa-telas-descobertas-w4.spec.ts"
+    },
+    {
+      "arquivo": "evidence/taskly/aplicacoes/qa-tela-templates.png",
+      "dimensoes": [
+        1280,
+        720
+      ],
+      "sha256": "8f0773daabcc79c4369bf3eaaec7094ad32664e1fa59367472e1d1f645a22929",
+      "spec": "qa-telas-descobertas-w4.spec.ts"
+    },
+    {
+      "arquivo": "evidence/taskly/aplicacoes/qa-tela-templates-criando.png",
+      "dimensoes": [
+        1280,
+        720
+      ],
+      "sha256": "5b1e76321a855b1db068794beae61b26aff6309e5c4e4e08c31e6115ab8eb23a",
+      "spec": "qa-telas-descobertas-w4.spec.ts"
+    },
+    {
+      "arquivo": "evidence/taskly/aplicacoes/qa-tela-templates-criada.png",
+      "dimensoes": [
+        1280,
+        720
+      ],
+      "sha256": "63de45a1eaeb630922d6a85676a243acc0c5ec7f5fdad9d3690fef042ac16713",
+      "spec": "qa-telas-descobertas-w4.spec.ts"
+    },
+    {
+      "arquivo": "evidence/taskly/aplicacoes/pagamento-quantidade-e-configuracao.png",
+      "dimensoes": [
+        1280,
+        1482
+      ],
+      "sha256": "3fcb23d50c903b8d200339f135dd3dc2358f796751424fc0eb81cb8928fde636",
+      "spec": "commercial-dashboard.spec.ts"
+    }
+  ],
+  "limite": "Os registros exploratórios de auditoria não comprovam pesquisa por toda ação e conteúdo; este conjunto prova as superfícies renderizadas. Gerado antes da correção F1; não prova confirmações destrutivas."
+}

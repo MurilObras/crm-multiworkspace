@@ -9,6 +9,8 @@ related_targets: ["components/inbox/inbox-workspace.css","app/app/_components/Ap
 
 Registro de desenvolvimento da direção aprovada, persistido durante a documentação do redesign existente em 29/10/2026. Não foi o insumo de um scaffold anterior e não registra aprovação retrospectiva de implementação.
 
+Atualização cromática autorizada na mesma data: o [contrato Taskly](app-globals-css.md) substitui somente as cores violeta/lavanda deste histórico por cobalto, gradientes estáticos e lima contido. Composição, tipografia, medidas, interação e pareceres Regulatis abaixo permanecem históricos; não restaurar o violeta a partir das referências antigas. [DESIGN.md](../../DESIGN.md) registra os tokens implementados atuais e [o pacote Taskly](../../evidence/taskly/README.md) registra a etapa local sem ampliar seus pareceres.
+
 ## Escopo e modo
 
 - **Modo:** Operate / Read.
@@ -21,7 +23,7 @@ Registro de desenvolvimento da direção aprovada, persistido durante a document
 
 **THESIS:** atendimento legível e operável com mobile frequente. A lista e a conversa não devem exigir que a pessoa role uma região inteira antes de alcançar a próxima tarefa.
 
-**OWN-WORLD:** navegação profunda, painéis de leitura claros e seleção suave. O padrão violeta/lavanda cede aos tokens da marca e ao tema; componentes reais e contornos funcionais sustentam o desenho.
+**OWN-WORLD:** navegação cobalto com gradiente estático, painéis frios de leitura e seleção azul suave, com lima contido no shell padrão. Taskly substitui o violeta/lavanda anterior somente em cor; marca resolvida e semânticas prevalecem. Componentes reais e contornos funcionais sustentam o desenho.
 
 **STORY:** localizar na lista → abrir conversa → responder ou registrar nota interna → consultar ficha → voltar ao atendimento. Estado e permissões determinam as ações disponíveis.
 

@@ -25,56 +25,70 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* ─────────────────────────────────────────────────────────────────────────
-   DeskcommCRM — Design System tokens (Sage palette · density Aerada)
+   DeskcommCRM — Design System tokens (Taskly palette · density Aerada)
    Source of truth: /app/design/lib/tokens.ts (PALETTES.sage)
    Light + dark drawn separately (NOT inverted).
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
+  /* Identidade padrão Taskly. Gradientes têm papéis próprios: os tokens de cor
+     continuam cores válidas para texto, borda, foco e marca personalizada. */
+  --color-chrome: #1643c0;
+  --color-chrome-gradient: linear-gradient(115deg in srgb, #1643c0 0%, #3047e8 52%, #5362da 100%);
+  --color-chrome-text: #ffffff;
+  --color-chrome-muted: #f0f4ff;
+  --color-chrome-hover: #2437ba;
+  --color-chrome-focus: #ffffff;
+  --color-chrome-border: #a7bcff;
+  --color-action-gradient: linear-gradient(115deg in srgb, #1643c0 0%, #3047e8 52%, #5362da 100%);
+  --color-ambient-gradient: linear-gradient(135deg, #edf2ff 0%, #fafbff 70%, #f1f7e1 100%);
+  --color-highlight: #d7f65b;
+  --color-highlight-fg: #1d2911;
+
   /* Surfaces (light) */
-  --color-bg: #faf9f6;
+  --color-bg: #f7f9fd;
   --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
-  --color-overlay: rgba(28, 26, 22, 0.42);
+  --color-surface-elevated: #edf2ff;
+  --color-overlay: rgba(17, 24, 39, 0.42);
 
   /* Text (light) */
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
+  --color-text: #1b2334;
+  --color-text-muted: #566174;
+  --color-text-subtle: #59677f;
 
   /* Borders (light) */
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  --color-border: #dce3f1;
+  --color-border-strong: #76839b;
 
-  /* Accent — Sage (11 stops) */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  /* Accent — azul cobalto Taskly (11 stops) */
+  --color-accent-50:  #f1f4ff;
+  --color-accent-100: #e8eeff;
+  --color-accent-200: #d5dfff;
+  --color-accent-300: #cbd7ff;
+  --color-accent-400: #a7bcff;
+  --color-accent-500: #5266f0;
+  --color-accent-600: #3047e8;
+  --color-accent-700: #2437ba;
+  --color-accent-800: #213196;
+  --color-accent-900: #1e2b73;
+  --color-accent-950: #121c34;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
   --color-accent-hover: var(--color-accent-700);
 
   /* Neutrals — greige (11 stops, light) */
-  --color-neutral-50:  #faf9f6;
-  --color-neutral-100: #f3f1ec;
-  --color-neutral-200: #e7e3da;
-  --color-neutral-300: #d2cdbf;
-  --color-neutral-400: #a9a395;
-  --color-neutral-500: #7d786c;
-  --color-neutral-600: #5d594f;
-  --color-neutral-700: #46433b;
-  --color-neutral-800: #2e2c26;
-  --color-neutral-900: #1c1a16;
-  --color-neutral-950: #0e0d0a;
+  --color-neutral-50:  #f7f9fd;
+  --color-neutral-100: #edf2ff;
+  --color-neutral-200: #dce3f1;
+  --color-neutral-300: #8491a6;
+  --color-neutral-400: #71809a;
+  --color-neutral-500: #59677f;
+  --color-neutral-600: #566174;
+  --color-neutral-700: #3b4860;
+  --color-neutral-800: #29364c;
+  --color-neutral-900: #1b2334;
+  --color-neutral-950: #101827;
 
   /* States (light) */
   --color-success: #5a8a5f;
@@ -160,7 +174,7 @@
   --destructive: var(--color-error);
   --destructive-foreground: #ffffff;
   --border: var(--color-border);
-  --input: var(--color-border);
+  --input: var(--color-border-strong);
   --ring: var(--color-accent-500);
   --radius: var(--radius-md);
   /* ---- Agenda · cor de pessoa (8 trilhas) ------------------------------
@@ -250,30 +264,32 @@
    (lib/branding/css.ts), que só ganha consumidor com a tela de marca.
    ───────────────────────────────────────────────────────────────────────── */
 [data-theme="light"] {
-  --color-bg: #faf9f6;
+  --color-action-gradient: linear-gradient(115deg in srgb, #1643c0 0%, #3047e8 52%, #5362da 100%);
+  --color-ambient-gradient: linear-gradient(135deg, #edf2ff 0%, #fafbff 70%, #f1f7e1 100%);
+  --color-bg: #f7f9fd;
   --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
-  --color-overlay: rgba(28, 26, 22, 0.42);
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  --color-surface-elevated: #edf2ff;
+  --color-overlay: rgba(17, 24, 39, 0.42);
+  --color-text: #1b2334;
+  --color-text-muted: #566174;
+  --color-text-subtle: #59677f;
+  --color-border: #dce3f1;
+  --color-border-strong: #76839b;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
   --color-accent-hover: var(--color-accent-700);
-  --color-neutral-50: #faf9f6;
-  --color-neutral-100: #f3f1ec;
-  --color-neutral-200: #e7e3da;
-  --color-neutral-300: #d2cdbf;
-  --color-neutral-400: #a9a395;
-  --color-neutral-500: #7d786c;
-  --color-neutral-600: #5d594f;
-  --color-neutral-700: #46433b;
-  --color-neutral-800: #2e2c26;
-  --color-neutral-900: #1c1a16;
-  --color-neutral-950: #0e0d0a;
+  --color-neutral-50: #f7f9fd;
+  --color-neutral-100: #edf2ff;
+  --color-neutral-200: #dce3f1;
+  --color-neutral-300: #8491a6;
+  --color-neutral-400: #71809a;
+  --color-neutral-500: #59677f;
+  --color-neutral-600: #566174;
+  --color-neutral-700: #3b4860;
+  --color-neutral-800: #29364c;
+  --color-neutral-900: #1b2334;
+  --color-neutral-950: #101827;
   --color-success: #5a8a5f;
   --color-success-bg: rgba(90, 138, 95, 0.12);
   --color-success-fg: #41673f;
@@ -307,7 +323,7 @@
   --destructive: var(--color-error);
   --destructive-foreground: #ffffff;
   --border: var(--color-border);
-  --input: var(--color-border);
+  --input: var(--color-border-strong);
   --ring: var(--color-accent-500);
   /* ---- Agenda · cor de pessoa (espelho do :root) -----------------------
    * Espelhado aqui porque o tema escuro sobrescreve estas oito chaves, e
@@ -327,50 +343,53 @@
 }
 
 [data-theme="dark"] {
+  --color-action-gradient: linear-gradient(115deg, #a7bcff, #cbd7ff 52%, #b5c1ff);
+  --color-ambient-gradient: linear-gradient(135deg, #192337, #111827 70%, #182525);
+
   /* Surfaces (dark — drawn) */
-  --color-bg: #161510;
-  --color-surface: #1d1c17;
-  --color-surface-elevated: #272620;
+  --color-bg: #111827;
+  --color-surface: #192337;
+  --color-surface-elevated: #24324b;
   --color-overlay: rgba(0, 0, 0, 0.55);
 
   /* Text (dark) */
-  --color-text: #f5f4ef;
-  --color-text-muted: #8e8b7f;
-  --color-text-subtle: #605e54;
+  --color-text: #f0f4ff;
+  --color-text-muted: #bdc9df;
+  --color-text-subtle: #a8b6ce;
 
   /* Borders (dark) */
-  --color-border: #33312a;
-  --color-border-strong: #444239;
+  --color-border: #34445f;
+  --color-border-strong: #71829f;
 
   /* Accent stays same hex stops; default shifts up for dark contrast */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  --color-accent-50:  #f1f4ff;
+  --color-accent-100: #e8eeff;
+  --color-accent-200: #d5dfff;
+  --color-accent-300: #cbd7ff;
+  --color-accent-400: #a7bcff;
+  --color-accent-500: #5266f0;
+  --color-accent-600: #3047e8;
+  --color-accent-700: #2437ba;
+  --color-accent-800: #213196;
+  --color-accent-900: #1e2b73;
+  --color-accent-950: #121c34;
   --color-accent: var(--color-accent-400);
-  --color-accent-fg: #161510;
-  --color-accent-soft: rgba(130, 160, 119, 0.16);
+  --color-accent-fg: #121c34;
+  --color-accent-soft: rgba(167, 188, 255, 0.16);
   --color-accent-hover: var(--color-accent-300);
 
   /* Neutrals — greige (11 stops, dark) */
-  --color-neutral-50:  #f5f4ef;
-  --color-neutral-100: #e6e4dc;
-  --color-neutral-200: #bbb8ac;
-  --color-neutral-300: #8e8b7f;
-  --color-neutral-400: #605e54;
-  --color-neutral-500: #444239;
-  --color-neutral-600: #33312a;
-  --color-neutral-700: #272620;
-  --color-neutral-800: #1d1c17;
-  --color-neutral-900: #161510;
-  --color-neutral-950: #0c0b08;
+  --color-neutral-50:  #f0f4ff;
+  --color-neutral-100: #dee6f7;
+  --color-neutral-200: #cbd5e8;
+  --color-neutral-300: #bdc9df;
+  --color-neutral-400: #a8b6ce;
+  --color-neutral-500: #71829f;
+  --color-neutral-600: #34445f;
+  --color-neutral-700: #24324b;
+  --color-neutral-800: #192337;
+  --color-neutral-900: #111827;
+  --color-neutral-950: #0a1020;
 
   /* States (dark) */
   --color-success: #82a077;
@@ -408,9 +427,9 @@
   --muted-foreground: var(--color-text-muted);
   --accent-foreground: var(--color-accent-fg);
   --destructive: var(--color-error);
-  --destructive-foreground: #ffffff;
+  --destructive-foreground: #0a1020;
   --border: var(--color-border);
-  --input: var(--color-border);
+  --input: var(--color-border-strong);
   --ring: var(--color-accent-400);
   /* ---- Agenda · cor de pessoa (tema escuro) ----------------------------
    * Mais claras e menos saturadas que as do claro: sobre `#161510` a versão
@@ -463,7 +482,7 @@
   --color-text-muted: var(--color-text-muted);
   --color-text-subtle: var(--color-text-subtle);
 
-  /* Accent — Sage */
+  /* Accent — azul cobalto Taskly */
   --color-accent: var(--color-accent);
   --color-accent-foreground: var(--color-accent-fg);
   --color-accent-soft: var(--color-accent-soft);
@@ -523,7 +542,7 @@
   --color-secondary: var(--color-surface-elevated);
   --color-secondary-foreground: var(--color-text);
   --color-destructive: var(--color-error);
-  --color-destructive-foreground: #ffffff;
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-muted: var(--color-surface-elevated);
   --color-muted-foreground: var(--color-text-muted);
   --color-popover: var(--color-surface);
@@ -903,4 +922,59 @@
     transition: none;
     transform: none;
   }
+}
+
+/* A identidade personalizada continua acima do padrão do produto. A navegação
+   mistura a semente com uma base escura para manter leitura em marcas claras.
+   A guarda olha o documento: a folha da instalação mora no head, a da org no body. */
+html:has(#marca-instalacao),
+html:has(#marca-organizacao) body,
+html:has(#marca-instalacao) [data-theme],
+html:has(#marca-organizacao) [data-theme] {
+  --color-chrome: color-mix(in srgb, var(--color-brand, #3047e8) 24%, #111827);
+  --color-chrome-gradient: linear-gradient(115deg, color-mix(in srgb, var(--color-brand, #3047e8) 24%, #111827), color-mix(in srgb, var(--color-brand, #3047e8) 16%, #192337));
+  --color-chrome-hover: color-mix(in srgb, var(--color-brand, #3047e8) 30%, #192337);
+  --color-action-gradient: none;
+  --color-ambient-gradient: none;
+  --color-highlight: var(--color-accent-soft);
+  --color-highlight-fg: var(--color-accent);
+}
+
+/* Expressão cromática compartilhada. Nenhuma medida, breakpoint ou interação
+   é alterada: as telas e os portais continuam consumindo os papéis existentes. */
+.shell-topbar,
+.shell-sidebar {
+  color: var(--color-chrome-text);
+  background-color: var(--color-chrome);
+  background-image: var(--color-chrome-gradient);
+  --foreground: var(--color-chrome-text);
+  --muted-foreground: var(--color-chrome-muted);
+  --color-text: var(--color-chrome-text);
+  --color-text-muted: var(--color-chrome-muted);
+  --color-text-subtle: var(--color-chrome-muted);
+  --color-bg: var(--color-chrome);
+  --color-surface: var(--color-chrome);
+  --color-surface-elevated: var(--color-chrome-hover);
+  --background: var(--color-chrome);
+  --card: var(--color-chrome);
+  --muted: var(--color-chrome-hover);
+  --secondary: var(--color-chrome-hover);
+  --secondary-foreground: var(--color-chrome-text);
+  --border: var(--color-chrome-border);
+}
+.shell-sidebar a[aria-current="page"] {
+  color: var(--color-highlight-fg);
+  background: var(--color-highlight);
+}
+.shell-topbar button:hover,
+.shell-topbar a:hover {
+  background-color: var(--color-chrome-hover);
+  color: var(--color-chrome-text);
+}
+.shell-topbar :focus-visible {
+  outline: 2px solid var(--color-chrome-focus);
+  outline-offset: 2px;
+}
+.shell-topbar + main {
+  background-image: var(--color-ambient-gradient);
 }

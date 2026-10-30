@@ -1,0 +1,71 @@
+{
+  "origem": "Build de produção local com correção F1, Supabase pg15 fresco, organizações sintéticas. Confirmação habilitada por nome, somente abertura e cancelamento; nenhuma exclusão executada.",
+  "viewport_altura": 900,
+  "capturas": [
+    {
+      "arquivo": "evidence/taskly/confirmacoes/destrutivo-dark-1440-hover.png",
+      "dimensoes": [
+        1440,
+        900
+      ],
+      "sha256": "f6a8df1b4f3c4b81a402a4415b828a6bdbd1f3340d37f65af324776bab70f7b1"
+    },
+    {
+      "arquivo": "evidence/taskly/confirmacoes/destrutivo-dark-1440-repouso.png",
+      "dimensoes": [
+        1440,
+        900
+      ],
+      "sha256": "1750f9f8eb8852d4849ed64f8f547ef9bab035063dc46c89cc816a7d24829b1d"
+    },
+    {
+      "arquivo": "evidence/taskly/confirmacoes/destrutivo-dark-390-hover.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "05752af7a969ec81b429d667ea36f0050c60b2addaf34814fea93d71aa9e4b62"
+    },
+    {
+      "arquivo": "evidence/taskly/confirmacoes/destrutivo-dark-390-repouso.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "4320271b12126d8047e60250d454bb589cb095e36c02012355fd0df348f5f8ef"
+    },
+    {
+      "arquivo": "evidence/taskly/confirmacoes/destrutivo-light-1440-hover.png",
+      "dimensoes": [
+        1440,
+        900
+      ],
+      "sha256": "d43c94dccc4fe5f7a0b83007c6fbce793082a426c364c0b4aa46ae7dc7071d65"
+    },
+    {
+      "arquivo": "evidence/taskly/confirmacoes/destrutivo-light-1440-repouso.png",
+      "dimensoes": [
+        1440,
+        900
+      ],
+      "sha256": "4efb6a7a0f60665b9dc1fbc1300902e07d14735bf2bcef956cb2690307e20664"
+    },
+    {
+      "arquivo": "evidence/taskly/confirmacoes/destrutivo-light-390-hover.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "0c9c6f4f503c73e029ac3fd557609d4591052b69d8c4d94647c547448ad8ff21"
+    },
+    {
+      "arquivo": "evidence/taskly/confirmacoes/destrutivo-light-390-repouso.png",
+      "dimensoes": [
+        390,
+        900
+      ],
+      "sha256": "22b894109ac8b60fa47eddbcb14e56b08b61041fa06c4bc59a7515e89c663acb"
+    }
+  ],
+  "medidas": "medidas.json"
+}

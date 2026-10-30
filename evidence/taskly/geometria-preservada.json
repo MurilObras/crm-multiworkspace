@@ -1,0 +1,18 @@
+[
+  {
+    "file": "app/globals.css",
+    "unchanged": true,
+    "declarationsBefore": 27,
+    "declarationsAfter": 27,
+    "removed": [],
+    "added": []
+  },
+  {
+    "file": "components/inbox/inbox-workspace.css",
+    "unchanged": true,
+    "declarationsBefore": 161,
+    "declarationsAfter": 161,
+    "removed": [],
+    "added": []
+  }
+]

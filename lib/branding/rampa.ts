@@ -10,9 +10,11 @@
  * pré-buildada e cada dependência nova é superfície de advisory num produto que o
  * cliente hospeda. As conversões (sRGB ↔ OKLab, de Björn Ottosson) cabem em 60 linhas.
  *
- * A régua é `app/globals.css`. `rampaDeSemente('#506d48')` reproduz os 11 stops Sage
- * com Δ ≤ 2/255 por canal — medido, e vigiado por
- * `tests/unit/branding-rampa.test.ts`, que LÊ os stops esperados do próprio CSS.
+ * A régua de contraste acompanha `app/globals.css`. A curva de derivação mantém
+ * a calibração Sage histórica para preservar as marcas já cadastradas, mesmo
+ * quando a identidade padrão muda. `rampaDeSemente('#506d48')` continua reproduzindo
+ * aquela rampa com Δ ≤ 2/255 por canal, vigiado por uma fixture de compatibilidade
+ * em `tests/unit/branding-rampa.test.ts`.
  */
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -203,8 +205,9 @@ export function compor(cor: string, alfa: number, sobre: string): string {
 // ── A rampa ──────────────────────────────────────────────────────────────────
 
 /**
- * Lightness dos 11 stops Sage, medida em OKLab a partir de `app/globals.css`.
- * É a FORMA da escada — a curva de luminosidade que o design system desenhou à mão.
+ * Lightness dos 11 stops Sage, medida na paleta anterior à direção Taskly.
+ * Esta curva histórica permanece estável para conservar as rampas das marcas
+ * personalizadas. Não é a paleta padrão atual de `app/globals.css`.
  */
 export const ESCADA_L = [
   0.9695, 0.9317, 0.8597, 0.7634, 0.6718, 0.5899, 0.5015, 0.4303, 0.3772, 0.339, 0.2278,

@@ -630,8 +630,8 @@
   border-radius: 12px;
   padding: 20px;
 }
-.ds-preview-light { background: #faf9f6; color: #1c1a16; }
-.ds-preview-dark  { background: #161510; color: #f5f4ef; }
+.ds-preview-light { background: #f7f9fd; color: #1b2334; }
+.ds-preview-dark  { background: #111827; color: #f0f4ff; }
 .ds-preview-label {
   font-family: var(--ds-font-mono);
   font-size: 10px;
