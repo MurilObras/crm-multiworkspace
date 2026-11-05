@@ -11,10 +11,36 @@
  * O índice parcial uniq_job_queue_one_running_per_contact fica de CINTO: na corrida
  * residual entre workers o 23505 é capturado e o claim perde só a rodada.
  *
- * Sem imports de RUNTIME de propósito: o worker de teste do SIGKILL roda este
+ * Sem imports de runtime do PROJETO: o worker de teste do SIGKILL roda este
  * módulo direto no Node 22 (type stripping), que não resolve especificador .js→.ts.
+ * AsyncLocalStorage é nativo do Node e não depende dessa resolução.
  */
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+interface JobExecution {
+  jobId: string;
+  workerId: string;
+  settled: JobStatus | null;
+  database: Queryable;
+}
+const executions = new AsyncLocalStorage<JobExecution>();
+
+/** Recibo local da transição que ESTE lease efetivou, não inferência pelo estado
+ * atual da fila (que outro worker pode ter alterado). Não guarda jobs globalmente. */
+export function withJobExecution<T>(jobId: string, workerId: string, database: Queryable,
+  run: (execution: JobExecution) => Promise<T>): Promise<T> {
+  const execution: JobExecution = { jobId, workerId, settled: null, database };
+  return executions.run(execution, () => run(execution));
+}
+
+function recordSettlement(jobId: string, workerId: string, status: JobStatus, database: Queryable): void {
+  const execution = executions.getStore();
+  // Um UPDATE executado por PoolClient pode pertencer a uma transação ainda
+  // sem commit. Só o pool registrado da tentativa fornece recibo autônomo.
+  if (execution?.jobId === jobId && execution.workerId === workerId
+    && execution.database === database) execution.settled = status;
+}
 
 export type JobKind = 'inbound_turn' | 'followup_turn' | 'watchdog' | 'flywheel' | 'case_reply_turn' | 'operator_turn' | 'responsible_delivery' | 'responsible_reply';
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'dead';
@@ -263,6 +289,7 @@ export async function completeJob<T = void>(
       );
     }
     await client.query('commit');
+    recordSettlement(jobId, workerId, 'done', pool);
     return result;
   } catch (err) {
     await rollback(client, err);
@@ -362,6 +389,7 @@ export async function cancelJob(
      returning *`,
     [jobId, workerId, normalizeError(reason)],
   );
+  if (rows[0]) recordSettlement(jobId, workerId, 'failed', db);
   return rows[0] ?? null;
 }
 
@@ -387,6 +415,7 @@ export async function rescheduleJob(
      returning *`,
     [jobId, workerId, opts.delayMs, normalizeError(opts.reason)],
   );
+  if (rows[0]) recordSettlement(jobId, workerId, 'pending', db);
   return rows[0] ?? null;
 }
 

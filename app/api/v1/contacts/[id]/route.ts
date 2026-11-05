@@ -1,3 +1,4 @@
+import { withReadRequest } from '@/lib/supabase/read-request';
 /**
  * GET    /api/v1/contacts/[id] — fetch single (handler em ../_handler.ts)
  * PATCH  /api/v1/contacts/[id] — update (handler em ../_handler.ts)
@@ -19,7 +20,7 @@ import { deleteContactHandler, getContactHandler, patchContactHandler } from "..
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
+async function readHandler(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -27,15 +28,11 @@ export async function GET(
   const { id } = await ctx.params;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  const authUser = await loadAuthUser();
+  const user = authUser;
+  if (!user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
-
-  const authUser = await loadAuthUser();
   const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
   if (!activeOrg) {
     return fail("no_active_org", "No active organization.", 403, { requestId });
@@ -141,3 +138,5 @@ export async function DELETE(
     throw err;
   }
 }
+
+export const GET = withReadRequest('api/v1/contacts/[id]', readHandler);

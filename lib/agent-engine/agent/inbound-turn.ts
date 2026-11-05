@@ -354,8 +354,9 @@ export const DEFAULT_MAX_SENDS_PER_TURN = 3;
 
 /**
  * Job já saiu de 'running' por decisão do próprio run (ex.: cancelJob no veto
- * is_blocked) — o worker NÃO deve completar nem re-tentar. main.ts trata via
- * failJob, que no-opa (lease já não é dele) — estado final é o que o run deixou.
+ * is_blocked) — o worker NÃO deve completar nem re-tentar. main.ts só reconhece
+ * esse desfecho se a tentativa possui recibo do CAS/commit do próprio lease.
+ * Sem recibo, o erro continua visível; uma perda real de lease não é ocultada.
  */
 export class JobSettledError extends Error {
   override readonly name = 'job_settled';

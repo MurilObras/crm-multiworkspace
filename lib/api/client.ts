@@ -16,7 +16,7 @@ export type RequestOpts = {
 };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 2;
 const RETRYABLE_STATUSES = new Set([429, 503]);
 const MUTATING_METHODS = new Set<HttpMethod>(["POST", "PATCH", "PUT", "DELETE"]);
 
@@ -62,16 +62,7 @@ function synthesizeCode(status: number): string {
 }
 
 function combineSignals(signals: Array<AbortSignal | undefined>): AbortSignal {
-  const controller = new AbortController();
-  for (const sig of signals) {
-    if (!sig) continue;
-    if (sig.aborted) {
-      controller.abort(sig.reason);
-      break;
-    }
-    sig.addEventListener("abort", () => controller.abort(sig.reason), { once: true });
-  }
-  return controller.signal;
+  return AbortSignal.any(signals.filter((s): s is AbortSignal => s !== undefined));
 }
 
 async function readBodySafe(res: Response): Promise<unknown> {
@@ -118,13 +109,19 @@ async function request<T>(
   const serializedBody = body === undefined || body === null ? undefined : JSON.stringify(body);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const requestedAttempts = Number.isFinite(opts.maxAttempts) ? opts.maxAttempts! : MAX_ATTEMPTS;
-  const maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.trunc(requestedAttempts)));
+  // Um timeout não prova que a escrita falhou. Mesmo com header de idempotência,
+  // nem toda rota tem armazenamento dessa chave; mutações nunca repetem aqui.
+  const maxAttempts = MUTATING_METHODS.has(method) ? 1
+    : Math.min(MAX_ATTEMPTS, Math.max(1, Math.trunc(requestedAttempts)));
+  const deadline = performance.now() + timeoutMs;
 
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+    const remainingMs = Math.max(0, deadline - performance.now());
+    if (remainingMs === 0) throw new DOMException('Request budget exhausted', 'TimeoutError');
+    const timer = setTimeout(() => timeoutController.abort(), remainingMs);
     const signal = combineSignals([timeoutController.signal, opts.signal]);
 
     try {
@@ -150,8 +147,13 @@ async function request<T>(
       if (RETRYABLE_STATUSES.has(res.status) && attempt < maxAttempts) {
         const retryAfter = parseRetryAfterSeconds(res.headers.get("Retry-After"));
         const delay = retryAfter !== null ? retryAfter * 1000 : backoffMs(attempt);
-        await sleep(delay, opts.signal);
-        continue;
+        if (delay < deadline - performance.now()) {
+          // Libera a conexão e os bytes antes de outra tentativa. O relógio
+          // total também cobre o body e a espera indicada pelo servidor.
+          await res.body?.cancel();
+          await sleep(delay, opts.signal);
+          continue;
+        }
       }
 
       // Non-retry error: parse and throw
@@ -182,12 +184,9 @@ async function request<T>(
       if (opts.signal?.aborted) {
         throw err;
       }
-      // Network error / timeout — retry
+      // A operação anterior pode continuar no servidor. Falhas de rede/timeout
+      // são devolvidas sem repetir; só HTTP 429/503 em leitura têm retry acima.
       lastError = err;
-      if (attempt < maxAttempts) {
-        await sleep(backoffMs(attempt), opts.signal);
-        continue;
-      }
       throw err;
     } finally {
       clearTimeout(timer);

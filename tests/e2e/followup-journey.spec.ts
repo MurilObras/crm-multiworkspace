@@ -334,6 +334,9 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     });
     expect(trigCfgRes.status()).toBe(200);
 
+    // Publicar o fluxo com envio já exige uma conexão utilizável. O seed
+    // nasce STARTING: prepare antes deste publish, não só do agente adiante.
+    runHelper(["prepare-agent-fixtures"]); // credential.validated_at + channel_session=WORKING
     await page.getByTestId("publish-button").click();
     await expect(page.getByText("Fluxo publicado.")).toBeVisible();
     await expect(page.locator('[aria-label="status: Ativo"]')).toBeVisible();
@@ -356,7 +359,6 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
       //    PUBLICADO com followup.enabled=true habilita o gatilho automático
       //    (isPointerEnabledForAutomaticTrigger, Task 7.2/8.1).
       // =========================================================================
-      runHelper(["prepare-agent-fixtures"]); // credential.validated_at + channel_session=WORKING
       const fixtures = creds.followup_agent_fixtures!;
       const agentName = `E2E Agente Jornada ${stamp}`;
       const createAgentRes = await page.request.post("/api/v1/ai/agents", {

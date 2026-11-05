@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Contenção de consultas e follow-up em lotes",
+    "subtitle": "Prazos, concorrência limitada e disposição confirmada",
+    "output": "request-backpressure.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "http",
+      "label": "Interface e borda"
+    },
+    {
+      "id": "rules",
+      "label": "Regras"
+    },
+    {
+      "id": "db",
+      "label": "Dados"
+    },
+    {
+      "id": "ops",
+      "label": "Observação"
+    }
+  ],
+  "mainPath": [
+    "ui",
+    "read",
+    "auth",
+    "data"
+  ],
+  "nodes": [
+    {
+      "id": "ui",
+      "lane": "http",
+      "col": 0,
+      "type": "frontend",
+      "label": "Inbox e entregas"
+    },
+    {
+      "id": "read",
+      "lane": "http",
+      "col": 1,
+      "type": "backend",
+      "label": "withReadRequest"
+    },
+    {
+      "id": "auth",
+      "lane": "rules",
+      "col": 2,
+      "type": "backend",
+      "label": "getUser com prazo"
+    },
+    {
+      "id": "data",
+      "lane": "db",
+      "col": 3,
+      "type": "database",
+      "label": "Supabase e RLS"
+    },
+    {
+      "id": "cycle",
+      "lane": "rules",
+      "col": 4,
+      "type": "backend",
+      "label": "withFollowupCycle"
+    },
+    {
+      "id": "candidates",
+      "lane": "db",
+      "col": 0,
+      "type": "database",
+      "label": "fn_silence_contact_page"
+    },
+    {
+      "id": "episode",
+      "lane": "db",
+      "col": 1,
+      "type": "database",
+      "label": "fn_enroll_silence_batch"
+    },
+    {
+      "id": "queue",
+      "lane": "rules",
+      "col": 2,
+      "type": "backend",
+      "label": "Executor da fila"
+    },
+    {
+      "id": "receipt",
+      "lane": "rules",
+      "col": 3,
+      "type": "backend",
+      "label": "Recibo de CAS/commit"
+    },
+    {
+      "id": "logs",
+      "lane": "ops",
+      "col": 4,
+      "type": "backend",
+      "label": "Logger: duração e memória"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-0",
+      "from": "ui",
+      "to": "read",
+      "label": "GET"
+    },
+    {
+      "id": "edge-1",
+      "from": "read",
+      "to": "auth",
+      "label": "validar"
+    },
+    {
+      "id": "edge-2",
+      "from": "auth",
+      "to": "data",
+      "label": "consultar"
+    },
+    {
+      "id": "edge-3",
+      "from": "data",
+      "to": "read",
+      "label": "dados"
+    },
+    {
+      "id": "edge-4",
+      "from": "read",
+      "to": "logs",
+      "label": "read_request_finished"
+    },
+    {
+      "id": "edge-5",
+      "from": "logs",
+      "to": "ui",
+      "label": "diagnóstico do operador"
+    },
+    {
+      "id": "edge-6",
+      "from": "cycle",
+      "to": "candidates",
+      "label": "página limitada"
+    },
+    {
+      "id": "edge-7",
+      "from": "candidates",
+      "to": "episode",
+      "label": "lote"
+    },
+    {
+      "id": "edge-8",
+      "from": "episode",
+      "to": "data",
+      "label": "episódio atômico"
+    },
+    {
+      "id": "edge-9",
+      "from": "data",
+      "to": "cycle",
+      "label": "resultado"
+    },
+    {
+      "id": "edge-10",
+      "from": "cycle",
+      "to": "queue",
+      "label": "enfileirar"
+    },
+    {
+      "id": "edge-11",
+      "from": "queue",
+      "to": "receipt",
+      "label": "transição confirmada"
+    },
+    {
+      "id": "edge-12",
+      "from": "receipt",
+      "to": "queue",
+      "label": "evita dupla conclusão"
+    },
+    {
+      "id": "edge-13",
+      "from": "receipt",
+      "to": "logs",
+      "label": "disposição ou perda real"
+    }
+  ]
+}

@@ -10,9 +10,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * para perguntar" (GoTrue fora do ar, rede, token ilegível), uma falha transitória
  * virava, no log, uma pessoa simplesmente deslogada — indistinguível do normal.
  *
- * A ação segue certa e não muda: sem usuário confirmado, `null` → login. Falhar
- * FECHADO na ação é o desfecho seguro. O que estava errado era falhar fechado
- * também na INFORMAÇÃO.
+ * O acesso continua fechado sem validação. Sessão ausente/inválida leva ao login;
+ * falha de infraestrutura resulta em503, sem simular logout ou revogação.
  *
  * ## O segundo defeito, que o conserto do primeiro quase introduziu
  *
@@ -83,7 +82,8 @@ describe("loadAuthUser — o erro do getUser deixa rastro", () => {
       },
     };
 
-    expect(await loadAuthUser()).toBeNull(); // a ação não muda: falha fechado
+    // Continua fechado, mas indisponibilidade não simula logout do usuário.
+    await expect(loadAuthUser()).rejects.toMatchObject({ status: 503, code: 'unavailable' });
     expect(erros).toHaveLength(1);
     expect(erros[0]!.msg).toMatch(/getUser falhou/);
     // Sem estes campos a linha não diagnostica nada — seria um "algo deu errado"

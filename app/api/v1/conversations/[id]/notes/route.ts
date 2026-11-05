@@ -1,3 +1,4 @@
+import { withReadRequest } from '@/lib/supabase/read-request';
 /**
  * GET  /api/v1/conversations/[id]/notes — lista notas internas da conversa (nunca vai ao WhatsApp).
  * POST /api/v1/conversations/[id]/notes — cria nota interna (autor = user.id, org de authz).
@@ -23,7 +24,7 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_req: NextRequest, { params }: RouteParams): Promise<Response> {
+async function readHandler(_req: NextRequest, { params }: RouteParams): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "conversation_notes" });
   if (!authz.ok) return authz.response;
@@ -144,3 +145,5 @@ async function emitirMencoesDaNota(input: {
     }),
   );
 }
+
+export const GET = withReadRequest('api/v1/conversations/[id]/notes', readHandler);

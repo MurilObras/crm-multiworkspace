@@ -1,3 +1,4 @@
+import { withReadRequest } from '@/lib/supabase/read-request';
 /**
  * GET /api/v1/conversations/[id]/messages — histórico de mensagens (handler
  * em /app/api/v1/messages/_handler.ts → listMessagesHandler).
@@ -19,20 +20,16 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+async function readHandler(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: conversationId } = await ctx.params;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  const authUser = await loadAuthUser();
+  const user = authUser;
+  if (!user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
-
-  const authUser = await loadAuthUser();
   const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
   if (!activeOrg) {
     return fail("no_active_org", "No active organization.", 403, { requestId });
@@ -69,3 +66,5 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     throw err;
   }
 }
+
+export const GET = withReadRequest('api/v1/conversations/[id]/messages', readHandler);

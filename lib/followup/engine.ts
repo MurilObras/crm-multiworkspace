@@ -10,6 +10,7 @@
  * `createSupabaseAdminClient` below adapts the real service-role client.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { serviceRequestBudgetRemaining } from '@/lib/supabase/service-fetch';
 
 import { idsDoContatoEGemeos } from "@/lib/channels/contato-por-telefone";
 import { logger } from "@/lib/logger";
@@ -682,6 +683,9 @@ export async function runFollowupTick(deps: TickDeps, opts?: { limit?: number })
   summary.claimed = claimed.length;
 
   for (const enrollment of claimed) {
+    // O claim dos restantes expira normalmente. Não inicia efeitos novos com
+    // o prazo vencido e não usa cancelamento de Promise para soltar a rodada.
+    if (serviceRequestBudgetRemaining() === 0) break;
     try {
       await processEnrollment(deps, enrollment, summary);
     } catch (err) {

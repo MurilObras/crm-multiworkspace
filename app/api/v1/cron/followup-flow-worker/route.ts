@@ -30,6 +30,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseAdminClient, runFollowupTick, type FollowupJobRequest } from "@/lib/followup/engine";
 import { createSupabaseFollowupGateDb } from "@/lib/followup/agent-followup-gate";
 import { createSupabaseSilenceSweepDb, runSilenceSweep } from "@/lib/followup/silence-sweep";
+import { withFollowupCycle } from '@/lib/followup/cycle-budget';
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,10 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
+  return await withFollowupCycle(() => runCycle(requestId)) ?? ok({ skipped: 'cycle_running' }, { requestId });
+}
+
+async function runCycle(requestId: string): Promise<Response> {
   const admin = createAdminClient();
   const deps = {
     db: createSupabaseAdminClient(admin),
