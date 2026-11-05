@@ -102,6 +102,7 @@ export const AUDIT_ACTIONS = [
   "contact.field_rejected",
   "lead.tags_changed",
   "message.sent",
+  "message.media_reprocess_requested",
   "message.delivery_confirmed",
   "message.received",
   // Uma rodada do cron `recover-stuck-messages` que de fato marcou mensagem

@@ -1,8 +1,9 @@
 "use client";
 
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
+import Link from "next/link";
 import { useState } from "react";
-import { formatDistanceToNowStrict } from "date-fns";
+import { format, formatDistanceToNowStrict } from "date-fns";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -83,6 +84,7 @@ function InboxRow({
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
+  const occurrence = format(new Date(item.created_at), "dd/MM/yyyy HH:mm", { locale: localeDaData });
   const when = formatDistanceToNowStrict(new Date(item.created_at), {
     addSuffix: true,
     locale: localeDaData,
@@ -95,8 +97,12 @@ function InboxRow({
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">{item.title}</p>
         <p className="text-xs text-muted-foreground">
-          {kindLabel(item.kind, t)} · {when}
+          {kindLabel(item.kind, t)} · <time dateTime={item.created_at} title={when}>{occurrence}</time>
         </p>
+        {item.origin ? <div className="mt-2 space-y-1">
+          <Link className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-2" href={item.origin.href}>{t(item.origin.label)}</Link>
+          {item.origin.state && <p className="text-xs text-muted-foreground">{t("Situação atual da origem")}: {t(originState(item.origin.state))}</p>}
+        </div> : item.ref_id ? <p className="mt-2 text-xs text-muted-foreground">{t("Origem indisponível ou sem acesso. O aviso conserva a ocorrência original.")}</p> : null}
         {item.body ? <p className="mt-1 text-xs text-muted-foreground">{item.body}</p> : null}
       </div>
       {canResolve ? (
@@ -113,4 +119,12 @@ function InboxRow({
       ) : null}
     </li>
   );
+}
+
+function originState(state: string): string {
+  const labels: Record<string,string> = { pending: "Na fila", running: "Em processamento", done: "Tarefa concluída",
+    failed: "Falha", dead: "Falha terminal", cancelled: "Cancelado", ready: "Mídia processada", active: "Ativo",
+    waiting_reply: "Aguardando resposta", paused_manual: "Pausado pela equipe", paused_handoff: "Atendimento humano",
+    completed: "Concluído", open: "Aberto", closed: "Fechado", snoozed: "Adiado" };
+  return labels[state] ?? "Confira no atendimento";
 }

@@ -44,6 +44,8 @@ export function ResponsibleConsultation({ agentId, disabled = false }: { agentId
       if (!response.ok) throw new Error(json.error?.message ?? "Falha ao salvar.");
       const checked = await load(kind === "settings");
       if (kind === "settings" && (checked.settings.enabled !== settings.enabled || checked.settings.conditions !== settings.conditions.trim() ||
+        (checked.settings.notify_client !== false) !== (settings.notify_client !== false) ||
+        (checked.settings.audio_failures_to_responsible === true) !== (settings.audio_failures_to_responsible === true) ||
         [...checked.settings.recipient_ids].sort().join(",") !== [...new Set(settings.recipient_ids)].sort().join(","))) throw new Error("A configuração mudou durante a gravação. Confira os valores carregados antes de salvar novamente.");
       if (kind === "recipient") { setName(""); setPhone(""); setEditing(undefined); setRecipientEnabled(true); }
       setNotice(kind === "settings" ? "Configuração salva e conferida. Vale para os próximos atendimentos deste agente publicado." : "Responsável salvo neste workspace. Selecione-o abaixo e salve a configuração do agente.");
@@ -52,10 +54,18 @@ export function ResponsibleConsultation({ agentId, disabled = false }: { agentId
   const locked = disabled || !loaded || loading || busy;
   return <Card className="space-y-4 p-4" data-testid="responsible-consultation">
     <h3 className="text-sm font-medium">{t("Consultar responsável pelo WhatsApp")}</h3>
-    <p className="text-xs text-muted-foreground">{t("Usa o número por QR Code do atendimento. Quando precisa de confirmação, avisa o cliente e pausa a conversa e os follow-ups até a resposta. Um pedido para falar com uma pessoa mantém o atendimento humano.")}</p>
+    <p className="text-xs text-muted-foreground">{t("Usa o número por QR Code do atendimento. Quando precisa de confirmação, pausa a conversa e os follow-ups até a resposta. O aviso ao cliente é opcional. Um pedido para falar com uma pessoa mantém o atendimento humano.")}</p>
     {loading && <p>{t("Carregando configuração…")}</p>}
     <div className="flex items-center gap-2"><Switch id="responsible-consultation-enabled" checked={settings.enabled} disabled={locked}
       onCheckedChange={enabled => setSettings(s => ({ ...s, enabled }))} /><Label htmlFor="responsible-consultation-enabled">{t("Ativar consulta e avisos aos responsáveis")}</Label></div>
+    <div className="space-y-2">
+      <div className="flex min-h-11 items-center gap-2"><Switch id="responsible-notify-client" checked={settings.notify_client !== false} disabled={locked}
+        onCheckedChange={notify_client => setSettings(s => ({ ...s, notify_client }))} /><Label htmlFor="responsible-notify-client">{t("Avisar o cliente enquanto consulta o responsável")}</Label></div>
+      <p className="text-xs text-muted-foreground">{t("Desligado: a consulta fica interna, sem mensagem genérica de espera. A resposta do responsável continua sendo entregue ao cliente.")}</p>
+      <div className="flex min-h-11 items-center gap-2"><Switch id="responsible-audio-failures" checked={settings.audio_failures_to_responsible === true} disabled={locked}
+        onCheckedChange={audio_failures_to_responsible => setSettings(s => ({ ...s, audio_failures_to_responsible }))} /><Label htmlFor="responsible-audio-failures">{t("Consultar responsável quando um áudio não puder ser processado")}</Label></div>
+      <p className="text-xs text-muted-foreground">{t("Encaminha a falha para conferência, sem inventar o conteúdo do áudio. Requer a consulta ativada e responsáveis selecionados.")}</p>
+    </div>
     <fieldset disabled={locked} className="space-y-2"><legend className="text-sm">{t("Quem recebe os avisos deste agente")}</legend>
       {!recipients.length && <p className="text-xs">{t("Cadastre um responsável abaixo para começar.")}</p>}
       {recipients.map(r => <div key={r.id} className="flex flex-wrap items-center gap-2">

@@ -4,6 +4,8 @@
  * Itens de plataforma (organization_id null) são do operador do sistema, não
  * do tenant — nunca entram aqui.
  */
+import { withReadRequest } from "@/lib/supabase/read-request";
+import { inboxOrigins } from "@/lib/ai/inbox-origins";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
@@ -19,7 +21,7 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
-export async function GET(req: NextRequest): Promise<Response> {
+async function readHandler(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "agent_inbox_items" });
   if (!authz.ok) return authz.response;
@@ -57,5 +59,10 @@ export async function GET(req: NextRequest): Promise<Response> {
     .eq("organization_id", org.orgId)
     .eq("status", "open");
 
-  return ok({ items: data ?? [], open_count: openCount ?? 0 }, { requestId });
+  // Falha no enriquecimento não esconde alertas; não adivinha o contato.
+  let origins: Awaited<ReturnType<typeof inboxOrigins>> = new Map();
+  try { origins = await inboxOrigins(org.orgId, data ?? []); } catch { /* Origem indisponível aparece explicitamente na tela. */ }
+  return ok({ items: (data ?? []).map(item => ({ ...item, origin: origins.get(item.id) ?? null })), open_count: openCount ?? 0 }, { requestId });
 }
+
+export const GET = withReadRequest("api/v1/ai/inbox", readHandler);

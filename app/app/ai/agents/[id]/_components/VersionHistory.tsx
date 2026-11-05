@@ -35,12 +35,14 @@ import { useT } from "@/hooks/i18n/useT";
 
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 import { revertToVersionAction } from "../_actions";
+import { useAgentVersionHistory } from "@/hooks/ai/useAgentVersionHistory";
 import { VersionDiff } from "./VersionDiff";
 
 interface Props {
   agentId: string;
   versions: AgentVersionRow[];
   readOnly?: boolean;
+  active?: boolean;
 }
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -77,7 +79,7 @@ function pickCounterpart(
   return null;
 }
 
-export function VersionHistory({ agentId, versions, readOnly }: Props) {
+export function VersionHistory({ agentId, versions, readOnly, active = true }: Props) {
   const t = useT();
   const router = useRouter();
   const [diffOpen, setDiffOpen] = React.useState(false);
@@ -89,12 +91,12 @@ export function VersionHistory({ agentId, versions, readOnly }: Props) {
   const [revertTarget, setRevertTarget] = React.useState<AgentVersionRow | null>(null);
   const [reverting, setReverting] = React.useState(false);
 
-  const sorted = React.useMemo(
-    () => [...versions].sort((a, b) => b.version_number - a.version_number),
-    [versions],
-  );
+  const history = useAgentVersionHistory(agentId, active, versions.map(v => v.id).join(","));
+  const sorted = React.useMemo(() => [...new Map([
+    ...versions, ...(history.data?.pages.flatMap(page => page.versions) ?? []),
+  ].map(v => [v.id, v])).values()].sort((a, b) => b.version_number - a.version_number), [versions, history.data]);
 
-  if (sorted.length === 0) {
+  if (sorted.length === 0 && !history.isLoading && !history.isError) {
     return <p className="text-sm text-muted-foreground">{t("Nenhuma versão criada ainda.")}</p>;
   }
 
@@ -135,6 +137,9 @@ export function VersionHistory({ agentId, versions, readOnly }: Props) {
 
   return (
     <>
+      {history.isLoading && <p role="status" className="text-sm text-muted-foreground">{t("Carregando histórico…")}</p>}
+      {history.isError && <div role="alert" className="space-y-2"><p>{t("Não foi possível carregar o histórico completo.")}</p>
+        <Button type="button" variant="outline" onClick={() => void history.refetch()}>{t("Tentar novamente")}</Button></div>}
       <ol className="flex flex-col gap-2">
         {sorted.map((v) => {
           const canRevert =
@@ -177,6 +182,8 @@ export function VersionHistory({ agentId, versions, readOnly }: Props) {
           );
         })}
       </ol>
+      {history.hasNextPage && <Button type="button" variant="outline" className="mt-3 min-h-11" disabled={history.isFetchingNextPage}
+        onClick={() => void history.fetchNextPage()}>{t(history.isFetchingNextPage ? "Carregando…" : "Carregar versões anteriores")}</Button>}
 
       <Dialog open={diffOpen} onOpenChange={setDiffOpen}>
         <DialogContent className="max-w-3xl">

@@ -23,6 +23,8 @@ export type CaseActorKind = "agent" | "human" | "system" | "lead";
 
 /** A ação que o humano toma ao responder um caso — POST .../reply. */
 export type CaseHumanAction = "resolved" | "need_lead_info" | "escalate";
+/** A resolução interna não grava enum novo no evento nem enfileira resposta ao cliente. */
+export type CaseReplyAction = CaseHumanAction | "resolved_internal";
 
 export interface CaseListItem {
   id: string;
@@ -88,7 +90,7 @@ export function useCase(id: string | null) {
 export function useReplyCase() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, action, body }: { id: string; action: CaseHumanAction; body: string }) =>
+    mutationFn: ({ id, action, body }: { id: string; action: CaseReplyAction; body: string }) =>
       apiClient
         .post<{ data: { status: CaseStatus } }>(`/api/v1/ai/cases/${id}/reply`, { action, body })
         .then((r) => r.data),

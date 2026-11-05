@@ -10,7 +10,7 @@ export async function readResponsibleSettings(db: Queryable, org: string, agent:
   const a = await db.query("select id from ai_agents where organization_id=$1 and id=$2 and archived_at is null", [org, agent]);
   if (!a.rows.length) return null;
   const [settings, bindings, recipients] = await Promise.all([
-    db.query<{ enabled: boolean; conditions: string }>("select enabled,conditions from agent_responsible_settings where organization_id=$1 and agent_id=$2", [org, agent]),
+    db.query<{ enabled: boolean; conditions: string; notify_client: boolean; audio_failures_to_responsible: boolean }>("select enabled,conditions,notify_client,audio_failures_to_responsible from agent_responsible_settings where organization_id=$1 and agent_id=$2", [org, agent]),
     db.query<{ responsible_id: string }>("select responsible_id from agent_responsible_bindings where organization_id=$1 and agent_id=$2 order by responsible_id", [org, agent]),
     db.query<Responsible>("select id,name,phone,enabled from agent_responsibles where organization_id=$1 order by name,id", [org]),
   ]);
@@ -43,8 +43,10 @@ export async function saveResponsibleSettings(pool: pg.Pool, org: string, agent:
         where r.organization_id=$1 and r.id=any($2::uuid[]) and s.archived_at is null`, [org, ids]);
       if (self.rows.length) throw new Error("recipient_is_channel");
     }
-    await db.query(`insert into agent_responsible_settings(organization_id,agent_id,enabled,conditions) values($1,$2,$3,$4)
-      on conflict(organization_id,agent_id) do update set enabled=excluded.enabled,conditions=excluded.conditions`, [org, agent, settings.enabled, settings.conditions]);
+    await db.query(`insert into agent_responsible_settings(organization_id,agent_id,enabled,conditions,notify_client,audio_failures_to_responsible) values($1,$2,$3,$4,$5,$6)
+      on conflict(organization_id,agent_id) do update set enabled=excluded.enabled,conditions=excluded.conditions,
+      notify_client=excluded.notify_client,audio_failures_to_responsible=excluded.audio_failures_to_responsible`,
+      [org, agent, settings.enabled, settings.conditions, settings.notify_client !== false, settings.audio_failures_to_responsible === true]);
     await db.query("delete from agent_responsible_bindings where organization_id=$1 and agent_id=$2", [org, agent]);
     for (const id of ids) await db.query("insert into agent_responsible_bindings(organization_id,agent_id,responsible_id) values($1,$2,$3)", [org, agent, id]);
     await db.query("commit");

@@ -46,6 +46,7 @@ export function apiTranscriptionProvider(
         method: "POST",
         headers: { Authorization: `Bearer ${creds.apiKey}` },
         body: form,
+        signal: AbortSignal.timeout(60_000),
       });
       if (!res.ok) throw new Error(`transcription_${res.status}`);
       const json = (await res.json()) as { text?: string };

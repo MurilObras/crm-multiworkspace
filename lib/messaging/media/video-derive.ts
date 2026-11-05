@@ -30,11 +30,13 @@ function defaultRunFfmpeg(args: string[], cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn("ffmpeg", ["-nostdin", "-y", ...args], { cwd });
     let stderr = "";
+    const timer = setTimeout(() => { proc.kill("SIGKILL"); reject(new Error("ffmpeg_timeout")); }, 30_000);
     proc.stderr.on("data", (d) => {
-      stderr += String(d);
+      stderr = (stderr + String(d)).slice(-1000);
     });
-    proc.on("error", (err) => reject(new Error(`ffmpeg_spawn_failed: ${err.message}`)));
+    proc.on("error", (err) => { clearTimeout(timer); reject(new Error(`ffmpeg_spawn_failed: ${err.message}`)); });
     proc.on("close", (code) => {
+      clearTimeout(timer);
       if (code === 0) resolve();
       else reject(new Error(`ffmpeg_exit_${code}: ${stderr.slice(-200)}`));
     });

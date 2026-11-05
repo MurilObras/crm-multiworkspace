@@ -221,6 +221,14 @@ function mapEnrollmentRow(row: Record<string, unknown>): EnrollmentRow {
 /** `TurnBridgeAdminClient` sobre `pg.Pool` — produção do worker 24/7. */
 export function createPgAdminClient(pool: Pick<pg.Pool, 'query'>): TurnBridgeAdminClient {
   return {
+    async reconcileActionDelivery(enrollment, nextNode) {
+      const { rows } = await pool.query<{ result: string }>(
+        `select public.fn_followup_reconcile_action($1,$2,$3,$4) as result`,
+        [enrollment.organization_id,enrollment.id,JSON.stringify({status:enrollment.status,
+          current_node_id:enrollment.current_node_id,node_epoch:enrollment.node_epoch ?? 0,
+          steps_taken:enrollment.steps_taken,updated_at:enrollment.updated_at}),nextNode]);
+      return rows[0]?.result ?? "missing";
+    },
     async claimDueEnrollments(limit, leaseSeconds) {
       const { rows } = await pool.query(`select e.*,e.updated_at::text as updated_at from fn_claim_due_followup_enrollments($1, $2) e`, [
         limit,

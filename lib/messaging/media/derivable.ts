@@ -17,3 +17,6 @@ export const TIPOS_DERIVAVEIS: ReadonlySet<string> = new Set([
 
 /** Estados finais de `messages.media_derived_status` — não há o que esperar. */
 export const DERIVACAO_TERMINADA: ReadonlySet<string> = new Set(["ready", "failed"]);
+
+/** Teto compartilhado: depois dele o turno pede conferência em vez de fingir que ouviu. */
+export const TETO_ESPERA_DERIVACAO_MS = 120_000;

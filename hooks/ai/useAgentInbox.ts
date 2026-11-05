@@ -13,6 +13,7 @@ export interface AgentInboxItem {
   ref_id: string | null;
   status: "open" | "ack" | "resolved";
   created_at: string;
+  origin?: { href: string; label: string; state: string | null } | null;
 }
 
 export interface AgentInboxData {

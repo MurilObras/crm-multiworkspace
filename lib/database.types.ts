@@ -604,6 +604,8 @@ export type Database = {
       };
       agent_responsible_settings: {
         Row: {
+          "audio_failures_to_responsible": boolean;
+          "notify_client": boolean;
           agent_id: string;
           conditions: string;
           enabled: boolean;
@@ -611,12 +613,16 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          "audio_failures_to_responsible"?: boolean;
+          "notify_client"?: boolean;
           agent_id: string;
           conditions?: string;
           enabled?: boolean;
           organization_id: string;
         };
         Update: {
+          "audio_failures_to_responsible"?: boolean;
+          "notify_client"?: boolean;
           agent_id?: string;
           conditions?: string;
           enabled?: boolean;
@@ -9540,6 +9546,15 @@ export type Database = {
       fn_followup_complete_step: {
         Args: { p_event: Json; p_expected: Json; p_id: string; p_org: string; p_patch: Json };
         Returns: boolean;
+      };
+      "fn_followup_reconcile_action": {
+          Args: {
+              "p_expected": Json;
+              "p_id": string;
+              "p_next": string;
+              "p_org": string;
+          };
+          Returns: string;
       };
       fn_followup_job_live: {
         Args: { p_contact: string; p_job: string; p_org: string };

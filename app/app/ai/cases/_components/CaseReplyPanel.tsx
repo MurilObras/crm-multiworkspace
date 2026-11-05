@@ -5,22 +5,22 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import { useReplyCase, type CaseHumanAction, type CaseStatus } from "@/hooks/ai/useCases";
+import { useReplyCase, type CaseReplyAction, type CaseStatus } from "@/hooks/ai/useCases";
 import { CASE_ACTIONS, CASE_REPLY_DISABLED_REASON } from "@/lib/ai/case-copy";
 import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
 
 /**
- * As 3 ações do humano sobre um caso aberto (spec 15 §9). Só habilitado em
+ * As ações do humano sobre um caso aberto (spec 15 §9). Só habilitado em
  * `awaiting_human` — nos outros estados a bola não está com o atendente, e
  * o motivo aparece em texto (nunca um botão desabilitado sem explicação).
  */
 export function CaseReplyPanel({ caseId, status }: { caseId: string; status: CaseStatus }) {
   const t = useT();
-  // Sem pré-seleção de propósito: as 3 ações têm efeitos muito diferentes (uma
+  // Sem pré-seleção de propósito: as ações têm efeitos muito diferentes (uma
   // delas FECHA o caso) e não há desfazer. Um default marcado faria quem digitou
   // pensando em "pedir info ao cliente" encerrar o caso sem perceber.
-  const [action, setAction] = useState<CaseHumanAction | null>(null);
+  const [action, setAction] = useState<CaseReplyAction | null>(null);
   const [body, setBody] = useState("");
   const reply = useReplyCase();
 
@@ -34,7 +34,7 @@ export function CaseReplyPanel({ caseId, status }: { caseId: string; status: Cas
       { id: caseId, action, body: body.trim() },
       {
         onSuccess: () => {
-          toast.success(t("Resposta enviada."));
+          toast.success(t(action === "resolved_internal" ? "Caso encerrado sem enviar mensagem ao cliente." : "Resposta enviada."));
           setBody("");
           setAction(null);
         },
@@ -73,14 +73,16 @@ export function CaseReplyPanel({ caseId, status }: { caseId: string; status: Cas
         value={body}
         onChange={(e) => setBody(e.target.value)}
         disabled={disabled}
-        placeholder={t("Escreva sua resposta para a IA...")}
+        aria-label={t(action === "resolved_internal" ? "Motivo do encerramento interno" : "Resposta para o cliente")}
+        placeholder={t(action === "resolved_internal" ? "Registre o motivo. Este texto fica somente no CRM." : "Escreva sua resposta para o cliente...")}
+        maxLength={4000}
         rows={3}
       />
       {!disabled && action === null ? (
         <p className="text-xs text-muted-foreground">{t("Escolha uma das opções acima para enviar.")}</p>
       ) : null}
       <Button onClick={handleSubmit} disabled={!canSubmit}>
-        {reply.isPending ? t("Enviando...") : t("Enviar")}
+        {reply.isPending ? t("Salvando...") : t(action === "resolved_internal" ? "Encerrar sem enviar" : "Enviar")}
       </Button>
     </div>
   );

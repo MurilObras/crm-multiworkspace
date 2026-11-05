@@ -798,6 +798,14 @@ async function sendFixedOutbound(
 
   if (chain.status === 'vetoed') {
     if (chain.code === 'outside_window' && chain.nextAllowedAt !== undefined) {
+      if (typeof job.payload.followup_enrollment_id === 'string') {
+        // O mesmo job continua dono da ação; não deixa um job done esperando
+        // um cron futuro que o motor confundiria com falha de transporte.
+        await rescheduleJob(pool, job.id, ctx.workerId, {
+          delayMs: Math.max(1000, chain.nextAllowedAt.getTime() - clock().getTime()), reason: 'outside_window',
+        });
+        throw new JobSettledError('followup aguardando a próxima janela permitida');
+      }
       await rescheduleReentry(pool, {
         tenantId,
         leadId,

@@ -6,6 +6,7 @@
  * unique constraint cobrindo a corrida; em caso de 23505, tenta novamente uma
  * vez.
  */
+import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
@@ -42,7 +43,7 @@ async function assertAgentInOrg(
   return { ok: true, kind: (data as { kind: string }).kind };
 }
 
-export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) return fail("invalid_request", "id inválido.", 400, { requestId });
@@ -51,16 +52,27 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   if (!authz.ok) return authz.response;
   const { org: activeOrg } = authz;
 
+  const search = new URL(req.url).searchParams;
+  const parsed = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50),
+    before_version: z.coerce.number().int().positive().optional() }).strict()
+    .safeParse(Object.fromEntries(search.entries()));
+  if (!parsed.success) return fail("validation_failed", "Página de versões inválida.", 422, { requestId });
   const supabase = await createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("ai_agent_versions")
     .select(VERSION_COLUMNS)
     .eq("organization_id", activeOrg.orgId)
     .eq("agent_id", id)
-    .order("version_number", { ascending: false });
+    .order("version_number", { ascending: false }).limit(parsed.data.limit + 1);
+  if (parsed.data.before_version !== undefined) query = query.lt("version_number", parsed.data.before_version);
+  const { data, error } = await query;
 
   if (error) return fail("internal_error", "Erro ao listar versions.", 500, { requestId });
-  return ok(data ?? [], { requestId });
+  const rows = (data ?? []).slice(0, parsed.data.limit);
+  return ok(rows, { requestId, meta: {
+    has_more: (data?.length ?? 0) > parsed.data.limit,
+    cursor: rows.length ? String(rows.at(-1)!.version_number) : null,
+  } });
 }
 
 export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {

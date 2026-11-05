@@ -32,6 +32,7 @@ import { RESPONSE_DELIVERY_TRANSLATIONS } from './response-delivery';
  * chave crua nem para erro. Uma tradução incompleta não pode deixar a tela pior
  * do que estava.
  */
+import { OPERATIONAL_RECOVERY_TRANSLATIONS } from "./operational-recovery";
 import type { Idioma } from "./idiomas";
 import { KIWIFY_HISTORY_TRANSLATIONS, KIWIFY_OPERATOR_TRANSLATIONS } from "./kiwify";
 import { RESPONSIBLE_TRANSLATIONS } from "./responsibles";
@@ -42,6 +43,7 @@ import { DASHBOARD_TRANSLATIONS } from "./dashboard";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  ...OPERATIONAL_RECOVERY_TRANSLATIONS,
   ...RESPONSE_DELIVERY_TRANSLATIONS,
   ...MEDIA_INTENT_TRANSLATIONS,
   ...RESPONSIBLE_TRANSLATIONS,

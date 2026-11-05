@@ -112,6 +112,7 @@ export function AgentTabs(props: Props) {
         <VersionHistory
           agentId={props.agent.id}
           versions={props.versions}
+          active={tab === "history"}
           readOnly={props.readOnly}
         />
       </TabsContent>

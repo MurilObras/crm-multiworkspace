@@ -361,6 +361,9 @@ export function descreveEvento(
         ...motor,
       };
     }
+    case "action_delivery_reconciled":
+      return { titulo: texto(p.result) === "review" ? "Envio pausado para conferência" : texto(p.result) === "cancelled" ? "Envio cancelado por condição do atendimento" : "Tarefa terminou sem envio confirmado",
+        detalhe: texto(p.result) === "review" ? "Confira a entrega antes de retomar para evitar repetição." : "Veja a origem do aviso na Central.", ...motor };
     case "action_sent":
       return { titulo: "Mensagem enviada", detalhe: null, ...motor };
     case "ai_classified":

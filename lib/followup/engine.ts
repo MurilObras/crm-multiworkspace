@@ -92,6 +92,8 @@ export interface FollowupJobRequest {
 /** DB surface the engine needs — see file header for why this isn't `SupabaseClient` directly. */
 export interface AdminClient {
   claimDueEnrollments(limit: number, leaseSeconds: number): Promise<EnrollmentRow[]>;
+  /** Reconciliação atômica com prova de transporte da ocupação exata. */
+  reconcileActionDelivery?(enrollment: EnrollmentRow, nextNode: string | null): Promise<string>;
   loadFlowGraph(orgId: string, versionId: string): Promise<FlowGraph | null>;
   loadLeadFacts(orgId: string, contactId: string): Promise<{
     lead_stage: string | null;
@@ -628,6 +630,16 @@ async function processEnrollment(
   const nextAlways = selectEdge(graph.edges, node.id, { type: "always" });
   const proximo = nextAlways ? (graph.nodes.find((n) => n.id === nextAlways.target) ?? null) : null;
 
+  if (node.type === "action" && actionEnqueued && !actionCompleted && db.reconcileActionDelivery) {
+    const reconciled = await db.reconcileActionDelivery(enrollment, nextAlways?.target ?? null);
+    if (reconciled !== "missing") {
+      if (reconciled === "confirmed") summary.advanced++;
+      if (reconciled === "dead") summary.dead++;
+      if (reconciled === "waiting") summary.scheduled++;
+      return;
+    }
+  }
+
   const result = processNode({
     node,
     edges: graph.edges,
@@ -706,6 +718,16 @@ export async function runFollowupTick(deps: TickDeps, opts?: { limit?: number })
 /** Production adapter: `AdminClient` backed by the real Supabase service-role client. */
 export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
   return {
+    async reconcileActionDelivery(enrollment, nextNode) {
+      const { data, error } = await admin.rpc("fn_followup_reconcile_action", {
+        p_org: enrollment.organization_id, p_id: enrollment.id,
+        p_expected: { status: enrollment.status, current_node_id: enrollment.current_node_id,
+          node_epoch: enrollment.node_epoch ?? 0, steps_taken: enrollment.steps_taken, updated_at: enrollment.updated_at },
+        p_next: nextNode,
+      });
+      if (error) throw new Error(error.message);
+      return data as string;
+    },
     async claimDueEnrollments(limit, leaseSeconds) {
       const { data, error } = await admin.rpc("fn_claim_due_followup_enrollments", {
         p_limit: limit,

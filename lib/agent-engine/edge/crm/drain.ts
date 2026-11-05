@@ -18,7 +18,7 @@ import type pg from 'pg';
 import type { Logger } from '../../obs/logger';
 import { enqueueJob } from '../../queue/queue';
 import { coalesceInboundDebounce } from '../../queue/inbound-pending';
-import { TIPOS_DERIVAVEIS, DERIVACAO_TERMINADA } from '@/lib/messaging/media/derivable';
+import { TIPOS_DERIVAVEIS, DERIVACAO_TERMINADA, TETO_ESPERA_DERIVACAO_MS } from '@/lib/messaging/media/derivable';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
 const DRAIN_CONSUMER = 'agent-engine';
@@ -149,7 +149,6 @@ const ESPERA_DERIVACAO_MS = 4_000;
  * o cliente esperando minutos pela primeira resposta. 120s cobre o caso comum
  * de transcrição lenta (como o do Alfran) sem impor essa espera longa.
  */
-const TETO_ESPERA_DERIVACAO_MS = 120_000;
 
 type DesfechoEvento = 'processado' | 'adiar';
 
