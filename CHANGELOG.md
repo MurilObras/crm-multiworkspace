@@ -8,6 +8,41 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.10.0] — 2026-11-06
+
+### Corrigido
+
+- **Áudios, consultas internas e acompanhamentos com confirmação de entrega** Transcrição de áudio resolve a chave OpenAI independente do provedor de chat.
+  A mídia que falhou pode ser reprocessada no Inbox sem reenviar uma resposta antiga.
+  Consultas aos responsáveis permitem desligar o aviso de espera e encaminhar falhas
+  de áudio. Casos já tratados podem ser encerrados sem mensagem ao cliente.
+
+  Acompanhamentos conferem a tarefa e o comprovante de transporte antes de avançar.
+  Entrega incerta exige conferência. A Central oferece atalho para a origem acessível
+  e mostra a data da ocorrência e a situação atual separadamente.
+
+  O editor carrega o histórico em páginas. O dossiê distingue etiquetas do contato
+  e do negócio, sem copiar ou sobrescrever suas fontes.
+
+- **Consultas lentas deixam de multiplicar tentativas e acumular acompanhamentos** O Inbox limita consultas simultâneas e encerra leituras quando a tela desiste.
+  Falhas temporárias de autenticação deixam de aparecer como logout.
+  O limite de autenticações simultâneas cobre também a leitura completa da resposta
+  e a carga de permissões, com até 128 operações por runtime. Saturação retorna
+  indisponibilidade temporária, preservando a validação de acesso.
+  Escritas sem deduplicação não são repetidas automaticamente após timeout ou erro de rede.
+  Envios e criação de regras com chave explícita e deduplicação persistida podem
+  recuperar uma resposta perdida em até três tentativas, dentro do mesmo prazo,
+  preservando o conteúdo e sem duplicar o envio. Timeout não reinicia a operação.
+
+  Os acompanhamentos selecionam contatos e inscrevem episódios em lotes limitados,
+  preservando pausas humanas, opt-out, aquecimento e o orçamento de mensagens.
+  Um reagendamento confirmado deixa de gerar um erro falso de perda de lease.
+
+  O cliente da interface mantém consultas e cancelamento em navegadores sem
+  composição nativa de sinais, removendo listeners após cada tentativa. O download
+  do arquivo para transcrição/derivação tem prazo de 60 segundos, inclusive para
+  corpo travado depois dos headers, preservando o tratamento de falha pela fila.
+
 ## [3.9.4] — 2026-10-30
 
 ### Alterado
@@ -3507,7 +3542,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.4...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.10.0...HEAD
+[3.10.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.4...v3.10.0
 [3.9.4]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.3...v3.9.4
 [3.9.3]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.2...v3.9.3
 [3.9.2]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.1...v3.9.2
