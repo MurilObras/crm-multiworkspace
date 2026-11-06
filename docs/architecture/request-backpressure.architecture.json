@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Contenção de consultas e follow-up em lotes",
-    "subtitle": "Prazos, concorrência limitada e disposição confirmada",
+    "subtitle": "Prazos, replay idempotente limitado e disposição confirmada",
     "output": "request-backpressure.html",
     "quality_profile": "standard"
   },
@@ -37,7 +37,7 @@
       "lane": "http",
       "col": 0,
       "type": "frontend",
-      "label": "Inbox e entregas"
+      "label": "Inbox e replay com chave"
     },
     {
       "id": "read",

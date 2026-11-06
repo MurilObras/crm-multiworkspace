@@ -6,7 +6,10 @@ titulo: Consultas lentas deixam de multiplicar tentativas e acumular acompanhame
 
 O Inbox limita consultas simultâneas e encerra leituras quando a tela desiste.
 Falhas temporárias de autenticação deixam de aparecer como logout. Escritas
-não são repetidas automaticamente após timeout ou erro de rede.
+sem deduplicação não são repetidas automaticamente após timeout ou erro de rede.
+Envios e criação de regras com chave explícita e deduplicação persistida podem
+recuperar uma resposta perdida em até três tentativas, dentro do mesmo prazo,
+preservando o conteúdo e sem duplicar o envio. Timeout não reinicia a operação.
 
 Os acompanhamentos selecionam contatos e inscrevem episódios em lotes limitados,
 preservando pausas humanas, opt-out, aquecimento e o orçamento de mensagens.

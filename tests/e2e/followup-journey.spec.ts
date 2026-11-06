@@ -219,7 +219,10 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     // módulo — sem reler, o objeto em memória nunca vê o bloco que o seed
     // acabou de gravar. Mesmo idioma de queue-assign.spec.ts, que passa por isso.
     creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
+    runHelper(["isolate-outbound-fixtures"]);
   });
+
+  test.afterAll(() => { runHelper(["restore-outbound-fixtures"]); });
 
   test("silêncio → enroll → trigger→wait→action→classify → resposta → outcome → fila", async ({ page }) => {
     // Jornada ponta a ponta com múltiplos round-trips reais de cron (tick +

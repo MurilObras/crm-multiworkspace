@@ -14,9 +14,13 @@ sendo contabilizada até o handler terminar. Operações longas de IA/upload nã
 receberam indiscriminadamente o orçamento curto dos GETs.
 
 O cliente HTTP é o único dono das novas tentativas: até duas em leituras com
-HTTP429/503, dentro do prazo total e descartando o corpo anterior. Erro de rede,
-timeout e mutações não repetem automaticamente. A consulta periódica da entrega
-ao responsável não sobrepõe leituras e cancela ao desmontar o componente.
+HTTP429/503, dentro do prazo total e descartando o corpo anterior. Timeout,
+cancelamento, erro de leitura/validação da resposta e escritas sem contrato
+auditado não repetem automaticamente. POSTs para messages e automation-rules,
+com chave explícita e deduplicação persistida no servidor, podem recuperar a
+mesma operação após perder a resposta de rede: no máximo três tentativas, com
+o mesmo corpo, chave e orçamento total. A consulta periódica da entrega ao
+responsável não sobrepõe leituras e cancela ao desmontar o componente.
 
 ## Acompanhamento
 
@@ -56,8 +60,9 @@ URL, query, conteúdo de cliente ou credencial. São o laço de retorno para com
 incidentes posteriores. O healthcheck TCP e o heap não foram ampliados.
 
 Validar em ambiente isolado: dependência lenta, cancelamento, excesso de leituras,
-ausência de retry de escritas, paginação, pausas humanas, continuação sem zerar
-etapas, permissões das RPCs, rollback e perda verdadeira do lease. Não executar
+ausência de retry de escritas não auditadas, recuperação deduplicada da resposta
+nas duas rotas auditadas, paginação, pausas humanas, continuação sem zerar etapas,
+permissões das RPCs, rollback e perda verdadeira do lease. Não executar
 esses cenários contra leads ou bancos de produção.
 
 A correção contém trabalho e remove desperdício comprovado. Ela não atribui,
@@ -75,8 +80,8 @@ O grafo é apoio à investigação, não prova de execução ou substituto dos t
 
 Plandex (plandex-ai/plandex, CLI/servidor 2.2.1) foi usado obrigatoriamente em
 projeto local separado, com aplicação e execução automática desabilitadas.
-A análise do plano foi concluída e orientou os limites, a ausência de retry de
-escritas e a preservação de claims/leases. As duas tentativas de revisão de
-código excederam o prazo e não forneceram veredito; não são aprovação.
-A revisão de código deste bloco foi feita por inspeção direta e regressões
-executáveis. Nenhum desses repositórios virou dependência do CRM em produção.
+A análise do plano e a revisão de código foram concluídas. A revisão complementar
+de 06/11 conferiu a recuperação idempotente e o isolamento/restauração das fixtures
+E2E. Inspeção direta e regressões executáveis completam a verificação; respostas
+ausentes ou timeouts não contam como aprovação. Nenhum desses repositórios virou
+dependência do CRM em produção.

@@ -38,6 +38,7 @@ import pg from "pg";
 
 import { createPgAdminClient, completeTurnForEnrollment, type TurnResult } from "@/lib/followup/turn-bridge";
 import { carregarEnvLocal } from "../scripts/lib/env-de-teste";
+import { lerEstadoDoCanal } from "@/lib/channels/estado";
 
 const env = carregarEnvLocal();
 
@@ -45,6 +46,7 @@ const DB_URL = env.SUPABASE_DB_URL;
 if (!DB_URL) throw new Error("Missing SUPABASE_DB_URL in .env.local");
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
+const OUTBOUND_BACKUP_PATH = path.join(process.cwd(), ".e2e-followup-outbound-backup.json");
 
 interface Creds {
   org_id: string;
@@ -65,6 +67,62 @@ async function main(): Promise<void> {
 
   try {
     switch (cmd) {
+      // A jornada publica um fluxo genérico, portanto exige um único remetente.
+      // Outras specs deixam conexões sintéticas operacionais na mesma org.
+      // A proteção de ambiguidade do produto fica ligada; isolamos a fixture.
+      case "isolate-outbound-fixtures": {
+        const creds = loadCreds();
+        if (!["127.0.0.1", "localhost"].includes(new URL(DB_URL).hostname)) throw new Error("isolated_test_db_required");
+        const org = await pool.query("select slug from organizations where id=$1", [creds.org_id]);
+        if (org.rows[0]?.slug !== "e2e-test-org" || !creds.followup_agent_fixtures) throw new Error("synthetic_e2e_org_required");
+        if (fs.existsSync(OUTBOUND_BACKUP_PATH)) throw new Error("restore_previous_outbound_fixture_backup_first");
+        const { rows } = await pool.query<{ id: string; status: string }>(
+          "select id,status from channel_sessions where organization_id=$1 and id<>$2 and archived_at is null",
+          [creds.org_id, creds.followup_agent_fixtures.channel_session_id],
+        );
+        const sessions = rows.filter(row => lerEstadoDoCanal(row.status).utilizavel);
+        // Salva antes de mudar qualquer linha, inclusive se uma chamada posterior falhar.
+        fs.writeFileSync(OUTBOUND_BACKUP_PATH, JSON.stringify({ org_id: creds.org_id, sessions }), { mode: 0o600 });
+        const client = await pool.connect();
+        try {
+          await client.query("begin");
+          for (const row of sessions) {
+            await client.query("update channel_sessions set status='STOPPED' where organization_id=$1 and id=$2 and status=$3",
+              [creds.org_id, row.id, row.status]);
+          }
+          await client.query("commit");
+        } catch (error) {
+          await client.query("rollback");
+          throw error;
+        } finally { client.release(); }
+        out({ isolated: sessions.length });
+        break;
+      }
+
+      case "restore-outbound-fixtures": {
+        if (!fs.existsSync(OUTBOUND_BACKUP_PATH)) { out({ restored: 0 }); break; }
+        if (!["127.0.0.1", "localhost"].includes(new URL(DB_URL).hostname)) throw new Error("isolated_test_db_required");
+        const creds = loadCreds();
+        const backup = JSON.parse(fs.readFileSync(OUTBOUND_BACKUP_PATH, "utf8")) as { org_id: string; sessions: { id: string; status: string }[] };
+        const org = await pool.query("select slug from organizations where id=$1", [creds.org_id]);
+        if (backup.org_id !== creds.org_id || org.rows[0]?.slug !== "e2e-test-org") throw new Error("synthetic_e2e_org_required");
+        const client = await pool.connect();
+        try {
+          await client.query("begin");
+          for (const row of backup.sessions) {
+            await client.query("update channel_sessions set status=$3 where organization_id=$1 and id=$2 and status='STOPPED'",
+              [creds.org_id, row.id, row.status]);
+          }
+          await client.query("commit");
+        } catch (error) {
+          await client.query("rollback");
+          throw error;
+        } finally { client.release(); }
+        fs.unlinkSync(OUTBOUND_BACKUP_PATH);
+        out({ restored: backup.sessions.length });
+        break;
+      }
+
       // ---- prepara os fixtures de agente pra PUBLICAR (não só salvar draft)
       // ---- — a credential nasce sem validated_at e a sessão nasce 'STARTING'
       // ---- (seed-e2e-followup-agent.ts, Task 7.2 — não precisava publicar).
