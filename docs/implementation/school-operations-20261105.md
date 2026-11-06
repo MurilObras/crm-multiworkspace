@@ -275,3 +275,14 @@ O Graphify foi atualizado para as alterações do cliente e do worker. A suíte
 completa de 8.805 testes da rodada anterior não foi repetida: esta rodada executou
 as regressões das partes modificadas e seus consumidores diretos. O ambiente
 descartável foi encerrado, sem alteração em produção, CI remoto, PR 20 ou leads.
+
+## Preparação para merge do PR 65
+
+O proprietário autorizou o merge deste trabalho e o encerramento do PR 20 sem
+merge. O PR 20 foi fechado; a branch de código dele foi preservada. O PR 65
+foi aberto com os seis commits revisados. Na primeira execução remota, ambas
+as partes do E2E pararam antes de testes: `version: latest` instalou Supabase
+CLI 3, que rejeita `[inbucket]` do config atual. O workflow agora fixa 2.122.0,
+a mesma versão usada na homologação local. A mudança não migra o ambiente do
+produto nem remove casos/assertivas. O merge continua condicionado aos checks
+do novo head, e deploy não foi autorizado nesta etapa.

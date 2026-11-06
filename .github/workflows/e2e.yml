@@ -532,7 +532,8 @@ jobs:
 
       - uses: supabase/setup-cli@v3
         with:
-          version: latest
+          # CLI 3 remove [inbucket]; esta versão foi validada com o config atual.
+          version: 2.122.0
 
       # A imagem do app já contém ffmpeg; a suíte roda Next fora da imagem.
       - name: Preparar conversão de áudios do app no ambiente de testes
