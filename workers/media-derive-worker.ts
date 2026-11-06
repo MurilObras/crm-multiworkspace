@@ -19,6 +19,7 @@ import { deriveVideoText } from "@/lib/messaging/media/video-derive";
 import { apiTranscriptionProvider } from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { WORKER_STORAGE_TIMEOUT_MS } from '@/lib/supabase/service-fetch';
 
 export const MEDIA_DERIVE_CONSUMER_KEY = "media_derive_v1";
 const DRAIN_MAX_ATTEMPTS = 5; // espelho de lib/event-log/drain.ts
@@ -95,7 +96,9 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
 
 
   try {
-    const dl = await admin.storage.from("whatsapp-media").download(msg.media_storage_path);
+    const dl = await admin.storage.from("whatsapp-media").download(msg.media_storage_path, {}, {
+      signal: AbortSignal.timeout(WORKER_STORAGE_TIMEOUT_MS),
+    });
     if (dl.error || !dl.data) throw new Error(`storage_download_failed: ${dl.error?.message ?? "no_data"}`);
     const buffer = Buffer.from(await dl.data.arrayBuffer());
 

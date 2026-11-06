@@ -17,3 +17,8 @@ preservando o conteúdo e sem duplicar o envio. Timeout não reinicia a operaç�
 Os acompanhamentos selecionam contatos e inscrevem episódios em lotes limitados,
 preservando pausas humanas, opt-out, aquecimento e o orçamento de mensagens.
 Um reagendamento confirmado deixa de gerar um erro falso de perda de lease.
+
+O cliente da interface mantém consultas e cancelamento em navegadores sem
+composição nativa de sinais, removendo listeners após cada tentativa. O download
+do arquivo para transcrição/derivação tem prazo de 60 segundos, inclusive para
+corpo travado depois dos headers, preservando o tratamento de falha pela fila.

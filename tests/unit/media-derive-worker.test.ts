@@ -104,6 +104,22 @@ describe("deriveMessageMedia", () => {
       expect.objectContaining({ media_derived_text: "transcrição do áudio real", media_derived_status: "ready" }),
     );
   });
+  it('download travado termina com erro e marca failed na última tentativa', async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    downloadMock.mockImplementation((_path, _options, parameters) => new Promise((_resolve, reject) => {
+      parameters.signal.addEventListener('abort', () => reject(parameters.signal.reason), { once: true });
+    }));
+    try {
+      const pending = deriveMessageMedia(eventRow(4));
+      await vi.waitFor(() => expect(downloadMock).toHaveBeenCalledOnce());
+      expect(timeout).toHaveBeenCalledWith(60_000);
+      controller.abort(new DOMException('Download timed out', 'TimeoutError'));
+      expect((await pending).status).toBe('error');
+      expect(deriveMediaText).not.toHaveBeenCalled();
+      expect(updateEqMock).toHaveBeenCalledWith(expect.objectContaining({ media_derived_status: 'failed' }));
+    } finally { timeout.mockRestore(); }
+  });
 
   it("pula se já derivado (idempotência)", async () => {
     messageRow.media_derived_status = "ready";

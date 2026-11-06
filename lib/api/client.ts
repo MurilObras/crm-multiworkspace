@@ -65,8 +65,20 @@ function synthesizeCode(status: number): string {
   return "unknown_error";
 }
 
-function combineSignals(signals: Array<AbortSignal | undefined>): AbortSignal {
-  return AbortSignal.any(signals.filter((s): s is AbortSignal => s !== undefined));
+function combineSignals(signals: Array<AbortSignal | undefined>): { signal: AbortSignal; dispose: () => void } {
+  const sources = signals.filter((s): s is AbortSignal => s !== undefined);
+  if (typeof AbortSignal.any === 'function') return { signal: AbortSignal.any(sources), dispose: () => {} };
+  // Navegadores suportados pelo Next podem não ter a composição nativa.
+  // O fallback não mantém listeners no sinal do chamador após cada tentativa.
+  const controller = new AbortController();
+  const subscriptions: Array<() => void> = [];
+  for (const source of sources) {
+    if (source.aborted) { controller.abort(source.reason); break; }
+    const abort = () => controller.abort(source.reason);
+    source.addEventListener('abort', abort, { once: true });
+    subscriptions.push(() => source.removeEventListener('abort', abort));
+  }
+  return { signal: controller.signal, dispose: () => { for (const remove of subscriptions) remove(); } };
 }
 
 async function readBodySafe(res: Response): Promise<unknown> {
@@ -130,7 +142,7 @@ async function request<T>(
     const remainingMs = Math.max(0, deadline - performance.now());
     if (remainingMs === 0) throw new DOMException('Request budget exhausted', 'TimeoutError');
     const timer = setTimeout(() => timeoutController.abort(), remainingMs);
-    const signal = combineSignals([timeoutController.signal, opts.signal]);
+    const { signal, dispose } = combineSignals([timeoutController.signal, opts.signal]);
     let responseReceived = false;
 
     try {
@@ -209,6 +221,7 @@ async function request<T>(
       throw err;
     } finally {
       clearTimeout(timer);
+      dispose();
     }
   }
 

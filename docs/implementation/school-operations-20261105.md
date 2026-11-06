@@ -239,3 +239,39 @@ Esta correção não altera schema: a prova anterior de instalação/atualizaç�
 os testes de banco continuam registrados acima. O consentimento Google real
 permanece adiado por decisão do usuário. Não houve CI remoto, merge, deploy,
 alteração no PR 20 ou mensagens de teste para leads.
+
+## Nova rodada de revisão: compatibilidade e download
+
+A revisão manual encontrou mais duas falhas. A composição incondicional por
+`AbortSignal.any` lançava TypeError antes de `fetch` quando a API não existia.
+O Next instalado documenta Chrome 111+ e Safari 16.4+; essa composição não está
+presente em todas essas versões. Referências: documentação instalada em
+`node_modules/next/dist/docs/03-architecture/supported-browsers.md` e
+[MDN AbortSignal.any](https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/any_static).
+O teste novo reproduziu o erro antes da correção. O fallback usa AbortController,
+propaga cancelamento/timeout e remove listeners em `finally` a cada tentativa,
+inclusive após sucesso e erro, mantendo as regras existentes de idempotência.
+
+Também foi confirmado que o download de `media-derive-worker` usava o admin
+client sem prazo para transferência de Storage. Agora o worker passa o sinal
+de 60 segundos diretamente ao SDK, sem mudar uploads manuais. A prova com HTTP
+real e SDK mantém os headers e trava o corpo; o prazo interrompe a leitura com
+TimeoutError. O teste do worker confirma erro, ausência de derivação e marcação
+failed na última tentativa. Na primeira versão dessa prova, a assertiva esperava
+um resultado com error; foi corrigida para exigir a exceção realmente observada
+no SDK, sem afrouxar o critério de cancelamento.
+
+Plandex revisou novamente rede, acompanhamentos e mídia, e depois os dois
+ajustes. O alerta de disponibilidade de AbortSignal.timeout no worker não se
+aplica: esse código só executa no Node 22, fixado no Dockerfile e CI, e não no
+navegador. A revisão manual não confirmou outra falha concreta nesses ajustes.
+
+Validação desta rodada: 61 testes direcionados aprovados em nove arquivos;
+typecheck, lint, lint:channels, lint:role-rank e build aprovados, sem novos avisos
+de lint. O E2E repetiu os cinco specs de acesso com a nova regressão de navegador:
+20 aprovados, zero skips e zero retries, em 47,9 segundos. A nova regressão remove
+a API antes do código da página e exige consulta real do Inbox com HTTP 200.
+O Graphify foi atualizado para as alterações do cliente e do worker. A suíte
+completa de 8.805 testes da rodada anterior não foi repetida: esta rodada executou
+as regressões das partes modificadas e seus consumidores diretos. O ambiente
+descartável foi encerrado, sem alteração em produção, CI remoto, PR 20 ou leads.
