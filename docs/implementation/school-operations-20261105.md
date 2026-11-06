@@ -174,3 +174,68 @@ A credencial OpenAI temporária criada pelo teste foi removida ao final: uma
 linha excluída somente do projeto descartável crm-stability-20261105, organização
 e2e-test-org, provedor openai. A chave protegida preexistente do Plandex permaneceu
 intacta. Evidência da limpeza fica junto aos logs locais, sem segredos.
+
+## Revisão adicional de capacidade em 06/11/2026
+
+A revisão reproduziu um limite incompleto na autenticação: `fetch` encerrava
+a contagem de concorrência ao receber os headers, mas o SDK ainda aguardava
+o corpo. Um servidor HTTP local que entrega headers e segura o JSON permitiu
+129 operações `getUser` pendentes, apesar do limite de 128 headers. Isso prova
+uma fraqueza de contenção; não comprova a causa inicial da indisponibilidade
+anterior do Supabase.
+
+`lib/auth/request-capacity.ts` limita a operação completa a 128 autenticações
+por runtime. `proxy()` e `loadAuthUser()` consomem essa guarda; no segundo,
+ela também cobre a carga de permissões. A vaga permanece ocupada até o SDK
+consumir o corpo ou falhar. Saturação retorna indisponibilidade sem tratar
+o usuário como deslogado ou liberar acesso sem validação. A vaga é devolvida
+em `finally`, inclusive em timeout e exceção. Não há fila ou dados de sessão
+nos globais; proxy e renderizador podem executar em runtimes diferentes.
+
+O laço operacional usa `auth_capacity_exceeded`, limitado a um aviso a cada
+dez segundos por runtime, e as respostas 503 chegam aos consumidores existentes
+de erro/retry do Inbox e das rotas. O mapa vivo incorpora a nova guarda com
+arestas para autenticação e diagnóstico. O Graphify foi reextraído: 19.940 nós
+e 62.178 arestas, com ligações reais para `loadAuthUser`, `proxy` e testes.
+Os dois avisos de extração parcial continuam nos mesmos arquivos preexistentes.
+
+Plandex revisou rede/autenticação, fila/follow-up e mídia/casos. Após a correção
+demonstrada manualmente, uma nova revisão do contexto completo de autenticação
+não encontrou falha concreta adicional. As ferramentas só analisaram o código.
+
+Os 20 testes direcionados passaram, incluindo HTTP real com o SDK Supabase:
+128 corpos pendentes conservam suas vagas; a operação excedente não chega ao
+transporte; completar os corpos recupera capacidade; timeout e exceção liberam
+a vaga. Proxy saturado retorna 503 nas rotas de interface e API, enquanto login
+público permanece acessível. A suíte unitária completa passou sem retries:
+799 arquivos, 8.805 testes aprovados e uma falha esperada preexistente, além de
+quatro testes nativos aprovados. Nenhum limite ou assertiva foi afrouxado.
+
+Typecheck, lint, lint:channels e lint:role-rank passaram; o lint conserva os
+322 avisos preexistentes e nenhum erro. A primeira tentativa do typecheck
+parou no heap padrão de aproximadamente 2 GB da ferramenta local. A repetição
+usou limite de 4 GB, com 6,9 GB disponíveis no ambiente local, e passou. Esse
+ajuste foi apenas do runner externo ao repositório, sem mudança no produto,
+nos testes ou na VPS. A sequência permaneceu bloqueada até essa aprovação.
+
+O build passou e o controle do bundle confirmou o host local isolado. O E2E
+adicional rodou cinco specs de autenticação, primeiro acesso, Inbox com escopo,
+papéis/permissões e troca de organização: 19 aprovados, zero skips e zero retries,
+em 47,4 segundos. Inclui login com MFA e bloqueio de envio para viewer. Os hashes
+dos três arquivos de runtime e das três regressões foram conferidos byte a byte
+entre a branch e os dois snapshots usados nas verificações. O projeto Supabase
+descartável foi encerrado ao final, sem atingir outras instalações locais.
+
+Antes da revisão, a limpeza operacional removeu somente 15 imagens Docker
+sem tag, sem referência de qualquer container e com mais de sete dias, usando
+IDs conferidos novamente antes da remoção e sem remoção forçada ou em cascata.
+Foram preservadas todas as imagens com tag, versões publicadas/rollback,
+containers, volumes, banco, mídias e logs. O disco passou de 94% para 83%,
+liberando aproximadamente 7,2 GB e mantendo 11,8 GB disponíveis. A verificação
+posterior confirmou os serviços saudáveis na versão 3.9.4 e HTTP 200 no login.
+Não houve reinício ou publicação de serviços durante essa limpeza.
+
+Esta correção não altera schema: a prova anterior de instalação/atualização e
+os testes de banco continuam registrados acima. O consentimento Google real
+permanece adiado por decisão do usuário. Não houve CI remoto, merge, deploy,
+alteração no PR 20 ou mensagens de teste para leads.

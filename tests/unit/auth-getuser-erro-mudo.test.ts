@@ -66,11 +66,19 @@ vi.mock("@/lib/supabase/server", () => ({
 const { loadAuthUser, ehSessaoAusente } = await import("@/lib/auth/server");
 
 beforeEach(() => {
+  globalThis.__crmAuthWork = undefined;
   erros.length = 0;
   resposta.atual = { data: { user: null }, error: null };
 });
 
 describe("loadAuthUser — o erro do getUser deixa rastro", () => {
+  it('capacidade esgotada retorna indisponibilidade sem confundir com sessão ausente', async () => {
+    globalThis.__crmAuthWork = { active: 128, lastWarningAt: 0 };
+    await expect(loadAuthUser()).rejects.toMatchObject({ status: 503, code: 'unavailable' });
+    expect(globalThis.__crmAuthWork.active).toBe(128);
+    expect(erros).toEqual([]);
+  });
+
   it("falha transitória do GoTrue REGISTRA, com a classe e o código", async () => {
     resposta.atual = {
       data: { user: null },

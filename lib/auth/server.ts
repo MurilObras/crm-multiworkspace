@@ -16,6 +16,7 @@ import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { ApiError } from '@/lib/api/types';
 import { randomId } from '@/lib/random-id';
 import { authServiceUnavailable } from './service-unavailable';
+import { withAuthRequestCapacity } from './request-capacity';
 import { SESSION_DATABASE_TIMEOUT_MS, withServiceRequestBudget } from '@/lib/supabase/service-fetch';
 import type { AuthUser, Role, UserOrgMembership, ActiveOrg } from "./types";
 
@@ -106,7 +107,13 @@ export function ehSessaoAusente(error: { name?: string } | null | undefined): bo
 }
 
 export async function loadAuthUser(): Promise<AuthUser | null> {
-  return withServiceRequestBudget(SESSION_DATABASE_TIMEOUT_MS, loadAuthUserWithinBudget);
+  const loaded = await withAuthRequestCapacity(() =>
+    withServiceRequestBudget(SESSION_DATABASE_TIMEOUT_MS, loadAuthUserWithinBudget));
+  if (!loaded.accepted) {
+    throw new ApiError(503, 'unavailable', undefined, randomId(),
+      'Autenticação temporariamente indisponível. Tente novamente.');
+  }
+  return loaded.result;
 }
 
 async function loadAuthUserWithinBudget(): Promise<AuthUser | null> {

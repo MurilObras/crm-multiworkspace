@@ -51,7 +51,7 @@
       "lane": "rules",
       "col": 2,
       "type": "backend",
-      "label": "getUser com prazo"
+      "label": "getUser e permissões com prazo"
     },
     {
       "id": "data",
@@ -101,6 +101,13 @@
       "col": 4,
       "type": "backend",
       "label": "Logger: duração e memória"
+    },
+    {
+      "id": "authCapacity",
+      "lane": "rules",
+      "col": 1,
+      "type": "backend",
+      "label": "128 autenticações por runtime"
     }
   ],
   "edges": [
@@ -187,6 +194,18 @@
       "from": "receipt",
       "to": "logs",
       "label": "disposição ou perda real"
+    },
+    {
+      "id": "edge-14",
+      "from": "authCapacity",
+      "to": "auth",
+      "label": "vaga até concluir o corpo"
+    },
+    {
+      "id": "edge-15",
+      "from": "authCapacity",
+      "to": "logs",
+      "label": "auth_capacity_exceeded"
     }
   ]
 }
