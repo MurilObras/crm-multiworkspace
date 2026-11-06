@@ -109,3 +109,68 @@ crm-stability-20261105, API 55421, banco 55422 e app 3106.
 O início da bateria foi condicionado à disponibilidade do banco/Auth após reinício
 automático do WSL. Evidências, logs e fingerprints estão fora do repositório.
 Não houve CI remoto, merge, deploy, alteração no PR 20 ou mensagens a leads reais.
+
+
+## Complemento: seis casos externos de 06/11/2026
+
+Os seis skips acima foram tratados separadamente, sem alterar produto, serviços
+de produção, PR 20 ou executar CI remoto. Cinco dos seis agora têm prova local.
+
+| Caso anteriormente pendente | Resultado complementar |
+| --- | --- |
+| FAQ indexada com chave cadastrada pela tela | Aprovado com embeddings reais |
+| Documento enviado vira trechos | Aprovado com embeddings reais |
+| Seleção de fontes pertence ao assistente escolhido | Aprovado |
+| Material não utilizado por nenhum assistente é sinalizado | Aprovado |
+| Retorno OAuth reconhece state e vínculo sem sessão Strict | Aprovado com client de teste e código deliberadamente inválido; erro específico da troca confirmado |
+| Consentimento Google real e conta conectada persistida | Implementado, ainda não executado: faltam aplicativo OAuth e conta Google dedicados de teste |
+
+A rodada complementar rodou os seis casos do acervo e os três do retorno OAuth:
+**9 aprovados, zero skips, zero retries**, em 41,6 segundos. O caso do retorno
+não prova consentimento nem sincronização real com uma conta Google. Ele prova
+que as guardas reconhecem a volta e deixam alcançar a troca de código.
+
+Os 49 testes unitários relacionados às rotas/configuração/cartão Google passaram.
+Typecheck, lint, lint:channels e lint:role-rank passaram; continuam os 322 avisos
+preexistentes de lint, sem erros. Plandex revisou os testes/rotas sem encontrar
+defeito demonstrável; o grafo Graphify existente foi consultado para dependências
+dessas rotas (10 nós e 96 arestas no recorte). Não há aprovação para merge/deploy.
+
+A chave existente autorizada pelo usuário respondeu ao preflight de embeddings
+(status 200, 1 vetor de 1.536 dimensões) e foi injetada no processo de teste, sem
+ser escrita nas fixtures ou logs. O teste a cadastrou pela própria UI local;
+traces, vídeos e capturas automáticas ficam desativados nesse perfil. Nenhuma
+compra ou recarga foi realizada.
+
+O primeiro preparo do acervo parou antes dos cenários: o WSL havia reiniciado e
+a API local ainda não tinha carregado o schema. Foi adicionada ao runner externo
+uma espera limitada pela disponibilidade real de Auth/REST antes da semeadura;
+não se alteraram limites ou assertivas do produto para obter aprovação.
+
+### Como executar o único caso ainda pendente
+
+1. Usar somente a instalação local descartável (app em http://localhost:3106),
+   sem conexão Google prévia para o usuário sintético.
+2. Disponibilizar aplicativo OAuth de teste com retorno exato
+   http://localhost:3106/api/v1/agenda/google/callback e conta Google dedicada
+   autorizada nesse aplicativo. Client ID/secret ficam somente na configuração
+   local protegida do servidor; não devem ser enviados no chat nem commitados.
+3. Injetar E2E_GOOGLE_LIVE=1 e E2E_GOOGLE_EXPECTED_EMAIL com o e-mail da conta
+   de teste. Rodar Playwright em modo visível (--headed), selecionando o caso
+   "conectar a agenda do Google pela tela e ver a faixa mudar". A pessoa faz
+   login e autoriza na janela Google; não há simulação do callback.
+4. O teste verifica consentimento offline, retorno sem erro, conta exibida,
+   persistência após recarga e desconexão pelo botão ao terminar. A única
+   captura explícita é a Agenda local após sucesso, sem tela de senha/consentimento.
+5. Rodar o perfil sem Google separadamente, para continuar provando a degradação
+   explicada. Usar E2E_REQUIRE_EXTERNALS=1 faz a ausência do opt-in real reprovar
+   explicitamente, em vez de fingir aprovação.
+
+Google Calendar é uma sincronização opcional. A agenda interna do CRM funciona
+sem essa autorização. Deixar o consentimento externo pendente não deve ser
+registrado como teste aprovado nem como impedimento de uso da agenda interna.
+
+A credencial OpenAI temporária criada pelo teste foi removida ao final: uma
+linha excluída somente do projeto descartável crm-stability-20261105, organização
+e2e-test-org, provedor openai. A chave protegida preexistente do Plandex permaneceu
+intacta. Evidência da limpeza fica junto aos logs locais, sem segredos.

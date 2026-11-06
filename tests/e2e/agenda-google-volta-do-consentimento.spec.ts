@@ -129,6 +129,7 @@ test.describe("a volta do consentimento do Google chega ao sistema", () => {
     });
 
     expect(volta.status(), "a volta foi barrada — o conserto do proxy regrediu").not.toBe(401);
+    expect(volta.status(), "a volta deve entregar a página-ponte, não um erro interno").toBe(200);
     // ⚠️ O DESTINO SAI DO CORPO, E NÃO DO HEADER `location`.
     //
     // A volta deixou de ser um 307: ela é uma PÁGINA-PONTE 200 que navega por
@@ -148,6 +149,9 @@ test.describe("a volta do consentimento do Google chega ao sistema", () => {
       "o vínculo não foi reconhecido: ou ele não é lido, ou é conferido depois da " +
         "queima do nonce, ou a assinatura mudou de um lado só",
     ).not.toContain("retorno_nao_verificavel");
+    // O código foi inventado: chegar ao erro específico da troca prova que as
+    // guardas de state/vínculo passaram. Um 500 genérico não satisfaz a jornada.
+    expect(destinoDaVolta).toContain("/app/agenda?erro=troca_de_codigo_falhou");
 
     await anonimo.close();
   });
