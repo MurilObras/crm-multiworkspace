@@ -26,6 +26,33 @@ describe("apiClient", () => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
+  it('funciona sem AbortSignal.any e remove os listeners ao terminar', async () => {
+    vi.stubGlobal('AbortSignal', { any: undefined });
+    const caller = new AbortController();
+    const added = vi.spyOn(caller.signal, 'addEventListener');
+    const removed = vi.spyOn(caller.signal, 'removeEventListener');
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+    await expect(apiClient.get('/x', { signal: caller.signal, timeoutMs: 20 })).resolves.toEqual({ ok: true });
+    expect(added).toHaveBeenCalledOnce();
+    expect(removed).toHaveBeenCalledWith('abort', added.mock.calls[0]![1]);
+  });
+  it.each(['caller', 'timeout', 'already-aborted'] as const)('sem composição nativa preserva cancelamento: %s', async (mode) => {
+    vi.stubGlobal('AbortSignal', { any: undefined });
+    const caller = new AbortController();
+    if (mode === 'already-aborted') caller.abort(new DOMException('cancelled', 'AbortError'));
+    const removed = vi.spyOn(caller.signal, 'removeEventListener');
+    fetchMock.mockImplementation((_path, init: RequestInit) => new Promise((_resolve, reject) => {
+      const signal = init.signal!;
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }));
+    const request = apiClient.get('/x', { signal: caller.signal, timeoutMs: mode === 'timeout' ? 10 : 1000 });
+    const assertion = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    if (mode === 'caller') caller.abort(new DOMException('cancelled', 'AbortError'));
+    await assertion;
+    expect(fetchMock).toHaveBeenCalledOnce();
+    if (mode !== 'already-aborted') expect(removed).toHaveBeenCalledOnce();
+  });
   it("não repete um teste cobrado após falha de rede quando maxAttempts é 1", async () => {
     fetchMock.mockRejectedValue(new Error("network"));
     await expect(
@@ -107,15 +134,33 @@ describe("apiClient", () => {
     expect(headers["Idempotency-Key"]).toBe("custom-key-123");
   });
 
-  it("t8: retry de rede reusa a MESMA Idempotency-Key (retry = mesma operação)", async () => {
+  it("t8: escrita de resultado desconhecido não repete, mesmo com Idempotency-Key", async () => {
     fetchMock
       .mockRejectedValueOnce(new TypeError("fetch failed"))
       .mockResolvedValueOnce(jsonResponse(200, { data: { ok: true } }));
-    await apiClient.post("/x", { a: 1 }, { idempotencyKey: "custom-key" });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await expect(apiClient.post("/x", { a: 1 }, { idempotencyKey: "custom-key" })).rejects.toThrow('fetch failed');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     const k1 = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
-    const k2 = (fetchMock.mock.calls[1]![1] as RequestInit).headers as Record<string, string>;
     expect(k1["Idempotency-Key"]).toBe("custom-key");
-    expect(k2["Idempotency-Key"]).toBe("custom-key");
+  });
+  it('não repete leitura após timeout/rede; 503 em escrita também não repete', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('network unavailable'));
+    await expect(apiClient.get('/x')).rejects.toThrow('network unavailable');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: { code: 'unavailable' } }));
+    await expect(apiClient.post('/x', {})).rejects.toMatchObject({ status: 503 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it('descarta resposta anterior e respeita orçamento antes de tentar de novo', async () => {
+    const cancel = vi.fn(async () => {});
+    const res = jsonResponse(503, {});
+    Object.defineProperty(res, 'body', { value: { cancel } });
+    fetchMock.mockResolvedValueOnce(res).mockResolvedValueOnce(jsonResponse(200, { data: true }));
+    expect(await apiClient.get('/x')).toEqual({ data: true });
+    expect(cancel).toHaveBeenCalledOnce();
+    fetchMock.mockClear();
+    fetchMock.mockResolvedValueOnce(jsonResponse(429, {}, { 'Retry-After': '3600' }));
+    await expect(apiClient.get('/x', { timeoutMs: 100 })).rejects.toMatchObject({ status: 429 });
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });

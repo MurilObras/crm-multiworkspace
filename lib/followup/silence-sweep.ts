@@ -35,6 +35,7 @@
  * `segments` vazio/ausente = todos os contatos silenciosos da org.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { serviceRequestBudgetRemaining } from '@/lib/supabase/service-fetch';
 
 import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
 import { flowGraphSchema } from "./graph-schema";
@@ -55,6 +56,9 @@ export interface SilenceSweepDb {
   loadActiveSilencePointers(): Promise<SilencePointer[]>;
   /** Contact ids da org sem inbound desde `cutoffIso` (inclusive); `segments` vazio = todos. */
   loadSilentContactIds(orgId: string, cutoffIso: string, segments: string[]): Promise<string[]>;
+  /** Produção: cursor no banco, sem carregar o histórico inteiro no processo. */
+  loadSilentContactPage?(orgId: string, cutoffIso: string, segments: string[], after: string | null): Promise<string[]>;
+  insertEnrollments?(inputs: SilenceEnrollmentInput[]): Promise<Array<{ contact_id: string; inserted: boolean }>>;
   /** id do nó `trigger` do grafo pinado da version; `null` se version/nó não existir (defensivo — não deveria acontecer, validate-publish garante 1 trigger). */
   loadTriggerNodeId(orgId: string, versionId: string): Promise<string | null>;
   /** Insere o enrollment nascendo no nó trigger; `inserted:false` = 23505 (já vivo nesse pointer) → skip. */
@@ -67,6 +71,12 @@ export interface SilenceSweepDb {
     next_eval_at: string;
     agent_id: string | null;
   }): Promise<{ inserted: boolean }>;
+}
+export type SilenceEnrollmentInput = Parameters<SilenceSweepDb['insertEnrollment']>[0];
+export const SILENCE_BATCH_SIZE = 50;
+
+declare global {
+  var __crmSilenceProgress: { cursors: Map<string, string> } | undefined;
 }
 
 export interface SilenceSweepSummary {
@@ -93,6 +103,9 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
 
   const pointers = await db.loadActiveSilencePointers();
   summary.pointers_scanned = pointers.length;
+  // Retoma o progresso sem trocar a ordem dos fluxos. Rodízio de pointers
+  // mudaria qual deles inscreve um contato que pertence a mais de um segmento.
+  const progress = globalThis.__crmSilenceProgress ??= { cursors: new Map() };
 
   // Memoiza a resolução do agente por pointer dentro desta varredura — nada
   // impede 2 pointers silence na mesma org, e a query do gate já é 1 por org
@@ -111,6 +124,7 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
   };
 
   for (const pointer of pointers) {
+    if (serviceRequestBudgetRemaining() === 0) break;
     const agentId = await resolveAgent(pointer.organization_id, pointer.id);
     if (agentId === null) {
       summary.pointers_gated_out++;
@@ -121,11 +135,15 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
     if (!triggerNodeId) continue;
 
     const cutoffIso = new Date(clock().getTime() - pointer.threshold_minutes * 60_000).toISOString();
-    const contactIds = await db.loadSilentContactIds(pointer.organization_id, cutoffIso, pointer.segments);
     const nextEvalAt = clock().toISOString();
-
-    for (const contactId of contactIds) {
-      const { inserted } = await db.insertEnrollment({
+    const key = `${pointer.organization_id}:${pointer.id}:${pointer.active_version_id}`;
+    let after = progress.cursors.get(key) ?? null;
+    while (serviceRequestBudgetRemaining() > 0) {
+      const contactIds = db.loadSilentContactPage
+        ? await db.loadSilentContactPage(pointer.organization_id, cutoffIso, pointer.segments, after)
+        : await db.loadSilentContactIds(pointer.organization_id, cutoffIso, pointer.segments);
+      if (!contactIds.length) { progress.cursors.delete(key); break; }
+      const inputs = contactIds.map((contactId): SilenceEnrollmentInput => ({
         organization_id: pointer.organization_id,
         pointer_id: pointer.id,
         version_id: pointer.active_version_id,
@@ -133,9 +151,28 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
         current_node_id: triggerNodeId,
         next_eval_at: nextEvalAt,
         agent_id: agentId,
-      });
-      if (inserted) summary.enrolled++;
-      else summary.skipped_existing++;
+      }));
+      const results: Array<{ contact_id: string; inserted: boolean }> = [];
+      if (db.insertEnrollments) {
+        for (let i = 0; i < inputs.length; i += SILENCE_BATCH_SIZE) {
+          results.push(...await db.insertEnrollments(inputs.slice(i, i + SILENCE_BATCH_SIZE)));
+        }
+      }
+      else for (const input of inputs) {
+        results.push({ contact_id: input.contact_id, ...await db.insertEnrollment(input) });
+      }
+      if (results.length !== inputs.length || new Set(results.map(r => r.contact_id)).size !== inputs.length
+        || results.some(r => !contactIds.includes(r.contact_id))) throw new Error('silence_batch_result_invalid');
+      for (const { inserted } of results) {
+        if (inserted) summary.enrolled++;
+        else summary.skipped_existing++;
+      }
+      if (!db.loadSilentContactPage || contactIds.length < SILENCE_BATCH_SIZE) {
+        progress.cursors.delete(key); break;
+      }
+      after = contactIds[contactIds.length - 1]!;
+      progress.cursors.set(key, after);
+      if (progress.cursors.size > 256) progress.cursors.delete(progress.cursors.keys().next().value!);
     }
   }
 
@@ -149,6 +186,19 @@ type ContactEmbed =
 /** Production adapter: `SilenceSweepDb` sobre o client service-role real. */
 export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSweepDb {
   return {
+    async loadSilentContactPage(orgId, cutoffIso, segments, after) {
+      const { data, error } = await admin.rpc('fn_silence_contact_page' as never, {
+        p_org: orgId, p_cutoff: cutoffIso, p_segments: segments,
+        p_after: after, p_limit: SILENCE_BATCH_SIZE,
+      } as never);
+      if (error) throw new Error(error.message);
+      return (data as Array<{ contact_id: string }> ?? []).map(row => row.contact_id);
+    },
+    async insertEnrollments(inputs) {
+      const { data, error } = await admin.rpc('fn_enroll_silence_batch' as never, { p_inputs: inputs } as never);
+      if (error) throw new Error(error.message);
+      return data as Array<{ contact_id: string; inserted: boolean }> ?? [];
+    },
     async loadActiveSilencePointers() {
       const { data, error } = await admin
         .from("followup_flow_pointers")

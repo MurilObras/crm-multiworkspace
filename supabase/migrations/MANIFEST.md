@@ -277,6 +277,9 @@ aplica.
 | `20261026020000` | `0241_private_realtime_policy_roles` | Limita a aplicação de políticas privadas de leitura aos papéis da aplicação; uma inscrição anônima não interrompe o lote Realtime dos usuários autenticados. |
 | `20261026190000` | `0242_response_delivery_retention` | Relaciona avisos do Inbox à resposta e ao canal; remove planos privados ao concluir ou anonimizar o contato. |
 | `20261027002000` | `0243_response_delivery_queue_access` | Restringe escrita da fila aos serviços e protege o plano privado pela visibilidade da conversa; impede forjar marcadores de retomada pelo acesso autenticado direto. |
+| `20261105180000` | `0244_followup_bounded_batches` | Seleção por cursor e inscrição em lotes limitados; preserva controles humanos e episódios de silêncio |
+| `20261105210000` | `0245_media_responsible_controls` | Aviso ao cliente e consulta por falha de áudio configuráveis por agente/workspace; mantém padrões anteriores |
+| `20261105220000` | `0246_followup_delivery_reconciliation` | Reconcilia ações com fila/ledger por workspace, nó e ocupação; preserva entregas incertas e cancelamentos esperados. |
 
 ## Reproducibility
 

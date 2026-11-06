@@ -248,6 +248,7 @@ export function ChatThread({ conversationId, onResponder, contact }: Props) {
               ) : (
                 <MessageBubble
                   canManage={canManage}
+                  canReprocess={activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
                   contactName={contact ? rotuloDoContato(contact) : undefined}
                   contactAvatarUrl={
                     contact?.avatar_storage_path && !contact.is_anonymized

@@ -1,82 +1,30 @@
 /**
- * A PROVA EM TELA DA FRENTE 3 (Google Calendar BYO) — ainda NÃO escrita, e por
- * isso existe como `skip` com motivo em vez de como promessa num relatório.
+ * Prova em tela da integração opcional Google Calendar BYO.
  *
- * ─── Por que este arquivo nasce vazio, e por que nasce AGORA ──────────────
+ * O perfil padrão não configura Google: verifica que a Agenda interna abre e
+ * explica o recurso opcional sem esconder a grade nem culpar o usuário.
  *
- * A frente 3 é OAuth e worker: ela não tem pixel próprio. O botão "Conectar
- * Google" e a faixa de estado da conexão moram na tela da Agenda, que é da
- * frente 2. A DECISÃO 21 deixa uma frente sem tela fechar com prova de caminho
- * real DESDE QUE declare quem a prova em tela — e a 21.3 fechou o furo dessa
- * declaração: o endereço não é citado num relatório que alguém precisa reler,
- * concordar e lembrar. É criado aqui, e passa a existir para
- * `tests/unit/e2e-cobertura-completa.test.ts` como qualquer outra spec.
- *
- * Eu tinha proposto o nome e escrito "se o VPS preferir outro, a escolha é
- * dele". O diagnóstico estava certo e o remédio era fraco: nome combinado por
- * mensagem é exatamente a transferência que evapora. Quem for dono da tela pode
- * renomear, mover ou reescrever isto à vontade — o que ele não consegue é fazer
- * a obrigação sumir em silêncio.
- *
- * ─── A ORDEM DOS DOIS CASOS NÃO É ACIDENTAL ───────────────────────────────
- *
- * O caso SEM CHAVE vem primeiro de propósito. Ele não é borda: é a primeira
- * tela que 100% dos self-hosters vê, porque `GOOGLE_CALENDAR_CLIENT_ID` e
- * `GOOGLE_CALENDAR_CLIENT_SECRET` são opcionais (DECISÃO 3.1) e nenhuma
- * instalação nova as tem. Uma spec que só cobrisse o caminho feliz deixaria sem
- * prova justamente o estado que todo mundo encontra no dia 1.
- *
- * ─── O que estas specs vão provar quando existirem ────────────────────────
- *
- * 1. SEM CHAVE NA INSTALAÇÃO: a tela da Agenda abre inteira, o botão "Conectar
- *    Google" NÃO aparece, e no lugar dele há uma linha dizendo o que falta e
- *    onde obter. O que se prova aqui é que a ausência de configuração degrada
- *    com explicação em vez de derrubar o módulo — `configuracaoDoGoogle()`
- *    devolve `null` justamente para isto, e há teste unitário de que ela não
- *    lança. O que falta é a tela consumir esse `null`.
- *
- * 2. COM CHAVE: clicar "Conectar Google" leva ao consentimento (o destino é
- *    `accounts.google.com`, com `access_type=offline` e `prompt=consent` — os
- *    dois parâmetros sem os quais a reconexão volta sem `refresh_token` e a
- *    integração morre em uma hora); voltar do consentimento grava a conexão; e
- *    a faixa da Agenda passa a dizer que a agenda está conectada, com o e-mail
- *    da conta.
- *
- * ─── O que falta para deixarem de ser `skip` ──────────────────────────────
- *
- * Da minha frente: nada nas rotas — `connect` e `callback` existem e têm 17
- * casos unitários, incluindo sabotagem da guarda que separa organizações.
- * Falta da frente 2: a tela da Agenda renderizar o botão e a faixa de estado.
- * Enquanto não houver botão, não há clique para dirigir.
- *
- * E falta, para o caso 2 rodar em CI de verdade, uma conta Google de teste com
- * consentimento pré-aprovado — que é o motivo de esta spec entrar em
- * `FORA_DO_CI` no `e2e.yml`, e não de ela ficar sem existir.
+ * O perfil E2E_GOOGLE_LIVE=1 exige aplicativo OAuth e conta Google dedicados.
+ * A pessoa autoriza em navegador visível; o teste verifica o consentimento, a
+ * troca real do código, a conexão persistida na tela e a desconexão de limpeza.
+ * Não há callback simulado nem conexão semeada nesse perfil. Sem autorização
+ * externa, esse caso permanece explicitamente pendente e não prova aprovação.
  */
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
 const ESPERA = 60_000;
+const GOOGLE_REAL = process.env.E2E_GOOGLE_LIVE === "1";
 test.describe.configure({ mode: "serial", timeout: 180_000 });
+// O consentimento real pode mostrar senha, código e tokens. Sem trace/vídeo.
+if (GOOGLE_REAL) test.use({ trace: "off", screenshot: "off", video: "off" });
 
-/**
- * ─── ATUALIZAÇÃO (@VPS, frente 2) ─────────────────────────────────────────
- *
- * O caso 1 DEIXOU de ser `skip`: a tela agora consome `googleEstaConfigurado()`
- * e `faltaParaConectarOGoogle()`, resolvidos no servidor e passados por prop —
- * a env nunca atravessa para o cliente.
- *
- * E ele roda no CI de graça, sem conta Google nenhuma: o ambiente de teste NÃO
- * tem `GOOGLE_CALENDAR_CLIENT_ID`, então ele já está no estado que 100% dos
- * self-hosters têm no dia 1. O caso mais importante era o mais barato de provar,
- * e por isso ele vinha primeiro no plano do DevGatilhos.
- *
- * O caso 2 continua `skip`, e o motivo não mudou: precisa de conta Google com
- * consentimento pré-aprovado.
- */
 test.describe("conectar a agenda do Google", () => {
   let page: Page;
+  let limparConexaoReal = false;
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(240_000);
@@ -88,7 +36,22 @@ test.describe("conectar a agenda do Google", () => {
     await page.close();
   });
 
+  test.afterEach(async () => {
+    if (!limparConexaoReal) return;
+    limparConexaoReal = false;
+    // Hook com orçamento próprio: o timeout do consentimento não pode impedir
+    // a limpeza. O teste exige começar sem conexão e só usa o app local.
+    await page.goto("/app/agenda");
+    if (await page.getByTestId("desconectar-google").isVisible()) {
+      const removida = page.waitForResponse(r => r.url().endsWith("/api/v1/agenda/google/desconectar") && r.request().method() === "DELETE");
+      await page.getByTestId("desconectar-google").click();
+      expect((await removida).ok(), "a conexão de teste deve ser removida ao terminar").toBe(true);
+      await expect(page.getByTestId("google-conectado")).toHaveCount(0);
+    }
+  });
+
   test("sem chave do Google, a Agenda abre e explica o que falta", async () => {
+    test.skip(GOOGLE_REAL, "o perfil de consentimento real exige Google configurado; o perfil sem chave roda separadamente");
     await page.goto("/app/agenda");
 
     // 1. A TELA ABRE INTEIRA. Env opcional ausente degrada com explicação, não
@@ -123,9 +86,51 @@ test.describe("conectar a agenda do Google", () => {
     expect(semOBloco, `código cru na frase: ${semOBloco}`).not.toMatch(/[a-z]+_[a-z]+_[a-z]+/);
   });
 
-  test.skip("conectar a agenda do Google pela tela e ver a faixa mudar", async () => {
-    // Continua bloqueada, e NÃO pela frente 2: o botão existe agora. Falta uma
-    // conta Google de teste com consentimento pré-aprovado — por isso esta spec
-    // fica em FORA_DO_CI, e não sem existir.
+  test("conectar a agenda do Google pela tela e ver a faixa mudar", async ({ baseURL }) => {
+    test.setTimeout(300_000);
+    // Opt-in com conta dedicada e --headed: a pessoa autoriza no Google,
+    // e o teste verifica o retorno real. O perfil padrão continua sem Google.
+    if (!GOOGLE_REAL && process.env.E2E_REQUIRE_EXTERNALS === "1") {
+      throw new Error("O consentimento Google real exige E2E_GOOGLE_LIVE=1 e uma conta dedicada de teste.");
+    }
+    test.skip(!GOOGLE_REAL, "consentimento real requer perfil E2E_GOOGLE_LIVE e autorização da conta Google de teste");
+    const origem = new URL(baseURL!);
+    if (origem.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(origem.hostname)) {
+      throw new Error("A conexão Google E2E só pode ser criada no aplicativo local de testes.");
+    }
+    const emailEsperado = process.env.E2E_GOOGLE_EXPECTED_EMAIL?.trim();
+    if (!emailEsperado) throw new Error("Informe E2E_GOOGLE_EXPECTED_EMAIL para não validar outra conta por engano.");
+
+    await page.goto("/app/agenda");
+    await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: ESPERA });
+    await expect(page.getByTestId("google-conectado"), "o teste precisa começar sem uma conexão anterior").toHaveCount(0);
+    await expect(page.getByTestId("conectar-google")).toBeVisible();
+    limparConexaoReal = true;
+    const ida = page.waitForResponse(r => r.url().endsWith("/api/v1/agenda/google/connect") && r.request().method() === "GET");
+    await page.getByTestId("conectar-google").click();
+    const inicio = await ida;
+    expect(inicio.status()).toBe(307);
+    const consentimento = new URL(inicio.headers().location!);
+    expect(consentimento.origin).toBe("https://accounts.google.com");
+    await page.waitForURL("https://accounts.google.com/**", { timeout: ESPERA });
+    expect(consentimento.searchParams.get("access_type")).toBe("offline");
+    expect(consentimento.searchParams.get("prompt")).toBe("consent");
+    expect(consentimento.searchParams.get("redirect_uri")).toBe(`${origem.origin}/api/v1/agenda/google/callback`);
+    expect(Boolean(consentimento.searchParams.get("state"))).toBe(true);
+    console.info("[E2E Google] Autorize a conta dedicada na janela do navegador; não informe senha ou código no chat.");
+
+    // A interação externa é real e pode exigir MFA. Não simular o callback nem
+    // semear uma conexão: isto precisa provar a troca e a gravação do token.
+    await page.waitForURL(url => url.origin === origem.origin && url.pathname === "/app/agenda", { timeout: 180_000 });
+    expect(new URL(page.url()).searchParams.has("erro"), "a autorização retornou um erro à Agenda").toBe(false);
+    const conectado = page.getByTestId("google-conectado");
+    await expect(conectado).toBeVisible({ timeout: ESPERA });
+    await expect(conectado).toContainText(emailEsperado);
+    await page.reload();
+    await expect(page.getByTestId("tela-agenda")).toBeVisible();
+    await expect(conectado).toContainText(emailEsperado);
+    const evidencias = process.env.E2E_GOOGLE_EVIDENCE_DIR ?? path.join(process.cwd(), ".superpowers/evidence/google-real");
+    fs.mkdirSync(evidencias, { recursive: true });
+    await page.screenshot({ path: path.join(evidencias, "conexao-confirmada.png"), fullPage: true });
   });
 });

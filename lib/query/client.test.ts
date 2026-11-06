@@ -9,5 +9,6 @@ describe("makeQueryClient()", () => {
     expect(opts.queries?.gcTime).toBe(300_000);
     expect(opts.queries?.refetchOnWindowFocus).toBe(false);
     expect(opts.mutations?.retry).toBe(false);
+    expect(opts.queries?.retry).toBe(false);
   });
 });

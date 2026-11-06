@@ -58,6 +58,9 @@ import { lerCreds, loginComoAdmin, type CredsE2E } from "./helpers/login-admin";
 const APP_URL = process.env.E2E_BASE_URL ?? "http://localhost:3011";
 const SEGREDO_CRON = process.env.INTERNAL_SECRET ?? "e2e-placeholder-nao-e-segredo";
 const CHAVE_OPENAI = process.env.OPENAI_API_KEY_E2E ?? "";
+// A jornada preenche uma chave real pela tela. O trace registra argumentos de
+// fill(), portanto não pode ser capturado neste perfil, nem quando houver falha.
+if (CHAVE_OPENAI) test.use({ trace: "off", screenshot: "off", video: "off" });
 
 const NOME_FAQ = `E2E FAQ ${Date.now()}`;
 const NOME_DOC = `E2E Documento ${Date.now()}`;

@@ -1,7 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
 
-import { ApiError } from '@/lib/api/types';
-
 export function makeQueryClient() {
   return new QueryClient({
     defaultOptions: {
@@ -9,10 +7,9 @@ export function makeQueryClient() {
         staleTime: 30_000,
         gcTime: 5 * 60_000,
         refetchOnWindowFocus: false,
-        retry: (count, err) =>
-          err instanceof ApiError && [429, 503].includes(err.status)
-            ? count < 2
-            : false,
+        // O cliente HTTP Ã© o dono do retry limitado. Repetir nesta camada
+        // multiplicava as tentativas quando a dependÃªncia estava indisponÃ­vel.
+        retry: false,
       },
       mutations: { retry: false },
     },

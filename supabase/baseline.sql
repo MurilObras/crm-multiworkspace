@@ -22236,6 +22236,225 @@ create policy job_queue_private_delivery_select on public.job_queue as restricti
   )
  );
 
+-- ---- Follow-up em lotes limitados (migration 0244) ----
+-- Seleção pequena no banco; não transfere todas as conversas/metadata ao Node.
+-- O episódio continua sendo decidido por fn_enroll_silence_episode (0236).
+create or replace function public.fn_silence_contact_page(
+  p_org uuid, p_cutoff timestamptz, p_segments text[], p_after uuid, p_limit integer
+) returns table(contact_id uuid)
+language sql stable security invoker set search_path=public,pg_temp as $$
+  select c.id from public.contacts c
+  join lateral (
+    select v.last_inbound_at,v.channel_session_id from public.conversations v
+    where v.organization_id=p_org and v.contact_id=c.id
+      and v.status not in ('closed','archived') and v.last_inbound_at is not null
+    order by v.last_inbound_at desc,v.id desc limit 1
+  ) recent on true
+  left join public.channel_sessions s on s.organization_id=p_org and s.id=recent.channel_session_id
+  where c.organization_id=p_org and (p_after is null or c.id>p_after)
+    and not c.is_blocked and not c.is_anonymized and not c.force_human
+    and recent.last_inbound_at<=p_cutoff
+    and (coalesce(cardinality(p_segments),0)=0 or c.tags && p_segments)
+    and (s.metadata->>'ai_gate' is distinct from 'allowlist' or c.ai_authorized_at is not null)
+    and not exists(select 1 from public.agent_responsibles r where r.organization_id=p_org and r.phone=c.phone_number)
+    and not exists(select 1 from public.agent_responsible_requests r where r.organization_id=p_org
+      and r.contact_id=c.id and r.status in ('pending','answered','failed'))
+    and not exists(select 1 from public.followup_enrollments e where e.organization_id=p_org
+      and e.contact_id=c.id and e.status in ('active','waiting_reply','paused_handoff','paused_manual'))
+  order by c.id limit greatest(1,least(coalesce(p_limit,50),50));
+$$;
+revoke execute on function public.fn_silence_contact_page(uuid,timestamptz,text[],uuid,integer) from public,anon,authenticated;
+grant execute on function public.fn_silence_contact_page(uuid,timestamptz,text[],uuid,integer) to service_role;
+
+create or replace function public.fn_enroll_silence_batch(p_inputs jsonb)
+returns table(contact_id uuid, inserted boolean)
+language plpgsql security invoker set search_path=public,pg_temp as $$
+declare item jsonb; org uuid;
+begin
+  if jsonb_typeof(p_inputs) is distinct from 'array' then
+    raise exception 'silence_batch_invalid' using errcode='22023';
+  end if;
+  if jsonb_array_length(p_inputs)<1 or jsonb_array_length(p_inputs)>50 then
+    raise exception 'silence_batch_size_invalid' using errcode='22023';
+  end if;
+  org:=(p_inputs->0->>'organization_id')::uuid;
+  if org is null or exists(select 1 from jsonb_array_elements(p_inputs) x
+    where (x->>'organization_id')::uuid is distinct from org) then
+    raise exception 'silence_batch_org_invalid' using errcode='22023';
+  end if;
+  -- Ordem única de locks por contato, inclusive entre pointers concorrentes.
+  for item in select value from jsonb_array_elements(p_inputs) order by value->>'contact_id' loop
+    contact_id:=(item->>'contact_id')::uuid;
+    -- O controle humano também trava o contato. Revalida a consulta interna
+    -- depois desse lock, não com um snapshot anterior à espera por ele.
+    perform 1 from public.contacts c where c.organization_id=org
+      and c.id=(item->>'contact_id')::uuid for update;
+    if exists(select 1 from public.agent_responsible_requests r where r.organization_id=org
+      and r.contact_id=(item->>'contact_id')::uuid and r.status in ('pending','answered','failed'))
+      or exists(select 1 from public.contacts c join public.agent_responsibles r
+        on r.organization_id=org and r.phone=c.phone_number
+        where c.organization_id=org and c.id=(item->>'contact_id')::uuid) then
+      inserted:=false;
+    else
+      inserted:=public.fn_enroll_silence_episode(item);
+    end if;
+    return next;
+  end loop;
+end $$;
+revoke execute on function public.fn_enroll_silence_batch(jsonb) from public,anon,authenticated;
+grant execute on function public.fn_enroll_silence_batch(jsonb) to service_role;
+notify pgrst, 'reload schema';
+
+-- ---- Controles de consulta e mídia (migration 0245) ----
+-- Controles compatíveis com as configurações anteriores: aviso ligado;
+-- consulta automática por falha de áudio somente por escolha do operador.
+alter table public.agent_responsible_settings add column if not exists notify_client boolean not null default true;
+alter table public.agent_responsible_settings add column if not exists audio_failures_to_responsible boolean not null default false;
+
+create or replace function public.fn_start_responsible_request(p_org uuid,p_case uuid,p_kind text default 'consultation')
+returns uuid language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_case agent_cases%rowtype; v_conv conversations%rowtype; v_req uuid; r_staff record; v_contact uuid; v_target uuid; v_changed uuid;
+begin
+ select * into v_case from agent_cases where organization_id=p_org and id=p_case for update;
+ if not found or v_case.agent_id is null or v_case.status not in ('awaiting_human','awaiting_lead') then return null; end if;
+ select * into v_conv from conversations where organization_id=p_org and id=v_case.conversation_id;
+ if v_conv.contact_id is null or v_conv.status in ('closed','archived') then return null; end if;
+ perform 1 from ai_agents where organization_id=p_org and id=v_case.agent_id for share;
+ if not exists(select 1 from agent_responsible_settings s join ai_agents a
+    on a.organization_id=s.organization_id and a.id=s.agent_id
+    where s.organization_id=p_org and s.agent_id=v_case.agent_id and s.enabled
+      and a.archived_at is null and a.published_version_id is not null) then return null; end if;
+ if not exists(select 1 from channel_sessions where organization_id=p_org and id=v_conv.channel_session_id
+    and provider='waha' and archived_at is null) then return null; end if;
+ select id into v_req from agent_responsible_requests where organization_id=p_org and conversation_id=v_case.conversation_id
+   and status in ('pending','answered','failed');
+ if v_req is not null then
+   if p_kind='handoff' then
+    update agent_responsible_requests set kind='handoff' where id=v_req and organization_id=p_org and kind<>'handoff' returning id into v_changed;
+    if v_changed is not null then
+     perform fn_queue_responsible_delivery(p_org,v_req,n.responsible_id,'receipt',n.target_conversation_id,n.target_contact_id,
+      'Atualização: o cliente pediu atendimento humano. Abra o atendimento para acompanhar a conversa; a IA continuará pausada.')
+      from agent_responsible_deliveries n where n.organization_id=p_org and n.request_id=v_req and n.purpose='notification';
+    end if;
+   end if;
+   return v_req;
+ end if;
+ if not exists(select 1 from agent_responsible_bindings b join agent_responsibles r
+  on r.organization_id=b.organization_id and r.id=b.responsible_id
+  where b.organization_id=p_org and b.agent_id=v_case.agent_id and r.enabled) then return null; end if;
+ insert into agent_responsible_requests(organization_id,case_id,conversation_id,contact_id,agent_id,kind)
+ values(p_org,p_case,v_conv.id,v_conv.contact_id,v_case.agent_id,p_kind) returning id into v_req;
+ if p_kind='consultation' and exists(select 1 from agent_responsible_settings
+    where organization_id=p_org and agent_id=v_case.agent_id and notify_client) then
+  perform fn_queue_responsible_delivery(p_org,v_req,null,'wait_notice',v_conv.id,v_conv.contact_id,
+    'Vou confirmar essa informação com o responsável e retorno por aqui.');
+ end if;
+ for r_staff in select r.* from agent_responsible_bindings b join agent_responsibles r
+  on r.organization_id=b.organization_id and r.id=b.responsible_id
+  where b.organization_id=p_org and b.agent_id=v_case.agent_id and r.enabled for share of r
+ loop
+  -- Responsável não pode ser o próprio cliente nem a conexão usada para avisá-lo.
+  if exists(select 1 from contacts where organization_id=p_org and id=v_conv.contact_id and phone_number=r_staff.phone)
+    or exists(select 1 from channel_sessions where organization_id=p_org and id=v_conv.channel_session_id and phone_number=r_staff.phone) then continue; end if;
+  v_contact := fn_upsert_wa_contact(p_org,'phone',r_staff.phone,null,substring(r_staff.phone from 2)||'@c.us',r_staff.name);
+  v_target := fn_upsert_wa_conversation(p_org,v_contact,v_conv.channel_session_id);
+  perform fn_queue_responsible_delivery(p_org,v_req,r_staff.id,'notification',v_target,v_contact);
+ end loop;
+ return v_req;
+end $$;
+revoke execute on function public.fn_start_responsible_request(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.fn_start_responsible_request(uuid,uuid,text) to service_role;
+notify pgrst, 'reload schema';
+
+-- 0246 — estado real da fila e do transporte no acompanhamento
+-- Reconciliação da ação com fila e ledger da ocupação exata, sem reenvio.
+create index if not exists idx_job_queue_followup_occupation on public.job_queue
+ (organization_id,(payload->>'followup_enrollment_id'),(payload->>'node_id'),(payload->>'node_epoch'),created_at desc)
+ where kind='followup_turn';
+
+create or replace function public.fn_followup_reconcile_action(
+ p_org uuid,p_id uuid,p_expected jsonb,p_next text
+) returns text language plpgsql security invoker set search_path=public,pg_temp as $$
+declare e public.followup_enrollments; j public.job_queue; action_key text;
+ total integer; accepted integer; uncertain integer; held integer; result text; reason text;
+ legacy_due timestamptz; veto text;
+begin
+ select * into e from public.followup_enrollments where organization_id=p_org and id=p_id for update;
+ if not found or e.status not in ('active','waiting_reply')
+   or e.status is distinct from p_expected->>'status'
+   or e.current_node_id is distinct from p_expected->>'current_node_id'
+   or e.node_epoch is distinct from (p_expected->>'node_epoch')::integer
+   or e.steps_taken is distinct from (p_expected->>'steps_taken')::integer
+   or e.updated_at is distinct from (p_expected->>'updated_at')::timestamptz then return 'stale'; end if;
+ select ev.idempotency_key into action_key from public.followup_enrollment_events ev
+   where ev.organization_id=p_org and ev.enrollment_id=p_id and ev.node_id=e.current_node_id
+     and ev.event_type='turn_enqueued'
+     and ev.created_at>=coalesce((select max(r.created_at) from public.followup_enrollment_events r
+       where r.organization_id=p_org and r.enrollment_id=p_id and r.event_type='silence_resumed'),e.started_at)
+   order by ev.created_at desc,ev.id desc limit 1;
+ if action_key is null then return 'missing'; end if;
+ select * into j from public.job_queue where organization_id=p_org and contact_id=e.contact_id and kind='followup_turn'
+   and payload->>'followup_enrollment_id'=e.id::text and payload->>'node_id'=e.current_node_id
+   and payload->>'node_epoch'=e.node_epoch::text and payload->>'enrollment_action_key'=action_key
+   order by created_at desc,id desc limit 1;
+ if not found then return 'missing'; end if;
+ -- Enquanto o dono do job executa, não compete pelo seu checkpoint nem julga o transporte.
+ if j.status in ('pending','running') then
+   update public.followup_enrollments set next_eval_at=greatest(clock_timestamp()+interval '1 minute',j.run_after),
+     claimed_until=null where organization_id=p_org and id=p_id;
+   return 'waiting';
+ end if;
+ -- Compatibilidade com reentradas já agendadas antes desta correção.
+ select min(next_run_at) into legacy_due from public.cron_jobs
+   where organization_id=p_org and contact_id=e.contact_id and enabled
+     and payload->>'reschedule_of'=j.id::text
+     and payload->>'followup_enrollment_id'=e.id::text
+     and payload->>'node_id'=e.current_node_id and payload->>'node_epoch'=e.node_epoch::text;
+ if legacy_due is not null and not exists(select 1 from public.send_ledger where organization_id=p_org and job_id=j.id and status in ('accepted','requested','queued','uncertain')) then
+   update public.followup_enrollments set next_eval_at=greatest(clock_timestamp()+interval '1 minute',legacy_due),claimed_until=null
+     where organization_id=p_org and id=p_id;
+   return 'waiting';
+ end if;
+ select vetoed_code into veto from public.before_send_traces where organization_id=p_org and job_id=j.id
+   order by created_at desc,id desc limit 1;
+ select count(*),count(*) filter(where status='accepted'),
+   count(*) filter(where status in ('requested','uncertain')),count(*) filter(where status='queued')
+   into total,accepted,uncertain,held from public.send_ledger where organization_id=p_org and job_id=j.id;
+ if j.status='done' and total>0 and total=accepted and p_next is not null then
+   if public.fn_followup_complete_step(p_org,p_id,p_expected,
+     jsonb_build_object('node_id',e.current_node_id,'event_type','action_sent',
+       'idempotency_key','delivery:'||j.id::text,'payload',jsonb_build_object('job_id',j.id,'enrollment_action_key',action_key,'reconciled',true)),
+     jsonb_build_object('current_node_id',p_next,'status','active','steps_taken',e.steps_taken+1,
+       'next_eval_at',clock_timestamp(),'claimed_until',null,'updated_at',clock_timestamp())) then return 'confirmed'; end if;
+   return 'stale';
+ end if;
+ -- Entrega parcial, em trânsito ou retida não é prova de ausência de envio.
+ if accepted>0 or uncertain>0 or held>0 then
+   result:='review'; reason:='action_delivery_requires_review';
+ elsif (total=0 and veto in ('contato_bloqueado','lgpd_anonymized')) or (j.status='failed' and j.last_error in
+   ('contact_blocked','followup_inactive','lead_replied','human_in_control','opted_out','followup_expired','stale_inbound')) then
+   result:='cancelled'; reason:=coalesce(veto,j.last_error);
+ else result:='dead'; reason:='action_job_'||j.status||'_without_confirmed_delivery'; end if;
+ update public.followup_enrollments set status=case when result='review' then 'paused_manual' else result end,
+   last_error=reason,cancel_reason=case when result='cancelled' then reason else cancel_reason end,
+   next_eval_at=null,claimed_until=null,completed_at=case when result in ('cancelled','dead') then clock_timestamp() else completed_at end,
+   updated_at=clock_timestamp() where organization_id=p_org and id=p_id;
+ insert into public.followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,idempotency_key)
+   values(p_org,p_id,e.current_node_id,'action_delivery_reconciled',jsonb_build_object('job_id',j.id,'result',result,'reason',reason),
+     'terminal:'||j.id::text) on conflict do nothing;
+ if result<>'cancelled' then
+   insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id)
+     values(p_org,'followup_dead','warn',case when result='review' then 'Envio de acompanhamento precisa de conferência' else 'Acompanhamento terminou sem envio confirmado' end,
+       case when result='review' then 'A inscrição foi pausada. Há entrega parcial, retida ou incerta; confira o atendimento antes de retomar para evitar repetição.'
+       else 'A tarefa terminou sem confirmação de transporte. Confira a origem e as condições do atendimento antes de retomar.' end,
+       'followup_enrollment',p_id);
+ end if;
+ return result;
+end $$;
+revoke execute on function public.fn_followup_reconcile_action(uuid,uuid,jsonb,text) from public,anon,authenticated;
+grant execute on function public.fn_followup_reconcile_action(uuid,uuid,jsonb,text) to service_role;
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES

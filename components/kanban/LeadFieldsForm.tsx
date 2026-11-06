@@ -162,7 +162,7 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="tagsRaw">{t("Tags (separadas por vírgula)")}</Label>
+          <Label htmlFor="tagsRaw">{t("Etiquetas do negócio (separadas por vírgula)")}</Label>
           <Input id="tagsRaw" placeholder="vip, recompra" {...form.register("tagsRaw")} />
         </div>
 

@@ -11,6 +11,7 @@ import type { Message } from "@/lib/types/messaging";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
+import { ReprocessMedia } from "./media/ReprocessMedia";
 import { ConfirmVideoDelivery } from "./ConfirmVideoDelivery";
 import { extractCitations, isAiGeneratedMessage } from "@/lib/ai/citations/types";
 
@@ -22,6 +23,7 @@ interface Props {
   /** A mensagem citada por ESTA, quando houver — desenha o fio. */
   citada?: Message | null;
   canManage?: boolean;
+  canReprocess?: boolean;
   contactName?: string;
   contactAvatarUrl?: string | null;
 }
@@ -47,6 +49,7 @@ export function MessageBubble({
   onResponder,
   citada,
   canManage,
+  canReprocess,
   contactName,
   contactAvatarUrl,
 }: Props) {
@@ -223,6 +226,10 @@ export function MessageBubble({
           "uncertain" ? (
           <ConfirmVideoDelivery message={message} />
         ) : null}
+        {canReprocess && !apagada && !isOutbound && message.media_derived_status === "failed" && message.media_storage_path &&
+          (message.type !== "document" || message.media_mime?.split(";")[0]?.trim().toLowerCase() === "application/pdf") && (
+          <ReprocessMedia messageId={message.id} />
+        )}
         <div
           className={cn(
             "inbox-message-meta mt-1 flex items-center justify-end gap-1 text-xs",

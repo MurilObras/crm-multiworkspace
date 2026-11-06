@@ -69,7 +69,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import type pg from 'pg';
 
-import { createInboundTurnHandler } from '@/lib/agent-engine/agent/inbound-turn';
+import { createInboundTurnHandler, JobSettledError } from '@/lib/agent-engine/agent/inbound-turn';
 import { createFollowupTurnHandler, type FollowupTurnDeps } from '@/lib/agent-engine/agent/followup-turn';
 import { createCaseReplyTurnHandler } from '@/lib/agent-engine/agent/case-reply-turn';
 import { createOperatorTurnHandler } from '@/lib/agent-engine/agent/operator-turn';
@@ -103,6 +103,7 @@ import {
   failJob,
   faltaParaOProximoJob,
   reapExpiredJobs,
+  withJobExecution,
   type JobKind,
   type JobRow,
 } from '@/lib/agent-engine/queue/queue';
@@ -374,13 +375,18 @@ export async function startWorker(
     if (!leaseOwner) throw new Error('job_without_lease');
     const attemptStarted = performance.now();
     log.info('queue_attempt_timing', queueAttemptTiming(job, Date.now()));
+    await withJobExecution(job.id, leaseOwner, pool, async (execution) => {
     try {
       const handler = handlers.get(job.kind);
       if (!handler) {
         throw new Error(`nenhum handler registrado para kind=${job.kind}`);
       }
       await handler(job, pool, { workerId: leaseOwner });
-      await completeJob(pool, job.id, leaseOwner);
+      if (execution.settled && execution.settled !== 'done') {
+        log.info('job disposto pelo handler', { job_id: job.id, kind: job.kind, status: execution.settled });
+        return;
+      }
+      if (!execution.settled) await completeJob(pool, job.id, leaseOwner);
       log.info('job concluído', { job_id: job.id, kind: job.kind });
       try {
         const wrote = await recordRunMetrics(pool, job);
@@ -391,6 +397,12 @@ export async function startWorker(
         log.error('métricas do run não registradas', { job_id: job.id, error: errMsg(metricsErr) });
       }
     } catch (err) {
+      // Só o recibo do CAS/commit do próprio lease permite este desfecho. Uma
+      // JobSettledError sem recibo continua sendo falha real, nunca sucesso.
+      if (err instanceof JobSettledError && execution.settled) {
+        log.info('job disposto pelo handler', { job_id: job.id, kind: job.kind, status: execution.settled });
+        return;
+      }
       const terminal = ehVetoPermanenteDeNegocio(err);
       // `warn`, não `error`: veto de negócio é o sistema funcionando como
       // configurado. Rotulá-lo de erro treina quem opera a ignorar o painel.
@@ -429,6 +441,7 @@ export async function startWorker(
       log.info('job_attempt_timing', { organization_id: job.organization_id, job_id: job.id,
         attempt: job.attempts, elapsed_ms: Math.round(performance.now() - attemptStarted) });
     }
+    });
   };
 
   const workerLoop = rodarLoopDaFila<JobRow>({

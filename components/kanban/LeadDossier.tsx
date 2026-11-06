@@ -1,6 +1,8 @@
 "use client";
 
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
+import { useContact } from "@/hooks/contacts/useContact";
+import { Badge } from "@/components/ui/badge";
 import { useRef } from "react";
 
 import { useT } from "@/hooks/i18n/useT";
@@ -64,6 +66,7 @@ export function LeadDossier({
   const t = useT();
   const campos = useRef<HTMLDivElement | null>(null);
   const timeline = useLeadTimeline(open ? lead.id : null, lead.contact_id);
+  const contact = useContact(open ? lead.contact_id ?? "" : "");
   const owner = resolveLeadOwner(lead, ownerNames);
   const score = lead.score ?? null;
 
@@ -131,6 +134,17 @@ export function LeadDossier({
         )}
 
         <ConversaNoDossie conversa={lead.conversa} />
+        <section className="space-y-2 border-b border-border py-3" aria-label={t("Etiquetas por origem")}>
+          <p className="text-xs font-medium">{t("Etiquetas do negócio")}</p>
+          <div className="flex flex-wrap gap-1">{lead.tags?.length ? lead.tags.map(tag => <Badge key={tag} variant="secondary">{tag}</Badge>) : <span className="text-xs text-muted-foreground">{t("Nenhuma no negócio")}</span>}</div>
+          {lead.contact_id && <>
+            <p className="text-xs font-medium">{t("Etiquetas do contato")}</p>
+            {contact.isLoading ? <p className="text-xs" role="status">{t("Carregando etiquetas do contato…")}</p> : contact.isError ?
+              <p className="text-xs text-muted-foreground">{t("Não foi possível carregar as etiquetas do contato.")}</p> :
+              <div className="flex flex-wrap gap-1">{contact.data?.data.tags?.length ? contact.data.data.tags.map(tag => <Badge key={tag} variant="outline">{tag}</Badge>) : <span className="text-xs text-muted-foreground">{t("Nenhuma no contato")}</span>}</div>}
+            <p className="text-xs text-muted-foreground">{t("Os acompanhamentos usam as etiquetas do contato conforme o fluxo configurado. As etiquetas do negócio são independentes.")}</p>
+          </>}
+        </section>
 
         {/* ② timeline */}
         <section className="flex-1 py-3">

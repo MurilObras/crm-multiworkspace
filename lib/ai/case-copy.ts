@@ -5,7 +5,7 @@
  * só que espera o humano resolver um bloqueio pontual. Nunca mostrar enum
  * cru (status/kind/actor_kind/source) ao atendente — sempre via este mapa.
  */
-import type { CaseEvent, CaseHumanAction, CaseStatus } from "@/hooks/ai/useCases";
+import type { CaseEvent, CaseHumanAction, CaseReplyAction, CaseStatus } from "@/hooks/ai/useCases";
 
 export const STATUS_LABEL: Record<CaseStatus, string> = {
   awaiting_human: "Aguardando você",
@@ -35,13 +35,18 @@ export const CASE_REPLY_DISABLED_REASON: Partial<Record<CaseStatus, string>> = {
 };
 
 export interface CaseActionOption {
-  action: CaseHumanAction;
+  action: CaseReplyAction;
   label: string;
   help: string;
 }
 
-/** As 3 ações do POST .../reply — rótulo + efeito em 1 linha (não é óbvio). */
+/** As ações do POST .../reply — rótulo + efeito em 1 linha (não é óbvio). */
 export const CASE_ACTIONS: CaseActionOption[] = [
+  {
+    action: "resolved_internal",
+    label: "Encerrar sem enviar mensagem",
+    help: "Registra a decisão internamente e encerra esta consulta, sem mensagem ao cliente.",
+  },
   {
     action: "resolved",
     label: "Concluí",

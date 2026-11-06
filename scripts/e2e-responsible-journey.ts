@@ -61,12 +61,22 @@ async function main() {
         const channels=await db.query("select id from channel_sessions where organization_id=$1 and id=any($2::uuid[]) and waha_session_name='responsible-'||id::text",[org,sessions]);
         if(owned.rows.length!==ids.length || channels.rows.length!==sessions.length) throw new Error("Cleanup recusou fixture não sintética.");
         const contacts=(await db.query("select distinct contact_id as id from conversations where organization_id=$1 and channel_session_id=any($2::uuid[])",[org,sessions])).rows.map(r=>r.id);
+        const mediaPaths=(await db.query("select media_storage_path from messages where organization_id=$1 and channel_session_id=any($2::uuid[]) and media_storage_path is not null",[org,sessions])).rows.map(r=>String(r.media_storage_path));
+        if(mediaPaths.length) {
+          const removed=await admin.storage.from("whatsapp-media").remove(mediaPaths);
+          if(removed.error) throw new Error("Cleanup de mídia sintética falhou");
+        }
         const names=ids.map(id=>`Responsável sintético ${id.slice(0,8)}`);
         await db.query(`delete from job_queue where organization_id=$1 and (id in (
           select d.job_id from agent_responsible_deliveries d join agent_responsible_requests r on r.organization_id=d.organization_id and r.id=d.request_id
           where r.organization_id=$1 and r.agent_id=any($2::uuid[])) or (kind='responsible_reply' and source_event_id in (
           select id from messages where organization_id=$1 and channel_session_id=any($3::uuid[]))))`,[org,ids,sessions]);
         await db.query("delete from agent_cases where organization_id=$1 and agent_id=any($2::uuid[])",[org,ids]);
+        await db.query("delete from agent_inbox_items where organization_id=$1 and ref_kind='message' and ref_id in (select id from messages where organization_id=$1 and channel_session_id=any($2::uuid[]))",[org,sessions]);
+        await db.query("delete from crm_leads where organization_id=$1 and contact_id=any($2::uuid[])",[org,contacts]);
+        const slugs=ids.map(id=>`op-${id}`);
+        await db.query("delete from crm_stages where organization_id=$1 and pipeline_id in (select id from crm_pipelines where organization_id=$1 and slug=any($2::text[]))",[org,slugs]);
+        await db.query("delete from crm_pipelines where organization_id=$1 and slug=any($2::text[])",[org,slugs]);
         await db.query("delete from conversations where organization_id=$1 and channel_session_id=any($2::uuid[])",[org,sessions]);
         await db.query("delete from agent_inbox_items where organization_id=$1 and ref_kind='contact' and ref_id=any($2::uuid[])",[org,contacts]);
         await db.query("update ai_agents set published_version_id=null where organization_id=$1 and id=any($2::uuid[])",[org,ids]);
@@ -95,6 +105,34 @@ async function main() {
         await db.query("commit");
         result = { org, agent, session, contact, conv };
       } catch(error) { await db.query("rollback"); throw error; } finally { db.release(); }
+    } else if (mode === "tags") {
+      const pipeline=(await pool.query("insert into crm_pipelines(organization_id,name,slug) values($1,'Operação sintética',$2) returning id",[input.org,`op-${input.agent}`])).rows[0]!.id;
+      const stage=(await pool.query("insert into crm_stages(organization_id,pipeline_id,name,slug,position) select $1,$2,'Avaliação','avaliacao',coalesce(max(position)+1,0) from crm_stages where organization_id=$1 and pipeline_id=$2 returning id",[input.org,pipeline])).rows[0]!.id;
+      await pool.query("update contacts set tags=array['etiqueta-do-contato'] where organization_id=$1 and id=$2",[input.org,input.contact]);
+      const lead=(await pool.query("insert into crm_leads(organization_id,pipeline_id,stage_id,contact_id,title,tags) values($1,$2,$3,$4,'Negócio sintético de etiquetas',array['etiqueta-do-negocio']) returning id",[input.org,pipeline,stage,input.contact])).rows[0]!.id;
+      result={pipeline,lead};
+    } else if (mode === "history") {
+      await pool.query(`insert into ai_agent_versions(organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status)
+        select $1,$2,n,'HISTORY_ONLY_'||lpad(n::text,2,'0')||repeat(' contexto aprovado',150),'openai','gpt-4.1-mini',$3,
+          case when n=31 then 'draft' else 'superseded' end from generate_series(2,31) n`,[input.org,input.agent,input.session]);
+      result={created:30};
+    } else if (mode === "media") {
+      const path = `${input.org}/${input.conv}/${randomUUID()}.wav`;
+      const upload = await admin.storage.from("whatsapp-media").upload(path,voice,{contentType:"audio/wav"});
+      if (upload.error) throw new Error("Upload sintético falhou");
+      const message = (await pool.query(`insert into messages(organization_id,contact_id,conversation_id,channel_session_id,type,direction,status,media_mime,media_storage_path,media_derived_status)
+        values($1,$2,$3,$4,'audio','inbound','delivered','audio/wav',$5,'failed') returning id`,[input.org,input.contact,input.conv,input.session,path])).rows[0]!.id;
+      const alertTitle=`Mídia sintética ${message}`;
+      if(input.alert) await pool.query("insert into agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id) values($1,'midia_nao_lida','warn',$2,'Confira a mensagem original.','message',$3)",[input.org,alertTitle,message]);
+      result={message,path,alert_title:alertTitle};
+    } else if (mode === "status") {
+      result={
+        requests:(await pool.query("select status from agent_responsible_requests where organization_id=$1 and conversation_id=$2 order by created_at",[input.org,input.conv])).rows,
+        messages:(await pool.query("select id,direction,media_derived_status from messages where organization_id=$1 and conversation_id=$2 order by created_at",[input.org,input.conv])).rows,
+        reply_jobs:(await pool.query("select count(*)::int n from job_queue where organization_id=$1 and contact_id=$2 and kind in ('case_reply_turn','inbound_turn')",[input.org,input.contact])).rows[0]!.n,
+        derive_events:(await pool.query("select count(*)::int n from event_log where organization_id=$1 and entity_id=$2 and event_type='media.derive_requested'",[input.org,input.message??randomUUID()])).rows[0]!.n,
+        automatic_paused:(await pool.query("select public.fn_responsible_waiting($1,$2) as paused",[input.org,input.contact])).rows[0]!.paused,
+      };
     } else if (mode === "open") {
       if (input.handoff) {
         await performHumanHandoff(pool,{tenantId:input.org,leadId:input.contact,conversationId:input.conv},

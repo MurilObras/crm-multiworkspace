@@ -69,6 +69,7 @@ vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
   })),
 }));
 
+import { resolveOrgLlmConfig } from "@/lib/agent-engine/edge/llm/credentials";
 import { deriveMessageMedia } from "@/workers/media-derive-worker";
 import { deriveMediaText } from "@/lib/messaging/media/derive";
 
@@ -90,6 +91,7 @@ describe("deriveMessageMedia", () => {
   beforeEach(() => {
     downloadMock.mockReset().mockResolvedValue({ data: new Blob([new Uint8Array([1, 2, 3])]), error: null });
     updateEqMock.mockReset();
+    vi.mocked(resolveOrgLlmConfig).mockClear();
     messageRow.media_derived_status = null;
     messageRow.type = "audio";
     vi.mocked(deriveMediaText).mockReset().mockResolvedValue("transcrição do áudio real");
@@ -101,6 +103,22 @@ describe("deriveMessageMedia", () => {
     expect(updateEqMock).toHaveBeenCalledWith(
       expect.objectContaining({ media_derived_text: "transcrição do áudio real", media_derived_status: "ready" }),
     );
+  });
+  it('download travado termina com erro e marca failed na última tentativa', async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    downloadMock.mockImplementation((_path, _options, parameters) => new Promise((_resolve, reject) => {
+      parameters.signal.addEventListener('abort', () => reject(parameters.signal.reason), { once: true });
+    }));
+    try {
+      const pending = deriveMessageMedia(eventRow(4));
+      await vi.waitFor(() => expect(downloadMock).toHaveBeenCalledOnce());
+      expect(timeout).toHaveBeenCalledWith(60_000);
+      controller.abort(new DOMException('Download timed out', 'TimeoutError'));
+      expect((await pending).status).toBe('error');
+      expect(deriveMediaText).not.toHaveBeenCalled();
+      expect(updateEqMock).toHaveBeenCalledWith(expect.objectContaining({ media_derived_status: 'failed' }));
+    } finally { timeout.mockRestore(); }
   });
 
   it("pula se já derivado (idempotência)", async () => {
@@ -125,4 +143,35 @@ describe("deriveMessageMedia", () => {
       expect.objectContaining({ media_derived_status: "failed" }),
     );
   });
+});
+
+// Regressões do incidente: a chave do chat podia impedir a própria transcrição.
+describe("credenciais por capacidade e resultado honesto", () => {
+  it("áudio resolve somente OpenAI; não consulta o padrão de chat", async () => {
+    messageRow.type = "audio"; messageRow.media_derived_status = null;
+    vi.mocked(resolveOrgLlmConfig).mockClear();
+    vi.mocked(deriveMediaText).mockResolvedValue("conteúdo transcrito");
+    expect((await deriveMessageMedia(eventRow())).status).toBe("ok");
+    expect(resolveOrgLlmConfig).toHaveBeenCalledTimes(1);
+    expect(resolveOrgLlmConfig).toHaveBeenCalledWith(expect.anything(),expect.anything(),"org1",{provider:"openai"});
+  });
+  it("PDF não precisa de chave de chat ou transcrição", async () => {
+    messageRow.type = "document"; messageRow.media_derived_status = null; messageRow.media_mime = "application/pdf";
+    vi.mocked(resolveOrgLlmConfig).mockClear();
+    vi.mocked(deriveMediaText).mockResolvedValue("texto extraído do PDF");
+    expect((await deriveMessageMedia(eventRow())).status).toBe("ok");
+    expect(resolveOrgLlmConfig).not.toHaveBeenCalled();
+  });
+  it.each(["", "   ", "[o cliente enviou uma mídia que não consegui interpretar]"])("não grava ready para conteúdo indisponível: %s", async (text) => {
+    messageRow.type = "audio"; messageRow.media_derived_status = null;
+    updateEqMock.mockClear(); vi.mocked(deriveMediaText).mockResolvedValue(text);
+    expect((await deriveMessageMedia(eventRow())).status).toBe("error");
+    expect(updateEqMock).not.toHaveBeenCalledWith(expect.objectContaining({media_derived_status:"ready"}));
+  });
+});
+
+it("documento sem extrator não baixa repetidamente nem chama IA",async()=>{
+ messageRow.type="document";messageRow.media_mime="application/vnd.ms-excel";messageRow.media_derived_status=null;
+ downloadMock.mockClear();vi.mocked(resolveOrgLlmConfig).mockClear();
+ expect((await deriveMessageMedia(eventRow())).status).toBe("skipped");expect(downloadMock).not.toHaveBeenCalled();expect(resolveOrgLlmConfig).not.toHaveBeenCalled();
 });

@@ -2,6 +2,9 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
+import { serviceFetch, SESSION_AUTH_TIMEOUT_MS, SESSION_DATABASE_TIMEOUT_MS } from '@/lib/supabase/service-fetch';
+import { authServiceUnavailable } from '@/lib/auth/service-unavailable';
+import { withAuthRequestCapacity } from '@/lib/auth/request-capacity';
 import { isPublicPath } from "@/lib/auth/public-paths";
 import {
   verifyImpersonateCookieEdge,
@@ -37,6 +40,9 @@ export async function proxy(request: NextRequest) {
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
+      db: { timeout: SESSION_DATABASE_TIMEOUT_MS, retry: false },
+      global: { fetch: serviceFetch({ authTimeoutMs: SESSION_AUTH_TIMEOUT_MS,
+        databaseTimeoutMs: SESSION_DATABASE_TIMEOUT_MS }) },
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -59,10 +65,15 @@ export async function proxy(request: NextRequest) {
   );
 
   // Validate JWT server-side (NEVER use getSession on backend per CLAUDE.md).
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const authentication = await withAuthRequestCapacity(() => supabase.auth.getUser());
 
+  if (!authentication.accepted || authServiceUnavailable(authentication.result.error)) {
+    return NextResponse.json({ error: { code: 'unavailable',
+      message: 'Autenticação temporariamente indisponível. Tente novamente.' } },
+    { status: 503, headers: { 'x-request-id': requestId, 'cache-control': 'no-store' } });
+  }
+
+  const user = authentication.result.data.user;
   if (!user) {
     // API routes must respond with JSON envelope (contract: {error:{code,message}})
     // — never redirect HTML to JSON consumers. UI routes redirect to /login as before.

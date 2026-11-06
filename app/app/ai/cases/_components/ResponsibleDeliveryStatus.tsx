@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import { useT } from "@/hooks/i18n/useT";
+import { apiClient } from '@/lib/api/client';
 
 interface State {
   requests: { id: string; kind: string; status: string; answered_by: string | null }[];
@@ -17,16 +18,20 @@ export function ResponsibleDeliveryStatus({ caseId }: { caseId: string }) {
   const [error, setError] = React.useState(false);
   React.useEffect(() => {
     let active = true;
+    let loading = false;
+    const controller = new AbortController();
     async function load() {
+      if (!active || loading) return;
+      loading = true;
       try {
-        const response = await fetch(`/api/v1/ai/cases/${caseId}/responsibles`);
-        if (!response.ok) throw new Error("unavailable");
-        const json = await response.json();
+        const json = await apiClient.get<{ data: State }>(`/api/v1/ai/cases/${caseId}/responsibles`,
+          { signal: controller.signal, maxAttempts: 1 });
         if (active) { setData(json.data); setError(false); }
       } catch { if (active) setError(true); }
+      finally { loading = false; }
     }
     setData(null); void load(); const timer = setInterval(load, 10_000);
-    return () => { active = false; clearInterval(timer); };
+    return () => { active = false; clearInterval(timer); controller.abort(); };
   }, [caseId]);
   if (error) return <p role="alert" className="text-xs">{t("Não foi possível atualizar as entregas pelo WhatsApp.")}</p>;
   if (!data?.requests.length) return null;

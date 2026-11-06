@@ -67,6 +67,8 @@ export interface Message {
   media_mime: string | null;
   media_size_bytes: number | null;
   media_storage_path: string | null;
+  /** Estado da leitura para a IA; reprocessar não envia resposta ao cliente. */
+  media_derived_status?: string | null;
   sent_via: "user" | "ai" | "system";
   sent_by_user_id: string | null;
   sent_at: string;

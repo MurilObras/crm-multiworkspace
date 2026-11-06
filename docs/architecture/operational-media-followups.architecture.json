@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Correções operacionais: mídia, consultas e acompanhamentos",
+    "subtitle": "Recuperação explícita, sem resposta antiga nem avanço sem prova de entrega",
+    "output": "operational-media-followups.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Operador"
+    },
+    {
+      "id": "runtime",
+      "label": "Execução"
+    },
+    {
+      "id": "data",
+      "label": "Dados"
+    }
+  ],
+  "mainPath": [
+    "inbox",
+    "retry",
+    "media",
+    "context"
+  ],
+  "nodes": [
+    {
+      "id": "inbox",
+      "lane": "ui",
+      "col": 1,
+      "type": "frontend",
+      "label": "Inbox / Central de avisos",
+      "sublabel": "Erro contextual e origem acessível por RLS"
+    },
+    {
+      "id": "retry",
+      "lane": "runtime",
+      "col": 2,
+      "type": "api",
+      "label": "POST messages/[id]/reprocess",
+      "sublabel": "Autorização, auditoria e uma nova derivação"
+    },
+    {
+      "id": "media",
+      "lane": "runtime",
+      "col": 3,
+      "type": "service",
+      "label": "media-derive-worker",
+      "sublabel": "Credencial por capacidade; sem replay de inbound"
+    },
+    {
+      "id": "context",
+      "lane": "data",
+      "col": 4,
+      "type": "database",
+      "label": "messages.media_derived_*",
+      "sublabel": "Texto útil ou falha explícita"
+    },
+    {
+      "id": "cases",
+      "lane": "ui",
+      "col": 2,
+      "type": "frontend",
+      "label": "Casos / consulta ao responsável",
+      "sublabel": "Aviso opcional e encerramento interno"
+    },
+    {
+      "id": "settings",
+      "lane": "data",
+      "col": 3,
+      "type": "database",
+      "label": "agent_responsible_settings",
+      "sublabel": "Opções por workspace e agente"
+    },
+    {
+      "id": "followup",
+      "lane": "runtime",
+      "col": 4,
+      "type": "service",
+      "label": "fn_followup_reconcile_action",
+      "sublabel": "CAS + ocupação exata + confirmação de transporte"
+    },
+    {
+      "id": "ledger",
+      "lane": "data",
+      "col": 5,
+      "type": "database",
+      "label": "job_queue / send_ledger",
+      "sublabel": "Espera, confirmação, cancelamento ou conferência"
+    }
+  ],
+  "edges": [
+    {
+      "from": "inbox",
+      "to": "retry",
+      "label": "Solicitar nova leitura"
+    },
+    {
+      "from": "retry",
+      "to": "media",
+      "label": "media.derive_requested"
+    },
+    {
+      "from": "media",
+      "to": "context",
+      "label": "Persistir resultado"
+    },
+    {
+      "from": "media",
+      "to": "inbox",
+      "label": "Falha com origem"
+    },
+    {
+      "from": "settings",
+      "to": "cases",
+      "label": "Política de consulta"
+    },
+    {
+      "from": "context",
+      "to": "cases",
+      "label": "Áudio sem leitura segura"
+    },
+    {
+      "from": "followup",
+      "to": "ledger",
+      "label": "Conferir tarefa e entrega"
+    },
+    {
+      "from": "followup",
+      "to": "inbox",
+      "label": "Pausar e pedir conferência"
+    }
+  ]
+}

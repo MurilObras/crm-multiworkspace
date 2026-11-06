@@ -33,6 +33,7 @@ import {
 } from "@/lib/agent-engine/agent/human-cases";
 import { performHumanHandoff } from "@/lib/agent-engine/agent/human-handoff";
 import { avisarLeadDoCrm } from "@/lib/ai/handoff/aviso-ao-lead";
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { createLogger } from "@/lib/agent-engine/obs/logger";
@@ -49,13 +50,14 @@ interface RouteParams {
 
 const bodySchema = z
   .object({
-    action: z.enum(["resolved", "need_lead_info", "escalate"]),
+    action: z.enum(["resolved", "need_lead_info", "escalate", "resolved_internal"]),
     body: z.string().trim().min(1).max(4000),
   })
   .strict();
 
 const NEW_STATUS: Record<z.infer<typeof bodySchema>["action"], string> = {
   resolved: "resolved",
+  resolved_internal: "resolved",
   need_lead_info: "awaiting_lead",
   escalate: "escalated",
 };
@@ -75,6 +77,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   if (!authz.ok) return authz.response;
   const { org, user } = authz;
   const { id: caseId } = await params;
+  if (!z.string().uuid().safeParse(caseId).success) return fail("validation_failed", "Caso inválido.", 422, { requestId });
 
   let payload: unknown;
   try {
@@ -90,6 +93,14 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     });
   }
   const { action, body } = parsed.data;
+
+  if (action === "resolved_internal") {
+    const session = await createClient();
+    const { data, error } = await session.from("agent_cases").select("id")
+      .eq("organization_id", org.orgId).eq("id", caseId).maybeSingle();
+    if (error) return fail("unavailable", "Não foi possível conferir o acesso ao caso.", 503, { requestId });
+    if (!data) return fail("not_found", "Caso não encontrado.", 404, { requestId });
+  }
 
   let pool;
   try {
@@ -183,12 +194,25 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     let transitioned: boolean;
     try {
       await client.query("begin");
+      if (action === "resolved_internal") {
+        // Ordem caso → pedido; NOWAIT não espera um transporte ainda em voo.
+        await client.query("select id from agent_cases where organization_id=$1 and id=$2 for update nowait", [org.orgId, caseId]);
+        await client.query("select id from agent_responsible_requests where organization_id=$1 and case_id=$2 for update nowait", [org.orgId, caseId]);
+        const busy = await client.query(`select d.id from agent_responsible_deliveries d
+          join agent_responsible_requests r on r.organization_id=d.organization_id and r.id=d.request_id
+          where r.organization_id=$1 and r.case_id=$2 and d.purpose='answer' and d.status in ('sending','uncertain')`, [org.orgId, caseId]);
+        if (busy.rows.length) {
+          await client.query("rollback");
+          return fail("invalid_state", "Existe uma resposta em envio ou com entrega incerta. Confira a entrega antes de encerrar.", 409, { requestId });
+        }
+      }
       transitioned =
-        action === "resolved"
-          ? await resolveCaseFromHuman(client, org.orgId, caseId, user.id, body)
+        action === "resolved" || action === "resolved_internal"
+          ? await resolveCaseFromHuman(client, org.orgId, caseId, user.id,
+            action === "resolved_internal" ? `Encerrado internamente, sem envio ao cliente. Motivo: ${body}` : body)
           : await markAwaitingLead(client, org.orgId, caseId, user.id, body);
       if (transitioned) {
-        await enqueueJob(client, org.orgId, {
+        if (action !== "resolved_internal") await enqueueJob(client, org.orgId, {
           kind: "case_reply_turn",
           leadId: contactId,
           payload: { case_id: caseId, action, body },

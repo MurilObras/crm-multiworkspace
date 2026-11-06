@@ -1,3 +1,4 @@
+import { withReadRequest } from '@/lib/supabase/read-request';
 /**
  * GET /api/v1/contacts/{id}/avatar — serve a foto de perfil do contato.
  *
@@ -44,7 +45,7 @@ const SIGNED_TTL_SECONDS = 300;
  */
 const BROWSER_CACHE_SECONDS = 240;
 
-export async function GET(
+async function readHandler(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -92,3 +93,5 @@ export async function GET(
     },
   });
 }
+
+export const GET = withReadRequest('api/v1/contacts/[id]/avatar', readHandler);

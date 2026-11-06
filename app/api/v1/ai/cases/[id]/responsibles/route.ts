@@ -1,3 +1,4 @@
+import { withReadRequest } from '@/lib/supabase/read-request';
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth/require-role";
@@ -5,7 +6,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 
 export const dynamic = "force-dynamic";
-export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
+async function readHandler(_req: Request, context: { params: Promise<{ id: string }> }) {
   const requestId = randomUUID();
   const auth = await requireRole("agent", { requestId, resource: "agent_cases" });
   if (!auth.ok) return auth.response;
@@ -27,3 +28,5 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
     return ok({ requests: requests.rows, deliveries: deliveries.rows }, { requestId });
   } catch { return fail("unavailable", "Não foi possível consultar as entregas.", 503, { requestId }); }
 }
+
+export const GET = withReadRequest('api/v1/ai/cases/[id]/responsibles', readHandler);

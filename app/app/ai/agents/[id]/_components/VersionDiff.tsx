@@ -110,7 +110,7 @@ export function VersionDiff({ versionA, versionB }: Props) {
   const lines = diffLines(versionA.system_prompt ?? "", versionB.system_prompt ?? "");
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-4">
       <div className="flex items-center gap-2 text-sm">
         <Badge variant="outline">v{versionA.version_number}</Badge>
         <span className="text-muted-foreground">→</span>
@@ -186,7 +186,7 @@ export function VersionDiff({ versionA, versionB }: Props) {
       </Section>
 
       <Section title={t("System prompt")}>
-        <pre className="max-h-96 overflow-auto rounded-md border border-border/60 bg-muted/30 p-2 font-mono text-xs leading-relaxed">
+        <pre className="min-w-0 max-w-full max-h-96 overflow-auto rounded-md border border-border/60 bg-muted/30 p-2 font-mono text-xs leading-relaxed">
           {lines.map((l, idx) => {
             const cls =
               l.kind === "add"

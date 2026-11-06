@@ -10,6 +10,7 @@ import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { authCookieOptions } from "@/lib/supabase/auth-cookie-options";
 import { cookies } from "next/headers";
 import { env } from "@/lib/env";
+import { serviceFetch, SESSION_AUTH_TIMEOUT_MS, SESSION_DATABASE_TIMEOUT_MS } from './service-fetch';
 
 export const AUTH_COOKIE_NAME = "sb-deskcomm-auth";
 
@@ -20,6 +21,10 @@ export async function createClient() {
     // Identifica o cookie de cada link pendente (cadastro/reenvio/recovery).
     // A allowlist de Auth precisa aceitar a query de /auth/confirm.
     auth: { experimental: { appendPkceFlowIdToRedirects: true } },
+    db: { timeout: SESSION_DATABASE_TIMEOUT_MS, retry: false },
+    global: { fetch: serviceFetch({
+      authTimeoutMs: SESSION_AUTH_TIMEOUT_MS, databaseTimeoutMs: SESSION_DATABASE_TIMEOUT_MS,
+    }) },
     cookies: {
       getAll() {
         return cookieStore.getAll();

@@ -21,11 +21,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
+import { localFixtureDb } from "./helpers/local-fixture-db";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const EVIDENCIA = path.join(process.cwd(), ".superpowers", "evidence");
 
 interface Creds {
+  org_id: string;
   password: string;
   users: Record<string, { email: string }>;
   funis?: { segunda_org_id: string };
@@ -79,6 +81,48 @@ async function idDoFunil(page: Page, nome: string): Promise<string> {
 }
 
 test.describe("gestão de funis", () => {
+  const db = localFixtureDb();
+  let original: { id: string; is_default: boolean; is_archived: boolean; position: number }[] = [];
+  test.beforeAll(async () => {
+    // O caso do ÚLTIMO funil exige esse estado; outras specs deixam funis ativos.
+    const client = await db.connect();
+    try {
+      await client.query("begin");
+      const org = await client.query("select slug from organizations where id=$1 for update", [creds.org_id]);
+      if (org.rows[0]?.slug !== "e2e-test-org") throw new Error("synthetic_e2e_org_required");
+      const { rows } = await client.query(
+        "select id,name,is_default,is_archived,position from crm_pipelines where organization_id=$1 for update", [creds.org_id],
+      );
+      const pedidos = rows.filter(row => row.name === "Pedidos" && !row.is_archived);
+      if (pedidos.length !== 1) throw new Error("single_pedidos_fixture_required");
+      await client.query("update crm_pipelines set is_default=false where organization_id=$1", [creds.org_id]);
+      await client.query("update crm_pipelines set is_archived=(id<>$2), is_default=(id=$2) where organization_id=$1", [creds.org_id, pedidos[0].id]);
+      await client.query("commit");
+      original = rows;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally { client.release(); }
+  });
+  test.afterAll(async () => {
+    try {
+      if (original.length === 0) return;
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        await client.query("update crm_pipelines set is_default=false where organization_id=$1", [creds.org_id]);
+        await client.query("update crm_pipelines set is_archived=true where organization_id=$1 and name=any($2::text[])", [creds.org_id, [NOME, RENOMEADO]]);
+        for (const row of original) {
+          await client.query("update crm_pipelines set is_default=$3,is_archived=$4,position=$5 where organization_id=$1 and id=$2",
+            [creds.org_id, row.id, row.is_default, row.is_archived, row.position]);
+        }
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally { client.release(); }
+    } finally { await db.end(); }
+  });
   test.beforeEach(async ({ page }) => {
     await login(page, creds.users.manager!.email);
     await page.goto("/app/kanban");
@@ -120,7 +164,19 @@ test.describe("gestão de funis", () => {
     await expect(linhaDoFunil(page, RENOMEADO)).toBeVisible();
 
     // ---- reordenar: sobe para o topo ----
-    await page.getByTestId(`subir-${id}`).click();
+    // "Subir" move uma posição. O banco compartilhado pode conter outros funis.
+    const limiteDeMovimentos = await page.locator('li[data-testid^="funil-"]').count();
+    for (let i = 0; i < limiteDeMovimentos; i++) {
+      const first = page.locator('li[data-testid^="funil-"]').first();
+      if (await first.getAttribute("data-testid") === `funil-${id}`) break;
+      const posicaoAnterior = await page.locator('li[data-testid^="funil-"]').evaluateAll(
+        (rows, target) => rows.findIndex(row => row.getAttribute("data-testid") === target), `funil-${id}`,
+      );
+      await page.getByTestId(`subir-${id}`).click();
+      await expect.poll(() => page.locator('li[data-testid^="funil-"]').evaluateAll(
+        (rows, target) => rows.findIndex(row => row.getAttribute("data-testid") === target), `funil-${id}`,
+      )).toBe(posicaoAnterior - 1);
+    }
     await expect(page.locator('li[data-testid^="funil-"]').first()).toContainText(RENOMEADO);
 
     // ---- tornar padrão ----

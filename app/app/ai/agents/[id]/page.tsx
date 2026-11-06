@@ -90,12 +90,18 @@ export default async function AgentEditorPage({
   // mcp_agent: busca versions + lookups.
   const [versionsRes, credentialsRes, channelSessions, routerMemberRes, funisRes, acervoRes] =
     await Promise.all([
-    supabase
-      .from("ai_agent_versions")
-      .select(VERSION_COLUMNS)
-      .eq("organization_id", activeOrg.orgId)
-      .eq("agent_id", id)
-      .order("version_number", { ascending: false }),
+    // Só as versões necessárias ao formulário. Prompts históricos são lidos
+    // em páginas quando a aba Histórico abre, preservando o rascunho obsoleto.
+    Promise.all([
+      supabase.from("ai_agent_versions").select(VERSION_COLUMNS).eq("organization_id", activeOrg.orgId)
+        .eq("agent_id", id).order("version_number", { ascending: false }).limit(1),
+      supabase.from("ai_agent_versions").select(VERSION_COLUMNS).eq("organization_id", activeOrg.orgId)
+        .eq("agent_id", id).eq("status", "draft").order("version_number", { ascending: false }).limit(1),
+      agent.published_version_id
+        ? supabase.from("ai_agent_versions").select(VERSION_COLUMNS).eq("organization_id", activeOrg.orgId)
+          .eq("agent_id", id).eq("id", agent.published_version_id).limit(1)
+        : Promise.resolve({ data: [], error: null }),
+    ]),
     supabase
       .from("ai_provider_credentials_safe")
       .select(CREDENTIAL_COLUMNS)
@@ -128,7 +134,9 @@ export default async function AgentEditorPage({
       .order("created_at", { ascending: true }),
   ]);
 
-  const versions = (versionsRes.data ?? []) as unknown as AgentVersionRow[];
+  if (versionsRes.some(result => result.error)) throw new Error("Não foi possível carregar as versões do agente.");
+  const versions = [...new Map(versionsRes.flatMap(result => result.data ?? [])
+    .map(row => [row.id, row])).values()] as unknown as AgentVersionRow[];
   const funis = (funisRes.data ?? []) as unknown as FunilDaResposta[];
   const materiais = (acervoRes.data ?? []) as unknown as MaterialDoAcervo[];
 

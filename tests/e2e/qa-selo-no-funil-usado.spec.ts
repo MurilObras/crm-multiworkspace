@@ -15,11 +15,11 @@
  *
  * Não é gate: é observação, e o resultado é uma captura para olhar.
  */
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
+import { localFixtureDb } from "./helpers/local-fixture-db";
 
 const APP_URL = `http://localhost:${process.env.E2E_PORT ?? "3001"}`;
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
@@ -31,14 +31,7 @@ interface Creds {
 }
 const creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
 
-/** Escreve no banco pelo container — é simulação de ESTADO, não de comportamento. */
-function sql(query: string): string {
-  return execFileSync(
-    "docker",
-    ["exec", "-i", "supabase_db_deskcomm-crm", "psql", "-U", "postgres", "-d", "postgres", "-t", "-c", query],
-    { encoding: "utf8" },
-  );
-}
+const pool = localFixtureDb();
 
 async function login(page: Page): Promise<void> {
   await page.goto(`${APP_URL}/login`);
@@ -49,27 +42,28 @@ async function login(page: Page): Promise<void> {
 }
 
 test.describe("QA — o selo de autoria com o funil já vivido", () => {
+  test.afterAll(async () => { await pool.end(); });
   test("quantos selos o dono vê depois de algumas semanas de uso", async ({ page }) => {
     test.setTimeout(180_000);
     fs.mkdirSync(SAIDA, { recursive: true });
 
     // Um mês de uso normal: o dono mexeu nas etapas em momentos diferentes.
-    sql(`
+    await pool.query(`
       update crm_stages s set last_change_actor_kind='user',
              last_change_at = now() - (random()*30 || ' days')::interval
         from crm_pipelines p, organizations o
        where s.pipeline_id=p.id and p.organization_id=o.id and o.slug='e2e-test-org'
-         and s.is_archived=false;
+         and p.is_archived=false and s.is_archived=false;
     `);
     // E o assistente mexeu em UMA, agora há pouco. É esta que precisa saltar.
-    sql(`
+    await pool.query(`
       update crm_stages s set last_change_actor_kind='ai', last_change_at = now()
         from crm_pipelines p, organizations o
        where s.pipeline_id=p.id and p.organization_id=o.id and o.slug='e2e-test-org'
-         and s.is_archived=false
+         and p.is_archived=false and s.is_archived=false
          and s.id = (select s2.id from crm_stages s2 join crm_pipelines p2 on p2.id=s2.pipeline_id
                       join organizations o2 on o2.id=p2.organization_id
-                     where o2.slug='e2e-test-org' and s2.is_archived=false
+                     where o2.slug='e2e-test-org' and p2.is_archived=false and s2.is_archived=false
                      order by s2.position desc limit 1);
     `);
 

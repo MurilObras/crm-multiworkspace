@@ -13,6 +13,11 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { empresaExigeMfa, exigeCadastroDeMfa } from "@/lib/auth/politica-mfa";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
+import { ApiError } from '@/lib/api/types';
+import { randomId } from '@/lib/random-id';
+import { authServiceUnavailable } from './service-unavailable';
+import { withAuthRequestCapacity } from './request-capacity';
+import { SESSION_DATABASE_TIMEOUT_MS, withServiceRequestBudget } from '@/lib/supabase/service-fetch';
 import type { AuthUser, Role, UserOrgMembership, ActiveOrg } from "./types";
 
 const ACTIVE_ORG_COOKIE = "active_org";
@@ -102,6 +107,16 @@ export function ehSessaoAusente(error: { name?: string } | null | undefined): bo
 }
 
 export async function loadAuthUser(): Promise<AuthUser | null> {
+  const loaded = await withAuthRequestCapacity(() =>
+    withServiceRequestBudget(SESSION_DATABASE_TIMEOUT_MS, loadAuthUserWithinBudget));
+  if (!loaded.accepted) {
+    throw new ApiError(503, 'unavailable', undefined, randomId(),
+      'Autenticação temporariamente indisponível. Tente novamente.');
+  }
+  return loaded.result;
+}
+
+async function loadAuthUserWithinBudget(): Promise<AuthUser | null> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -112,8 +127,9 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
   // trata com todo o cuidado: significa "não está logado" (estado normal) E
   // "não deu para perguntar" (rede, GoTrue fora do ar, token ilegível).
   //
-  // A ação não muda, e isso é deliberado: sem usuário confirmado, devolver
-  // `null` — e portanto redirecionar para o login — é o desfecho seguro.
+  // Sem usuário confirmado, não libera acesso. Sessão ausente/inválida devolve
+  // null; falha transitória de infraestrutura devolve indisponibilidade (503),
+  // para não apresentar uma indisponibilidade do GoTrue como logout.
   // Falhar FECHADO na ação continua certo. O que estava errado era falhar
   // fechado também na INFORMAÇÃO: quem investigasse depois via só uma pessoa
   // "deslogada", sem nada distinguindo isso de uma falha transitória.
@@ -137,12 +153,16 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
     // (rede, GoTrue fora do ar) de `AuthApiError` (token ilegível). Ambas podem
     // chegar com o mesmo `status`, e a mensagem vem em inglês do upstream — sem o
     // nome, distinguir as duas viraria regex sobre texto que muda entre versões.
-    logger.error("[auth] getUser falhou — tratando como não autenticado", {
+    logger.error("[auth] getUser falhou — acesso não liberado", {
       name: error.name,
       code: error.code ?? null,
       status: error.status ?? null,
       message: error.message,
     });
+  }
+  if (authServiceUnavailable(error)) {
+    throw new ApiError(503, 'unavailable', undefined, randomId(),
+      'Autenticação temporariamente indisponível. Tente novamente.');
   }
   if (!user) return null;
 

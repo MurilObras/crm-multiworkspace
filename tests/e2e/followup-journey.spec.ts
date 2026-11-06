@@ -219,7 +219,10 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     // módulo — sem reler, o objeto em memória nunca vê o bloco que o seed
     // acabou de gravar. Mesmo idioma de queue-assign.spec.ts, que passa por isso.
     creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
+    runHelper(["isolate-outbound-fixtures"]);
   });
+
+  test.afterAll(() => { runHelper(["restore-outbound-fixtures"]); });
 
   test("silêncio → enroll → trigger→wait→action→classify → resposta → outcome → fila", async ({ page }) => {
     // Jornada ponta a ponta com múltiplos round-trips reais de cron (tick +
@@ -334,6 +337,9 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     });
     expect(trigCfgRes.status()).toBe(200);
 
+    // Publicar o fluxo com envio já exige uma conexão utilizável. O seed
+    // nasce STARTING: prepare antes deste publish, não só do agente adiante.
+    runHelper(["prepare-agent-fixtures"]); // credential.validated_at + channel_session=WORKING
     await page.getByTestId("publish-button").click();
     await expect(page.getByText("Fluxo publicado.")).toBeVisible();
     await expect(page.locator('[aria-label="status: Ativo"]')).toBeVisible();
@@ -356,7 +362,6 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
       //    PUBLICADO com followup.enabled=true habilita o gatilho automático
       //    (isPointerEnabledForAutomaticTrigger, Task 7.2/8.1).
       // =========================================================================
-      runHelper(["prepare-agent-fixtures"]); // credential.validated_at + channel_session=WORKING
       const fixtures = creds.followup_agent_fixtures!;
       const agentName = `E2E Agente Jornada ${stamp}`;
       const createAgentRes = await page.request.post("/api/v1/ai/agents", {

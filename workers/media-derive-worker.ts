@@ -19,6 +19,7 @@ import { deriveVideoText } from "@/lib/messaging/media/video-derive";
 import { apiTranscriptionProvider } from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { WORKER_STORAGE_TIMEOUT_MS } from '@/lib/supabase/service-fetch';
 
 export const MEDIA_DERIVE_CONSUMER_KEY = "media_derive_v1";
 const DRAIN_MAX_ATTEMPTS = 5; // espelho de lib/event-log/drain.ts
@@ -63,6 +64,18 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
   if (!msg?.media_storage_path) return { consumer_key, status: "skipped", detail: "no media" };
   if (msg.media_derived_status === "ready") return { consumer_key, status: "skipped", detail: "already derived" };
   if (!TIPOS_DERIVAVEIS.has(msg.type)) return { consumer_key, status: "skipped", detail: `type ${msg.type}` };
+  const markFailed = async () => {
+    const { error } = await admin.from("messages").update({ media_derived_status: "failed" })
+      .eq("id", msg.id).eq("organization_id", msg.organization_id);
+    if (error) throw new Error("media_failed_status_not_persisted");
+  };
+
+  // Formato sem extrator não é falha transitória: não baixa o mesmo arquivo
+  // cinco vezes nem espera uma chave de IA para algo que ela não vai executar.
+  if (msg.type === "document" && msg.media_mime?.split(";")[0]?.trim().toLowerCase() !== "application/pdf") {
+    await markFailed();
+    return { consumer_key, status: "skipped", detail: "unsupported_document_format" };
+  }
   // Vídeo é opt-in (custo: ffmpeg + N chamadas de visão): só deriva se algum agente
   // publicado da org tem video_frames_enabled=true (flag da migration 0058).
   if (msg.type === "video") {
@@ -74,16 +87,18 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       .eq("video_frames_enabled", true)
       .limit(1)
       .maybeSingle();
-    if (!flag) return { consumer_key, status: "skipped", detail: "video_frames_disabled" };
+    if (!flag) {
+      await markFailed();
+      return { consumer_key, status: "skipped", detail: "video_frames_disabled" };
+    }
   }
 
-  const markFailed = async () => {
-    await admin.from("messages").update({ media_derived_status: "failed" })
-      .eq("id", msg.id).eq("organization_id", msg.organization_id);
-  };
+
 
   try {
-    const dl = await admin.storage.from("whatsapp-media").download(msg.media_storage_path);
+    const dl = await admin.storage.from("whatsapp-media").download(msg.media_storage_path, {}, {
+      signal: AbortSignal.timeout(WORKER_STORAGE_TIMEOUT_MS),
+    });
     if (dl.error || !dl.data) throw new Error(`storage_download_failed: ${dl.error?.message ?? "no_data"}`);
     const buffer = Buffer.from(await dl.data.arrayBuffer());
 
@@ -99,7 +114,10 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       openrouterApiKey: process.env.OPENROUTER_API_KEY,
       cacheTtl: "1h",
     };
-    let llm = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id);
+    // Áudio/PDF não dependem do provedor de chat. A visão é resolvida somente
+    // quando o tipo precisa dela, priorizando o binding explícito do painel.
+    const needsVision = msg.type === "image" || msg.type === "video";
+    let llm: { provider: string; apiKey: string; defaultModel: string | null } | null = null;
 
     // ─── O painel de provedores manda AQUI também ────────────────────────────
     //
@@ -111,7 +129,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     // modelo padrão. É textualmente a classe de defeito que
     // `lib/ai/gateway-binding.ts` declara ter vindo matar — três pontos foram
     // fechados e este ficou igual.
-    const bindingDaVisao = await lerBindingDoPonto(admin, row.organization_id, "visao_de_imagem");
+    const bindingDaVisao = needsVision ? await lerBindingDoPonto(admin, row.organization_id, "visao_de_imagem") : null;
     if (bindingDaVisao) {
       try {
         const comBinding = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
@@ -131,6 +149,15 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       }
     }
 
+    if (needsVision && !llm) {
+      try { llm = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id); }
+      catch {
+        // Vídeo pode ter transcrição útil mesmo sem visão. O aviso da trilha
+        // indisponível é emitido quando describeImage for realmente chamado.
+        llm = null;
+      }
+    }
+
     // A transcrição é SEMPRE do Whisper (api.openai.com), então precisa de uma
     // chave OpenAI — não da chave do provedor de chat da org. O comentário
     // antigo já dizia isso ("senão exige credencial openai dedicada"), mas o
@@ -139,31 +166,30 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     // (visto nesta VPS: media.derive_requested preso com transcription_401,
     // e o cliente ouvindo "não consigo ouvir áudio" com a chave certa no .env).
     let openaiKey: string | null = null;
-    if (llm.provider === "openai") {
-      openaiKey = llm.apiKey;
-    } else {
+    if (msg.type === "audio" || msg.type === "video") {
       try {
-        const oa = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
-          provider: "openai",
-        });
+        const oa = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, { provider: "openai" });
         openaiKey = oa.apiKey;
-      } catch {
-        openaiKey = null; // sem credencial e sem OPENAI_API_KEY: áudio fica sem transcrição
-      }
+      } catch { openaiKey = null; }
     }
 
     const deps = buildDeriveDeps(llm, openaiKey, row.organization_id, admin);
 
     const text = await deriveMediaText(msg.type, buffer, msg.media_mime ?? "application/octet-stream", deps);
-    await admin.from("messages")
+    if (!text.trim() || text.trim() === MARCADOR_NAO_LIDA ||
+      (msg.type === "video" && !text.replaceAll(MARCADOR_NAO_LIDA, "").replace(/Transcrição do áudio do vídeo:|Cenas do vídeo:|- Quadro \d+:/g, "").trim())) throw new Error("media_content_unavailable");
+    const { error: persistError } = await admin.from("messages")
       .update({ media_derived_text: text, media_derived_status: "ready" })
       .eq("id", msg.id).eq("organization_id", msg.organization_id);
+    if (persistError) throw new Error("media_derived_persist_failed");
     return { consumer_key, status: "ok" };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     if (row.attempts >= DRAIN_MAX_ATTEMPTS - 1) {
       logger.error("[media-derive] failed permanently", { message_id: msg.id, detail });
       await markFailed();
+      await avisarMidiaNaoLida(row.organization_id, msg.type,
+        "o processamento terminou sem leitura segura; confira a credencial e tente processar novamente", msg.id);
     }
     return { consumer_key, status: "error", detail };
   }
@@ -199,7 +225,7 @@ async function lerBindingDoPonto(
 }
 
 function buildDeriveDeps(
-  llm: { provider: string; apiKey: string; defaultModel: string | null },
+  llm: { provider: string; apiKey: string; defaultModel: string | null } | null,
   openaiKey: string | null,
   orgId: string,
   admin: ReturnType<typeof createAdminClient>,
@@ -220,13 +246,17 @@ function buildDeriveDeps(
     const { data } = await admin
       .from("ai_models")
       .select("supports_vision")
-      .eq("provider", llm.provider)
-      .eq("model_id", llm.defaultModel ?? "")
+      .eq("provider", llm?.provider ?? "")
+      .eq("model_id", llm?.defaultModel ?? "")
       .is("deprecated_at", null)
       .maybeSingle();
     return data?.supports_vision ?? null;
   };
   const describeImage: DeriveDeps["describeImage"] = async (buffer, mime) => {
+    if (!llm) {
+      await avisarMidiaNaoLida(orgId, "imagem", "falta uma credencial utilizável para o modelo de visão configurado");
+      return MARCADOR_NAO_LIDA;
+    }
     // ⚠️ A resposta é resolvida AQUI, não na montagem das deps, porque num
     // roteador ela depende do catálogo e a consulta é assíncrona. Antes disto
     // a pergunta ia direto ao registro, que num roteador responde pelo prefixo
@@ -269,6 +299,8 @@ function buildDeriveDeps(
     }
     const res = await generateText({
       model: factory(llm.apiKey, llm.defaultModel ?? ""),
+      abortSignal: AbortSignal.timeout(60_000),
+      maxRetries: 0, // A fila já possui retry; não multiplica chamadas pagas no SDK.
       messages: [
         {
           role: "user",
@@ -282,9 +314,8 @@ function buildDeriveDeps(
     });
     return res.text;
   };
-  // Sem chave OpenAI não há como transcrever: devolver string vazia é honesto
-  // (o derivado fica vazio e o marcador "[áudio]" continua valendo) e evita o
-  // loop de 401 que retentava a cada drain.
+  // Sem chave OpenAI não há transcrição segura: o marcador mantém a mídia
+  // visível, mas não conta como texto interpretado nem como status ready.
   const transcriber: DeriveDeps["transcriber"] = openaiKey
     ? apiTranscriptionProvider({ apiKey: openaiKey })
     : {
@@ -331,17 +362,18 @@ async function avisarMidiaNaoLida(
   organizationId: string,
   tipo: string,
   motivo: string,
+  messageId?: string,
 ): Promise<void> {
   try {
     const admin = createAdminClient();
-    const { data: jaAberto } = await admin
+    let pendingNotice = admin
       .from("agent_inbox_items")
       .select("id")
       .eq("organization_id", organizationId)
       .eq("kind", "midia_nao_lida")
-      .eq("status", "open")
-      .limit(1)
-      .maybeSingle();
+      .eq("status", "open");
+    if (messageId) pendingNotice = pendingNotice.eq("ref_kind", "message").eq("ref_id", messageId);
+    const { data: jaAberto } = await pendingNotice.limit(1).maybeSingle();
     if (jaAberto) return;
 
     // `warn`, não `warning`: o CHECK de `agent_inbox_items.severity` aceita
@@ -351,10 +383,11 @@ async function avisarMidiaNaoLida(
     const { error } = await admin.from("agent_inbox_items").insert({
       organization_id: organizationId,
       kind: "midia_nao_lida",
+      ...(messageId ? { ref_kind: "message", ref_id: messageId } : {}),
       severity: "warn",
       title: `O agente não conseguiu ler ${tipo} que o cliente enviou`,
       body:
-        `Motivo: ${motivo}. Enquanto isso, o agente responde avisando que não conseguiu abrir o arquivo. ` +
+        `Motivo: ${motivo}. Confira a mensagem original antes de responder ao cliente. ` +
         `Para resolver, ajuste o modelo desse ponto em Agente de IA → Provedores, ou cadastre a chave necessária em Credenciais.`,
     });
     // E o retorno é CONFERIDO. O supabase-js devolve `{ error }` em vez de

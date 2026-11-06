@@ -16,7 +16,11 @@ export type RequestOpts = {
 };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 2;
+const MAX_IDEMPOTENT_WRITE_ATTEMPTS = 3;
+// Estas rotas persistem a chave e conferem o mesmo ator/payload antes do replay.
+// Ter apenas um header numa rota qualquer não oferece essa garantia.
+const REPLAY_SAFE_POST_PATHS = new Set(["/api/v1/messages", "/api/v1/automation-rules"]);
 const RETRYABLE_STATUSES = new Set([429, 503]);
 const MUTATING_METHODS = new Set<HttpMethod>(["POST", "PATCH", "PUT", "DELETE"]);
 
@@ -61,17 +65,20 @@ function synthesizeCode(status: number): string {
   return "unknown_error";
 }
 
-function combineSignals(signals: Array<AbortSignal | undefined>): AbortSignal {
+function combineSignals(signals: Array<AbortSignal | undefined>): { signal: AbortSignal; dispose: () => void } {
+  const sources = signals.filter((s): s is AbortSignal => s !== undefined);
+  if (typeof AbortSignal.any === 'function') return { signal: AbortSignal.any(sources), dispose: () => {} };
+  // Navegadores suportados pelo Next podem não ter a composição nativa.
+  // O fallback não mantém listeners no sinal do chamador após cada tentativa.
   const controller = new AbortController();
-  for (const sig of signals) {
-    if (!sig) continue;
-    if (sig.aborted) {
-      controller.abort(sig.reason);
-      break;
-    }
-    sig.addEventListener("abort", () => controller.abort(sig.reason), { once: true });
+  const subscriptions: Array<() => void> = [];
+  for (const source of sources) {
+    if (source.aborted) { controller.abort(source.reason); break; }
+    const abort = () => controller.abort(source.reason);
+    source.addEventListener('abort', abort, { once: true });
+    subscriptions.push(() => source.removeEventListener('abort', abort));
   }
-  return controller.signal;
+  return { signal: controller.signal, dispose: () => { for (const remove of subscriptions) remove(); } };
 }
 
 async function readBodySafe(res: Response): Promise<unknown> {
@@ -117,15 +124,26 @@ async function request<T>(
 
   const serializedBody = body === undefined || body === null ? undefined : JSON.stringify(body);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const requestedAttempts = Number.isFinite(opts.maxAttempts) ? opts.maxAttempts! : MAX_ATTEMPTS;
-  const maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.trunc(requestedAttempts)));
+  const replaySafeWrite = method === "POST" && REPLAY_SAFE_POST_PATHS.has(path) &&
+    Boolean(opts.idempotencyKey?.trim()) && Boolean(headers["Idempotency-Key"]?.trim());
+  const attemptLimit = replaySafeWrite ? MAX_IDEMPOTENT_WRITE_ATTEMPTS : MAX_ATTEMPTS;
+  const requestedAttempts = Number.isFinite(opts.maxAttempts) ? opts.maxAttempts! : attemptLimit;
+  // Um timeout não prova que a escrita falhou. Mesmo com header de idempotência,
+  // nem toda rota tem armazenamento dessa chave. Só repetimos as rotas auditadas
+  // acima quando o chamador forneceu a chave estável da operação.
+  const maxAttempts = MUTATING_METHODS.has(method) && !replaySafeWrite ? 1
+    : Math.min(attemptLimit, Math.max(1, Math.trunc(requestedAttempts)));
+  const deadline = performance.now() + timeoutMs;
 
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
-    const signal = combineSignals([timeoutController.signal, opts.signal]);
+    const remainingMs = Math.max(0, deadline - performance.now());
+    if (remainingMs === 0) throw new DOMException('Request budget exhausted', 'TimeoutError');
+    const timer = setTimeout(() => timeoutController.abort(), remainingMs);
+    const { signal, dispose } = combineSignals([timeoutController.signal, opts.signal]);
+    let responseReceived = false;
 
     try {
       const res = await fetch(path, {
@@ -135,6 +153,7 @@ async function request<T>(
         credentials: "same-origin",
         signal,
       });
+      responseReceived = true;
 
       const responseRequestId = res.headers.get("X-Request-Id") ?? requestId;
 
@@ -150,8 +169,13 @@ async function request<T>(
       if (RETRYABLE_STATUSES.has(res.status) && attempt < maxAttempts) {
         const retryAfter = parseRetryAfterSeconds(res.headers.get("Retry-After"));
         const delay = retryAfter !== null ? retryAfter * 1000 : backoffMs(attempt);
-        await sleep(delay, opts.signal);
-        continue;
+        if (delay < deadline - performance.now()) {
+          // Libera a conexão e os bytes antes de outra tentativa. O relógio
+          // total também cobre o body e a espera indicada pelo servidor.
+          await res.body?.cancel();
+          await sleep(delay, opts.signal);
+          continue;
+        }
       }
 
       // Non-retry error: parse and throw
@@ -182,15 +206,22 @@ async function request<T>(
       if (opts.signal?.aborted) {
         throw err;
       }
-      // Network error / timeout — retry
-      lastError = err;
-      if (attempt < maxAttempts) {
-        await sleep(backoffMs(attempt), opts.signal);
-        continue;
+      // A operação anterior pode continuar no servidor. Nunca repetir timeout,
+      // cancelamento ou erro de schema. Uma falha de rede numa escrita com
+      // deduplicação persistida pode recuperar o MESMO resultado, sem novo envio.
+      if (replaySafeWrite && !responseReceived && err instanceof TypeError && !timeoutController.signal.aborted && attempt < maxAttempts) {
+        const delay = backoffMs(attempt);
+        if (delay < deadline - performance.now()) {
+          await sleep(delay, opts.signal);
+          continue;
+        }
       }
+      // As demais falhas de rede/timeout são devolvidas sem repetir.
+      lastError = err;
       throw err;
     } finally {
       clearTimeout(timer);
+      dispose();
     }
   }
 

@@ -604,6 +604,8 @@ export type Database = {
       };
       agent_responsible_settings: {
         Row: {
+          "audio_failures_to_responsible": boolean;
+          "notify_client": boolean;
           agent_id: string;
           conditions: string;
           enabled: boolean;
@@ -611,12 +613,16 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          "audio_failures_to_responsible"?: boolean;
+          "notify_client"?: boolean;
           agent_id: string;
           conditions?: string;
           enabled?: boolean;
           organization_id: string;
         };
         Update: {
+          "audio_failures_to_responsible"?: boolean;
+          "notify_client"?: boolean;
           agent_id?: string;
           conditions?: string;
           enabled?: boolean;
@@ -9495,6 +9501,13 @@ export type Database = {
         Returns: number;
       };
       fn_encrypt_oauth: { Args: { plaintext: string }; Returns: string };
+      fn_enroll_silence_batch: {
+        Args: { p_inputs: Json };
+        Returns: {
+          contact_id: string;
+          inserted: boolean;
+        }[];
+      };
       fn_enroll_silence_episode: { Args: { p_input: Json }; Returns: boolean };
       fn_estampar_atribuicao_de_anuncio: {
         Args: { p_contact: string; p_metadata: Json; p_platform: string };
@@ -9533,6 +9546,15 @@ export type Database = {
       fn_followup_complete_step: {
         Args: { p_event: Json; p_expected: Json; p_id: string; p_org: string; p_patch: Json };
         Returns: boolean;
+      };
+      "fn_followup_reconcile_action": {
+          Args: {
+              "p_expected": Json;
+              "p_id": string;
+              "p_next": string;
+              "p_org": string;
+          };
+          Returns: string;
       };
       fn_followup_job_live: {
         Args: { p_contact: string; p_job: string; p_org: string };
@@ -9716,6 +9738,18 @@ export type Database = {
       fn_responsible_waiting: { Args: { p_contact: string; p_org: string }; Returns: boolean };
       fn_role_at_least: { Args: { p_min: string; p_org: string }; Returns: boolean };
       fn_semear_tipos_de_agendamento: { Args: { p_organization_id: string }; Returns: number };
+      fn_silence_contact_page: {
+        Args: {
+          p_after: string;
+          p_cutoff: string;
+          p_limit: number;
+          p_org: string;
+          p_segments: string[];
+        };
+        Returns: {
+          contact_id: string;
+        }[];
+      };
       fn_start_responsible_request: {
         Args: { p_case: string; p_kind?: string; p_org: string };
         Returns: string;

@@ -100,3 +100,13 @@ describe("CaseReplyPanel", () => {
     await waitFor(() => expect(showApiErrorMock).toHaveBeenCalled());
   });
 });
+
+it("encerramento interno exige decisão e motivo, sem apresentar o botão como envio", async () => {
+  postMock.mockResolvedValue({data:{status:"resolved"}});
+  renderWith("awaiting_human");
+  fireEvent.click(screen.getByRole("radio",{name:/encerrar sem enviar mensagem/i}));
+  expect(screen.getByRole("button",{name:"Encerrar sem enviar"})).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Motivo do encerramento interno"),{target:{value:"Equipe já respondeu por áudio."}});
+  fireEvent.click(screen.getByRole("button",{name:"Encerrar sem enviar"}));
+  await waitFor(()=>expect(postMock).toHaveBeenCalledWith("/api/v1/ai/cases/case-1/reply",{action:"resolved_internal",body:"Equipe já respondeu por áudio."}));
+});

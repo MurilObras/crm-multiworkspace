@@ -1,3 +1,4 @@
+import { consultFailedAudio } from "./audio-failure-consultation";
 import { randomUUID } from 'node:crypto';
 import { measureTurnPhase } from '../obs/turn-timing';
 import { checkpointContentSchema, type CheckpointContent } from './checkpoint-contract';
@@ -354,8 +355,9 @@ export const DEFAULT_MAX_SENDS_PER_TURN = 3;
 
 /**
  * Job já saiu de 'running' por decisão do próprio run (ex.: cancelJob no veto
- * is_blocked) — o worker NÃO deve completar nem re-tentar. main.ts trata via
- * failJob, que no-opa (lease já não é dele) — estado final é o que o run deixou.
+ * is_blocked) — o worker NÃO deve completar nem re-tentar. main.ts só reconhece
+ * esse desfecho se a tentativa possui recibo do CAS/commit do próprio lease.
+ * Sem recibo, o erro continua visível; uma perda real de lease não é ocultada.
  */
 export class JobSettledError extends Error {
   override readonly name = 'job_settled';
@@ -2123,6 +2125,12 @@ async function executarTurnoDoAgente(
     return; // bot silencia: a confirmação já saiu, e nada mais sai neste turno
   }
 
+  // Falha de infraestrutura de áudio não é dúvida comercial. A decisão é
+  // determinística e anterior ao modelo; nenhum conteúdo é inventado ao cliente.
+  if (job.kind === 'inbound_turn' && !pendingDelivery && agentConfig?.audioFailuresToResponsible && !optedOutThisTurn) {
+    if (await consultFailedAudio(pool, { tenantId, conversationId: input.conversationId, agentId: agentConfig.agentId }, inboundAnchor, clock())) return;
+  }
+
   // F3-07: compaction + flush pré-compaction. Quando o histórico cresce além do limiar,
   // o FLUSH grava as notas duráveis (lead_notes) e a compaction resume a conversa com o
   // modelo BARATO; o resumo compactado entra no lugar do rolling summary e o transcript
@@ -2765,7 +2773,7 @@ async function executarTurnoDoAgente(
             moverParaHandoffBestEffort('case_promise_autofallback');
             if (agentConfig?.responsibleConsultation && await waitingForResponsible(pool,tenantId,leadId)) {
               supersededError = new OutboundSupersededError("human_in_control");
-              return {ok:true,case_id:auto.caseId,message:"Consulta aberta. O sistema avisará o cliente e os responsáveis. Encerre o turno sem enviar outras mensagens."};
+              return {ok:true,case_id:auto.caseId,message:"Consulta aberta. O sistema notificará os responsáveis conforme a configuração. Encerre o turno sem enviar outras mensagens."};
             }
             // Re-roda a cadeia INTEIRA agora que há caso aberto — o send real acontece
             // DENTRO do runBeforeSend (via args.send); nunca chamamos o canal por fora
@@ -3173,7 +3181,7 @@ async function executarTurnoDoAgente(
           moverParaHandoffBestEffort('open_human_case');
           if (agentConfig.responsibleConsultation && await waitingForResponsible(pool,tenantId,leadId)) {
             supersededError = new OutboundSupersededError("human_in_control");
-            return {ok:true,case_id:res.caseId,message:"Consulta aberta. O sistema avisará o cliente e os responsáveis. Encerre o turno sem enviar outras mensagens."};
+            return {ok:true,case_id:res.caseId,message:"Consulta aberta. O sistema notificará os responsáveis conforme a configuração. Encerre o turno sem enviar outras mensagens."};
           }
           // ACH-03: a expectativa vai junto com a confirmação. Medido num turno
           // real: o agente abria o caso e prometia ao cliente que "alguém entra

@@ -14,6 +14,7 @@ import {
 import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
 import { createSupabaseSilenceSweepDb, runSilenceSweep } from "@/lib/followup/silence-sweep";
+import { withFollowupCycle } from '@/lib/followup/cycle-budget';
 import { logger } from "@/lib/logger";
 import { runRoutingWorker } from "@/lib/routing/worker";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -103,7 +104,7 @@ export async function executarTickDoRelogio(): Promise<{
     return summary;
   });
 
-  await uma("followup-flow-worker", async () => {
+  await uma("followup-flow-worker", async () => withFollowupCycle(async () => {
     const deps: TickDeps = {
       db: createSupabaseAdminClient(admin),
       clock: () => new Date(),
@@ -143,7 +144,7 @@ export async function executarTickDoRelogio(): Promise<{
     const enviados = await enviarTextoFixoPendente(admin);
     if (enviados > 0) mexeu = true;
     return summary;
-  });
+  }));
 
   await uma("routing-worker", async () => {
     const summary = await runRoutingWorker();

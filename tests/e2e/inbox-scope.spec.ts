@@ -29,6 +29,15 @@ async function login(page: Page, email: string): Promise<void> {
 }
 
 test.describe("G4-02 — inbox com escopo", () => {
+  test('Inbox continua consultando sem AbortSignal.any no navegador', async ({ page }) => {
+    await page.addInitScript(() => { Reflect.deleteProperty(AbortSignal, 'any'); });
+    await login(page, creds.users.manager!.email);
+    const response = page.waitForResponse(r => r.url().includes('/api/v1/conversations?') && r.request().method() === 'GET');
+    await page.goto('/app/inbox');
+    expect((await response).status()).toBe(200);
+    await expect(page.getByRole('tab', { name: /Todas/ })).toBeVisible();
+    expect(await page.evaluate(() => typeof AbortSignal.any)).toBe('undefined');
+  });
   test("agent em modo own*: vê Minhas e Fila, NÃO vê Todas", async ({ page }) => {
     await login(page, creds.users.agent!.email);
     await page.goto("/app/inbox");

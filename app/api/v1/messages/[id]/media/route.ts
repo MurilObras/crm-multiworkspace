@@ -1,3 +1,4 @@
+import { withReadRequest } from '@/lib/supabase/read-request';
 // app/api/v1/messages/[id]/media/route.ts
 /**
  * GET /api/v1/messages/[id]/media — acesso autenticado à mídia da mensagem.
@@ -30,19 +31,16 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+async function readHandler(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: messageId } = await ctx.params;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  const authUser = await loadAuthUser();
+  const user = authUser;
+  if (!user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
-  const authUser = await loadAuthUser();
   const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
   if (!activeOrg) {
     return fail("no_active_org", "No active organization.", 403, { requestId });
@@ -129,3 +127,5 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   return fail("not_found", "Mensagem sem mídia.", 404, { requestId });
 }
+
+export const GET = withReadRequest('api/v1/messages/[id]/media', readHandler);
