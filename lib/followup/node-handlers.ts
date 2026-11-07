@@ -52,7 +52,7 @@ export interface EnrollmentRow {
    * Plano de tempo decidido no acionamento (migration 0144) — `unknown` porque
    * é `jsonb` e um clone pode ter qualquer coisa lá; quem lê é
    * `esperaPlanejadaDe` (timing-plan.ts), que degrada em vez de lançar.
-   * Ausente/`null` = enrollment de antes da feature ⇒ comportamento anterior.
+   * Ausente/`null` mantém compatibilidade, salvo retomada que exige novo plano.
    */
   timing_plan?: unknown;
   /** Mensagem que abriu o episódio atual; invalida tempos decididos antes dela. */
@@ -360,8 +360,8 @@ export function processNode(input: {
   actionRecheckCount?: number;
   /** action: `action_sent` já existe nesta estadia — o envio fechou; avançar (sara corrida com recheck). */
   actionCompleted?: boolean;
-  /** trigger: as esperas adaptativas do grafo pinado (`coletarEsperasAdaptativas`). Vazio/ausente
-   *  ⇒ não há o que planejar e o acionamento NÃO paga uma chamada de modelo. */
+  /** Acionamento/retomada: esperas adaptativas do grafo pinado. Vazio/ausente
+   *  ⇒ não há o que planejar e não paga uma chamada de modelo. */
   smartWaits?: EsperaAdaptativa[];
   /** trigger occupancy guard: um turno de planejamento para ESTA estadia no trigger já foi
    *  enfileirado. Mesmo check de evento-do-passo-anterior do wait/action (`resolveWaitPhase`). */

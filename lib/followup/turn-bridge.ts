@@ -40,7 +40,7 @@ export interface TurnBridgeAdminClient extends AdminClient {
 export type TurnResult =
   | { kind: "sent" }
   | { kind: "classified"; class: string }
-  /** Plano de tempo do fluxo inteiro, proposto no acionamento — cru, antes do clamp. */
+  /** Plano do grafo inteiro, no acionamento ou nova retomada — antes do clamp. */
   | { kind: "planned"; propostas: PropostaDeEspera[]; modelo: string };
 
 /**
@@ -149,7 +149,7 @@ export async function completeTurnForEnrollment(
     return;
   }
 
-  // 'planned' — o acionamento decidiu os instantes de TODAS as esperas adaptativas.
+  // 'planned' — o acionamento ou a retomada decidiu TODAS as esperas adaptativas.
   const replanejando = node.type === "wait" && node.config.mode === "smart";
   if (node.type !== "trigger" && !replanejando) {
     throw new Error(`completeTurnForEnrollment: resultado 'planned' mas o nó "${node.id}" não permite planejamento`);

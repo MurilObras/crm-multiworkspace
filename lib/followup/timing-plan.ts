@@ -6,16 +6,14 @@
  * SEMPRE o máximo (`node-handlers.ts`, case `wait`): o controle existia na tela
  * e não existia no código.
  *
- * O plano conserta isso decidindo os instantes UMA VEZ, no acionamento do fluxo
- * (nó `trigger`), para TODAS as esperas adaptativas de uma vez — e não uma
- * decisão isolada por nó. Duas razões, nesta ordem:
+ * O acionamento (nó `trigger`) decide TODAS as esperas adaptativas em conjunto.
+ * Um novo episódio de silêncio pode conter outra data ou decisão do cliente:
+ * ao retomar uma espera adaptativa com plano anterior à mensagem, o motor pede
+ * outro plano do grafo inteiro, conservando o nó atual e as ações já enviadas.
  *
- *  1. **É estratégia, não reflexo.** Escolher bem a 1ª espera e mal a 3ª não é
- *     um plano; quem decide precisa ver a sequência inteira.
- *  2. **Não cria um terceiro estado no nó de espera.** `resolveWaitPhase`
- *     decide "já entrei neste nó?" pelo evento do passo anterior; um turno de
- *     decisão POR NÓ seria um terceiro estado indistinguível dos outros dois
- *     — a race que manteve esta feature parada. Sem turno por nó, não há race.
+ * Não há decisão nova em cada visita ao nó. A retomada usa os eventos do
+ * episódio atual para distinguir o planejamento em voo da espera já decidida;
+ * a ponte aplica o resultado sob CAS e o callback repetido não renova o prazo.
  *
  * O modelo PROPÕE; quem decide o intervalo é o nó. Proposta fora de
  * `[min_ms, max_ms]` é grampeada (`clampado:true`) e o valor original fica
@@ -23,10 +21,10 @@
  * em silêncio (o operador precisa poder ler "a IA pediu 3 dias, seu limite era
  * 12h").
  *
- * Tudo aqui é tolerante a lixo: `timing_plan` é `jsonb` e um clone pode ter
- * qualquer coisa lá. Plano ilegível ⇒ a espera cai no comportamento anterior
- * (o máximo), NUNCA derruba o tick — degradar é aceitável, parar o follow-up
- * de todo mundo por um jsonb torto não é.
+ * Tudo aqui é tolerante a lixo: `timing_plan` é `jsonb`. Sem nova retomada,
+ * plano ilegível conserva a compatibilidade (espera máxima). Após nova mensagem,
+ * exige replanejamento antes de avançar; se ele não terminar, o enrollment vai
+ * para a fila de falhas em vez de enviar com uma decisão anterior à mensagem.
  */
 import { z } from "zod";
 
