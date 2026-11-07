@@ -35,7 +35,7 @@ import {
   type LeadFacts,
   type NodeResult,
 } from "./node-handlers";
-import { coletarEsperasAdaptativas, type EsperaAdaptativa, type TimingPlan } from "./timing-plan";
+import { coletarEsperasAdaptativas, precisaReplanejarEspera, type EsperaAdaptativa, type TimingPlan } from "./timing-plan";
 import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persistir-resposta";
 
 const MAX_STEPS = 80;
@@ -249,7 +249,7 @@ function turnPayloadExtras(
   if (node.type === "ai_classify") {
     return { classes: node.config.classes, ...(node.config.hint !== undefined ? { hint: node.config.hint } : {}) };
   }
-  if (node.type === "trigger") {
+  if (node.type === "trigger" || (node.type === "wait" && node.config.mode === "smart")) {
     // As esperas vêm do GRAFO PINADO, não do nó — o trigger não as conhece, e é
     // o grafo que manda (o payload do modelo nunca decide o intervalo).
     return { waits: smartWaits };
@@ -553,8 +553,10 @@ async function processEnrollment(
   let repeatTotal: number | null | undefined;
   let events: EnrollmentEventRef[] = [];
 
-  const smartWaits = node.type === "trigger" ? coletarEsperasAdaptativas(graph.nodes) : [];
-  const vaiPlanejar = smartWaits.length > 0 && (enrollment.timing_plan ?? null) === null;
+  const replanejar = node.type === "wait" && node.config.mode === "smart"
+    && precisaReplanejarEspera(enrollment.timing_plan, enrollment.silence_anchor_at);
+  const smartWaits = node.type === "trigger" || replanejar ? coletarEsperasAdaptativas(graph.nodes) : [];
+  const vaiPlanejar = replanejar || (smartWaits.length > 0 && (enrollment.timing_plan ?? null) === null);
   const precisaEventos =
     vaiPlanejar ||
     node.type === "wait" ||

@@ -18,7 +18,7 @@ import { waitingForResponsible } from "@/lib/responsibles/service";
 import type { AdminClient, EnrollmentPatch } from "./engine";
 import { flowGraphSchema } from "./graph-schema";
 import { classEdgeMatch, selectEdge, type EnrollmentRow } from "./node-handlers";
-import { coletarEsperasAdaptativas, montarTimingPlan, type PropostaDeEspera } from "./timing-plan";
+import { coletarEsperasAdaptativas, montarTimingPlan, precisaReplanejarEspera, type PropostaDeEspera } from "./timing-plan";
 import { persistirRespostaFollowupPg } from "./persistir-resposta";
 
 /** Superset de AdminClient: a ponte precisa do snapshot COMPLETO do enrollment
@@ -40,7 +40,7 @@ export interface TurnBridgeAdminClient extends AdminClient {
 export type TurnResult =
   | { kind: "sent" }
   | { kind: "classified"; class: string }
-  /** Plano de tempo do fluxo inteiro, proposto no acionamento — cru, antes do clamp. */
+  /** Plano do grafo inteiro, no acionamento ou nova retomada — antes do clamp. */
   | { kind: "planned"; propostas: PropostaDeEspera[]; modelo: string };
 
 /**
@@ -149,10 +149,13 @@ export async function completeTurnForEnrollment(
     return;
   }
 
-  // 'planned' — o acionamento decidiu os instantes de TODAS as esperas adaptativas.
-  if (node.type !== "trigger") {
-    throw new Error(`completeTurnForEnrollment: resultado 'planned' mas o nó "${node.id}" não é 'trigger'`);
+  // 'planned' — o acionamento ou a retomada decidiu TODAS as esperas adaptativas.
+  const replanejando = node.type === "wait" && node.config.mode === "smart";
+  if (node.type !== "trigger" && !replanejando) {
+    throw new Error(`completeTurnForEnrollment: resultado 'planned' mas o nó "${node.id}" não permite planejamento`);
   }
+  // Callback repetido ou plano já substituído não renova o prazo novamente.
+  if (replanejando && !precisaReplanejarEspera(enrollment.timing_plan, enrollment.silence_anchor_at)) return;
   // Clampa contra o GRAFO PINADO, nunca contra o que o payload do modelo afirma
   // que o intervalo era: quem propõe é a IA, quem decide o intervalo é o nó.
   const plano = montarTimingPlan({
@@ -161,6 +164,15 @@ export async function completeTurnForEnrollment(
     modelo: result.modelo,
     agora: now,
   });
+  if (replanejando) {
+    const espera = plano.esperas[node.id];
+    if (!espera) throw new Error("adaptive_replan_wait_missing");
+    await applyStep("timing_plan_decidido", { ...plano }, {
+      current_node_id: node.id, status: "active", timing_plan: plano,
+      next_eval_at: new Date(now.getTime() + espera.escolhido_ms).toISOString(),
+    });
+    return;
+  }
   const edge = selectEdge(graph.edges, node.id, { type: "always" });
   if (!edge) throw new Error(`trigger node "${node.id}" sem aresta 'always' de saída`);
   await applyStep(
@@ -215,6 +227,7 @@ function mapEnrollmentRow(row: Record<string, unknown>): EnrollmentRow {
     // `?? null` e não `as TimingPlan`: num clone sem a migration 0144 a chave
     // simplesmente não vem, e "sem plano" é exatamente o que null significa.
     timing_plan: row.timing_plan ?? null,
+    silence_anchor_at: toIso(row.silence_anchor_at),
   };
 }
 

@@ -12,6 +12,9 @@ import { decideOutboundRecovery, type RecoveryMessage } from '../edge/crm/outbou
 export const turnClosingSchema = z.object({
   version: z.literal(1),
   previousCheckpointId: z.uuid().nullable().optional(),
+  /** Versão da próxima ação lida na abertura; não pisa em edição posterior. */
+  // pg devolve bigint como texto: não arredondar identidades acima de 2^53.
+  previousNextActionSeq: z.union([z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), z.string().regex(/^\d+$/)]).nullable().optional(),
   agent: z.object({
     agentId: z.uuid(),
     operatorEnabled: z.boolean(),

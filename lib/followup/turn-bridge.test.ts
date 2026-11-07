@@ -8,6 +8,32 @@ import type { EnrollmentPatch } from "./engine";
 const NOW = new Date("2026-07-22T12:00:00.000Z");
 const clock = () => NOW;
 
+describe('replanejamento da espera retomada', () => {
+  it('troca o relógio sem sair da espera, e callback repetido não renova o prazo', async () => {
+    const snapshot = enrollment({ current_node_id: 'w1', node_epoch: 8,
+      silence_anchor_at: '2026-07-22T11:00:00Z',
+      timing_plan: { decidido_em: '2026-07-20T10:00:00Z', modelo: 'velho', esperas: {} } });
+    const { db, updateEnrollment } = fakeDb({ enrollment: snapshot, graph: PLAN_GRAPH });
+    const result = { kind: 'planned' as const, modelo: 'teste', propostas: [
+      { node_id: 'w1', aguardar_ms: 1_200_000, motivo: 'Nova data confirmada' },
+    ] };
+    await completeTurnForEnrollment(db, 'org-1', 'enr-1', 'w1', result, clock, { key: 'w1:3', nodeEpoch: 8 });
+    const patch = updateEnrollment.mock.calls[0]![2];
+    expect(patch).toMatchObject({ current_node_id: 'w1', status: 'active', next_eval_at: '2026-07-22T12:20:00.000Z' });
+    Object.assign(snapshot, patch);
+    await completeTurnForEnrollment(db, 'org-1', 'enr-1', 'w1', result, clock, { key: 'w1:3', nodeEpoch: 8 });
+    expect(updateEnrollment).toHaveBeenCalledTimes(1);
+  });
+  it('descarta plano tardio após outra resposta ou pausa humana', async () => {
+    for (const change of [{ node_epoch: 9 }, { status: 'paused_manual' as const }]) {
+      const { db, updateEnrollment } = fakeDb({ enrollment: enrollment({ current_node_id: 'w1', node_epoch: 8,
+        silence_anchor_at: '2026-07-22T11:00:00Z', ...change }), graph: PLAN_GRAPH });
+      await completeTurnForEnrollment(db, 'org-1', 'enr-1', 'w1', { kind: 'planned', modelo: 'teste', propostas: [] }, clock, { key: 'w1:3', nodeEpoch: 8 });
+      expect(updateEnrollment).not.toHaveBeenCalled();
+    }
+  });
+});
+
 function enrollment(overrides: Partial<EnrollmentRow> = {}): EnrollmentRow {
   return {
     id: "enr-1",
@@ -341,8 +367,10 @@ describe("completeTurnForEnrollment — 'planned' (acionamento, no trigger)", ()
     expect(Object.keys(patch.timing_plan.esperas)).toEqual(["w1"]);
   });
 
-  it("lança quando o nó do turno não é o trigger", async () => {
-    const { db } = fakeDb({ enrollment: enrollment({ current_node_id: "w1" }), graph: PLAN_GRAPH });
+  it("rejeita planejamento em uma espera fixa", async () => {
+    const fixed: FlowGraph = { ...PLAN_GRAPH, nodes: PLAN_GRAPH.nodes.map(node => node.id === 'w1'
+      ? { ...node, type: 'wait' as const, config: { mode: 'fixed' as const, duration_ms: 900_000 } } : node) };
+    const { db } = fakeDb({ enrollment: enrollment({ current_node_id: "w1" }), graph: fixed });
     await expect(
       completeTurnForEnrollment(db, "org-1", "enr-1", "w1", { kind: "planned", modelo: "m", propostas: [] }, clock),
     ).rejects.toThrow();

@@ -1955,7 +1955,7 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 
 ## Continuação do follow-up após resposta
 
-`followup-dossie.spec.ts`: resposta encerra a sequência; novo silêncio retoma a mesma inscrição/etapa sem zerar contadores. O prazo anterior continua sendo piso. A linha do tempo mostra interrupção e retomada traduzidas (captura automática no artefato de execução do E2E). Banco isolado cobre varreduras concorrentes, isolamento de organização, pausa humana e replay antigo.
+`followup-dossie.spec.ts`: resposta encerra a sequência; novo silêncio retoma a mesma inscrição/etapa sem zerar contadores. Nas esperas fixas, o prazo anterior continua sendo piso. Nas adaptativas, uma resposta posterior ao plano exige nova decisão antes de avançar (cobertura complementar de 07/11 abaixo). A linha do tempo mostra interrupção e retomada traduzidas (captura automática no artefato de execução do E2E). Banco isolado cobre varreduras concorrentes, isolamento de organização, pausa humana e replay antigo.
 
 
 ## Consulta ao responsável pelo WhatsApp
@@ -2025,3 +2025,11 @@ entrega de citação pelo transporte continua coberta pelos testes dos adapters.
 - [P1] `user-menu-teclado.test.tsx` cobre a coleção Radix de idiomas/tema, Enter, setas, troca efetiva de tema, Escape e retorno de foco. Idiomas ficam num grupo do menu, sem submenu.
 - [P1] `inbox-viewport.test.tsx` cobre redução/restauração da área visível, zoom, aviso sem evento de viewport e limpeza. O cenário com body mínimo de 844px e área visível de 480px insere/remove aviso pelo DOM e verifica a reserva 440→480px sem resize artificial. A fonte observa caixas anteriores/ancestrais e mudanças childList fora da subárvore das mensagens; não depende só do resize do body.
 - As provas duráveis estão em `evidence/inbox-regulatis/`, com cada imagem e finalidade no [índice](../../evidence/inbox-regulatis/README.md). São componentes reais com dados sintéticos e hooks de backend substituídos. Integração, entrega, hardware e CI do lote atual têm validação própria; a prévia não os comprova.
+
+## Retomada de lembretes e próxima ação — 2026-11-07
+
+- [P0] Uma nova resposta invalida o plano adaptativo anterior antes do avanço da espera; replanejamento é deduplicado e respeita epoch, pausa e cancelamento.
+- [P0] Prazo recalculado não repete ações já entregues; espera fixa conserva seu comportamento.
+- [P0] Cancelamento mantém a próxima ação do estado coerente com o checkpoint; edição humana posterior e retry antigo não são sobrescritos.
+- Cobertura: `lib/followup/node-handlers.test.ts`, `lib/followup/turn-bridge.test.ts`, `tests/invariants/adaptive-reminder-replanning.test.ts`, `tests/invariants/checkpoint-next-action-sync.test.ts` e invariantes de retomada/fechamento. [Resultados executados deste lote](experimental-reminder-memory-validation.md); especificação de teste não comprova execução.
+- A prova em WhatsApp exige publicar a branch num ambiente de teste. A versão em produção não valida código ainda não publicado. Nenhuma mensagem a leads faz parte desta homologação.
