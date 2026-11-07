@@ -44,6 +44,29 @@ function lead(overrides: Partial<LeadFacts> = {}): LeadFacts {
   return { lead_stage: null, tags: [], steps_taken: 0, last_outcome: null, ...overrides };
 }
 
+describe('espera adaptativa após nova resposta', () => {
+  const node: FlowNode = { id: 'wait-aula', type: 'wait', label: 'Lembrete', position: { x: 0, y: 0 },
+    config: { mode: 'smart', min_ms: 300_000, max_ms: 2_592_000_000 } };
+  const edges: FlowEdge[] = [{ id: 'sair', source: node.id, target: 'lembrete', priority: 0, condition: { type: 'always' } }];
+  const resumed = enrollment({ silence_anchor_at: '2026-07-21T11:00:00Z',
+    timing_plan: { decidido_em: '2026-07-20T12:00:00Z', modelo: 'teste', esperas: {} } });
+  it('não avança por um wait_started antigo quando a aula mudou', () => {
+    expect(processNode({ node, edges, enrollment: resumed, lead: lead(), clock, waitElapsed: true }))
+      .toEqual({ kind: 'enqueue_turn', purpose: 'plan_timing', wake_status: 'active' });
+  });
+  it('não duplica o planejamento em voo nem envia se ele nunca concluir', () => {
+    expect(processNode({ node, edges, enrollment: resumed, lead: lead(), clock, waitElapsed: true, planEnqueued: true, planRecheckCount: 1 }).kind).toBe('recheck');
+    expect(processNode({ node, edges, enrollment: resumed, lead: lead(), clock, waitElapsed: true, planEnqueued: true, planRecheckCount: 100 }))
+      .toEqual({ kind: 'dead', reason: 'adaptive_replan_never_completed' });
+  });
+  it('mantém cadências fixas e o avanço de um plano já atualizado', () => {
+    const current = { ...resumed, timing_plan: { decidido_em: NOW.toISOString(), modelo: 'teste', esperas: {} } };
+    expect(processNode({ node, edges, enrollment: current, lead: lead(), clock, waitElapsed: true }).kind).toBe('advance');
+    const fixed: FlowNode = { ...node, config: { mode: 'fixed', duration_ms: 3_600_000 } };
+    expect(processNode({ node: fixed, edges, enrollment: resumed, lead: lead(), clock, waitElapsed: true }).kind).toBe('advance');
+  });
+});
+
 function edge(overrides: Partial<FlowEdge> & Pick<FlowEdge, "source" | "target" | "condition">): FlowEdge {
   return { id: `${overrides.source}->${overrides.target}`, priority: 0, ...overrides };
 }

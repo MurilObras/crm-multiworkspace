@@ -209,8 +209,8 @@ export async function applyLeadStateUpdate(
   // passar a proposta reescrita com as mesmas palavras, e comparar `updated_at`
   // recusaria autorização válida a cada escrita de estágio ou BANT.
   //
-  // Este é o ÚNICO caminho de escrita de `next_action`, então o incremento tem
-  // um lugar só. Trigger não serviria: do lado do banco, "escreveu o mesmo
+  // A tool identifica cada proposta; o fechamento também pode substituir uma
+  // ação antiga via CAS, sem alterar estágio/BANT. Trigger não serviria: "escreveu o mesmo
   // valor de novo" é indistinguível de "não escreveu".
   const upsert = `
     insert into lead_state (organization_id, contact_id, stage, qualification, next_action, next_action_seq)
@@ -254,4 +254,33 @@ export async function applyLeadStateUpdate(
       ? `o lead já está em "${currentStage}" — nada a alterar no estágio.`
       : `estado atualizado (estágio permanece "${currentStage}").`;
   return { ok: true, state, transition, message };
+}
+
+/** O fechamento é obrigatório, a tool de avanço não. Espelha a próxima ação do
+ * checkpoint sem alterar estágio/BANT nem revogar uma edição posterior humana.
+ * Deve ser chamado na mesma transação protegida pelo lease do checkpoint. */
+export async function reconcileCheckpointNextAction(
+  db: Queryable, tenantId: string, leadId: string, nextAction: string | null,
+  expectedSeq: number | string | null | undefined,
+): Promise<void> {
+  // Marcadores anteriores não carregavam o CAS. Não inferir autorização no retry.
+  if (expectedSeq === undefined) return;
+  if (expectedSeq === null) {
+    if (nextAction === null) return;
+    await db.query(
+      `insert into lead_state (organization_id,contact_id,stage,qualification,next_action,next_action_seq)
+       select $1,$2,'new','{}'::jsonb,$3,1 where exists (
+         select 1 from contacts where organization_id=$1 and id=$2 and not is_anonymized)
+       on conflict (organization_id,contact_id) do nothing`,
+      [tenantId,leadId,nextAction],
+    );
+    return;
+  }
+  await db.query(
+    `update lead_state set next_action=$3,next_action_seq=next_action_seq+1,updated_at=now()
+       where organization_id=$1 and contact_id=$2 and next_action_seq=$4
+         and next_action is distinct from $3
+         and exists (select 1 from contacts where organization_id=$1 and id=$2 and not is_anonymized)`,
+    [tenantId,leadId,nextAction,expectedSeq],
+  );
 }

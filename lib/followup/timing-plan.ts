@@ -163,3 +163,16 @@ export function esperaPlanejadaDe(timingPlan: unknown, nodeId: string): EsperaPl
   if (!parsed.success) return null;
   return parsed.data.esperas[nodeId] ?? null;
 }
+
+/** Um novo episódio de silêncio pode carregar outra data/decisão do cliente.
+ * Só esperas adaptativas são replanejadas; cadências fixas conservam seu prazo.
+ * Plano legado/ilegível também precisa de nova decisão após essa retomada. */
+export function precisaReplanejarEspera(plano: unknown, silencioDesde?: string | null): boolean {
+  if (!silencioDesde) return false;
+  const anchor = Date.parse(silencioDesde);
+  if (!Number.isFinite(anchor)) return false;
+  const parsed = timingPlanSchema.safeParse(plano);
+  if (!parsed.success) return true;
+  const decided = Date.parse(parsed.data.decidido_em);
+  return !Number.isFinite(decided) || decided < anchor;
+}

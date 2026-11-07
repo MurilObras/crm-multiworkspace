@@ -6,7 +6,7 @@
 import { NO_REPLY_BRANCH_ID, REPEAT_BODY_BRANCH_ID, REPEAT_DONE_BRANCH_ID, nodeBranches } from "./graph-schema";
 import type { FlowEdge, FlowNode, ReplySaveTo } from "./graph-schema";
 import { parseReplyCount } from "./parse-count";
-import { clampEspera, esperaPlanejadaDe, type EsperaAdaptativa } from "./timing-plan";
+import { clampEspera, esperaPlanejadaDe, precisaReplanejarEspera, type EsperaAdaptativa } from "./timing-plan";
 import { fraseDeConfirmacao } from "./vocabulario";
 import { nextInSendWindow } from "./send-window";
 
@@ -55,6 +55,8 @@ export interface EnrollmentRow {
    * Ausente/`null` = enrollment de antes da feature ⇒ comportamento anterior.
    */
   timing_plan?: unknown;
+  /** Mensagem que abriu o episódio atual; invalida tempos decididos antes dela. */
+  silence_anchor_at?: string | null;
 }
 
 /** Minimal typed facts a `condition` node can check — loaded by the engine, never guessed. */
@@ -422,6 +424,13 @@ export function processNode(input: {
     }
 
     case "wait": {
+      // A resposta pode ter mudado a data do compromisso. Não consumir o relógio
+      // antigo enquanto uma nova decisão ainda não tiver sido confirmada.
+      if (node.config.mode === "smart" && precisaReplanejarEspera(enrollment.timing_plan, enrollment.silence_anchor_at)) {
+        if (!planEnqueued) return { kind: "enqueue_turn", purpose: "plan_timing", wake_status: "active" };
+        if ((planRecheckCount ?? 0) >= MAX_PLAN_RECHECKS) return { kind: "dead", reason: "adaptive_replan_never_completed" };
+        return { kind: "recheck", next_eval_at: new Date(clock().getTime() + ACTION_RECHECK_MS) };
+      }
       // Revalidar também quando a resposta acorda o fluxo ou o worker chega atrasado.
       if ((waitElapsed || wokeEarly) && node.config.mode === "fixed" && node.config.send_window) {
         const now = clock();

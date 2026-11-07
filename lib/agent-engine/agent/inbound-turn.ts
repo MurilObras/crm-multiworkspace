@@ -85,7 +85,7 @@ import { coherentMediaContext, optionalMediaContextVeto } from './media-response
 import { loadTurnMediaDecision, persistTurnMediaDecision } from './media-intent-store';
 import { recentTurnMediaIds } from './conversation-audios';
 import { renderMediaDecisionInstruction } from '@/lib/ai/agents/media-simulation';
-import { applyLeadStateUpdate, getLeadState, type LeadStage, type LeadStateRow } from './lead-state';
+import { applyLeadStateUpdate, getLeadState, reconcileCheckpointNextAction, type LeadStage, type LeadStateRow } from './lead-state';
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
 import { applyScheduleFollowup, type FollowupWindowKnobs } from './schedule-followup';
@@ -1281,7 +1281,7 @@ function turnoVaiFalarComOLead(job: JobRow): boolean {
 async function publishTurnCheckpoint(
   pool: pg.Pool, job: JobRow, ctx: { workerId: string },
   input: AgentTurnInput, agentConfig: TurnClosing['agent'], content: CheckpointContent,
-  closing: { callId: string | null }, runLog: Logger,
+  closing: { callId: string | null; previousNextActionSeq?: number | string | null }, runLog: Logger,
 ): Promise<void> {
   const tenantId = job.organization_id;
   const leadId = job.contact_id;
@@ -1294,6 +1294,10 @@ async function publishTurnCheckpoint(
     const previous = await latestCheckpoint(tx, tenantId, leadId);
     if (await checkpointDoJob(tx, tenantId, leadId, job.id) === null) {
       await insertCheckpoint(tx, { tenantId, leadId, jobId: job.id, content });
+    }
+    // Um retry antigo não pode promover a próxima ação acima de memória nova.
+    if ((await latestCheckpoint(tx, tenantId, leadId))?.job_id === job.id) {
+      await reconcileCheckpointNextAction(tx, tenantId, leadId, content.next_action, closing.previousNextActionSeq);
     }
     return previous;
   });
@@ -1512,7 +1516,7 @@ async function resumeTurnClosing(
     content = parseCheckpointText(closing.result.text);
     callId = closing.callId;
   }
-  await measureTurnPhase(log, job, 'checkpoint_persist', () => publishTurnCheckpoint(pool, job, ctx, input, state.agent, content, { callId }, log));
+  await measureTurnPhase(log, job, 'checkpoint_persist', () => publishTurnCheckpoint(pool, job, ctx, input, state.agent, content, { callId, previousNextActionSeq: state.previousNextActionSeq }, log));
   log.info('fechamento retomado e concluído — sem repetir atendimento ou envios');
 }
 
@@ -3734,7 +3738,7 @@ async function executarTurnoDoAgente(
       }
       if (!resumeRequiredPrelude) {
         await mcpCleanup?.();mcpCleanup=null;
-        const state={version:1 as const,agent:agentConfig?{agentId:agentConfig.agentId,operatorEnabled:agentConfig.operatorEnabled,
+        const state={version:1 as const,previousNextActionSeq:leadState?.next_action_seq ?? null,agent:agentConfig?{agentId:agentConfig.agentId,operatorEnabled:agentConfig.operatorEnabled,
           provider:agentConfig.provider,model:agentConfig.model,credentialId:agentConfig.credentialId}:null};
         await rememberTurnClosing(pool,job,ctx.workerId,state);
         await resumeTurnClosing(deps,pool,job,ctx,input,state,runLog);
@@ -3890,6 +3894,7 @@ async function executarTurnoDoAgente(
     await rememberTurnClosing(pool, job, ctx.workerId, {
       version: 1,
       previousCheckpointId: previous?.id ?? null,
+      previousNextActionSeq: leadState?.next_action_seq ?? null,
       agent: agentConfig === null ? null : {
         agentId: agentConfig.agentId, operatorEnabled: agentConfig.operatorEnabled,
         provider: agentConfig.provider, model: agentConfig.model, credentialId: agentConfig.credentialId,
@@ -3928,7 +3933,7 @@ async function executarTurnoDoAgente(
   ));
   const content = parseCheckpointText(closing.result.text);
 
-  await measureTurnPhase(runLog, job, 'checkpoint_persist', () => publishTurnCheckpoint(pool, job, ctx, input, agentConfig, content, closing, runLog));
+  await measureTurnPhase(runLog, job, 'checkpoint_persist', () => publishTurnCheckpoint(pool, job, ctx, input, agentConfig, content, { ...closing, previousNextActionSeq: leadState?.next_action_seq ?? null }, runLog));
 
   // F3-11: divergência classificador×modelo. O classificador sugeriu um estágio; se o
   // modelo confirmou (via update_lead_state — a máquina F2-10) um estágio DIFERENTE, o
