@@ -27,6 +27,9 @@ beforeEach(async () => {
     last_error text, payload jsonb, source_event_id uuid);
     create table messages (id uuid primary key, organization_id uuid, conversation_id uuid,
       direction text, sent_at timestamptz, created_at timestamptz default now());
+    create table case_resolution_intents (organization_id uuid,conversation_id uuid,message_id uuid,status text);
+    create table agent_cases(id uuid,organization_id uuid,conversation_id uuid);
+    create table agent_case_events(organization_id uuid,case_id uuid,kind text,metadata jsonb,created_at timestamptz default now());
     insert into messages (id,organization_id,conversation_id,direction) values
       ('aaaaaaaa-0000-4000-8000-000000000008','aaaaaaaa-0000-4000-8000-000000000001','aaaaaaaa-0000-4000-8000-000000000004','inbound');`);
   db = {
@@ -72,6 +75,28 @@ async function job(id: string, overrides: Record<string, unknown> = {}) {
 }
 
 describe("rajadas sem perder mensagem nova", () => {
+  it("encerramento interno dispensa resposta antiga preparada, preservando nova entrada", async () => {
+    const id = "aaaaaaaa-0000-4000-8000-000000000095";
+    await pg.query("insert into agent_cases values($1,$2,$3)", [id,input.organizationId,input.conversationId]);
+    await pg.query(`insert into agent_case_events(organization_id,case_id,kind,metadata)
+      values($1,$2,'resolved','{"internal_no_send":true}')`, [input.organizationId,id]);
+    expect(await isCurrentInbound(db,input.organizationId,input.conversationId,input.messageId)).toBe(false);
+    const next = "aaaaaaaa-0000-4000-8000-000000000096";
+    await pg.query(`insert into messages(id,organization_id,conversation_id,direction,created_at)
+      values($1,$2,$3,'inbound',now()+interval '1 second')`, [next,input.organizationId,input.conversationId]);
+    expect(await isCurrentInbound(db,input.organizationId,input.conversationId,next)).toBe(true);
+  });
+  it("a resposta humana confirmada dispensa o inbound antigo, mas não uma nova pergunta", async () => {
+    const responseId = "aaaaaaaa-0000-4000-8000-000000000090";
+    await pg.query(`insert into messages(id,organization_id,conversation_id,direction,sent_at)
+      values($1,$2,$3,'outbound',now())`, [responseId, input.organizationId, input.conversationId]);
+    await pg.query("insert into case_resolution_intents values($1,$2,$3,'applied')", [input.organizationId,input.conversationId,responseId]);
+    expect(await isCurrentInbound(db,input.organizationId,input.conversationId,input.messageId)).toBe(false);
+    const newId = "aaaaaaaa-0000-4000-8000-000000000091";
+    await pg.query(`insert into messages(id,organization_id,conversation_id,direction,sent_at)
+      values($1,$2,$3,'inbound',now()+interval '1 second')`, [newId,input.organizationId,input.conversationId]);
+    expect(await isCurrentInbound(db,input.organizationId,input.conversationId,newId)).toBe(true);
+  });
   it("atualiza a âncora do debounce para a última mensagem e conserva o job", async () => {
     await job("debounce");
     expect(await coalesceInboundDebounce(db, input)).toBe("debounce");

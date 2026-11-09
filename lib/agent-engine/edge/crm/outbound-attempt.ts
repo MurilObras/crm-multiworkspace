@@ -290,6 +290,7 @@ async function executeAttempt(
                     and not c.is_anonymized), '{}'::jsonb)
            where id=$4 and organization_id=$2 and status='queued'
              and metadata->'outbound_attempt'->>'phase'='prepared'
+             and public.fn_case_internal_outbound_live($2,$1,$4)
              and ($5::boolean or exists(select 1 from eligible_conversation))
              and (not exists(select 1 from job_queue where id=$1 and organization_id=$2
                and payload->>'followup_enrollment_id' is not null) or exists(select 1 from eligible_flow))
@@ -301,6 +302,9 @@ async function executeAttempt(
           const owned = await db.query('select id from job_queue where id=$1 and organization_id=$2 and status=\'running\' and locked_by=$3',
             [job, org, owner]);
           if (owned.rows.length) {
+            const live = await db.query<{ live: boolean }>(
+              'select public.fn_case_internal_outbound_live($1,$2,$3) live', [org,job,messageId]);
+            if (live.rows[0]?.live === false) throw new OutboundSupersededError('human_in_control');
             if (contact) await currentAutomaticRecipient(cfg.supabase, org, contact);
             const current = await followupJobGate(db, org, job, contact, owner);
             if (!current.allowed && !current.retryAt)

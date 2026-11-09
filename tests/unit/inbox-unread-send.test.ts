@@ -68,7 +68,11 @@ function makeSupabase(conversation: Record<string, unknown>) {
           },
           update: (patch: Record<string, unknown>) => {
             conversationPatch = patch;
-            return { eq: async () => ({ error: null }) };
+            const chain: Encadeavel = {
+              eq: (col, val) => { conversationFilters[col] = val; return chain; },
+              then: (resolve) => Promise.resolve({ error: null }).then(resolve),
+            };
+            return chain;
           },
         };
       }

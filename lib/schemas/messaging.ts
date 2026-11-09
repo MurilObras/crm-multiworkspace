@@ -95,7 +95,13 @@ export const sendMessageSchema = z
      * o vocabulário do canal, que é justamente o que o seam existe para evitar.
      */
     reply_to_message_id: z.string().uuid().optional(),
+    /** Intenção explícita do atendente; metadados não concedem esta autoridade. */
+    resolve_case_id: z.string().uuid().optional(),
   })
+  .refine(d => !d.resolve_case_id || (
+    (d.type === "text" && Boolean(d.body?.trim())) ||
+    (d.type === "audio" && Boolean(d.media_storage_path))
+  ), { message: "Resolver consulta exige resposta em texto ou áudio enviado nesta conversa.", path: ["resolve_case_id"] })
   .refine(
     (d) => {
       if (d.type === "contact") {

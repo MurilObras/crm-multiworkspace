@@ -68,7 +68,7 @@ export function CaseDetail({ caseId }: { caseId: string | null }) {
         </div>
       </div>
 
-      <CaseReplyPanel caseId={data.id} status={data.status} />
+      <CaseReplyPanel caseId={data.id} status={data.status} conversationId={data.conversation_id} />
       <ResponsibleDeliveryStatus caseId={data.id} />
 
       <div>

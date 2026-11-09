@@ -280,6 +280,7 @@ aplica.
 | `20261105180000` | `0244_followup_bounded_batches` | Seleção por cursor e inscrição em lotes limitados; preserva controles humanos e episódios de silêncio |
 | `20261105210000` | `0245_media_responsible_controls` | Aviso ao cliente e consulta por falha de áudio configuráveis por agente/workspace; mantém padrões anteriores |
 | `20261105220000` | `0246_followup_delivery_reconciliation` | Reconcilia ações com fila/ledger por workspace, nó e ocupação; preserva entregas incertas e cancelamentos esperados. |
+| `20261109160000` | `0247_inbox_case_resolution` | Vincula resolução explícita à confirmação do envio humano, preserva decisões posteriores e recupera o efeito sem retransporte. |
 
 ## Reproducibility
 

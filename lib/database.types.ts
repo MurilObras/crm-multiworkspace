@@ -604,28 +604,28 @@ export type Database = {
       };
       agent_responsible_settings: {
         Row: {
-          "audio_failures_to_responsible": boolean;
-          "notify_client": boolean;
           agent_id: string;
+          audio_failures_to_responsible: boolean;
           conditions: string;
           enabled: boolean;
+          notify_client: boolean;
           organization_id: string;
         };
         ComputedFields: never;
         Insert: {
-          "audio_failures_to_responsible"?: boolean;
-          "notify_client"?: boolean;
           agent_id: string;
+          audio_failures_to_responsible?: boolean;
           conditions?: string;
           enabled?: boolean;
+          notify_client?: boolean;
           organization_id: string;
         };
         Update: {
-          "audio_failures_to_responsible"?: boolean;
-          "notify_client"?: boolean;
           agent_id?: string;
+          audio_failures_to_responsible?: boolean;
           conditions?: string;
           enabled?: boolean;
+          notify_client?: boolean;
           organization_id?: string;
         };
         Relationships: [
@@ -2258,47 +2258,46 @@ export type Database = {
       };
       before_send_traces: {
         Row: {
-          conversation_id: string | null;
-          response_key: string | null;
           channel_session_id: string;
           contact_id: string | null;
+          conversation_id: string | null;
           created_at: string;
           id: string;
           job_id: string;
           organization_id: string;
+          response_key: string | null;
           trace: NonNullable<Json>;
           vetoed_code: string | null;
           vetoed_gate: string | null;
         };
         ComputedFields: never;
         Insert: {
-          conversation_id?: string | null;
-          response_key?: string | null;
           channel_session_id: string;
           contact_id?: string | null;
+          conversation_id?: string | null;
           created_at?: string;
           id?: string;
           job_id: string;
           organization_id: string;
+          response_key?: string | null;
           trace: NonNullable<Json>;
           vetoed_code?: string | null;
           vetoed_gate?: string | null;
         };
         Update: {
-          conversation_id?: string | null;
-          response_key?: string | null;
           channel_session_id?: string;
           contact_id?: string | null;
+          conversation_id?: string | null;
           created_at?: string;
           id?: string;
           job_id?: string;
           organization_id?: string;
+          response_key?: string | null;
           trace?: NonNullable<Json>;
           vetoed_code?: string | null;
           vetoed_gate?: string | null;
         };
         Relationships: [
-          {foreignKeyName:"before_send_traces_conversation_id_fkey";columns:["conversation_id"];isOneToOne:false;referencedRelation:"conversations";referencedColumns:["id"];},
           {
             foreignKeyName: "before_send_traces_channel_session_id_fkey";
             columns: ["channel_session_id"];
@@ -2311,6 +2310,13 @@ export type Database = {
             columns: ["contact_id"];
             isOneToOne: false;
             referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "before_send_traces_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
             referencedColumns: ["id"];
           },
           {
@@ -2856,6 +2862,100 @@ export type Database = {
           },
         ];
       };
+      case_resolution_intents: {
+        Row: {
+          actor_user_id: string | null;
+          applied_at: string | null;
+          case_id: string;
+          confirmation_event_id: string | null;
+          confirmed_at: string | null;
+          contact_id: string;
+          contact_revision: number;
+          conversation_id: string;
+          conversation_revision: number;
+          created_at: string;
+          message_id: string;
+          organization_id: string;
+          reason: string | null;
+          status: string;
+          transport_started_at: string | null;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          actor_user_id?: string | null;
+          applied_at?: string | null;
+          case_id: string;
+          confirmation_event_id?: string | null;
+          confirmed_at?: string | null;
+          contact_id: string;
+          contact_revision: number;
+          conversation_id: string;
+          conversation_revision: number;
+          created_at?: string;
+          message_id: string;
+          organization_id: string;
+          reason?: string | null;
+          status?: string;
+          transport_started_at?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          actor_user_id?: string | null;
+          applied_at?: string | null;
+          case_id?: string;
+          confirmation_event_id?: string | null;
+          confirmed_at?: string | null;
+          contact_id?: string;
+          contact_revision?: number;
+          conversation_id?: string;
+          conversation_revision?: number;
+          created_at?: string;
+          message_id?: string;
+          organization_id?: string;
+          reason?: string | null;
+          status?: string;
+          transport_started_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "case_resolution_intents_case_id_fkey";
+            columns: ["case_id"];
+            isOneToOne: false;
+            referencedRelation: "agent_cases";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "case_resolution_intents_contact_id_fkey";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "case_resolution_intents_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "case_resolution_intents_message_id_fkey";
+            columns: ["message_id"];
+            isOneToOne: true;
+            referencedRelation: "messages";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "case_resolution_intents_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       catalog_products: {
         Row: {
           ativo: boolean;
@@ -3299,6 +3399,7 @@ export type Database = {
         Row: {
           ai_authorized_at: string | null;
           ai_authorized_reason: string | null;
+          ai_control_revision: number;
           anonymized_at: string | null;
           avatar_storage_path: string | null;
           avatar_updated_at: string | null;
@@ -3337,6 +3438,7 @@ export type Database = {
         Insert: {
           ai_authorized_at?: string | null;
           ai_authorized_reason?: string | null;
+          ai_control_revision?: number;
           anonymized_at?: string | null;
           avatar_storage_path?: string | null;
           avatar_updated_at?: string | null;
@@ -3374,6 +3476,7 @@ export type Database = {
         Update: {
           ai_authorized_at?: string | null;
           ai_authorized_reason?: string | null;
+          ai_control_revision?: number;
           anonymized_at?: string | null;
           avatar_storage_path?: string | null;
           avatar_updated_at?: string | null;
@@ -3525,6 +3628,7 @@ export type Database = {
           active_agent_set_at: string | null;
           active_ai_agent_id: string | null;
           active_intent: string | null;
+          ai_control_revision: number;
           assigned_at: string | null;
           assigned_to_user_id: string | null;
           assigned_to_user_name: string | null;
@@ -3565,6 +3669,7 @@ export type Database = {
           active_agent_set_at?: string | null;
           active_ai_agent_id?: string | null;
           active_intent?: string | null;
+          ai_control_revision?: number;
           assigned_at?: string | null;
           assigned_to_user_id?: string | null;
           assigned_to_user_name?: string | null;
@@ -3603,6 +3708,7 @@ export type Database = {
           active_agent_set_at?: string | null;
           active_ai_agent_id?: string | null;
           active_intent?: string | null;
+          ai_control_revision?: number;
           assigned_at?: string | null;
           assigned_to_user_id?: string | null;
           assigned_to_user_name?: string | null;
@@ -9133,16 +9239,16 @@ export type Database = {
     Views: {
       ai_provider_credentials_safe: {
         Row: {
-          api_key_last4: string | null;
-          created_at: string | null;
+          api_key_last4: string;
+          created_at: string;
           created_by: string | null;
-          id: string | null;
-          is_active: boolean | null;
-          label: string | null;
+          id: string;
+          is_active: boolean;
+          label: string;
           models_available: string[] | null;
-          organization_id: string | null;
-          provider: string | null;
-          updated_at: string | null;
+          organization_id: string;
+          provider: string;
+          updated_at: string;
           validated_at: string | null;
           validation_error: string | null;
         };
@@ -9187,10 +9293,6 @@ export type Database = {
       };
     };
     Functions: {
-      fn_conversation_retentions: {
-        Args: {p_org:string;p_conversation:string};
-        Returns: {id:string;created_at:string;vetoed_gate:string|null;vetoed_code:string|null;delivery_state:string}[];
-      };
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string };
         Returns: undefined;
@@ -9261,6 +9363,7 @@ export type Database = {
         };
         Returns: Json;
       };
+      fn_apply_case_resolution: { Args: { p_message: string; p_org: string }; Returns: Json };
       fn_arm_obra_recovery: {
         Args: { p_contact: string; p_event: string; p_org: string };
         Returns: boolean;
@@ -9322,6 +9425,7 @@ export type Database = {
         Returns: boolean;
       };
       fn_can_view_lead: { Args: { p_org: string; p_owner_user_id: string }; Returns: boolean };
+      fn_cancel_case_resolution: { Args: { p_message: string; p_org: string }; Returns: undefined };
       fn_capture_dashboard_attribution: {
         Args: {
           p_ad: string;
@@ -9333,6 +9437,14 @@ export type Database = {
           p_org: string;
           p_source: string;
         };
+        Returns: boolean;
+      };
+      fn_case_internal_outbound_live: {
+        Args: { p_job: string; p_message: string; p_org: string };
+        Returns: boolean;
+      };
+      fn_case_resolution_transport_live: {
+        Args: { p_message: string; p_org: string };
         Returns: boolean;
       };
       fn_claim_dashboard_ad_sync: { Args: { p_account: string; p_org: string }; Returns: Json };
@@ -9433,6 +9545,7 @@ export type Database = {
           active_agent_set_at: string | null;
           active_ai_agent_id: string | null;
           active_intent: string | null;
+          ai_control_revision: number;
           assigned_at: string | null;
           assigned_to_user_id: string | null;
           assigned_to_user_name: string | null;
@@ -9473,6 +9586,16 @@ export type Database = {
           isOneToOne: false;
           isSetofReturn: true;
         };
+      };
+      fn_conversation_retentions: {
+        Args: { p_conversation: string; p_org: string };
+        Returns: {
+          created_at: string;
+          delivery_state: string;
+          id: string;
+          vetoed_code: string;
+          vetoed_gate: string;
+        }[];
       };
       fn_crm_dashboard_inputs: {
         Args: {
@@ -9547,18 +9670,13 @@ export type Database = {
         Args: { p_event: Json; p_expected: Json; p_id: string; p_org: string; p_patch: Json };
         Returns: boolean;
       };
-      "fn_followup_reconcile_action": {
-          Args: {
-              "p_expected": Json;
-              "p_id": string;
-              "p_next": string;
-              "p_org": string;
-          };
-          Returns: string;
-      };
       fn_followup_job_live: {
         Args: { p_contact: string; p_job: string; p_org: string };
         Returns: boolean;
+      };
+      fn_followup_reconcile_action: {
+        Args: { p_expected: Json; p_id: string; p_next: string; p_org: string };
+        Returns: string;
       };
       fn_gasto_de_ia_do_mes: { Args: { p_org: string }; Returns: number };
       fn_ingest_kiwify: {
@@ -9649,6 +9767,10 @@ export type Database = {
       fn_podar_fila_de_jobs: {
         Args: { p_limite?: number; p_retencao_dias?: number };
         Returns: number;
+      };
+      fn_prepare_case_resolution: {
+        Args: { p_actor: string; p_case: string; p_message: string; p_org: string };
+        Returns: Json;
       };
       fn_publish_ai_agent_version: {
         Args: { p_agent_id: string; p_org_id: string; p_version_id: string };

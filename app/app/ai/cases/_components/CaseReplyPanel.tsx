@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import { useT } from "@/hooks/i18n/useT";
  * `awaiting_human` — nos outros estados a bola não está com o atendente, e
  * o motivo aparece em texto (nunca um botão desabilitado sem explicação).
  */
-export function CaseReplyPanel({ caseId, status }: { caseId: string; status: CaseStatus }) {
+export function CaseReplyPanel({ caseId, status, conversationId }: { caseId: string; status: CaseStatus; conversationId?: string }) {
   const t = useT();
   // Sem pré-seleção de propósito: as ações têm efeitos muito diferentes (uma
   // delas FECHA o caso) e não há desfazer. Um default marcado faria quem digitou
@@ -34,7 +35,7 @@ export function CaseReplyPanel({ caseId, status }: { caseId: string; status: Cas
       { id: caseId, action, body: body.trim() },
       {
         onSuccess: () => {
-          toast.success(t(action === "resolved_internal" ? "Caso encerrado sem enviar mensagem ao cliente." : "Resposta enviada."));
+          toast.success(t(action === "resolved_internal" ? "Caso encerrado sem enviar mensagem ao cliente." : "Resposta registrada. O envio ainda será processado."));
           setBody("");
           setAction(null);
         },
@@ -46,6 +47,12 @@ export function CaseReplyPanel({ caseId, status }: { caseId: string; status: Cas
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
       <h3 className="text-sm font-semibold">{t("O que você quer fazer?")}</h3>
+      {!disabled && conversationId && <div className="rounded-md border border-border p-3 text-xs">
+        <Link href={`/app/inbox?id=${encodeURIComponent(conversationId)}`} className="font-medium underline">
+          {t("Responder e continuar no Inbox")}
+        </Link>
+        <p className="mt-1 text-muted-foreground">{t("No Inbox, marque que a resposta resolve esta consulta. A liberação acontece após o envio confirmado, respeitando os demais bloqueios.")}</p>
+      </div>}
       {disabled ? <p className="text-xs text-muted-foreground">{disabledReason ? t(disabledReason) : null}</p> : null}
 
       <div className="flex flex-col gap-2" role="radiogroup" aria-label={t("O que você quer fazer?")}>

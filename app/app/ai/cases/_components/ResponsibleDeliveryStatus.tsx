@@ -5,12 +5,18 @@ import { apiClient } from '@/lib/api/client';
 
 interface State {
   requests: { id: string; kind: string; status: string; answered_by: string | null }[];
-  deliveries: { id: string; purpose: string; status: string; responsible_name: string | null; format: string | null }[];
+  deliveries: { id: string; purpose: string; status: string; responsible_name: string | null; format: string | null; message_status?: string | null }[];
 }
 const labels: Record<string, string> = { pending: "Aguardando", answered: "Resposta recebida; entrega pendente", delivered: "Entregue ao cliente",
   sending: "Enviando",
   cancelled: "Encerrado", failed: "Falha; verifique o atendimento", uncertain: "Entrega incerta; não reenviar automaticamente", blocked: "Envio impedido", sent: "Enviado",
   wait_notice: "Aviso ao cliente", notification: "Aviso ao responsável", answer: "Resposta ao cliente", receipt: "Confirmação ao responsável" };
+// O envio da tarefa e o recibo do canal são estados diferentes; nenhum deles
+// resolve a consulta. Sem recibo confirmado, não presumir entrega ou leitura.
+const receiptLabels: Record<string, string> = {
+  sent: "Enviado ao WhatsApp", delivered: "Entregue pelo WhatsApp", read: "Lido no WhatsApp",
+  failed: "Falha no WhatsApp",
+};
 
 export function ResponsibleDeliveryStatus({ caseId }: { caseId: string }) {
   const t = useT();
@@ -38,6 +44,6 @@ export function ResponsibleDeliveryStatus({ caseId }: { caseId: string }) {
   return <section className="space-y-2 rounded-md border p-3" aria-label={t("Consulta pelo WhatsApp")}>
     <h3 className="text-sm font-medium">{t("Consulta pelo WhatsApp")}</h3>
     {data.requests.map(r => <p key={r.id} className="text-xs">{t(r.kind === "handoff" ? "Atendimento humano" : "Consulta ao responsável")}: {t(labels[r.status] ?? r.status)}{r.answered_by ? ` · ${r.answered_by}` : ""}</p>)}
-    <ul className="space-y-1">{data.deliveries.map(d => <li key={d.id} className="text-xs">{t(labels[d.purpose] ?? d.purpose)}{d.responsible_name ? ` · ${d.responsible_name}` : ""}: {t(labels[d.status] ?? d.status)}{d.format === "audio" ? ` (${t("áudio")})` : ""}</li>)}</ul>
+    <ul className="space-y-1">{data.deliveries.map(d => <li key={d.id} className="text-xs">{t(labels[d.purpose] ?? d.purpose)}{d.responsible_name ? ` · ${d.responsible_name}` : ""}: {t(labels[d.status] ?? d.status)}{d.format === "audio" ? ` (${t("áudio")})` : ""}<span className="block text-muted-foreground">{t(receiptLabels[d.message_status ?? ""] ?? "Sem confirmação de entrega")}</span></li>)}</ul>
   </section>;
 }

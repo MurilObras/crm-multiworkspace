@@ -31,6 +31,13 @@ beforeEach(() => {
 });
 
 describe("CaseReplyPanel", () => {
+  it("oferece o Inbox para responder e liberar o atendimento com confirmação real de envio", () => {
+    render(<QueryClientProvider client={new QueryClient()}>
+      <CaseReplyPanel caseId="case-1" status="awaiting_human" conversationId="conv-1" />
+    </QueryClientProvider>);
+    expect(screen.getByRole("link", { name: "Responder e continuar no Inbox" }))
+      .toHaveAttribute("href", "/app/inbox?id=conv-1");
+  });
   it("desabilitado fora de awaiting_human, com explicação visível", () => {
     renderWith("awaiting_lead");
 

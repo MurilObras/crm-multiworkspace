@@ -39,6 +39,9 @@ import type { Message } from "@/lib/types/messaging";
 import type { OutboundSendPhase } from '@/lib/channels/outbound-timing';
 import { currentAutomaticRecipient } from "@/lib/automation/current-recipient";
 import { decidirElegibilidade, normalizarInstante } from "@/lib/ai/elegibilidade/gate";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { prepareCaseResolution, assertCaseResolutionBeforeTransport, cancelCaseResolution } from "@/lib/escalacao/resolucao-vinculada";
+import { logger } from "@/lib/logger";
 
 type SB = SupabaseClient;
 
@@ -222,6 +225,11 @@ export async function sendMessageHandler(
     returnExistingOnConflict?: boolean;
   },
 ): Promise<Message> {
+  if (input.resolve_case_id) {
+    if (ctx.actor.type !== "user") throw new ApiError(403, "forbidden", undefined, ctx.requestId, "Somente atendentes podem resolver uma consulta com a resposta.");
+    if (!((input.type === "text" && input.body?.trim()) || (input.type === "audio" && input.media_storage_path)))
+      throw new ApiError(422, "validation_failed", undefined, ctx.requestId, "Use uma resposta em texto ou áudio para resolver a consulta.");
+  }
   options?.onPhase?.('recipient');
   // Um ID deterministico manual nao vincula a mensagem a um plano de automacao.
   // As RPCs do plano sao exclusivas de service_role; o envio manual conserva
@@ -478,6 +486,25 @@ export async function sendMessageHandler(
   let message = created as unknown as Message;
   if (options?.messageId && ['sent', 'delivered', 'read'].includes(message.status) && message.external_id) return message;
 
+  // Autoridade fica numa intenção de serviço, nunca no metadata editável do
+  // navegador. Sem preparar a intenção, o transporte não começa.
+  if (input.resolve_case_id && ctx.actor.type === "user") {
+    try {
+      await prepareCaseResolution(getRequestPool(), {
+        organizationId: ctx.organization_id, conversationId: c.id,
+        messageId: message.id, caseId: input.resolve_case_id, actorUserId: ctx.actor.id,
+      });
+    } catch {
+      await createAdminClient().from("messages").update({ status: "failed", error_code: "case_resolution_unavailable",
+        error_message: "A consulta não pôde ser vinculada. Nenhuma resposta foi enviada." })
+        .eq("organization_id", ctx.organization_id).eq("id", message.id);
+      try { await cancelCaseResolution(getRequestPool(), { organizationId: ctx.organization_id, messageId: message.id }); }
+      catch { /* Sem transporte. A pendência permanece visível para conferência. */ }
+      throw new ApiError(409, "state_conflict", undefined, ctx.requestId,
+        "Não foi possível vincular esta consulta. Recarregue e confira o caso antes de enviar.");
+    }
+  }
+
   options?.onPhase?.('prepare_transport');
   // Tentativas do ledger escrevem pelo fence transacional do executor. Uma
   // checagem antes deste UPDATE não bastaria: o lease pode mudar durante o await.
@@ -493,7 +520,10 @@ export async function sendMessageHandler(
         ...(typeof queuedReason === 'string' ? { queuedReason } : {}),
       }), error: null };
     }
-    return supabase.from('messages').update(patch).eq('id', message.id)
+    // Só o resultado escrito pelo servidor pode confirmar uma intenção. O
+    // INSERT original e as validações continuam no client autenticado.
+    const statusClient = input.resolve_case_id ? createAdminClient() : supabase;
+    return statusClient.from('messages').update(patch).eq('id', message.id)
       .eq('organization_id', ctx.organization_id).select(MSG_COLS).maybeSingle();
   };
 
@@ -507,7 +537,7 @@ export async function sendMessageHandler(
         status: "failed", error_code: "send_guard_rejected",
         error_message: "Envio interrompido antes do transporte.",
       };
-      if (options.writeAttemptState) await writeState(rejected);
+      if (options.writeAttemptState || input.resolve_case_id) await writeState(rejected);
       else await supabase.from('messages').update(rejected).eq('id', message.id).eq('organization_id', ctx.organization_id);
       throw error;
     }
@@ -630,6 +660,9 @@ export async function sendMessageHandler(
         if (data !== true) throw new ApiError(403,"forbidden",undefined,ctx.requestId,"contact_anonymized");
       }
       await options?.beforeTransport?.(message);
+      if (input.resolve_case_id) await assertCaseResolutionBeforeTransport(getRequestPool(), {
+        organizationId: ctx.organization_id, messageId: message.id,
+      });
       transportStarted = true;
       options?.onPhase?.('transport');
     };
@@ -848,6 +881,12 @@ export async function sendMessageHandler(
     }
   }
 
+  if (input.resolve_case_id && message.status === "failed") {
+    // A função só encerra tentativas que não cruzaram a rede. Um resultado
+    // incerto mantém a intenção para conferência, nunca libera outra resposta.
+    try { await cancelCaseResolution(getRequestPool(), { organizationId: ctx.organization_id, messageId: message.id }); }
+    catch { logger.warn("case_resolution_cancellation_pending", { message_id: message.id, organization_id: ctx.organization_id }); }
+  }
   options?.onPhase?.('finalize');
   const conversationUpdate: {
     last_outbound_at: string;
@@ -868,7 +907,7 @@ export async function sendMessageHandler(
     // outbound, que o envio pelo CRM não chama (só atualiza colunas à mão).
     unread_count_for_assignee: 0,
   };
-  if (ctx.actor.type === "user") {
+  if (ctx.actor.type === "user" && !input.resolve_case_id) {
     const silenceUntil = extendBotSilence(c.bot_silenced_until, now);
     if (silenceUntil) conversationUpdate.bot_silenced_until = silenceUntil;
   }
@@ -884,7 +923,7 @@ export async function sendMessageHandler(
     protectedPreview = data === true;
   }
   if (!protectedPreview) await supabase.from("conversations").update(conversationUpdate)
-    .eq("id", c.id);
+    .eq("id", c.id).eq("organization_id", c.organization_id);
 
   // Envio pelo CRM não passa por `fn_mark_conversation_message` — carimba o
   // contato aqui para /app/contacts refletir a resposta (migration 0162).

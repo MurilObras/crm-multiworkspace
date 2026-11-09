@@ -20,7 +20,7 @@ async function readHandler(_req: Request, context: { params: Promise<{ id: strin
       from agent_responsible_requests r left join agent_responsibles p on p.organization_id=r.organization_id and p.id=r.accepted_responsible_id
       where r.organization_id=$1 and r.case_id=$2 order by r.created_at desc`, [auth.org.orgId, id]);
     const deliveries = await db.query(`select d.id,d.request_id,d.purpose,d.status,d.created_at,d.message_id,p.name as responsible_name,
-      m.type as format,m.error_code
+      m.type as format,m.error_code,m.status as message_status
       from agent_responsible_deliveries d join agent_responsible_requests r on r.organization_id=d.organization_id and r.id=d.request_id
       left join agent_responsibles p on p.organization_id=d.organization_id and p.id=d.responsible_id
       left join messages m on m.organization_id=d.organization_id and m.id=d.message_id

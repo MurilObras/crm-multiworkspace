@@ -3,6 +3,7 @@ import { useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Message } from "@/lib/types/messaging";
+import { randomId } from '@/lib/random-id';
 
 interface SendArgs {
   conversation_id: string;
@@ -22,6 +23,8 @@ interface SendArgs {
   template_values?: Record<string, string>;
   /** A mensagem citada — id da NOSSA linha; o handler traduz para o do canal. */
   reply_to_message_id?: string;
+  /** Consulta escolhida explicitamente; o servidor valida e só aplica após envio confirmado. */
+  resolve_case_id?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -35,7 +38,10 @@ export function useSendMessage() {
 
   return useMutation({
     mutationFn: async (input: SendArgs) =>
-      apiClient.post<{ data: Message }>("/api/v1/messages", input),
+      apiClient.post<{ data: Message }>("/api/v1/messages", input, { idempotencyKey: randomId() }),
+    // O cliente HTTP conserva a chave nas tentativas da mesma operação.
+    // Repetir a mutation criaria outra operação após um envio possivelmente confirmado.
+    retry: false,
     onMutate: async (args) => {
       if (args.media_storage_path || args.media_url || args.type === "contact") return {};
 

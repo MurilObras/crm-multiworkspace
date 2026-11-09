@@ -99,6 +99,7 @@ function actorAuditPayload(actor: Actor): {
 // ---------------------------------------------------------------------------
 
 export interface ListLeadsQuery {
+  contact_id?: string;
   pipeline_id?: string;
   stage_id?: string;
   status?: "open" | "won" | "lost";
@@ -152,6 +153,7 @@ export async function listLeadsHandler(
     .order("id", { ascending: false })
     .limit(limit + 1);
 
+  if (q.contact_id) query = query.eq("contact_id", q.contact_id);
   if (q.pipeline_id) query = query.eq("pipeline_id", q.pipeline_id);
   if (q.stage_id) query = query.eq("stage_id", q.stage_id);
   if (q.status) query = query.eq("status", q.status);
@@ -376,6 +378,24 @@ export async function updateLeadHandler(
   }
   if (!existing) {
     throw new ApiError(404, "not_found", undefined, ctx.requestId, "Lead não encontrado.");
+  }
+
+  // A FK garante existência, não tenancy. Relink administrativo continua
+  // permitido, mas somente para um contato da organização confiável da sessão.
+  if (input.contact_id != null && input.contact_id !== existing.contact_id) {
+    const { data: contact, error: contactError } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("organization_id", ctx.organization_id)
+      .eq("id", input.contact_id)
+      .maybeSingle();
+    if (contactError) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, contactError.message);
+    }
+    if (!contact) {
+      throw new ApiError(422, "validation_failed", undefined, ctx.requestId,
+        "Contato não encontrado nesta organização.");
+    }
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };

@@ -133,8 +133,15 @@ function makeSupabase(
             };
           },
           update: (patch: Row) => {
-            Object.assign(conversation, patch);
-            return { eq: async () => ({ error: null }) };
+            let matches = true;
+            const query = {
+              eq(column: string, value: unknown) { matches = matches && conversation[column] === value; return query; },
+              then(resolve: (result: { error: null }) => unknown) {
+                if (matches) Object.assign(conversation, patch);
+                return Promise.resolve({ error: null }).then(resolve);
+              },
+            };
+            return query;
           },
         };
       }

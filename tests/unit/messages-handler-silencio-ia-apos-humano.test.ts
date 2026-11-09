@@ -19,8 +19,18 @@ import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
 import type { HandlerCtx } from '@/lib/api/handlers/types';
 import type { SendMessageInput } from '@/lib/schemas';
 
+const resolution = vi.hoisted(() => ({
+  db: null as unknown,
+  prepare: vi.fn(async () => ({})),
+  beforeTransport: vi.fn(async () => undefined),
+}));
+vi.mock('@/lib/agent-engine/db/request-pool', () => ({ getRequestPool: () => ({}) }));
+vi.mock('@/lib/escalacao/resolucao-vinculada', () => ({
+  prepareCaseResolution: resolution.prepare,
+  assertCaseResolutionBeforeTransport: resolution.beforeTransport,
+}));
 vi.mock('@/lib/supabase/admin', () => ({
-  createAdminClient: () => ({ storage: { from: () => ({ createSignedUrl: vi.fn() }) } }),
+  createAdminClient: () => resolution.db ?? ({ storage: { from: () => ({ createSignedUrl: vi.fn() }) } }),
 }));
 vi.mock('@/lib/audit', () => ({ audit: vi.fn(async () => {}) }));
 
@@ -60,7 +70,8 @@ function makeSupabase(botSilencedUntil: string | null) {
           }),
           update: (patch: Row) => {
             patches.push(patch);
-            return { eq: async () => ({ error: null }) };
+            const query = { eq: () => query, then: (resolve: (v: unknown) => unknown) => Promise.resolve({ error: null }).then(resolve) };
+            return query;
           },
         };
       }
@@ -111,11 +122,28 @@ function wahaConfigured() {
 }
 
 afterEach(() => {
+  resolution.db = null;
+  resolution.prepare.mockClear();
+  resolution.beforeTransport.mockClear();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
 describe('sendMessageHandler — silêncio da IA de 5min após resposta manual humana', () => {
+  it('resposta vinculada não sobrepõe a retomada com uma nova pausa de cinco minutos', async () => {
+    wahaConfigured();
+    const { supabase, patches } = makeSupabase(null);
+    resolution.db = supabase;
+    const result = await sendMessageHandler(supabase, {
+      organization_id: ORG, actor: { type: 'user', id: USER }, requestId: 'linked',
+    }, { ...input, resolve_case_id: '77777777-7777-4777-8777-777777777777' });
+    expect(result.status).toBe('sent');
+    expect(patches.some(patch => 'bot_silenced_until' in patch)).toBe(false);
+    expect(resolution.prepare).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      organizationId: ORG, conversationId: CONV, actorUserId: USER, messageId: 'msg-1',
+    }));
+    expect(resolution.beforeTransport).toHaveBeenCalledTimes(1);
+  });
   it('humano manda mensagem numa conversa sem silêncio → bot_silenced_until vira ~agora+5min', async () => {
     wahaConfigured();
     const ctx: HandlerCtx = { organization_id: ORG, actor: { type: 'user', id: USER }, requestId: 'req-1' };

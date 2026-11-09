@@ -50,6 +50,7 @@ interface CenarioBanco {
   checkpointAnterior?: Record<string, unknown> | null;
   negocios?: Array<Record<string, unknown>>;
   erroDoEmitEvent?: { message: string } | null;
+  erroDaPendencia?: boolean;
 }
 
 /**
@@ -88,6 +89,10 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
         if (tabela === "lead_checkpoints") {
           return Promise.resolve({ data: cenario.checkpointAnterior ?? null, error: null });
         }
+        if (tabela === "agent_cases") return Promise.resolve({
+          data: cenario.chamados?.find(c => c.status === "awaiting_human") ?? null,
+          error: cenario.erroDaPendencia ? { message: "indisponível" } : null,
+        });
         if (tabela === "crm_pipelines") {
           return Promise.resolve({ data: { id: "pipe-1" }, error: null });
         }
@@ -183,6 +188,21 @@ async function retomar(cenario: CenarioBanco, cap: Captura, actor: Actor = USUAR
 }
 
 describe("devolver o atendimento ao agente", () => {
+  it("consulta pendente é explicada sem ser concluída nem liberar o controle por inferência", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(cenarioComAtendimentoHumano({ chamados: [{
+      id: CHAMADO, title: "Confirmar condição", status: "awaiting_human", opened_at: "2026-08-04T11:00:00Z", closed_at: null,
+    }] }), cap);
+    expect(res).toMatchObject({ ok: true, blockingCaseId: CHAMADO });
+    expect(cap.updates).toEqual([]);
+    expect(cap.rpc).toEqual([]);
+  });
+  it("falha ao conferir pendência não libera atendimento por suposição", async () => {
+    const cap = novaCaptura();
+    expect(await retomar(cenarioComAtendimentoHumano({ erroDaPendencia: true }), cap))
+      .toMatchObject({ ok: false, erro: "pending_check_failed" });
+    expect(cap.updates).toEqual([]);
+  });
   it("limpa force_human do contato — a trava que ninguém soltava", async () => {
     const cap = novaCaptura();
     const res = await retomar(cenarioComAtendimentoHumano(), cap);

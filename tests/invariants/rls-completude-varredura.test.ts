@@ -75,6 +75,10 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  {
+    tabela: "case_resolution_intents",
+    razao: "tests/invariants/inbox-case-resolution.test.ts — intenções reais em duas organizações; SET LOCAL ROLE authenticated + JWT prova leitura própria e zero linhas vizinhas nos dois sentidos. INSERT/UPDATE/DELETE diretos e SELECT anon são negados; service_role tem controle positivo. Escrita e RPCs continuam exclusivas do serviço.",
+  },
   ...['crm_first_payments','crm_lead_qualifications','crm_lead_attribution','crm_campaign_assignments',
     'crm_ad_spend_daily','crm_ad_spend_coverage','crm_ad_sync_accounts','crm_campaign_links',
     'obra_commercial_links','obra_commercial_receipts'].map(tabela=>({

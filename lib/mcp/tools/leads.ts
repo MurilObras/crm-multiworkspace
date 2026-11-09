@@ -71,6 +71,7 @@ async function enrichLeads(
 // ---------------------------------------------------------------------------
 
 const listInputShape = {
+  contact_id: z.string().uuid().optional(),
   pipeline_id: z.string().uuid().optional(),
   stage_id: z.string().uuid().optional(),
   status: z.enum(["open", "won", "lost"]).optional(),
@@ -82,7 +83,7 @@ const listInputShape = {
 export const crmListLeads: McpToolDefinition<typeof listInputShape> = {
   name: "crm_list_leads",
   description:
-    "Lista leads do CRM filtrando por pipeline, stage, status e owner. Cursor base64 para paginação. " +
+    "Lista leads do CRM filtrando por contact_id, pipeline, stage, status e owner. Use contact_id para localizar os cartões da pessoa sem percorrer toda a carteira. Cursor base64 para paginação. " +
     "Governança por lead: owner_user_id + owner_user_name (só o nome do dono, sem email/telefone), stage ({ id, name } legível além do stage_id) e tags[].",
   inputSchema: listInputShape,
   category: "read",
@@ -97,6 +98,7 @@ export const crmListLeads: McpToolDefinition<typeof listInputShape> = {
         requestId: ctx.requestId,
       },
       {
+        contact_id: input.contact_id,
         pipeline_id: input.pipeline_id,
         stage_id: input.stage_id,
         status: input.status,
@@ -227,12 +229,13 @@ const updateInputShape = {
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   tags: z.array(z.string()).optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 };
 
 export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
   name: "crm_update_lead",
   description:
-    "Atualiza campos editáveis de um lead. Stage transitions são via crm_move_lead_stage; status é gerenciado por triggers.",
+    "Atualiza campos editáveis de um lead e a ficha em custom_fields (merge dos campos informados). Use as chaves definidas pelo funil, sem trocar o contato para registrar um agendamento. Stage transitions são via crm_move_lead_stage; status é gerenciado por triggers.",
   inputSchema: updateInputShape,
   category: "write",
   requiresRole: "agent",

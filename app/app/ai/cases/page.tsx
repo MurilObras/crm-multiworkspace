@@ -4,10 +4,12 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CaseList } from "./_components/CaseList";
+import { z } from "zod";
 
 export const dynamic = "force-dynamic";
 
-export default async function CasesPage() {
+export default async function CasesPage({ searchParams }: { searchParams: Promise<{ case_id?: string }> }) {
+  const selected = z.string().uuid().safeParse((await searchParams).case_id);
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   // GET/POST de /api/v1/ai/cases exigem role agent+ (requireRole("agent")) —
@@ -26,7 +28,7 @@ export default async function CasesPage() {
           )}
         </p>
       </header>
-      <CaseList />
+      <CaseList initialSelectedId={selected.success ? selected.data : null} />
     </div>
   );
 }
