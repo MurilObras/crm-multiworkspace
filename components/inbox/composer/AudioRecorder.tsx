@@ -17,10 +17,13 @@ function pickMime(): string | undefined {
 interface Props {
   conversationId: string;
   disabled?: boolean;
+  resolveCaseId?: string;
+  onSendStart?: () => void;
+  onResolutionMessage?: (messageId: string) => void;
 }
 
 /** Gravação de voz estilo WhatsApp: mic → timer + cancelar/enviar → PTT. */
-export function AudioRecorder({ conversationId, disabled }: Props) {
+export function AudioRecorder({ conversationId, disabled, resolveCaseId, onSendStart, onResolutionMessage }: Props) {
   const t = useT();
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -29,6 +32,11 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
   const chunksRef = useRef<Blob[]>([]);
   const discardRef = useRef(false);
   const startingRef = useRef(false);
+  const mounted = useRef(true);
+  const generation = useRef(0);
+  const selection = useRef({ resolveCaseId, onSendStart, onResolutionMessage, disabled });
+  useEffect(() => { selection.current = { resolveCaseId, onSendStart, onResolutionMessage, disabled }; },
+    [resolveCaseId, onSendStart, onResolutionMessage, disabled]);
   const upload = useUploadMedia();
   const send = useSendMessage();
 
@@ -45,19 +53,23 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
 
   // Trocar de conversa/rota no meio de uma gravação não pode deixar o mic aberto.
   useEffect(
-    () => () => {
+    () => { const currentGeneration = generation.current; mounted.current = true; return () => {
+      mounted.current = false;
+      generation.current = currentGeneration + 1;
       discardRef.current = true;
       if (recorderRef.current?.state === "recording") recorderRef.current.stop();
       cleanupStream();
-    },
-    [],
+    }; },
+    [conversationId],
   );
 
   async function start() {
-    if (startingRef.current || recording) return;
+    if (startingRef.current || recording || disabled || upload.isPending || send.isPending) return;
     startingRef.current = true;
+    const startedGeneration = generation.current;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mounted.current || generation.current !== startedGeneration) { stream.getTracks().forEach(track => track.stop()); return; }
       streamRef.current = stream;
       const mime = pickMime();
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
@@ -70,12 +82,16 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
         cleanupStream();
         setRecording(false);
         setElapsed(0);
-        if (discardRef.current || chunksRef.current.length === 0) return;
+        if (!mounted.current || generation.current !== startedGeneration || discardRef.current || chunksRef.current.length === 0) return;
+        const chosen = selection.current;
+        if (chosen.disabled) return;
+        chosen.onSendStart?.();
         const type = rec.mimeType || "audio/webm";
         const blob = new Blob(chunksRef.current, { type });
         void upload
           .mutateAsync({ conversationId, file: blob, filename: `ptt.${type.includes("ogg") ? "ogg" : "webm"}` })
-          .then((uploaded) =>
+          .then((uploaded) => {
+            if (!mounted.current || generation.current !== startedGeneration) return;
             send.mutate(
               {
                 conversation_id: conversationId,
@@ -83,10 +99,13 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
                 media_storage_path: uploaded.storage_path,
                 media_mime: uploaded.media_mime,
                 media_size_bytes: uploaded.media_size_bytes,
+                ...(chosen.resolveCaseId ? { resolve_case_id: chosen.resolveCaseId } : {}),
               },
-              {},
-            ),
-          )
+              { onSuccess: (result) => {
+                if (mounted.current && generation.current === startedGeneration && chosen.resolveCaseId) chosen.onResolutionMessage?.(result.data.id);
+              } },
+            );
+          })
           .catch(() => {
             // toast já disparado pelo onError de useUploadMedia
           });
@@ -118,7 +137,7 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
         className="h-9 w-9 shrink-0"
         aria-label={t("Gravar áudio")}
         onClick={start}
-        disabled={disabled}
+        disabled={disabled || upload.isPending || send.isPending}
       >
         <Microphone size={16} weight="fill" aria-hidden />
       </Button>
@@ -149,7 +168,8 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
         size="icon"
         className="h-9 w-9 shrink-0"
         aria-label={t("Enviar áudio")}
-        onClick={stopIfRecording}
+        disabled={disabled || upload.isPending || send.isPending}
+        onClick={() => { if (!selection.current.disabled && !upload.isPending && !send.isPending) stopIfRecording(); }}
       >
         <PaperPlaneTilt size={16} weight="fill" aria-hidden />
       </Button>

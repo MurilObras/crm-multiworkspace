@@ -22,6 +22,7 @@ import { conversaoDeVendaHandler } from "@/lib/conversoes/envio.handler";
 import { registerHandler } from "@/lib/event-log/dispatcher";
 import { campaignHandler } from "@/lib/campaigns/worker";
 import { obraRecoveryHandler } from "@/lib/obra-no-bolso/recovery.handler";
+import { caseResolutionHandler } from "@/workers/case-resolution-worker";
 
 let _registered = false;
 
@@ -30,6 +31,7 @@ export function ensureHandlersRegistered(): void {
   // Follow-up de inbound ANTES do LLM: no Hobby o drain da mensagem
   // estourava no worker de IA e o match_reply nunca lia a resposta.
   registerHandler(followupReactivityHandler);
+  registerHandler(caseResolutionHandler);
   registerHandler(campaignHandler);
   registerHandler(aiResponseHandler);
   registerHandler(aiSentimentHandler);

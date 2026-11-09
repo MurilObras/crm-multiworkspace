@@ -195,12 +195,22 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     try {
       await client.query("begin");
       if (action === "resolved_internal") {
+        // O transporte automático toma a mesma linha antes do CAS prepared→started.
+        await client.query("select id from conversations where organization_id=$1 and id=$2 for update nowait", [org.orgId, conversationId]);
         // Ordem caso → pedido; NOWAIT não espera um transporte ainda em voo.
         await client.query("select id from agent_cases where organization_id=$1 and id=$2 for update nowait", [org.orgId, caseId]);
         await client.query("select id from agent_responsible_requests where organization_id=$1 and case_id=$2 for update nowait", [org.orgId, caseId]);
         const busy = await client.query(`select d.id from agent_responsible_deliveries d
           join agent_responsible_requests r on r.organization_id=d.organization_id and r.id=d.request_id
-          where r.organization_id=$1 and r.case_id=$2 and d.purpose='answer' and d.status in ('sending','uncertain')`, [org.orgId, caseId]);
+          where r.organization_id=$1 and r.case_id=$2 and d.purpose='answer' and d.status in ('sending','uncertain')
+          union all select message_id from case_resolution_intents where organization_id=$1 and case_id=$2
+           and transport_started_at is not null and status in ('pending','confirmed')
+          union all select m.id from messages m join send_ledger l on l.organization_id=m.organization_id
+           and l.id::text=m.metadata->>'idempotency_key'
+          join job_queue j on j.organization_id=l.organization_id and j.id=l.job_id
+          join agent_cases ac on ac.organization_id=m.organization_id and ac.conversation_id=m.conversation_id
+          where ac.organization_id=$1 and ac.id=$2 and j.kind in ('inbound_turn','case_reply_turn')
+           and m.external_id is null and m.metadata->'outbound_attempt'->>'phase' in ('started','uncertain')`, [org.orgId, caseId]);
         if (busy.rows.length) {
           await client.query("rollback");
           return fail("invalid_state", "Existe uma resposta em envio ou com entrega incerta. Confira a entrega antes de encerrar.", 409, { requestId });
@@ -209,7 +219,8 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
       transitioned =
         action === "resolved" || action === "resolved_internal"
           ? await resolveCaseFromHuman(client, org.orgId, caseId, user.id,
-            action === "resolved_internal" ? `Encerrado internamente, sem envio ao cliente. Motivo: ${body}` : body)
+            action === "resolved_internal" ? `Encerrado internamente, sem envio ao cliente. Motivo: ${body}` : body,
+            { internalNoSend: action === "resolved_internal" })
           : await markAwaitingLead(client, org.orgId, caseId, user.id, body);
       if (transitioned) {
         if (action !== "resolved_internal") await enqueueJob(client, org.orgId, {

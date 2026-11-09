@@ -41,6 +41,8 @@ export interface CaseListItem {
 export interface CaseListData {
   cases: CaseListItem[];
   open_count: number;
+  agent_name?: string | null;
+  resolution_message_ids?: string[];
 }
 
 export interface CaseEvent {
@@ -69,12 +71,12 @@ export interface CaseDetailData {
 }
 
 /** Lista de casos humanos (spec 15 §9). Polling 60s — casos nascem no worker. */
-export function useCases(status: "open" | "resolved" = "open") {
+export function useCases(status: "open" | "resolved" = "open", conversationId?: string) {
   return useQuery({
-    queryKey: ["ai-cases", status],
+    queryKey: ["ai-cases", status, conversationId ?? null],
     refetchInterval: 60_000,
     queryFn: () =>
-      apiClient.get<{ data: CaseListData }>(`/api/v1/ai/cases?status=${status}`).then((r) => r.data),
+      apiClient.get<{ data: CaseListData }>(`/api/v1/ai/cases?status=${status}${conversationId ? `&conversation_id=${encodeURIComponent(conversationId)}` : ""}`).then((r) => r.data),
   });
 }
 

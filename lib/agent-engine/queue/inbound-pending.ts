@@ -71,9 +71,22 @@ export async function isCurrentInbound(
   messageId: string,
 ): Promise<boolean> {
   const { rows } = await db.query<{ id: string }>(
-    `select id from messages where organization_id = $1 and conversation_id = $2
-       and direction = 'inbound'
-     order by coalesce(sent_at, created_at) desc, created_at desc, id desc limit 1`,
+    `select newest.id from (
+       select id,organization_id,conversation_id,sent_at,created_at from messages
+        where organization_id = $1 and conversation_id = $2 and direction = 'inbound'
+        order by coalesce(sent_at, created_at) desc, created_at desc, id desc limit 1
+     ) newest where not exists (
+       select 1 from case_resolution_intents i join messages response
+         on response.organization_id=i.organization_id and response.id=i.message_id
+        where i.organization_id=$1 and i.conversation_id=$2 and i.status in ('applied','partial')
+         and response.direction='outbound' and response.created_at>=newest.created_at
+         and coalesce(response.sent_at,response.created_at)>=coalesce(newest.sent_at,newest.created_at)
+     ) and not exists (
+       select 1 from agent_case_events e join agent_cases ac
+         on ac.id=e.case_id and ac.organization_id=e.organization_id
+        where e.organization_id=$1 and ac.conversation_id=$2 and e.kind='resolved'
+         and e.metadata->>'internal_no_send'='true' and e.created_at>=newest.created_at
+     )`,
     [organizationId, conversationId],
   );
   return rows[0]?.id === messageId;

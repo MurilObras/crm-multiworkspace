@@ -187,7 +187,8 @@ function makeSupabase(linhaCompleta: Row) {
                 maybeSingle: async () => ({ data: projetar(linhaCompleta, cols), error: null }),
             };
           },
-          update: () => ({ eq: async () => ({ error: null }) }),
+          update: () => ({ eq() { return this; },
+            then: (resolve: (value: { error: null }) => unknown) => Promise.resolve({ error: null }).then(resolve) }),
         };
       }
       if (tabela === "meta_templates") {

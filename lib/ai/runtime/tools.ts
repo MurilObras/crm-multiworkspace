@@ -62,7 +62,13 @@ function wrapMcpTool(
   def: McpToolDefinition,
   input: PickToolsInput,
 ): Tool {
-  const inputSchema = shapeToZodObject(def.inputSchema as Record<string, z.ZodTypeAny>);
+  const runtimeShape = { ...def.inputSchema } as Record<string, z.ZodTypeAny>;
+  // Editar a ficha/etapa não é trocar a pessoa do negócio. O catálogo MCP é
+  // compartilhado com a administração humana, onde relink continua legítimo;
+  // somente a ferramenta montada para o modelo perde esse campo.
+  const operationalLeadUpdate = def.name === "crm_update_lead";
+  if (operationalLeadUpdate) delete runtimeShape.contact_id;
+  const inputSchema = shapeToZodObject(runtimeShape);
 
   return tool({
     description: def.description,
@@ -86,6 +92,9 @@ function wrapMcpTool(
         (args ?? {}) as Record<string, unknown>,
       );
       const argsRecord = higiene.limpos;
+      // Defesa no execute também: chamadas já preparadas/legadas podem ainda
+      // trazer o campo mesmo depois da remoção do schema oferecido ao modelo.
+      if (operationalLeadUpdate) delete argsRecord.contact_id;
       if (higiene.descartados.length > 0) {
         // Não é cosmético: sem esta linha o defeito passa a se curar em
         // silêncio e ninguém descobre que um modelo faz isso o tempo todo.

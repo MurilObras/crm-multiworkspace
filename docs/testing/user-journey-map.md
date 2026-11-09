@@ -10,6 +10,15 @@
 
 ## Convenções
 
+Continuidade humana `[P1]`: `tests/e2e/inbox-case-resolution.spec.ts` usa Inbox e
+backend reais com canal local parado: escolha de consulta, nota interna,
+envio em fila sem resolução prematura, recarga e geometria mobile. Confirmação,
+recuperação, concorrência e isolamento estão em
+`tests/invariants/inbox-case-resolution.test.ts`; identidade/ficha e retry em
+`tests/invariants/school-trial-acceptance.test.ts`. O teste não envia WhatsApp
+externo nem comprova compreensão semântica de áudio. Contrato e limitações:
+`specs/001-school-attendance-recovery/contracts/attendance.md`.
+
 Memória e diagnóstico `[P1]`: `tests/e2e/inbox-resposta-retida.spec.ts` exibe a falha técnica de schema em Execuções e preserva o Inbox sem bloqueio de entrega inventado. O JSON real emitido pelo SDK é validado em `checkpoint-contract.test.ts`; retomada sem envios duplicados, lease e memória recente em `tests/invariants/response-resume-turn.test.ts`. Contrato, relógios e smoke remoto opt-in em [memória e demora](../changes/checkpoint-memory-latency.md).
 
 Follow-up `[P1]`: o caso de edição da espera de 10min e janela de

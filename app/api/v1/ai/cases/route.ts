@@ -20,6 +20,7 @@ export const dynamic = "force-dynamic";
 
 const querySchema = z.object({
   status: z.enum(["open", "resolved"]).default("open"),
+  conversation_id: z.string().uuid().optional(),
 });
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -39,10 +40,27 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   try {
-    const { chamados, abertos } = await listarChamados(createAdminClient(), org.orgId, {
+    const db = createAdminClient();
+    const { chamados, abertos } = await listarChamados(db, org.orgId, {
       estado: parsed.data.status === "open" ? "abertos" : "fechados",
+      ...(parsed.data.conversation_id ? { conversationId: parsed.data.conversation_id, limite: 50 } : {}),
     });
-    return ok({ cases: chamados, open_count: abertos }, { requestId });
+    let agentName: string | null = null;
+    if (parsed.data.conversation_id && chamados[0]?.agent_id) {
+      const { data: agent, error } = await db.from("ai_agents").select("name")
+        .eq("organization_id", org.orgId).eq("id", chamados[0].agent_id).maybeSingle();
+      if (error) throw error;
+      agentName = agent?.name ?? null;
+    }
+    let resolutionMessageIds: string[] = [];
+    if (parsed.data.conversation_id) {
+      const { data: resolutions, error } = await db.from("case_resolution_intents").select("message_id")
+        .eq("organization_id", org.orgId).eq("conversation_id", parsed.data.conversation_id)
+        .order("created_at", { ascending: false }).limit(5);
+      if (error) throw error;
+      resolutionMessageIds = (resolutions ?? []).map(row => row.message_id as string);
+    }
+    return ok({ cases: chamados, open_count: abertos, agent_name: agentName, resolution_message_ids: resolutionMessageIds }, { requestId });
   } catch {
     return fail("internal_error", "Falha ao carregar os casos.", 500, { requestId });
   }

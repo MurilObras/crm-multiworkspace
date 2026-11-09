@@ -21,6 +21,7 @@ import { useCreateNote } from "@/hooks/inbox/useCreateNote";
 import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
 import { X } from "lucide-react";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
+import { PendingCaseResolution } from '@/components/inbox/PendingCaseResolution';
 import { useUploadMedia } from "@/hooks/inbox/useUploadMedia";
 import { imagemDoClipboard } from "@/lib/inbox/clipboard-image";
 import { interpolateTemplate } from "@/lib/inbox/template-vars";
@@ -79,6 +80,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [mode, setMode] = useState<"reply" | "note">("reply");
+  const [resolution, setResolution] = useState<{ conversationId: string; caseId: string | null | undefined; messageId: string | null }>(
+    { conversationId, caseId: undefined, messageId: null });
+  // Troca de conversa descarta a escolha antes de renderizar qualquer envio.
+  if (resolution.conversationId !== conversationId) setResolution({ conversationId, caseId: undefined, messageId: null });
+  const activeConversation = useRef(conversationId);
+  activeConversation.current = conversationId;
+  const caseId = resolution.conversationId === conversationId ? resolution.caseId : undefined;
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const send = useSendMessage();
   const upload = useUploadMedia();
@@ -98,6 +106,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   // nota interna nunca chega ao cliente, e é onde o atendente registra por que
   // a conversa esfriou — barrá-la tira exatamente o que ainda dá para fazer.
   const respostaBarrada = isDisabled || (mode === "reply" && !!janelaFechada);
+  const escolhaPendente = mode === 'reply' && caseId === null;
+  const clearCaseChoice = () => setResolution(current => ({ ...current, caseId: undefined }));
+  const trackResolution = (messageId: string) => {
+    if (activeConversation.current === conversationId) setResolution(current => ({ ...current, messageId }));
+  };
 
   function autoresize() {
     const ta = taRef.current;
@@ -108,12 +121,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   function handleSubmit() {
     const body = text.trim();
-    if (!body || (mode === "note" ? isDisabled : respostaBarrada)) return;
+    if (!body || escolhaPendente || (mode === "note" ? isDisabled : respostaBarrada)) return;
 
     setText("");
     requestAnimationFrame(() => autoresize());
 
     const restoreOnError = () => {
+      if (activeConversation.current !== conversationId) return;
       setText(body);
       requestAnimationFrame(() => autoresize());
     };
@@ -122,15 +136,19 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       createNote.mutate({ conversation_id: conversationId, body }, { onError: restoreOnError });
       return;
     }
+    clearCaseChoice();
     send.mutate(
       {
         conversation_id: conversationId,
         body,
         type: "text",
+        ...(caseId ? { resolve_case_id: caseId } : {}),
         ...(respondendo ? { reply_to_message_id: respondendo.id } : {}),
       },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          if (activeConversation.current !== conversationId) return;
+          if (caseId) trackResolution(result.data.id);
           setText("");
           // A citação vale para UMA mensagem. Mantê-la depois do envio faria a
           // próxima frase sair citando algo que o atendente já respondeu.
@@ -238,7 +256,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           </button>
           <button
             type="button"
-            onClick={() => setMode("note")}
+            onClick={() => { clearCaseChoice(); setMode("note"); }}
             aria-pressed={mode === "note"}
             className={cn(
               "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
@@ -250,6 +268,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             {t("Nota interna")}
           </button>
         </div>
+        {mode === 'reply' && <PendingCaseResolution conversationId={conversationId} value={caseId}
+          onChange={id => setResolution(current => ({ ...current, caseId: id }))} disabled={!!respostaBarrada}
+          messageId={resolution.conversationId === conversationId ? resolution.messageId : null} />}
         {/*
           A FAIXA DA CITAÇÃO — o que o atendente escolheu responder.
 
@@ -325,13 +346,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               size="icon"
               className="inbox-send h-11 w-11 shrink-0"
               onClick={handleSubmit}
-              disabled={(mode === "note" ? isDisabled : respostaBarrada) || !text.trim()}
+              disabled={(mode === "note" ? isDisabled : respostaBarrada) || escolhaPendente || !text.trim()}
               aria-label={t("Enviar")}
             >
               <PaperPlaneTilt size={16} weight="fill" aria-hidden />
             </Button>
           ) : (
-            <AudioRecorder conversationId={conversationId} disabled={respostaBarrada} />
+            <AudioRecorder key={conversationId} conversationId={conversationId} disabled={respostaBarrada || escolhaPendente}
+              resolveCaseId={caseId || undefined} onSendStart={clearCaseChoice} onResolutionMessage={trackResolution} />
           )}
         </div>
         <div className="inbox-composer-tools">
@@ -375,9 +397,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         sending={upload.isPending || send.isPending}
         onCancel={() => setPendingFile(null)}
         onSend={async (caption) => {
-          if (!pendingFile) return;
+          if (!pendingFile || escolhaPendente || respostaBarrada) return;
+          const selectedCase = caseId;
           try {
             const uploaded = await upload.mutateAsync({ conversationId, file: pendingFile });
+            if (activeConversation.current !== conversationId) return;
+            clearCaseChoice();
             send.mutate(
               {
                 conversation_id: conversationId,
@@ -386,8 +411,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 media_storage_path: uploaded.storage_path,
                 media_mime: uploaded.media_mime,
                 media_size_bytes: uploaded.media_size_bytes,
+                ...(selectedCase && uploaded.kind === 'audio' ? { resolve_case_id: selectedCase } : {}),
               },
-              { onSuccess: () => setPendingFile(null) },
+              { onSuccess: (result) => { if (activeConversation.current !== conversationId) return;
+                setPendingFile(null); if (selectedCase && uploaded.kind === 'audio') trackResolution(result.data.id); } },
             );
           } catch {
             // toast já disparado pelo onError de useUploadMedia; dialog fica aberto p/ retry
@@ -401,6 +428,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         excludeContactId={currentContactId}
         sending={send.isPending}
         onPick={(payload) => {
+          clearCaseChoice();
           send.mutate(
             {
               conversation_id: conversationId,

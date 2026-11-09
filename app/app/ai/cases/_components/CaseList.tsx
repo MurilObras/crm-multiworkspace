@@ -14,10 +14,10 @@ import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
 import { CaseDetail } from "./CaseDetail";
 
-export function CaseList() {
+export function CaseList({ initialSelectedId = null }: { initialSelectedId?: string | null }) {
   const t = useT();
   const [tab, setTab] = useState<"open" | "resolved">("open");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const { data, isLoading } = useCases(tab);
 
   return (

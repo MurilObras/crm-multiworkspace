@@ -53,6 +53,7 @@ export type RetomadaFalha =
   | "conversation_not_found"
   /** Alguém assumiu a conversa entre a leitura e a escrita. */
   | "assignment_conflict"
+  | "pending_check_failed"
   /** O sinal de retomada do follow-up não foi emitido — ver comentário abaixo. */
   | "resume_signal_failed";
 
@@ -63,6 +64,8 @@ export type RetomadaResultado =
       /** true = já estava com o agente; a operação é idempotente. */
       jaEstavaComOAgente: boolean;
       continuidade: ContinuidadeHumana;
+      /** Atribuição não significa aptidão: resolver a consulta exige decisão explícita. */
+      blockingCaseId?: string;
     }
   | { ok: false; erro: RetomadaFalha; detalhe?: string };
 
@@ -107,6 +110,14 @@ export async function devolverAtendimentoAoAgente(
     organizationId,
     input.conversationId,
   );
+  // O resumo é limitado e não é fonte de autorização: consultar existência
+  // separadamente impede que casos antigos desapareçam atrás de casos fechados.
+  const { data: pendente, error: pendenciaError } = await supabase.from("agent_cases").select("id")
+    .eq("organization_id", organizationId).eq("conversation_id", input.conversationId)
+    .eq("status", "awaiting_human").limit(1).maybeSingle();
+  if (pendenciaError) return { ok: false, erro: "pending_check_failed" };
+  if (pendente) return { ok: true, conversationId: input.conversationId,
+    jaEstavaComOAgente, continuidade, blockingCaseId: pendente.id };
 
   // (1) Solta o dono humano pela regra que já existe (UPDATE + evento de
   // atribuição na MESMA transação). `p_enforce_expected: false` porque soltar é

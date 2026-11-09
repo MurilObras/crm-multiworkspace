@@ -45,12 +45,12 @@ export const CASE_ACTIONS: CaseActionOption[] = [
   {
     action: "resolved_internal",
     label: "Encerrar sem enviar mensagem",
-    help: "Registra a decisão internamente e encerra esta consulta, sem mensagem ao cliente.",
+    help: "Encerra esta consulta sem mensagem. Não desfaz pausa ou cancelamento manual; acompanhamentos ativos são independentes.",
   },
   {
     action: "resolved",
     label: "Concluí",
-    help: "A IA avisa o cliente e encerra o assunto.",
+    help: "Encerra a consulta e agenda uma resposta da IA. Para enviar sua resposta e liberar o atendimento, use o Inbox.",
   },
   {
     action: "need_lead_info",

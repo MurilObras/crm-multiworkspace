@@ -1,5 +1,6 @@
 "use client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { apiClient } from "@/lib/api/client";
@@ -17,7 +18,7 @@ export interface ContinuidadeDaRetomada {
 }
 
 interface ResumeResponse {
-  data: { reactivated: boolean; continuidade: ContinuidadeDaRetomada };
+  data: { reactivated: boolean; pending_case_id?: string | null; continuidade: ContinuidadeDaRetomada };
 }
 
 /**
@@ -38,7 +39,9 @@ export function useResumeAiAttendance() {
         {},
       ),
     onError: (err) => showApiError(err),
-    onSuccess: (_data, args) => {
+    onSuccess: (result, args) => {
+      if (!result.data.reactivated && result.data.pending_case_id)
+        toast.warning("Aguardando resolução da consulta. Responda no Inbox com a opção de resolver a consulta ou abra Casos.");
       qc.invalidateQueries({ queryKey: ["conversations"] });
       qc.invalidateQueries({ queryKey: ["conversation", args.conversation_id] });
     },

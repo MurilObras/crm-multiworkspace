@@ -52,6 +52,8 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   );
 
   if (!resultado.ok) {
+    if (resultado.erro === "pending_check_failed")
+      return fail("unavailable", "Não foi possível conferir as consultas pendentes. O atendimento permanece com a equipe.", 503, { requestId });
     if (resultado.erro === "conversation_not_found") {
       return fail("not_found", "Conversa não encontrada.", 404, { requestId });
     }
@@ -75,7 +77,8 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   return ok(
     {
-      reactivated: true,
+      reactivated: !resultado.blockingCaseId,
+      pending_case_id: resultado.blockingCaseId ?? null,
       // O que a pessoa fez vai junto: quem chamou consegue mostrar na tela que o
       // agente não voltou cego.
       continuidade: {

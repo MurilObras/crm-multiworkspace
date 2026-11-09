@@ -18,6 +18,7 @@ export const ESTADOS_FECHADOS = ["resolved", "escalated", "cancelled"] as const;
 
 export interface ChamadoDaLista {
   id: string;
+  agent_id?: string;
   title: string;
   summary: string;
   blocker: string;
@@ -45,7 +46,7 @@ export interface ChamadoDetalhado extends ChamadoDaLista {
 }
 
 const COLUNAS_LISTA =
-  "id, title, summary, blocker, status, opened_at, conversation_id, " +
+  "id, agent_id, title, summary, blocker, status, opened_at, conversation_id, " +
   "conversations:conversation_id(contacts:contact_id(name, phone_number))";
 
 const COLUNAS_DETALHE =
@@ -54,6 +55,7 @@ const COLUNAS_DETALHE =
 
 interface LinhaComContato {
   id: string;
+  agent_id?: string;
   title: string;
   summary: string;
   blocker: string;
@@ -68,6 +70,7 @@ interface LinhaComContato {
 function achatarContato(r: LinhaComContato): ChamadoDaLista {
   return {
     id: r.id,
+    ...(r.agent_id ? { agent_id: r.agent_id } : {}),
     title: r.title,
     summary: r.summary,
     blocker: r.blocker,
@@ -88,25 +91,29 @@ export interface ResultadoDaLista {
 export async function listarChamados(
   supabase: SupabaseClient,
   organizationId: string,
-  opts: { estado: "abertos" | "fechados"; limite?: number },
+  opts: { estado: "abertos" | "fechados"; limite?: number; conversationId?: string },
 ): Promise<ResultadoDaLista> {
   const estados = opts.estado === "abertos" ? ESTADOS_ABERTOS : ESTADOS_FECHADOS;
 
-  const base = supabase
+  let base = supabase
     .from("agent_cases")
     .select(COLUNAS_LISTA)
     .eq("organization_id", organizationId)
-    .in("status", estados as unknown as string[])
-    .order("opened_at", { ascending: false });
+    .in("status", estados as unknown as string[]);
+  if (opts.conversationId) base = base.eq("conversation_id", opts.conversationId);
+  const ordered = base.order("opened_at", { ascending: false });
 
-  const { data, error } = await (opts.limite === undefined ? base : base.limit(opts.limite));
+  const { data, error } = await (opts.limite === undefined ? ordered : ordered.limit(opts.limite));
   if (error) throw new Error(error.message);
 
-  const { count } = await supabase
+  let countQuery = supabase
     .from("agent_cases")
     .select("id", { count: "exact", head: true })
     .eq("organization_id", organizationId)
     .in("status", ESTADOS_ABERTOS as unknown as string[]);
+  if (opts.conversationId) countQuery = countQuery.eq("conversation_id", opts.conversationId);
+  const { count, error: countError } = await countQuery;
+  if (countError) throw new Error(countError.message);
 
   return {
     chamados: ((data ?? []) as unknown as LinhaComContato[]).map(achatarContato),

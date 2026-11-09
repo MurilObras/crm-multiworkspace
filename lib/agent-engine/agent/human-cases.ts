@@ -265,6 +265,7 @@ export async function resolveCaseFromHuman(
   caseId: string,
   actorUserId: string,
   note: string,
+  options?: { internalNoSend?: boolean },
 ): Promise<boolean> {
   const { rowCount } = await db.query(
     `with updated as (
@@ -273,11 +274,11 @@ export async function resolveCaseFromHuman(
         where organization_id = $1 and id = $2 and status = 'awaiting_human'
         returning id
      )
-     insert into agent_case_events (organization_id, case_id, kind, actor_kind, actor_user_id, human_action, body)
-     select $1::uuid, id, 'human_replied', 'human', $3::uuid, 'resolved', $4::text from updated
+     insert into agent_case_events (organization_id, case_id, kind, actor_kind, actor_user_id, human_action, body, metadata)
+     select $1::uuid, id, 'human_replied', 'human', $3::uuid, 'resolved', $4::text, $5::jsonb from updated
      union all
-     select $1::uuid, id, 'resolved', 'human', $3::uuid, null::text, null::text from updated`,
-    [tenantId, caseId, actorUserId, note],
+     select $1::uuid, id, 'resolved', 'human', $3::uuid, null::text, null::text, $5::jsonb from updated`,
+    [tenantId, caseId, actorUserId, note, JSON.stringify(options?.internalNoSend ? { internal_no_send: true } : {})],
   );
   return transitioned(rowCount);
 }

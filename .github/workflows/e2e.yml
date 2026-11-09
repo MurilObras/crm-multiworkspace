@@ -390,6 +390,7 @@ jobs:
         kiwify-operator-ui.spec.ts
         inbox-quem-manda.spec.ts
         inbox-resposta-retida.spec.ts
+        inbox-case-resolution.spec.ts
         acervo-de-conhecimento.spec.ts
         agenda-kit-visual.spec.ts
         agenda-conectar-google.spec.ts
