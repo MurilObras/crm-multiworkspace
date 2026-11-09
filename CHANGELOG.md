@@ -8,6 +8,20 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [3.11.0] — 2026-11-09
+
+### Corrigido
+
+- **Respostas humanas podem resolver consultas e devolver o atendimento** No Inbox, o atendente pode escolher a consulta resolvida por uma resposta em texto
+  ou áudio. A consulta só é concluída após a confirmação do envio; pausas posteriores,
+  outras consultas e bloqueios continuam sendo respeitados. O progresso permanece
+  disponível após recarregar e a recuperação não envia a resposta novamente.
+
+  A edição de cartões pelo agente preserva o contato original e permite localizar
+  a ficha pelo contato. Casos também diferenciam o aviso ao responsável enviado,
+  entregue e lido. Reprocessar áudio histórico e regularizar acompanhamentos
+  cancelados continuam sendo ações operacionais explícitas.
+
 ## [3.10.1] — 2026-11-07
 
 ### Corrigido
@@ -3550,7 +3564,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.10.1...HEAD
+[Não lançado]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.11.0...HEAD
+[3.11.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.10.1...v3.11.0
 [3.10.1]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.10.0...v3.10.1
 [3.10.0]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.4...v3.10.0
 [3.9.4]: https://github.com/MurilObras/crm-multiworkspace/compare/v3.9.3...v3.9.4
